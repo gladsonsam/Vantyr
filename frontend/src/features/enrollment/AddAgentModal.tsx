@@ -179,28 +179,26 @@ function DiscoveryInstructions({ hints, hintsLoading, copied, onCopy }: {
   onCopy: (kind: "wss" | "code", text: string) => Promise<void>;
 }) {
   return (
-          <ol className="grid list-decimal gap-3 pl-5 text-sm marker:text-muted-foreground">
-            <li>
-              On the device, open Vantyr settings{" "}
-              <kbd className="rounded bg-muted px-1.5 py-0.5 font-sans text-xs">Ctrl+Shift+F12</kbd>.
-            </li>
-            <li>
-              <span>
-                {hints?.mdns === "advertising" ? "Choose Discover server, or paste this address:" : "Paste this server address:"}
-              </span>
-              {hintsLoading && !hints ? (
-                <span className="mt-2 block text-muted-foreground">Loading…</span>
-              ) : hints?.agent_wss_url ? (
-                <span className="mt-2 flex flex-wrap items-center gap-2">
-                  <code className="rounded bg-muted px-2 py-1 font-mono text-xs break-all">{hints.agent_wss_url}</code>
-                  <Button variant="ghost" size="sm" onClick={() => void onCopy("wss", hints.agent_wss_url!)}>
-                    <Copy /> {copied === "wss" ? "Copied" : "Copy"}
-                  </Button>
-                </span>
-              ) : null}
-            </li>
-            <li>Generate a code here and enter it under Request access, then approve the device below.</li>
-          </ol>
+    <ol className="grid list-decimal gap-2.5 pl-5 text-sm marker:text-muted-foreground">
+      <li>
+        On the device, open Vantyr settings{" "}
+        <kbd className="rounded bg-muted px-1.5 py-0.5 font-sans text-xs">Ctrl+Shift+F12</kbd>.
+      </li>
+      <li>
+        {hints?.mdns === "advertising" ? "Choose Discover server, or paste this address:" : "Paste this server address:"}
+        {hintsLoading && !hints ? (
+          <span className="mt-1.5 block text-muted-foreground">Loading…</span>
+        ) : hints?.agent_wss_url ? (
+          <span className="mt-1.5 flex items-start gap-1.5">
+            <code className="min-w-0 rounded bg-muted px-2 py-1 font-mono text-xs break-all">{hints.agent_wss_url}</code>
+            <Button variant="ghost" size="sm" className="shrink-0" onClick={() => void onCopy("wss", hints.agent_wss_url!)}>
+              <Copy /> {copied === "wss" ? "Copied" : "Copy"}
+            </Button>
+          </span>
+        ) : null}
+      </li>
+      <li>Generate a code, enter it under Request access, then approve the device here.</li>
+    </ol>
   );
 }
 

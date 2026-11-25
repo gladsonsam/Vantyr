@@ -24,6 +24,8 @@ export interface CustomGroup {
   hidden: boolean;
   isNew: boolean;
   deleted: boolean;
+  /** Renamed or hidden/shown since it was loaded (new and deleted groups are already counted). */
+  dirty?: boolean;
 }
 
 export interface CategoryDraft {
@@ -83,12 +85,23 @@ export function patchCategory(draft: CategoryDraft, key: string, patch: Partial<
 }
 
 export function patchGroup(draft: CategoryDraft, index: number, patch: Partial<CustomGroup>): CategoryDraft {
-  return { ...draft, groups: draft.groups.map((g, i) => (i === index ? { ...g, ...patch } : g)) };
+  return { ...draft, groups: draft.groups.map((g, i) => (i === index ? { ...g, ...patch, dirty: true } : g)) };
 }
 
 /** "Fun & Games" -> "fun_games". */
 export function slugifyGroupKey(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+}
+
+/** Why a group name can't be added (it would collide with a group's key), or null when it is fine. */
+export function groupNameProblem(draft: CategoryDraft, labelInput: string): string | null {
+  const key = slugifyGroupKey(labelInput.trim());
+  if (!key) return "Use at least one letter or number in the name.";
+  const clash = draft.groups.find((g) => g.key === key);
+  if (!clash) return null;
+  return clash.deleted
+    ? "A group with this name is deleted but not saved yet. Save first or pick another name."
+    : "A group with this name already exists.";
 }
 
 /** Adds a new group; an empty label (or one that slugs to nothing) leaves the draft unchanged. */
@@ -166,7 +179,7 @@ export function filterCategories(draft: CategoryDraft, text: string): Ut1Cat[] {
 
 export function pendingChanges(draft: CategoryDraft): { dirtyCount: number; groupChanges: number; hasChanges: boolean } {
   const dirtyCount = draft.ut1Cats.filter((c) => c.dirty).length;
-  const groupChanges = draft.groups.filter((g) => g.isNew || g.deleted).length;
+  const groupChanges = draft.groups.filter((g) => g.isNew || g.deleted || g.dirty).length;
   return { dirtyCount, groupChanges, hasChanges: dirtyCount > 0 || groupChanges > 0 };
 }
 

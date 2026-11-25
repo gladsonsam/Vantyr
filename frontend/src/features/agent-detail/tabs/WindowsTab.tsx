@@ -1,6 +1,5 @@
-import { Search, X } from "lucide-react";
+import { Activity, History } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
 import { DataTable } from "@/components/common/data-table/DataTable";
 import { DataTableColumnHeader } from "@/components/common/data-table/DataTableColumnHeader";
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
@@ -17,7 +16,8 @@ import { agentRecallHref } from "@/features/recall/lib/recallUrl";
 import type { AgentInfo, WindowEvent as WindowEventRow, WindowTopRow } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
-import { RefreshButton } from "@/components/common/RefreshButton";
+import { LoadFailed, MonitoringToolbar, ROW_ACTIONS_CLASS, ROW_ACTION_BUTTON_CLASS } from "@/features/agent-detail/components/MonitoringToolbar";
+import { listCountLabel, titleRestatesApp } from "@/features/agent-detail/lib/monitoring";
 import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
 interface WindowEvent {
@@ -76,53 +76,53 @@ function windowColumns(
       cell: ({ row, table }) => {
         const item = row.original;
         return (
-          <>
-            <div className="flex items-center gap-2">
-              <AppIcon agentId={agentId} exeName={item.exe_name} size={16} />
-              <button
-                type="button"
-                onClick={() => table.setGlobalFilter(item.exe_name ?? "")}
-                title="Filter table by this app"
-                className="inline-flex min-h-6 cursor-pointer items-center p-0 text-left hover:underline"
-              >
-                {prettyAppLabel({ exeName: item.exe_name, appDisplay: item.app_display })}
-              </button>
-            </div>
-            <div className="font-mono text-xs text-muted-foreground">
-              {item.exe_name}
-            </div>
-          </>
+          <div className="flex items-center gap-2">
+            <AppIcon agentId={agentId} exeName={item.exe_name} size={16} />
+            <button
+              type="button"
+              onClick={() => table.setGlobalFilter(item.exe_name ?? "")}
+              title={`Only show ${item.exe_name}`}
+              className="inline-flex min-h-7 cursor-pointer items-center p-0 text-left hover:underline max-sm:min-h-7 pointer-coarse:min-h-9"
+            >
+              {prettyAppLabel({ exeName: item.exe_name, appDisplay: item.app_display })}
+            </button>
+          </div>
         );
       },
+      meta: { className: "whitespace-nowrap" },
     }),
     columnHelper.accessor("window_title", {
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Window Title" />,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Window title" />,
       cell: ({ row }) => {
         const item = row.original;
+        const title = titleRestatesApp(item.window_title, item.app_display, item.exe_name) ? "" : item.window_title;
         return (
           <div className="flex items-start justify-between gap-2.5">
-            <span className="min-w-0 wrap-break-word">{item.window_title || "—"}</span>
-            <span className="flex shrink-0 gap-2">
+            <span className="min-w-0 wrap-break-word">{title || <span className="text-muted-foreground">Untitled window</span>}</span>
+            <span className={ROW_ACTIONS_CLASS}>
               {item.window_title?.trim() ? (
-                <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openInActivity(item.window_title)}>
-                  Activity
+                <Button variant="ghost" size="icon-sm" className={ROW_ACTION_BUTTON_CLASS} aria-label="Show in timeline" title="Show in timeline" onClick={() => openInActivity(item.window_title)}>
+                  <Activity />
                 </Button>
               ) : null}
               {item.timestamp ? (
-                <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openInRecall(item.timestamp)}>
-                  Recall
+                <Button variant="ghost" size="icon-sm" className={ROW_ACTION_BUTTON_CLASS} aria-label="Open in Recall" title="Open in Recall" onClick={() => openInRecall(item.timestamp)}>
+                  <History />
                 </Button>
               ) : null}
             </span>
           </div>
         );
       },
-      meta: { className: "max-sm:order-first max-sm:basis-full" },
+      meta: { className: "w-full max-sm:order-first max-sm:basis-full" },
     }),
   ]);
 }
 
-const WINDOWS_PAGE = { limit: 500 };
+const WINDOWS_LIMIT = 500;
+const WINDOWS_PAGE = { limit: WINDOWS_LIMIT };
+const FOCUS_EVENTS = { one: "focus change", many: "focus changes" };
+const TOP_CHIPS = 3;
 const TOP_WINDOWS_PAGE = { limit: 20 };
 const NO_WINDOWS: WindowEvent[] = [];
 const NO_TOP_WINDOWS: TopWindowRow[] = [];
@@ -199,55 +199,60 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
     return <CapabilityNotice info={agentInfo} capability="active_window" title="Window tracking unavailable" />;
   }
 
+  const failed = windowsQuery.isError;
+  const topChips = topItems.filter((t) => t.title.trim() || t.app).slice(0, TOP_CHIPS);
+
   return (
     <div className="overflow-hidden rounded-xl bg-card">
-      <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="font-heading text-base font-medium">
-            Focus events{" "}
-            <span className="ml-1 text-sm font-normal text-muted-foreground tabular-nums">{items.length}</span>
-          </h2>
-          {topItems.length > 0 && (
-            <p className="text-sm text-muted-foreground">
-              {`Top: ${topItems
-                .slice(0, 2)
-                .map((t) => `${prettyAppLabel({ exeName: t.app, appDisplay: t.app_display })} (${t.focus_count})`)
-                .join(" • ")}`}
-            </p>
-          )}
-        </div>
-        <RefreshButton onClick={() => void fetchWindows()} />
-      </div>
-      <div className="px-5 pt-3">
-        <InputGroup className="h-9">
-          <InputGroupAddon>
-            <Search />
-          </InputGroupAddon>
-          <InputGroupInput
-            aria-label="Search windows"
-            placeholder="App or window title"
-            value={filteringText}
-            onChange={(e) => table.setGlobalFilter(e.target.value)}
-          />
-          {filteringText && (
-            <InputGroupAddon align="inline-end">
-              <InputGroupButton
-                size="icon-xs"
-                aria-label="Clear search"
-                onClick={() => table.setGlobalFilter("")}
+      <MonitoringToolbar
+        title="App windows"
+        searchLabel="Search windows"
+        placeholder="Search windows"
+        query={filteringText}
+        onQueryChange={table.setGlobalFilter}
+        count={listCountLabel({
+          shown: table.getFilteredRowModel().rows.length,
+          loaded: items.length,
+          limit: WINDOWS_LIMIT,
+          noun: FOCUS_EVENTS,
+        })}
+        onRefresh={fetchWindows}
+        refreshing={loading && items.length > 0}
+      />
+      {topChips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 px-4 pt-2 sm:px-5">
+          <span className="text-[13px] text-muted-foreground">Most focused</span>
+          {topChips.map((t) => {
+            const label = titleRestatesApp(t.title, t.app_display, t.app)
+              ? prettyAppLabel({ exeName: t.app, appDisplay: t.app_display })
+              : t.title;
+            const query = t.title.trim() || t.app;
+            const active = filteringText === query;
+            return (
+              <Button
+                key={`${t.app}|${t.title}`}
+                variant={active ? "secondary" : "outline"}
+                size="sm"
+                className="h-7 max-w-64 gap-1.5 pointer-coarse:h-9"
+                aria-pressed={active}
+                title={`${label} · focused ${t.focus_count} times. ${active ? "Show everything again" : "Only show this"}`}
+                onClick={() => table.setGlobalFilter(active ? "" : query)}
               >
-                <X />
-              </InputGroupButton>
-            </InputGroupAddon>
-          )}
-        </InputGroup>
-      </div>
+                <AppIcon agentId={agentId} exeName={t.app} size={14} />
+                <span className="truncate">{label}</span>
+                <span className="text-muted-foreground tabular-nums">{t.focus_count}</span>
+              </Button>
+            );
+          })}
+        </div>
+      )}
+      {failed ? <LoadFailed what="window history" onRetry={fetchWindows} /> : null}
       <div className="px-2 py-2">
         <DataTable dayGroupColumn="timestamp"
           table={table}
           loading={loading}
           loadingText="Loading windows…"
-          emptyText="No windows yet"
+          emptyText={failed ? "Nothing to show." : filteringText ? "No windows match this search." : "No windows recorded yet."}
           bodyClassName="[&_td]:align-top"
         />
       </div>

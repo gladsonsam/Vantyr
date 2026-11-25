@@ -1,20 +1,21 @@
-import { Search, X } from "lucide-react";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
+import { Button } from "@vantyr/ui/components/button";
 import { DataTable } from "@/components/common/data-table/DataTable";
 import { DataTableColumnHeader } from "@/components/common/data-table/DataTableColumnHeader";
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { agentQueries } from "@/api/queries/agents";
+import { cn } from "@/lib/utils";
 import { prettyAppLabel } from "@/lib/appNames";
 import { AppIcon } from "@/components/common/AppIcon";
 import type { AgentInfo, KeySession } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
-import { RefreshButton } from "@/components/common/RefreshButton";
+import { LoadFailed, MonitoringToolbar } from "@/features/agent-detail/components/MonitoringToolbar";
+import { isLongText, listCountLabel, titleRestatesApp } from "@/features/agent-detail/lib/monitoring";
 import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
 interface KeystrokeEvent {
@@ -62,6 +63,33 @@ function matchesKeystroke(item: KeystrokeEvent, filteringText: string): boolean 
   );
 }
 
+/** Typed text, folded after a few lines so one long session doesn't push every other row off screen. */
+function TypedText({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  if (!text) return <span className="text-muted-foreground">No text kept</span>;
+  const long = isLongText(text);
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <div id={id} className={cn("max-w-full whitespace-pre-wrap break-words", long && !open && "line-clamp-3")}>
+        {text}
+      </div>
+      {long ? (
+        <Button
+          variant="ghost"
+          size="xs"
+          className="-ml-2 h-7 font-sans pointer-coarse:h-9"
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? "Show less" : `Show all ${text.length.toLocaleString()} characters`}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 const columnHelper = createDataTableColumns<KeystrokeEvent>();
 
 function keystrokeColumns(agentId: string, showCorrected: boolean) {
@@ -82,39 +110,42 @@ function keystrokeColumns(agentId: string, showCorrected: boolean) {
       cell: ({ row, table }) => {
         const item = row.original;
         return (
-          <>
-            <div className="flex items-center gap-2">
-              <AppIcon agentId={agentId} exeName={item.exe_name} size={16} />
-              <button
-                type="button"
-                onClick={() => table.setGlobalFilter(item.exe_name ?? "")}
-                title="Filter table by this app"
-                className="inline-flex min-h-6 cursor-pointer items-center p-0 text-left hover:underline"
-              >
-                {prettyAppLabel({ exeName: item.exe_name, appDisplay: item.app_display })}
-              </button>
-            </div>
-            <div className="font-mono text-xs text-muted-foreground">
-              {item.exe_name}
-            </div>
-          </>
+          <div className="flex items-center gap-2">
+            <AppIcon agentId={agentId} exeName={item.exe_name} size={16} />
+            <button
+              type="button"
+              onClick={() => table.setGlobalFilter(item.exe_name ?? "")}
+              title={`Only show ${item.exe_name}`}
+              className="inline-flex min-h-7 cursor-pointer items-center p-0 text-left hover:underline max-sm:min-h-7 pointer-coarse:min-h-9"
+            >
+              {prettyAppLabel({ exeName: item.exe_name, appDisplay: item.app_display })}
+            </button>
+          </div>
         );
       },
+      meta: { className: "whitespace-nowrap" },
     }),
     columnHelper.accessor("window_title", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Window" />,
-      meta: { className: "max-w-64 text-[13px] whitespace-normal wrap-break-word max-sm:basis-full" },
+      // A window called just like its app adds nothing to the row.
+      cell: ({ row }) => {
+        const item = row.original;
+        return titleRestatesApp(item.window_title, item.app_display, item.exe_name) ? null : item.window_title;
+      },
+      meta: { className: "max-w-56 text-[13px] text-muted-foreground whitespace-normal wrap-break-word max-sm:basis-full" },
     }),
     columnHelper.display({
       id: "keys",
-      header: "Keystrokes",
-      cell: ({ row }) => (showCorrected ? applyBackspaceCorrection(row.original.keys || "") : row.original.keys || ""),
-      meta: { className: "max-w-80 font-mono text-xs whitespace-normal wrap-break-word max-sm:order-first max-sm:basis-full" },
+      header: "Typed text",
+      cell: ({ row }) => <TypedText text={showCorrected ? applyBackspaceCorrection(row.original.keys || "") : row.original.keys || ""} />,
+      meta: { className: "min-w-64 max-w-xl font-mono text-xs whitespace-normal wrap-break-word max-sm:order-first max-sm:basis-full" },
     }),
   ]);
 }
 
-const KEYS_PAGE = { limit: 500 };
+const KEYS_LIMIT = 500;
+const KEYS_PAGE = { limit: KEYS_LIMIT };
+const SESSIONS = { one: "typing session", many: "typing sessions" };
 const NO_KEYSTROKES: KeystrokeEvent[] = [];
 
 function toKeystrokeEvents({ rows }: { rows: KeySession[] }): KeystrokeEvent[] {
@@ -161,13 +192,22 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
 
   return (
     <div className="overflow-hidden rounded-xl bg-card">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
-        <h2 className="font-heading text-base font-medium">
-          Typed text{" "}
-          <span className="ml-1 text-sm font-normal text-muted-foreground tabular-nums">{items.length}</span>
-        </h2>
-        <div className="flex items-center gap-3">
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+      <MonitoringToolbar
+        title="Typed text"
+        searchLabel="Search keystrokes"
+        placeholder="Search typing"
+        query={filteringText}
+        onQueryChange={table.setGlobalFilter}
+        count={listCountLabel({
+          shown: table.getFilteredRowModel().rows.length,
+          loaded: items.length,
+          limit: KEYS_LIMIT,
+          noun: SESSIONS,
+        })}
+        onRefresh={() => void keysQuery.refetch()}
+        refreshing={loading && items.length > 0}
+        actions={
+          <label className="flex cursor-pointer items-center gap-2 px-1 text-sm text-muted-foreground" title="Show every key press, including backspaces, instead of the text as typed">
             <Checkbox
               checked={showRaw}
               onCheckedChange={(checked) => setShowRaw(checked === true)}
@@ -175,39 +215,15 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
             />
             Raw keys
           </label>
-          <RefreshButton onClick={() => void keysQuery.refetch()} />
-        </div>
-      </div>
-      <div className="px-5 pt-3">
-        <InputGroup className="h-9">
-          <InputGroupAddon>
-            <Search />
-          </InputGroupAddon>
-          <InputGroupInput
-            aria-label="Search keystrokes"
-            placeholder="App, window, or text"
-            value={filteringText}
-            onChange={(e) => table.setGlobalFilter(e.target.value)}
-          />
-          {filteringText && (
-            <InputGroupAddon align="inline-end">
-              <InputGroupButton
-                size="icon-xs"
-                aria-label="Clear search"
-                onClick={() => table.setGlobalFilter("")}
-              >
-                <X />
-              </InputGroupButton>
-            </InputGroupAddon>
-          )}
-        </InputGroup>
-      </div>
+        }
+      />
+      {keysQuery.isError ? <LoadFailed what="typed text" onRetry={() => void keysQuery.refetch()} /> : null}
       <div className="px-2 py-2">
         <DataTable dayGroupColumn="timestamp"
           table={table}
           loading={loading}
           loadingText="Loading keystrokes…"
-          emptyText="No keystrokes yet"
+          emptyText={keysQuery.isError ? "Nothing to show." : filteringText ? "No typing matches this search." : "No keystrokes recorded yet."}
           bodyClassName="[&_td]:align-top"
         />
       </div>

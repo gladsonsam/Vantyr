@@ -1,8 +1,7 @@
-import { RuleScheduleSection } from "./RuleScheduleSection";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@vantyr/ui/components/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { CheckboxField, InputField, ToggleGroupField } from "@/components/common/form/fields";
 import { FormField } from "@/components/common/form/FormField";
@@ -15,6 +14,8 @@ import {
   type AppBlockForm,
   type AppBlockRuleBody,
 } from "../lib/appBlockForm";
+import { DialogError } from "./RuleTabParts";
+import { RuleScheduleSection } from "./RuleScheduleSection";
 import { ScheduleRowsEditor } from "./ScheduleRowsEditor";
 import { ScopeRowsEditor } from "./ScopeRowsEditor";
 
@@ -32,21 +33,20 @@ interface AppBlockRuleDialogProps {
   /** Seeds the scope of a legacy single-agent rule. */
   contextAgentId: string;
   saving: boolean;
+  /** Why the last save failed; shown here because the page behind the dialog is out of sight. */
+  error?: string | null;
   onSave: (id: number | null, body: AppBlockRuleBody) => void;
   onClose: () => void;
 }
 
-/** Create/edit dialog for one app block rule. */
+/** Create/edit dialog for one app block rule. It cannot be dismissed while the save is in flight. */
 export function AppBlockRuleDialog({ target, onClose, ...rest }: AppBlockRuleDialogProps) {
   return (
-    <Dialog open={target !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+    <Dialog open={target !== null} onOpenChange={(open) => { if (!open && !rest.saving) onClose(); }}>
+      <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>
-            {target?.mode === "edit"
-              ? `Edit app block rule — ${target.rule.name || target.rule.exe_pattern || ""}`
-              : "Add app block rule"}
-          </DialogTitle>
+          <DialogTitle>{target?.mode === "edit" ? "Edit app block rule" : "New app block rule"}</DialogTitle>
+          <DialogDescription>Closes the app each time it starts on a device in scope.</DialogDescription>
         </DialogHeader>
         {target && <AppBlockRuleFormBody target={target} onClose={onClose} {...rest} />}
       </DialogContent>
@@ -54,7 +54,7 @@ export function AppBlockRuleDialog({ target, onClose, ...rest }: AppBlockRuleDia
   );
 }
 
-function AppBlockRuleFormBody({ target, groups, agents, contextAgentId, saving, onSave, onClose }: Omit<AppBlockRuleDialogProps, "target"> & { target: NonNullable<AppBlockRuleDialogTarget> }) {
+function AppBlockRuleFormBody({ target, groups, agents, contextAgentId, saving, error, onSave, onClose }: Omit<AppBlockRuleDialogProps, "target"> & { target: NonNullable<AppBlockRuleDialogTarget> }) {
   const form = useForm<AppBlockForm>({
     resolver: zodResolver(appBlockSchema),
     defaultValues: target.mode === "edit" ? appBlockRuleToForm(target.rule, contextAgentId) : defaultAppBlockForm(),
@@ -68,36 +68,39 @@ function AppBlockRuleFormBody({ target, groups, agents, contextAgentId, saving, 
 
   return (
     <form onSubmit={submit} noValidate className="contents">
-      <div className="grid gap-6">
+      <fieldset disabled={saving} className="m-0 grid min-w-0 gap-5 border-0 p-0">
         <InputField
           control={control}
           name="exe_pattern"
           id="appblock-exe"
-          label="EXE name"
+          label="App (EXE name)"
           className="h-9"
           placeholder="e.g. tiktok.exe"
-          description="Executable file name to block (e.g. tiktok.exe)."
+          description="The executable file name to close, e.g. tiktok.exe."
         />
-        <ToggleGroupField control={control} name="match_mode" label="Match mode" ariaLabel="Match mode" options={MATCH_OPTIONS} />
-        <InputField control={control} name="label" id="appblock-label" label="Label" className="h-9" placeholder="Optional" />
-        <FormField control={control} name="scopes" label="Scope" description="Which agents this rule applies to.">
+        <div className="grid gap-5 sm:grid-cols-2">
+          <ToggleGroupField control={control} name="match_mode" label="Match" ariaLabel="Match mode" options={MATCH_OPTIONS} />
+          <InputField control={control} name="label" id="appblock-label" label="Label (optional)" className="h-9" placeholder="Shown in the list" />
+        </div>
+        <FormField control={control} name="scopes" label="Applies to" description="Which devices close this app. Add more rows to cover several groups or devices.">
           {({ field }) => <ScopeRowsEditor rows={field.value} onChange={field.onChange} groups={groups} agents={agents} />}
         </FormField>
 
-        <RuleScheduleSection toggle={<CheckboxField control={control} name="scheduled" label="Only during set hours" description="Times are in the device's local time. Overnight windows such as 22:00 → 06:00 work." />}>
+        <RuleScheduleSection toggle={<CheckboxField control={control} name="scheduled" label="Only during set hours" />}>
           {scheduled && (
-              <FormField control={control} name="schedule_rows">
-                {({ field }) => <ScheduleRowsEditor rows={field.value} onChange={field.onChange} />}
-              </FormField>
-            )}
+            <FormField control={control} name="schedule_rows">
+              {({ field }) => <ScheduleRowsEditor rows={field.value} onChange={field.onChange} />}
+            </FormField>
+          )}
         </RuleScheduleSection>
-      </div>
-      <DialogFooter>
-        <Button variant="outline" onClick={onClose} disabled={saving}>
+      </fieldset>
+      <DialogError prefix="Couldn’t save the rule" message={error} />
+      <DialogFooter className="-bottom-4">
+        <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
           Cancel
         </Button>
         <Button type="submit" disabled={saving}>
-          {saving && <Spinner />} {target.mode === "create" ? "Add rule" : "Save"}
+          {saving && <Spinner />} {target.mode === "create" ? "Add rule" : "Save changes"}
         </Button>
       </DialogFooter>
     </form>

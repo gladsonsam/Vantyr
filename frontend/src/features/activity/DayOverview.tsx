@@ -69,17 +69,19 @@ export function TimelineOverview({
             const left = pct(s.startTime.getTime());
             const width = Math.max(pct(s.endTime.getTime()) - left, 0.35);
             const dimmed = appFilterExe != null && !idle && s.appName.toLowerCase() !== appFilterExe.toLowerCase();
+            const alerted = (s.alertEvents?.length ?? 0) > 0;
             return (
               <button
                 key={s.id}
                 type="button"
                 onClick={() => onSelect(s.id)}
-                title={`${idle ? "Idle" : s.appDisplayName || s.appName} · ${formatTimeRange(s.startTime, s.endTime)} · ${formatDuration(s.duration)}`}
-                aria-label={`${idle ? "Idle" : s.appDisplayName || s.appName}, ${fmtTime(s.startTime)}`}
+                title={`${idle ? "Idle" : s.appDisplayName || s.appName} · ${formatTimeRange(s.startTime, s.endTime)} · ${formatDuration(s.duration)}${alerted ? " · alert" : ""}`}
+                aria-label={`${idle ? "Idle" : s.appDisplayName || s.appName}, ${fmtTime(s.startTime)}${alerted ? ", alert" : ""}`}
                 style={{ left: `${left}%`, width: `${width}%`, background: idle ? undefined : appColor(s.appName) }}
                 className={cn(
                   "absolute inset-y-0 cursor-pointer transition-opacity hover:brightness-125 focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-foreground",
                   idle && "bg-muted-foreground/15",
+                  alerted && "shadow-[inset_0_3px_0_var(--destructive)]",
                   dimmed && "opacity-20",
                   focusedId === s.id && "z-10 ring-2 ring-foreground ring-inset",
                 )}
@@ -125,7 +127,10 @@ export function TimelineOverview({
           <span className="px-2 text-xs text-muted-foreground">+{stats.apps.length - topApps.length} more</span>
         )}
         {stats.alerts > 0 && (
-          <span className="ml-auto inline-flex items-center gap-1.5 px-2 text-xs text-destructive">
+          <span
+            className="ml-auto inline-flex items-center gap-1.5 px-2 text-xs text-destructive"
+            title="Sessions with alerts have a red edge on the bar"
+          >
             <Bell size={12} aria-hidden /> {stats.alerts} alert{stats.alerts === 1 ? "" : "s"}
           </span>
         )}

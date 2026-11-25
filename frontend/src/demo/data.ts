@@ -151,6 +151,31 @@ export const demoAgentInfo: Record<string, AgentInfo> = Object.fromEntries(
   ]),
 );
 
+// The first demo agent reports a fuller machine (several drives and adapters, long values) so the
+// Specs view can be checked against realistic data, not just the one-drive default.
+Object.assign(demoAgentInfo["win11dev"], {
+  system_serial: "PF3DEMO0042",
+  motherboard_manufacturer: "Micro-Star International Co., Ltd.",
+  motherboard_model: "PRO B550M-VC WIFI (MS-7C95)",
+  os_long_version: "Windows 11 Pro 23H2 (build 22631.4460)",
+  timezone: "Australia/Sydney",
+  install_path: "C:\\Program Files\\Vantyr Agent\\Customer Support Tools\\Remote Monitoring\\vantyr-agent.exe",
+  config_path: "C:\\Users\\Demo\\AppData\\Roaming\\Vantyr\\agent-config.toml",
+  config_server_url: "wss://demo.vantyr.local/ws/agent?token=demo-not-a-real-token-0123456789abcdef",
+  capabilities: { remote_input: "supported", clipboard: "supported", audio_capture: "limited", software_inventory: "supported", terminal: "needs_permission", system_control: "unsupported" },
+  drives: [
+    { name: "C:", mount_point: "C:\\", file_system: "NTFS", total_gb: 930.52, available_gb: 826.09 },
+    { name: "Data", mount_point: "D:\\", file_system: "exFAT", total_gb: 1862.4, available_gb: 120.3 },
+    { name: "Backups", mount_point: "E:\\Backups", file_system: "NTFS", total_gb: 465.76, available_gb: 41.2 },
+  ],
+  adapters: [
+    { name: "Ethernet", description: "Realtek PCIe 2.5GbE Family Controller", mac: "02-00-5E-10-00-00", ips: ["10.0.2.20", "fe80::a4ac:1498:9525:34ba"], gateways: ["10.0.2.1"], dns: ["1.1.1.1", "8.8.8.8", "1.1.1.1"] },
+    { name: "WiFi", description: "Intel Wi-Fi 6 AX200", mac: "02-00-5E-10-00-10", ips: ["169.254.42.42", "fe80::9e2d:8547:877c:7bb6"], gateways: [], dns: ["10.0.2.3"] },
+    { name: "Bluetooth Network Connection", description: "Bluetooth Device (Personal Area Network)", mac: "02-00-5E-10-00-70", ips: ["169.254.36.104"], gateways: [], dns: [] },
+    { name: "Loopback Pseudo-Interface 1", description: "Software Loopback Interface 1", mac: "", ips: ["127.0.0.1", "::1"], gateways: [], dns: [] },
+  ],
+});
+
 export const demoGroups: AgentGroup[] = [
   { id: "grp-workstations", name: "Workstations", description: "Employee laptops and desktops", created_at: isoHoursAgo(900), member_count: 5 },
   { id: "grp-kiosks", name: "Kiosks", description: "Shared unattended machines", created_at: isoHoursAgo(720), member_count: 2 },
@@ -270,8 +295,8 @@ export const demoAppBlockRules: AppBlockRule[] = [
     match_mode: "contains",
     enabled: true,
     created_at: isoHoursAgo(12),
-    scopes: [{ kind: "group", group_id: "grp-workstations" }],
-    schedules: [],
+    scopes: [{ kind: "group", group_id: "grp-workstations" }, { kind: "group", group_id: "grp-kiosks" }, { kind: "agent", agent_id: "sitting-room" }],
+    schedules: [1, 2, 3, 4, 5].map((day_of_week) => ({ day_of_week, start_minute: 9 * 60, end_minute: 17 * 60 })),
   },
   {
     id: 14,
@@ -291,7 +316,10 @@ export const demoAppBlockRules: AppBlockRule[] = [
     enabled: true,
     created_at: isoHoursAgo(60),
     scopes: [{ kind: "group", group_id: "grp-kiosks" }],
-    schedules: [],
+    schedules: [
+      { day_of_week: 5, start_minute: 22 * 60, end_minute: 1440 },
+      { day_of_week: 6, start_minute: 0, end_minute: 6 * 60 },
+    ],
   },
 ];
 
@@ -303,6 +331,25 @@ export const demoInternetBlockRules: InternetBlockRule[] = [
     created_at: isoHoursAgo(72),
     scopes: [{ kind: "group", group_id: "grp-kiosks" }],
     schedules: [{ day_of_week: 1, start_minute: 18 * 60, end_minute: 23 * 60 + 59 }],
+  },
+  {
+    id: 21,
+    name: "",
+    enabled: false,
+    created_at: isoHoursAgo(30),
+    scopes: [{ kind: "all" }],
+    schedules: [],
+  },
+  {
+    id: 22,
+    name: "School nights",
+    enabled: true,
+    created_at: isoHoursAgo(10),
+    scopes: [{ kind: "group", group_id: "grp-workstations" }, { kind: "agent", agent_id: "sitting-room" }],
+    schedules: [
+      { day_of_week: 0, start_minute: 21 * 60, end_minute: 1440 },
+      { day_of_week: 1, start_minute: 0, end_minute: 7 * 60 },
+    ],
   },
 ];
 
@@ -317,7 +364,10 @@ export const demoScheduledScripts: ScheduledScript[] = [
     created_at: isoHoursAgo(24),
     updated_at: isoHoursAgo(4),
     scopes: [{ kind: "all", group_id: null, agent_id: null }],
-    schedules: [{ frequency: "daily", day_of_week: null, fire_minute: 3 * 60 }],
+    schedules: [
+      { frequency: "daily", day_of_week: null, fire_minute: 3 * 60 },
+      { frequency: "hourly", day_of_week: null, fire_minute: 15 },
+    ],
   },
   {
     id: 31,
@@ -336,7 +386,7 @@ export const demoScheduledScripts: ScheduledScript[] = [
     name: "Windows update check",
     shell: "powershell",
     script: "Get-WindowsUpdate -AcceptAll -Install -AutoReboot",
-    timeout_secs: 600,
+    timeout_secs: 300,
     enabled: true,
     created_at: isoHoursAgo(48),
     updated_at: isoHoursAgo(12),
@@ -396,10 +446,13 @@ export function demoUrls(agentId: string, count = 24): UrlVisit[] {
     "https://news.ycombinator.com/",
     "https://outlook.office.com/mail/",
   ];
+  // Every few rows: a campaign link with a wall of tracking parameters, and a bare domain with no title.
+  const trackedUrl =
+    "https://www.example-shop.test/products/garden-chairs/summer-sale?utm_source=ads&utm_medium=cpc&utm_campaign=AU_EN_KWD_ACQ&ad_group=164750731181&gad_campaignid=21746669725&gclid=Cj0KCQiAdemoTrackingValue0123456789";
   return range(count).map((i) => ({
     id: i + 1,
-    url: urls[(i + agentId.length) % urls.length],
-    title: ["GitHub", "Tokio docs", "Cloudscape", "Hacker News", "Outlook"][i % 5],
+    url: i % 7 === 3 ? trackedUrl : i % 9 === 4 ? "https://example.org/" : urls[(i + agentId.length) % urls.length],
+    title: i % 9 === 4 ? null : i % 7 === 3 ? "Garden chairs — summer sale" : ["GitHub", "Tokio docs", "Cloudscape", "Hacker News", "Outlook"][i % 5],
     browser: i % 2 === 0 ? "Chrome" : "Edge",
     ts: isoMinutesAgo(i * 13 + 4),
     user: demoUserFor(agentId),
@@ -413,7 +466,10 @@ export function demoKeys(agentId: string, count = 12): KeySession[] {
     app: i % 2 === 0 ? "Code.exe" : "WindowsTerminal.exe",
     app_display: i % 2 === 0 ? "Visual Studio Code" : "Terminal",
     window_title: i % 2 === 0 ? "Vantyr - Visual Studio Code" : "PowerShell",
-    text: "[demo keystroke session redacted]",
+    text:
+      i % 3 === 0
+        ? "[demo keystroke session redacted] " + "Meeting notes for the quarterly review: budget, hiring plan and roadmap. ".repeat(6) + "[⌫][⌫]\nNext steps:\n- send summary\n- book follow-up\n- archive the old board"
+        : "[demo keystroke session redacted]",
     started_at: isoMinutesAgo(i * 17 + 5),
     updated_at: isoMinutesAgo(i * 17 + 2),
     user: demoUserFor(agentId),
@@ -429,26 +485,62 @@ export function demoActivity(agentId: string, count = 18): ActivityEvent[] {
   }));
 }
 
+const DEMO_SOFTWARE: Array<[string, string, string, string]> = [
+  ["Vantyr Agent", "", "Vantyr", "20260601"],
+  ["Microsoft Edge", "142.0.3595.65", "Microsoft Corporation", "20261120"],
+  ["Visual Studio Code", "1.96.2", "Microsoft Corporation", "20261104"],
+  ["7-Zip 24.08 (x64)", "24.08", "Igor Pavlov", "20260822"],
+  ["PowerShell 7-x64", "7.4.6.0", "Microsoft Corporation", "20260811"],
+  ["Microsoft Visual C++ 2022 X64 Additional Runtime - 14.40.33816", "14.40.33816", "Microsoft Corporation", "20260709"],
+  ["Microsoft Visual C++ 2022 X64 Minimum Runtime - 14.40.33816", "14.40.33816", "Microsoft Corporation", "20260709"],
+  ["Python 3.12.4 Core Interpreter (64-bit)", "3.12.4150.0", "Python Software Foundation", "20260518"],
+  ["Git", "2.47.1", "The Git Development Community", "20260517"],
+  ["Adobe Acrobat Reader - Enterprise Managed Deployment with Extended Language Pack and Accessibility Tools", "24.005.20320", "Adobe", "20260301"],
+  ["Node.js", "22.12.0", "Node.js Foundation", "20260215"],
+  ["Zoom Workplace (64-bit)", "6.3.0 (47000)", "Zoom Communications, Inc.", "20260110"],
+  ["Mozilla Firefox (x64 en-US)", "133.0", "Mozilla", "20251207"],
+  ["VLC media player", "3.0.21", "VideoLAN", "20250914"],
+  ["Unknown vendor utility", "1.0", "", ""],
+];
+
 export function demoSoftware(agentId: string): AgentSoftwareRow[] {
-  return ["Vantyr Agent", "Microsoft Edge", "Visual Studio Code", "7-Zip", "PowerShell 7"].map((name, i) => ({
+  const rows = DEMO_SOFTWARE.map(([name, version, publisher, date], i) => ({
     name,
-    version: i === 0 ? demoAgentInfo[agentId]?.agent_version ?? "0.2.9" : `${1 + i}.${12 + i}.0`,
-    publisher: i === 0 ? "Vantyr" : "Demo Publisher",
-    install_location: `C:\\Program Files\\${name}`,
-    install_date: "20260601",
+    version: version || (demoAgentInfo[agentId]?.agent_version ?? "0.2.9"),
+    publisher: publisher || null,
+    install_location: `C:\\Program Files\\${name.split(" ")[0]}`,
+    install_date: date || null,
     captured_at: isoMinutesAgo(i * 8),
   }));
+  // The first agent has a long inventory so sorting and paging can be exercised.
+  if (agentId !== "win11dev") return rows.slice(0, 5);
+  const extra = Array.from({ length: 48 }, (_, i) => ({
+    name: `Demo component ${String(i + 1).padStart(2, "0")} (x64)`,
+    version: `${1 + (i % 4)}.${i}.0`,
+    publisher: i % 3 === 0 ? "Demo Publisher" : i % 3 === 1 ? "Contoso Ltd." : "Fabrikam, Inc.",
+    install_location: null,
+    install_date: `2025${String(1 + (i % 12)).padStart(2, "0")}${String(1 + (i % 27)).padStart(2, "0")}`,
+    captured_at: isoMinutesAgo(i),
+  }));
+  return [...rows, ...extra];
 }
 
 export function demoScheduledEvents(): ScheduledScriptEvent[] {
+  const outcomes = [
+    { status: "failed", output: "--- STDERR ---\nAccess is denied.\n--- ERROR ---\nExit code 1" },
+    { status: "success", output: "--- STDOUT ---\nOsName      OsVersion\n------      ---------\nWindows 11  10.0.26100\n" },
+    { status: "success", output: "--- STDOUT ---\nDiagnostics collected\n" },
+    { status: "skipped_offline", output: null },
+    { status: "fired", output: null },
+  ];
   return demoAgents.slice(0, 5).map((a, i) => ({
     script_id: demoScheduledScripts[0].id,
     agent_id: a.id,
     agent_name: a.name,
     rule_name: demoScheduledScripts[0].name,
-    status: i % 4 === 0 ? "failed" : "ok",
-    expected_fire_time: isoHoursAgo(i + 1),
-    output: i % 4 === 0 ? "Timed out in demo mode" : "Diagnostics collected",
+    status: outcomes[i].status,
+    expected_fire_time: isoHoursAgo(1),
+    output: outcomes[i].output,
     is_manual: i === 0,
   }));
 }

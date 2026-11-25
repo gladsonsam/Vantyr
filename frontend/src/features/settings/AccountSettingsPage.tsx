@@ -1,5 +1,5 @@
 import { ArrowLeft } from "lucide-react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@vantyr/ui/components/button";
 import type { ReturnToState } from "@/app/DashboardLayout";
 import { useAppTheme } from "@/app/providers/useAppTheme";
@@ -19,18 +19,21 @@ export function AccountSettingsPage() {
   const from = (location.state as ReturnToState)?.from;
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={() => navigate(from ?? "/", { replace: true })}>
-          <ArrowLeft /> Back
-        </Button>
-      </div>
+    <div className="flex max-w-2xl flex-col gap-6">
+      <Button variant="ghost" size="sm" className="-ml-2.5 w-fit pointer-coarse:h-9" onClick={() => navigate(from ?? "/", { replace: true })}>
+        <ArrowLeft /> Back
+      </Button>
 
-      <div className="flex flex-col gap-8">
-        <AppearanceSettings themeMode={themeMode} onThemeChange={changeTheme} />
+      <AppearanceSettings themeMode={themeMode} onThemeChange={changeTheme} />
+      <TwoFactorSettings />
 
-        <TwoFactorSettings />
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Retention, updates, enrollment and other server-wide options are in{" "}
+        <Link to="/settings" className="text-primary underline-offset-4 hover:underline">
+          Settings
+        </Link>
+        .
+      </p>
     </div>
   );
 }

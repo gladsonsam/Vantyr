@@ -3,9 +3,11 @@ import { Button } from "@vantyr/ui/components/button";
 import { cn } from "@/lib/utils";
 
 /** The one refresh control: an icon that spins while loading, instead of a "Refresh" text button per card. */
-export function RefreshButton({ onClick, loading = false, label = "Refresh", className }: {
+export function RefreshButton({ onClick, loading = false, disabled = false, label = "Refresh", className }: {
   onClick: () => void;
   loading?: boolean;
+  /** Unavailable for a reason the label explains (a role without access, say). */
+  disabled?: boolean;
   label?: string;
   className?: string;
 }) {
@@ -14,7 +16,7 @@ export function RefreshButton({ onClick, loading = false, label = "Refresh", cla
       variant="ghost"
       size="icon-sm"
       className={cn("text-muted-foreground hover:text-foreground", className)}
-      disabled={loading}
+      disabled={loading || disabled}
       onClick={onClick}
       aria-label={label}
       title={label}

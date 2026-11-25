@@ -3,7 +3,6 @@ import { RefreshCw } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
-import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
 import {
   Table,
   TableBody,
@@ -13,6 +12,8 @@ import {
   TableRow,
 } from "@vantyr/ui/components/table";
 import { Spinner } from "@vantyr/ui/components/spinner";
+import { errorText } from "@/api";
+import type { SettingsVersionPayload } from "@/api/serverVersionStore";
 import { Switch } from "@/components/common/SettingsSwitch";
 import { HelpTip } from "@/components/common/HelpTip";
 
@@ -28,18 +29,22 @@ interface StorageUsage {
   tables: StorageTableItem[];
 }
 
+/** One thing the page loads: what it has, what went wrong, and how to ask again. */
+interface Loaded<T> {
+  data: T | null;
+  /** The last failure, kept beside `data` so an old result is never shown as if it were current. */
+  error: string | null;
+  loading: boolean;
+  /** When `data` was last fetched successfully (ms), or 0. */
+  updatedAt: number;
+  onReload: () => void;
+}
+
 interface SystemAboutSettingsProps {
   isAdmin: boolean;
-  loadingMeta: boolean;
-  storage: StorageUsage | null;
-  githubRelease: { tag: string | null; releasesUrl: string } | null;
-  githubReleaseLoading: boolean;
-  githubReleaseError: string | null;
-  agentAutoUpdateEnabled: boolean | null;
-  agentAutoUpdateLoadErr: string | null;
-  onCheckGithubRelease: (nocache: boolean) => Promise<void>;
-  onRefreshMeta: () => Promise<void>;
-  onSaveAutoUpdate: (enabled: boolean) => Promise<void>;
+  storage: Loaded<StorageUsage>;
+  version: Loaded<SettingsVersionPayload>;
+  autoUpdate: Omit<Loaded<{ enabled: boolean }>, "updatedAt"> & { onSave: (enabled: boolean) => Promise<void> };
 }
 
 function formatBytesAdaptive(bytes: number): string {
@@ -55,179 +60,252 @@ function formatBytesAdaptive(bytes: number): string {
   return `${value.toFixed(2)} ${units[idx]}`;
 }
 
-export function SystemAboutSettings({
-  isAdmin,
-  loadingMeta,
-  storage,
-  githubRelease,
-  githubReleaseLoading,
-  githubReleaseError,
-  agentAutoUpdateEnabled,
-  agentAutoUpdateLoadErr,
-  onCheckGithubRelease,
-  onRefreshMeta,
-  onSaveAutoUpdate,
-}: SystemAboutSettingsProps) {
-  const [autoUpdateSaving, setAutoUpdateSaving] = useState(false);
-  const [autoUpdateSaveErr, setAutoUpdateSaveErr] = useState<string | null>(null);
+function clock(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
 
-  const handleAutoUpdateChange = async (checked: boolean) => {
-    setAutoUpdateSaving(true);
-    setAutoUpdateSaveErr(null);
-    try {
-      await onSaveAutoUpdate(checked);
-    } catch (e) {
-      setAutoUpdateSaveErr(String(e));
-    } finally {
-      setAutoUpdateSaving(false);
-    }
-  };
+/** A card title with its help text and the one button that asks the server again. */
+function RefreshHeader({ title, help, action, loading, onClick }: { title: string; help: string; action: string; loading: boolean; onClick: () => void }) {
+  return (
+    <CardHeader className="px-5 pt-5 pb-2">
+      <CardTitle className="flex items-center gap-1.5">
+        {title}
+        <HelpTip>{help}</HelpTip>
+      </CardTitle>
+      <CardAction>
+        <Button variant="outline" size="sm" disabled={loading} onClick={onClick}>
+          {loading ? <Spinner /> : <RefreshCw />} {action}
+        </Button>
+      </CardAction>
+    </CardHeader>
+  );
+}
 
+function StaleNotice({ children, loading, onRetry }: { children: string; loading: boolean; onRetry: () => void }) {
+  return (
+    <Alert variant="destructive">
+      <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+        <span>{children}</span>
+        <Button variant="outline" size="sm" disabled={loading} onClick={onRetry}>
+          Try again
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+export function SystemAboutSettings({ isAdmin, storage, version, autoUpdate }: SystemAboutSettingsProps) {
   return (
     <div className="flex flex-col gap-8">
-      <StorageUsageCard loadingMeta={loadingMeta} storage={storage} onRefreshMeta={onRefreshMeta} />
-
-      {/* About */}
-      <Card className="gap-0 py-0">
-        <CardHeader className="px-5 pt-5 pb-2">
-          <CardTitle className="flex items-center gap-1.5">About<HelpTip>Tag from the latest GitHub release (same source as server Docker images).</HelpTip></CardTitle>
-          <CardAction>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={githubReleaseLoading}
-              onClick={() => void onCheckGithubRelease(true)}
-            >
-              {githubReleaseLoading ? <Spinner /> : <RefreshCw />} Check GitHub now
-            </Button>
-          </CardAction>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-5 px-5 pb-5">
-          {githubReleaseError ? (
-            <p className="text-sm text-destructive">{githubReleaseError}</p>
-          ) : null}
-          {autoUpdateSaveErr ? (
-            <Alert variant="destructive">
-              <AlertDescription>{autoUpdateSaveErr}</AlertDescription>
-            </Alert>
-          ) : null}
-          <AutoUpdatePolicy isAdmin={isAdmin} loadingMeta={loadingMeta} agentAutoUpdateEnabled={agentAutoUpdateEnabled} agentAutoUpdateLoadErr={agentAutoUpdateLoadErr} saving={autoUpdateSaving} onChange={handleAutoUpdateChange} />
-          <div className="rounded-lg bg-muted/50 px-3.5 py-3">
-            <div className="text-xs text-muted-foreground">Latest GitHub release</div>
-            <div className="mt-1 font-mono text-sm">
-              {githubReleaseLoading && githubRelease == null ? "…" : githubRelease?.tag ?? "—"}
-            </div>
-            {githubRelease?.releasesUrl ? (
-              <p className="mt-1 text-sm text-muted-foreground">
-                <a
-                  href={githubRelease.releasesUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary underline-offset-4 hover:underline"
-                >
-                  Open releases on GitHub
-                </a>
-              </p>
-            ) : null}
-          </div>
-        </CardContent>
-      </Card>
+      <UpdatesCard isAdmin={isAdmin} version={version} autoUpdate={autoUpdate} />
+      <StorageUsageCard storage={storage} />
     </div>
   );
 }
 
-function StorageUsageCard({ loadingMeta, storage, onRefreshMeta }: Pick<SystemAboutSettingsProps, "loadingMeta" | "storage" | "onRefreshMeta">) {
-  return (<Card className="gap-0 py-0">
-        <CardHeader className="px-5 pt-5 pb-2">
-          <CardTitle className="flex items-center gap-1.5">Storage usage<HelpTip>Total size is PostgreSQL pg_database_size (entire DB on disk). Expand to see per-table breakdown.</HelpTip></CardTitle>
-          <CardAction>
-            <Button variant="outline" size="sm" disabled={loadingMeta} onClick={() => void onRefreshMeta()}>
-              {loadingMeta ? <Spinner /> : <RefreshCw />} Refresh usage
-            </Button>
-          </CardAction>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-5 px-5 pb-5">
-          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {[
-              ["Total database size", storage ? formatBytesAdaptive(storage.database_bytes) : "—"],
-              ["Public schema", storage ? formatBytesAdaptive(storage.public_tables_bytes) : "—"],
-              ["Other", storage ? formatBytesAdaptive(storage.other_bytes) : "—"],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-lg bg-muted/50 px-3.5 py-3">
-                <dt className="text-xs text-muted-foreground">{label}</dt>
-                <dd className="mt-1 font-mono text-sm">{value}</dd>
-              </div>
-            ))}
-          </dl>
-
-          <details className="group rounded-lg bg-muted/50 px-3.5 py-3">
-            <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              Details
-            </summary>
-            <div className="pt-3">
-              {storage ? (
-                <div className="flex flex-col gap-3">
-                  <p className="text-sm text-muted-foreground">
-                    {storage.tables.length} relation{storage.tables.length === 1 ? "" : "s"} in{" "}
-                    <code className="font-mono text-xs">public</code> (partition children are rolled into their parent&apos;s size).
-                  </p>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="px-3">Relation</TableHead>
-                        <TableHead className="px-3">Size (with indexes)</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {storage.tables.map((item) => (
-                        <TableRow key={item.name}>
-                          <TableCell className="px-3 py-3.5 font-mono text-xs">{item.name}</TableCell>
-                          <TableCell className="px-3 py-3.5">{formatBytesAdaptive(item.bytes)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No storage data yet.</p>
-              )}
-            </div>
-          </details>
-        </CardContent>
-      </Card>);
+/** What the version check proves: "Up to date" only from a fresh, successful answer that names a latest release. */
+function versionStatus(payload: SettingsVersionPayload): { text: string; tone: "ok" | "update" | "unknown" } {
+  if (payload.server_update_available && payload.latest_server_release) {
+    return { text: `Update available: ${payload.latest_server_release}`, tone: "update" };
+  }
+  if (!payload.latest_server_release) return { text: "Latest release unknown", tone: "unknown" };
+  return { text: "Up to date", tone: "ok" };
 }
 
-function AutoUpdatePolicy({ isAdmin, loadingMeta, agentAutoUpdateEnabled, agentAutoUpdateLoadErr, saving: autoUpdateSaving, onChange: handleAutoUpdateChange }: Pick<SystemAboutSettingsProps, "isAdmin" | "loadingMeta" | "agentAutoUpdateEnabled" | "agentAutoUpdateLoadErr"> & { saving: boolean; onChange: (checked: boolean) => Promise<void> }) {
-  return <>          {agentAutoUpdateLoadErr ? (
-            <Alert variant="destructive">
-              <AlertDescription>{agentAutoUpdateLoadErr}</AlertDescription>
-            </Alert>
-          ) : agentAutoUpdateEnabled === null && loadingMeta ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner /> Loading agent auto-update policy…
-            </div>
-          ) : (
-            <Field>
-              <FieldLabel htmlFor="global-auto-update">Agent auto updates (global default)</FieldLabel>
-              <div className="flex flex-wrap items-center gap-3">
-                <Switch
-                  id="global-auto-update"
-                  checked={agentAutoUpdateEnabled ?? false}
-                  disabled={
-                    agentAutoUpdateEnabled === null || !isAdmin || autoUpdateSaving || loadingMeta
-                  }
-                  onCheckedChange={(checked) => void handleAutoUpdateChange(checked)}
-                />
-                <span className="text-sm">Enable agent auto updates by default</span>
-                {autoUpdateSaving && <Spinner />}
+function UpdatesCard({ isAdmin, version, autoUpdate }: Pick<SystemAboutSettingsProps, "isAdmin" | "version" | "autoUpdate">) {
+  const payload = version.data;
+  return (
+    <Card className="gap-0 py-0">
+      <RefreshHeader
+        title="Server version"
+        help="The latest tag comes from the newest GitHub release, the same source as the server Docker images."
+        action="Check for updates"
+        loading={version.loading}
+        onClick={version.onReload}
+      />
+      <CardContent className="flex flex-col gap-5 px-5 pb-5">
+        {version.error && (
+          <StaleNotice loading={version.loading} onRetry={version.onReload}>
+            {payload
+              ? `Couldn't check GitHub just now. Showing the result from ${clock(version.updatedAt)}.`
+              : `Couldn't check for updates. ${version.error}`}
+          </StaleNotice>
+        )}
+        {payload ? (
+          <VersionDetails payload={payload} checkedAt={version.updatedAt} />
+        ) : !version.error ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Spinner /> Checking for updates…
+          </div>
+        ) : null}
+        <AutoUpdatePolicy isAdmin={isAdmin} autoUpdate={autoUpdate} />
+      </CardContent>
+    </Card>
+  );
+}
+
+const STATUS_TONE = { ok: "text-success", update: "text-foreground", unknown: "text-muted-foreground" } as const;
+
+function VersionDetails({ payload, checkedAt }: { payload: SettingsVersionPayload; checkedAt: number }) {
+  const status = versionStatus(payload);
+  return (
+    <div className="flex flex-col gap-3">
+      <p role="status" className={`text-sm font-medium ${STATUS_TONE[status.tone]}`}>
+        {status.text}
+        {checkedAt > 0 && <span className="font-normal text-muted-foreground"> · checked {clock(checkedAt)}</span>}
+      </p>
+      <dl className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-3">
+        <Fact label="Running" value={payload.server_version} />
+        <Fact label="Latest release" value={payload.latest_server_release ?? "—"} />
+        <Fact label="Latest agent" value={payload.latest_agent_version ?? "—"} />
+      </dl>
+      {payload.releases_url ? (
+        <p className="text-sm">
+          <a href={payload.releases_url} target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-4 hover:underline">
+            Open releases on GitHub
+          </a>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-lg bg-muted/50 px-3 py-2.5">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-1 font-mono text-sm break-words">{value}</dd>
+    </div>
+  );
+}
+
+function StorageUsageCard({ storage }: { storage: Loaded<StorageUsage> }) {
+  const usage = storage.data;
+  return (
+    <Card className="gap-0 py-0">
+      <RefreshHeader
+        title="Storage usage"
+        help="Total size is PostgreSQL pg_database_size (the entire database on disk). Details lists each table."
+        action="Refresh usage"
+        loading={storage.loading}
+        onClick={storage.onReload}
+      />
+      <CardContent className="flex flex-col gap-5 px-5 pb-5">
+        {storage.error && (
+          <StaleNotice loading={storage.loading} onRetry={storage.onReload}>
+            {usage
+              ? `Couldn't refresh usage. Showing the sizes from ${clock(storage.updatedAt)}.`
+              : `Couldn't load storage usage. ${storage.error}`}
+          </StaleNotice>
+        )}
+
+        {usage ? (
+          <>
+            <dl className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-3">
+              <Fact label="Total database size" value={formatBytesAdaptive(usage.database_bytes)} />
+              <Fact label="Public schema" value={formatBytesAdaptive(usage.public_tables_bytes)} />
+              <Fact label="Other" value={formatBytesAdaptive(usage.other_bytes)} />
+            </dl>
+            {storage.updatedAt > 0 && <p className="-mt-3 text-xs text-muted-foreground">As of {clock(storage.updatedAt)}</p>}
+
+            <details className="group rounded-lg bg-muted/50 px-3.5 py-3">
+              <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                Details by table ({usage.tables.length})
+              </summary>
+              <div className="flex flex-col gap-3 pt-3">
+                <p className="text-sm text-muted-foreground">
+                  Tables in <code className="font-mono text-xs">public</code>; partition children are rolled into their parent&apos;s size.
+                </p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="px-3">Table</TableHead>
+                      <TableHead className="px-3">Size (with indexes)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {usage.tables.map((item) => (
+                      <TableRow key={item.name}>
+                        <TableCell className="px-3 py-3.5 font-mono text-xs break-all">{item.name}</TableCell>
+                        <TableCell className="px-3 py-3.5">{formatBytesAdaptive(item.bytes)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-              <FieldDescription>
-                {isAdmin
-                  ? "When enabled, the server tells connected Windows agents they may check GitHub releases and install updates (policy is pushed over the WebSocket). Operators can still set a per-computer override on each agent's Settings tab."
-                  : "Current default policy for Windows agents. Only administrators can change it."}
-                {!isAdmin && " Administrator role required to edit."}
-              </FieldDescription>
-            </Field>
+            </details>
+          </>
+        ) : !storage.error ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Spinner /> Loading storage usage…
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** The global default for Windows agent auto-updates; the switch shows only what the server confirmed. */
+function AutoUpdatePolicy({ isAdmin, autoUpdate }: Pick<SystemAboutSettingsProps, "isAdmin" | "autoUpdate">) {
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const enabled = autoUpdate.data?.enabled ?? null;
+
+  const change = async (next: boolean) => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await autoUpdate.onSave(next);
+    } catch (e) {
+      setSaveError(errorText(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section aria-labelledby="global-auto-update-label" className="flex flex-col gap-2 border-t border-foreground/[0.06] pt-5">
+      {autoUpdate.error && !autoUpdate.data ? (
+        <StaleNotice loading={autoUpdate.loading} onRetry={autoUpdate.onReload}>
+          {`Couldn't load the agent auto-update default. ${autoUpdate.error}`}
+        </StaleNotice>
+      ) : enabled === null ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner /> Loading agent auto-update default…
+        </div>
+      ) : (
+        <>
+          {autoUpdate.error && (
+            <StaleNotice loading={autoUpdate.loading} onRetry={autoUpdate.onReload}>
+              Couldn&apos;t re-check the agent auto-update default, so it may be out of date.
+            </StaleNotice>
           )}
-</>;
+          <div className="flex flex-wrap items-center gap-3">
+            <Switch
+              id="global-auto-update"
+              checked={enabled}
+              disabled={!isAdmin || saving}
+              onCheckedChange={(checked) => void change(checked)}
+              aria-labelledby="global-auto-update-label"
+            />
+            <label id="global-auto-update-label" htmlFor="global-auto-update" className="text-sm font-medium">
+              Agent auto-updates by default
+            </label>
+            <HelpTip>
+              When on, the server tells connected Windows agents they may check GitHub releases and install updates (the policy is pushed
+              over the WebSocket). A device can override this on its own Settings tab.
+            </HelpTip>
+            {saving && <Spinner />}
+            <span className="text-sm text-muted-foreground">{enabled ? "On" : "Off"}</span>
+          </div>
+          {saveError && (
+            <Alert variant="destructive">
+              <AlertDescription>Not saved. {saveError}</AlertDescription>
+            </Alert>
+          )}
+          {!isAdmin && <p className="text-sm text-muted-foreground">Only admins can change this default.</p>}
+        </>
+      )}
+    </section>
+  );
 }

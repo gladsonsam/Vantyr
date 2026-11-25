@@ -30,6 +30,17 @@ export const alertRuleSchema = z
     if (!isMonitoringChannel(form.channel) && !form.pattern.trim()) {
       ctx.addIssue({ code: "custom", path: ["pattern"], message: "Pattern is required" });
     }
+    // The server rejects a scope row that names nothing, so say which one before sending.
+    for (const row of form.scopes) {
+      if (row.kind === "group" && !row.group_id.trim()) {
+        ctx.addIssue({ code: "custom", path: ["scopes"], message: "Each group scope must select a group" });
+        return;
+      }
+      if (row.kind === "agent" && !row.agent_id.trim()) {
+        ctx.addIssue({ code: "custom", path: ["scopes"], message: "Each agent scope must select an agent" });
+        return;
+      }
+    }
   });
 
 export type AlertRuleForm = z.infer<typeof alertRuleSchema>;

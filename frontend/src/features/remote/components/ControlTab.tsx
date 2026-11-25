@@ -1,32 +1,13 @@
-import { Info, TriangleAlert, Plus, Trash2 } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@vantyr/ui/components/alert-dialog";
-import { Button } from "@vantyr/ui/components/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
-import { Checkbox } from "@vantyr/ui/components/checkbox";
-import { Spinner } from "@vantyr/ui/components/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
+import { Info } from "lucide-react";
+import { Alert, AlertTitle } from "@vantyr/ui/components/alert";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link as RouterLink } from "react-router-dom";
-import { api } from "@/api";
+import { api, errorText } from "@/api";
 import { ruleKeys, ruleQueries } from "@/api/queries/rules";
 import type { AgentInfo, AppBlockRule } from "@/api/types";
-import { AppIcon } from "@/components/common/AppIcon";
+import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { AppBlockModal } from "./AppBlockModal";
-import { capabilityAvailable, capabilityNeedsCaution, capabilityStatus } from "@/features/agent-detail/lib/agentCapabilities";
-import { cn } from "@/lib/utils";
-import { HelpTip } from "@/components/common/HelpTip";
-import { Switch } from "@/components/common/SettingsSwitch";
+import { AppRulesSection, BlockInternetDialog, DeleteRuleDialog, InternetSection } from "./BlockingSections";
 
 interface ControlTabProps {
   agentId: string;
@@ -41,46 +22,26 @@ const NO_RULES: AppBlockRule[] = [];
 
 const toRules = (r: { rules: AppBlockRule[] }) => r.rules;
 
-function StatusWord({ blocked }: { blocked: boolean }) {
-  return (
-    <span className="inline-flex items-center gap-2 text-[13px]">
-      <span className={cn("size-[7px] rounded-full", blocked ? "bg-warning" : "bg-success")} aria-hidden="true" />
-      <span className={blocked ? "text-warning" : "text-success"}>{blocked ? "Blocked" : "Allowed"}</span>
-    </span>
-  );
-}
-
-function ScopeWord({ kind }: { kind: string }) {
-  if (kind === "all") return <span>All devices</span>;
-  if (kind === "group") return <span>Group</span>;
-  return <span className="text-muted-foreground">This device</span>;
-}
-
+/** Blocking: the device's internet policy and the apps that are closed on it (admins only). */
 export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo }: ControlTabProps) {
   const queryClient = useQueryClient();
+  const [confirmingBlock, setConfirmingBlock] = useState(false);
 
   // ── Internet access ──────────────────────────────────────────────────────────
-  // Same key as the agent vitals card, so a toggle here updates both. A failed load reads as "Allowed".
+  // Same key as the agent vitals card, so a change here updates both. The state shown is only ever
+  // what the server last confirmed.
   const netQuery = useQuery(ruleQueries.internetBlocked(agentId));
-  const { blocked: netBlocked, source: netSource } = networkPolicyState(netQuery.data);
-  const netLoad = netQuery.isPending;
-
   const netPolicy = useMutation({
     mutationFn: (vars: { agentId: string; blocked: boolean }) =>
       api.agentInternetBlockedPut(vars.agentId, { blocked: vars.blocked }),
     onSuccess: (r, vars) => queryClient.setQueryData(ruleKeys.internetBlocked(vars.agentId), r),
   });
-  const netSave = netPolicy.isPending;
-  const netErr = netPolicy.error ? String(netPolicy.error) : null;
-
-  const applyNetworkPolicy = (blocked: boolean) => netPolicy.mutate({ agentId, blocked });
-
-
+  const setInternetBlocked = (blocked: boolean) =>
+    netPolicy.mutate({ agentId, blocked }, { onSettled: () => setConfirmingBlock(false) });
 
   // ── App blocking ─────────────────────────────────────────────────────────────
   const rulesQuery = useQuery({ ...ruleQueries.appBlockRulesForAgent(agentId), select: toRules });
   const rules = rulesQuery.data ?? NO_RULES;
-  const rulesLoad = rulesQuery.isFetching;
   // Toggle/delete failures; cleared when the list is reloaded (another agent, or a rule was added).
   const [mutationErr, setMutationErr] = useState<string | null>(null);
   const [errAgentId, setErrAgentId] = useState(agentId);
@@ -88,7 +49,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
     setErrAgentId(agentId);
     setMutationErr(null);
   }
-  const rulesErr = ruleError(mutationErr, rulesQuery.error);
+  const rulesErr = mutationErr ?? (rulesQuery.error ? errorText(rulesQuery.error) : null);
   const [showModal, setShowModal] = useState(false);
   const [deletingRule, setDeletingRule] = useState<AppBlockRule | null>(null);
 
@@ -107,28 +68,17 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
       api.appBlockRulesUpdate(vars.rule.id, { enabled: !vars.rule.enabled }),
     onSuccess: (_, { agentId: forAgent, rule }) =>
       patchRules(forAgent, (prev) => prev.map((r) => r.id === rule.id ? { ...r, enabled: !r.enabled } : r)),
-    onError: (e) => setMutationErr(String(e)),
+    onError: (e) => setMutationErr(errorText(e)),
   });
   const togglingId = toggle.isPending ? toggle.variables.rule.id : null;
 
   const remove = useMutation({
     mutationFn: (vars: { agentId: string; rule: AppBlockRule }) => api.appBlockRulesDelete(vars.rule.id),
     onSuccess: (_, { agentId: forAgent, rule }) => patchRules(forAgent, (prev) => prev.filter((r) => r.id !== rule.id)),
-    onError: (e) => setMutationErr(String(e)),
+    onError: (e) => setMutationErr(errorText(e)),
     onSettled: () => setDeletingRule(null),
   });
   const deletingId = remove.isPending ? remove.variables.rule.id : null;
-
-  const toggleRule = (rule: AppBlockRule) => toggle.mutate({ agentId, rule });
-
-  const deleteRule = (rule: AppBlockRule) => remove.mutate({ agentId, rule });
-
-
-
-  const networkAvailable = capabilityAvailable(agentInfo, "network_blocking");
-  const appBlockAvailable = capabilityAvailable(agentInfo, "app_blocking");
-  const networkCaution = capabilityNeedsCaution(agentInfo, "network_blocking");
-  const appBlockCaution = capabilityNeedsCaution(agentInfo, "app_blocking");
 
   if (!isAdmin) {
     return (
@@ -139,61 +89,41 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
     );
   }
 
-  return (
-    <div className="flex flex-col gap-6">
-      <NetworkPolicyCard netLoad={netLoad} netBlocked={netBlocked} netSource={netSource} netSave={netSave} networkAvailable={networkAvailable} applyNetworkPolicy={applyNetworkPolicy} agentOnline={agentOnline} agentInfo={agentInfo} networkCaution={networkCaution} netErr={netErr} />
+  const networkAvailable = capabilityAvailable(agentInfo, "network_blocking");
+  const appBlockAvailable = capabilityAvailable(agentInfo, "app_blocking");
+  const netStatus = netQuery.data;
 
-      {/* ── App blocking ────────────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-1.5">App blocking</CardTitle>
-          <CardAction>
-            <Button variant="outline" size="sm" disabled={!appBlockAvailable}
-              title={appBlockAvailable ? undefined : "App blocking is unavailable on this agent"}
-              onClick={() => setShowModal(true)}>
-              <Plus /> Add rule
-            </Button>
-          </CardAction>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {!appBlockAvailable && (
-            <Alert>
-              <Info />
-              <AlertTitle>App blocking unavailable</AlertTitle>
-              <AlertDescription>
-                Status: <code>{capabilityStatus(agentInfo, "app_blocking") ?? "unsupported"}</code>
-              </AlertDescription>
-            </Alert>
-          )}
-          {appBlockAvailable && appBlockCaution && (
-            <Alert>
-              <Info />
-              <AlertTitle>App blocking is limited</AlertTitle>
-              <AlertDescription>
-                This agent reports app blocking as <code>{capabilityStatus(agentInfo, "app_blocking")}</code>.
-              </AlertDescription>
-            </Alert>
-          )}
-          {rulesErr && (
-            <Alert variant="destructive">
-              <AlertDescription>{rulesErr}</AlertDescription>
-            </Alert>
-          )}
-          <div className="overflow-hidden rounded-xl bg-muted/50">
-            <Table>
-              <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead>App</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Active</TableHead>
-                  <TableHead><span className="sr-only">Actions</span></TableHead>
-                </TableRow>
-              </TableHeader>
-              <AppRulesTableBody rulesLoad={rulesLoad} rules={rules} agentId={agentId} appBlockAvailable={appBlockAvailable} togglingId={togglingId} toggleRule={toggleRule} deletingId={deletingId} setDeletingRule={setDeletingRule} />
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+  return (
+    <div className="flex flex-col gap-4">
+      <InternetSection
+        loading={netQuery.isPending}
+        loadFailed={netQuery.isError}
+        blocked={netStatus?.blocked ?? false}
+        source={netStatus?.source ?? null}
+        saving={netPolicy.isPending}
+        available={networkAvailable}
+        online={agentOnline}
+        info={agentInfo}
+        error={netPolicy.error ? errorText(netPolicy.error) : null}
+        onReload={() => void netQuery.refetch()}
+        onAllow={() => setInternetBlocked(false)}
+        onAskBlock={() => setConfirmingBlock(true)}
+      />
+
+      <AppRulesSection
+        agentId={agentId}
+        loading={rulesQuery.isFetching}
+        rules={rules}
+        available={appBlockAvailable}
+        info={agentInfo}
+        error={rulesErr}
+        togglingId={togglingId}
+        deletingId={deletingId}
+        onReload={reloadRules}
+        onAdd={() => setShowModal(true)}
+        onToggle={(rule) => toggle.mutate({ agentId, rule })}
+        onAskDelete={setDeletingRule}
+      />
 
       <AppBlockModal
         visible={showModal}
@@ -203,178 +133,21 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
         onCreated={reloadRules}
       />
 
-      <DeleteRuleDialog deletingRule={deletingRule} deletingId={deletingId} setDeletingRule={setDeletingRule} deleteRule={deleteRule} />
+      <BlockInternetDialog
+        open={confirmingBlock}
+        agentName={agentName}
+        online={agentOnline}
+        saving={netPolicy.isPending}
+        onCancel={() => setConfirmingBlock(false)}
+        onConfirm={() => setInternetBlocked(true)}
+      />
+
+      <DeleteRuleDialog
+        rule={deletingRule}
+        deleting={deletingId !== null}
+        onCancel={() => setDeletingRule(null)}
+        onConfirm={(rule) => remove.mutate({ agentId, rule })}
+      />
     </div>
   );
-}
-
-interface NetworkPolicyCardProps {
-  netLoad: boolean; netBlocked: boolean; netSource: string | null; netSave: boolean;
-  networkAvailable: boolean; applyNetworkPolicy: (blocked: boolean) => void; agentOnline: boolean;
-  agentInfo?: AgentInfo | null; networkCaution: boolean; netErr: string | null;
-}
-function NetworkPolicyCard({ netLoad, netBlocked, netSource, netSave, networkAvailable, applyNetworkPolicy, agentOnline, agentInfo, networkCaution, netErr }: NetworkPolicyCardProps) {
-  return (<Card>
-        {/* One row: status plus the switch. The fleet-wide rules live on the Rules page. */}
-        <CardHeader>
-          <CardTitle className="flex items-center gap-1.5">
-            Internet access
-            <HelpTip>
-              Rules for groups or the whole fleet are on the{" "}
-              <RouterLink to="/rules?tab=internet-access" className="text-primary hover:underline">Rules</RouterLink> page.
-            </HelpTip>
-          </CardTitle>
-          {!netLoad && (
-            <CardAction className="flex items-center gap-3">
-              <StatusWord blocked={netBlocked} />
-              <Switch
-                checked={netBlocked}
-                disabled={!networkAvailable || netSave || (netBlocked && netSource !== null && netSource !== "agent")}
-                onCheckedChange={(checked) => applyNetworkPolicy(checked === true)}
-                aria-label="Block internet"
-              />
-            </CardAction>
-          )}
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 pt-0 empty:hidden">
-          {!agentOnline && (
-            <Alert>
-              <TriangleAlert />
-              <AlertDescription>
-                Agent offline. Applies on reconnect.
-              </AlertDescription>
-            </Alert>
-          )}
-          {!networkAvailable && (
-            <Alert>
-              <Info />
-              <AlertTitle>Network blocking unavailable</AlertTitle>
-              <AlertDescription>
-                Status: <code>{capabilityStatus(agentInfo, "network_blocking") ?? "unsupported"}</code>
-              </AlertDescription>
-            </Alert>
-          )}
-          {networkAvailable && networkCaution && (
-            <Alert>
-              <Info />
-              <AlertTitle>May need host privileges</AlertTitle>
-              <AlertDescription>
-                Status: <code>{capabilityStatus(agentInfo, "network_blocking")}</code>
-              </AlertDescription>
-            </Alert>
-          )}
-          {netErr && (
-            <Alert variant="destructive">
-              <AlertDescription>{netErr}</AlertDescription>
-            </Alert>
-          )}
-          {netLoad ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : netBlocked && sourceLabel(netSource) ? (
-            <p className="text-sm text-muted-foreground">Set by a {sourceLabel(netSource)}.</p>
-          ) : null}
-        </CardContent>
-      </Card>);
-}
-
-  const sourceLabel = (src: string | null) => {
-    if (src === "all") return "all devices rule";
-    if (src === "group") return "group rule";
-    return null;
-  };
-
-function AppRulesTableBody({ rulesLoad, rules, agentId, appBlockAvailable, togglingId, toggleRule, deletingId, setDeletingRule }: {
-  rulesLoad: boolean; rules: AppBlockRule[]; agentId: string; appBlockAvailable: boolean;
-  togglingId: AppBlockRule["id"] | null; toggleRule: (rule: AppBlockRule) => void;
-  deletingId: AppBlockRule["id"] | null; setDeletingRule: (rule: AppBlockRule) => void;
-}) {
-  return (<TableBody className="[&_td]:px-3 [&_td]:py-3.5">
-                {rulesLoad && rules.length === 0 ? (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={4}>
-                      <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                        <Spinner /> Loading…
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : rules.length === 0 ? (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={4}>
-                      <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                        No rules.
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  rules.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <AppIcon agentId={agentId} exeName={r.exe_pattern} size={18} />
-                          <span className="font-mono text-[13px]">{r.exe_pattern}</span>
-                          <span className="text-xs text-muted-foreground">{r.match_mode}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <ScopeWord kind={resolvedScopeKind(r)} />
-                      </TableCell>
-                      <TableCell>
-                        <Checkbox
-                          checked={r.enabled}
-                          disabled={!appBlockAvailable || togglingId === r.id}
-                          onCheckedChange={() => toggleRule(r)}
-                          aria-label={`${r.enabled ? "Disable" : "Enable"} rule for ${r.exe_pattern}`}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Delete rule for ${r.exe_pattern}`}
-                          disabled={deletingId === r.id}
-                          onClick={() => setDeletingRule(r)}
-                        >
-                          <Trash2 />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>);
-}
-
-  const resolvedScopeKind = (rule: AppBlockRule) =>
-    rule.scope_kind ?? rule.scopes?.[0]?.kind ?? "agent";
-
-function DeleteRuleDialog({ deletingRule, deletingId, setDeletingRule, deleteRule }: {
-  deletingRule: AppBlockRule | null; deletingId: AppBlockRule["id"] | null;
-  setDeletingRule: (rule: AppBlockRule | null) => void; deleteRule: (rule: AppBlockRule) => void;
-}) {
-  return (<AlertDialog open={deletingRule !== null} onOpenChange={(open) => { if (!open) setDeletingRule(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete block rule?</AlertDialogTitle>
-            <AlertDialogDescription>
-              “{deletingRule?.name || deletingRule?.exe_pattern}” will no longer be blocked.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deletingId !== null}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={deletingId !== null}
-              onClick={() => { if (deletingRule) deleteRule(deletingRule); }}
-            >
-              {deletingId !== null && <Spinner />} Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>);
-}
-
-function networkPolicyState(status?: { blocked?: boolean; source?: string | null }) {
-  return { blocked: status?.blocked ?? false, source: status?.source ?? null };
-}
-function ruleError(mutationError: string | null, queryError: unknown): string | null {
-  return mutationError ?? (queryError ? String(queryError) : null);
 }

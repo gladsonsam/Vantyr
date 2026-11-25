@@ -8,6 +8,7 @@ import { Checkbox } from "@vantyr/ui/components/checkbox";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -31,11 +32,15 @@ import type {
   AlertRuleScopeKind,
 } from "@/api/types";
 import { groupRuleSchema, type GroupRuleValues, type RuleScopeRow } from "./groupSchemas";
+import { messageOf } from "./groupSummary";
 
 interface RuleModalProps {
   visible: boolean;
   onDismiss: () => void;
-  rule: AlertRule | null; // null for create
+  /** The rule to edit, or the unsaved one to start from (id 0). */
+  rule: AlertRule | null;
+  /** Dialog title; defaults to "Edit alert rule" / "New alert rule". */
+  heading?: string;
   /** Kept for compatibility; layout is responsive and ignores it. */
   isNarrow?: boolean;
   agentOptions: { label: string; value: string }[];
@@ -49,7 +54,7 @@ const CHANNEL_OPTIONS: { label: string; value: AlertRuleChannel }[] = [
 ];
 
 const MATCH_OPTIONS: { label: string; value: AlertRuleMatchMode }[] = [
-  { label: "Substring", value: "substring" },
+  { label: "Contains", value: "substring" },
   { label: "Regex", value: "regex" },
 ];
 
@@ -114,21 +119,21 @@ function CheckRow({ checked, disabled, onChange, label }: {
   );
 }
 
-export function RuleModal({ visible, onDismiss, rule, agentOptions, groupOptions, onSave }: RuleModalProps) {
+export function RuleModal({ visible, onDismiss, rule, heading, agentOptions, groupOptions, onSave }: RuleModalProps) {
   // The dialog can't be dismissed while the save request is in flight.
   const [busy, setBusy] = useState(false);
   return (
     <Dialog open={visible} onOpenChange={(open) => !open && !busy && onDismiss()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-2xl">
         {visible && (
-          <RuleForm rule={rule} agentOptions={agentOptions} groupOptions={groupOptions} onDismiss={onDismiss} onSave={onSave} onBusyChange={setBusy} />
+          <RuleForm rule={rule} heading={heading} agentOptions={agentOptions} groupOptions={groupOptions} onDismiss={onDismiss} onSave={onSave} onBusyChange={setBusy} />
         )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function RuleForm({ rule, agentOptions, groupOptions, onDismiss, onSave, onBusyChange }: Omit<RuleModalProps, "visible"> & { onBusyChange: (busy: boolean) => void }) {
+function RuleForm({ rule, heading, agentOptions, groupOptions, onDismiss, onSave, onBusyChange }: Omit<RuleModalProps, "visible"> & { onBusyChange: (busy: boolean) => void }) {
   const form = useForm<GroupRuleValues>({
     resolver: zodResolver(groupRuleSchema),
     mode: "onChange",
@@ -140,25 +145,31 @@ function RuleForm({ rule, agentOptions, groupOptions, onDismiss, onSave, onBusyC
   const matchMode = useWatch({ control, name: "match_mode" });
   const patternFilled = useWatch({ control, name: "pattern" }).trim() !== "";
 
+  // The page behind the dialog is out of sight, so a failed save is reported here and the form stays open.
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const submit = form.handleSubmit(async (values) => {
+    setSaveError(null);
     onBusyChange(true);
     try {
       await onSave(values);
       onDismiss();
-    } catch {
-      // Handled by parent
+    } catch (e: unknown) {
+      setSaveError(messageOf(e));
     } finally {
       onBusyChange(false);
     }
   });
+  const editing = rule !== null && rule.id > 0;
 
   return (
     <form className="grid gap-4" onSubmit={submit} noValidate>
       <DialogHeader>
-        <DialogTitle>{rule ? "Edit alert rule" : "Create alert rule"}</DialogTitle>
+        <DialogTitle>{heading ?? (editing ? "Edit alert rule" : "New alert rule")}</DialogTitle>
+        <DialogDescription>Raises an alert when an agent in its scope matches.</DialogDescription>
       </DialogHeader>
 
-      <InputField control={control} name="name" id="rule-name" label="Display name" autoFocus disabled={isSubmitting} />
+      <InputField control={control} name="name" id="rule-name" label="Name (optional)" disabled={isSubmitting} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <FormField control={control} name="channel" id="rule-channel" label="Channel">
@@ -238,7 +249,7 @@ function RuleForm({ rule, agentOptions, groupOptions, onDismiss, onSave, onBusyC
           const scopes = field.value;
           return (
             <div className="grid gap-2">
-              <div className="text-sm font-medium">Scopes</div>
+              <div className="text-sm font-medium">Scope</div>
               {scopes.map((row, index) => (
                 <div key={scopeKeys[index]} className="rounded-lg bg-muted/50 p-3">
                   <div className="flex flex-wrap items-end gap-2">
@@ -338,12 +349,18 @@ function RuleForm({ rule, agentOptions, groupOptions, onDismiss, onSave, onBusyC
         }}
       </FormField>
 
-      <DialogFooter>
+      {saveError && (
+        <div role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm break-words text-destructive">
+          Couldn’t save the rule: {saveError}
+        </div>
+      )}
+
+      <DialogFooter className="-bottom-4">
         <Button type="button" variant="outline" disabled={isSubmitting} onClick={onDismiss}>
           Cancel
         </Button>
         <Button type="submit" disabled={!patternFilled || isSubmitting}>
-          {isSubmitting && <Spinner />} Save
+          {isSubmitting && <Spinner />} {editing ? "Save changes" : "Create rule"}
         </Button>
       </DialogFooter>
     </form>

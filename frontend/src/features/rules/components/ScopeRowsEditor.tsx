@@ -7,12 +7,12 @@ import { updateScopeRow } from "../lib/scopeRows";
 import { emptyScopeRow, type ScopeFormRow } from "../rulesUtils";
 
 const SCOPE_OPTIONS = [
-  { label: "All agents", value: "all" },
-  { label: "Agent group", value: "group" },
-  { label: "Single agent", value: "agent" },
+  { label: "All devices", value: "all" },
+  { label: "Group", value: "group" },
+  { label: "Agent", value: "agent" },
 ];
 
-/** Rows of "all agents / a group / one agent" pickers shared by the rule editors. */
+/** Rows of "all devices / a group / one agent" pickers shared by the rule editors. */
 export function ScopeRowsEditor({ rows, onChange, groups, agents, divided = true }: {
   rows: ScopeFormRow[];
   onChange: (rows: ScopeFormRow[]) => void;
@@ -44,7 +44,7 @@ export function ScopeRowsEditor({ rows, onChange, groups, agents, divided = true
             <div className="min-w-36 flex-1">
               <FormSelect
                 ariaLabel={`Scope ${i + 1} group`}
-                placeholder="Select group"
+                placeholder={groups.length === 0 ? "No groups yet" : "Choose a group"}
                 value={s.group_id}
                 options={groupOptions}
                 onChange={(value) => onChange(updateScopeRow(rows, i, { group_id: value }))}
@@ -55,7 +55,7 @@ export function ScopeRowsEditor({ rows, onChange, groups, agents, divided = true
             <div className="min-w-36 flex-1">
               <FormSelect
                 ariaLabel={`Scope ${i + 1} agent`}
-                placeholder="Select agent"
+                placeholder={agents.length === 0 ? "No agents yet" : "Choose an agent"}
                 value={s.agent_id}
                 options={agentOptions}
                 onChange={(value) => onChange(updateScopeRow(rows, i, { agent_id: value }))}
@@ -63,13 +63,13 @@ export function ScopeRowsEditor({ rows, onChange, groups, agents, divided = true
             </div>
           )}
           {rows.length > 1 && (
-            <Button variant="ghost" size="sm" aria-label={`Remove scope ${i + 1}`} onClick={() => onChange(rows.filter((_, j) => j !== i))}>
+            <Button type="button" variant="ghost" className="pointer-coarse:h-9" aria-label={`Remove scope ${i + 1}`} onClick={() => onChange(rows.filter((_, j) => j !== i))}>
               <X /> Remove
             </Button>
           )}
         </div>
       ))}
-      <Button variant="ghost" size="sm" className="self-start" onClick={() => onChange([...rows, emptyScopeRow()])}>
+      <Button type="button" variant="ghost" className="self-start pointer-coarse:h-9" onClick={() => onChange([...rows, emptyScopeRow()])}>
         <Plus /> Add scope
       </Button>
     </div>

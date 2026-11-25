@@ -16,6 +16,33 @@ import {
 import { asRecord, asStringArray, page } from "./helpers";
 import type { DemoState } from "./state";
 
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Synthetic log lines, one of them very long, so the viewer's scrolling and wrapping can be tried. */
+function demoLogText(agentId: string, kind: string): string {
+  if (kind === "ui") return `[demo] settings UI started for ${agentId}\n[demo] UI idle\n`;
+  const levels = ["INFO", "INFO", "INFO", "WARN", "INFO", "ERROR"];
+  const lines = Array.from({ length: 240 }, (_, i) => {
+    const time = new Date(Date.UTC(2026, 0, 2, 10, 0, 0) + i * 7000).toISOString().slice(11, 19);
+    return `${time} ${levels[i % levels.length]} demo.module${i % 5}: telemetry batch ${i} uploaded for ${agentId}`;
+  });
+  lines.splice(
+    12, 0,
+    `10:01:30 WARN demo.paths: could not read C:\\Users\\demo-user\\AppData\\Local\\Vantyr\\cache\\very\\deeply\\nested\\folder\\structure\\that\\keeps\\going\\and\\going\\until\\the\\line\\is\\far\\wider\\than\\any\\screen\\file-0001.tmp (access denied)`,
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+/** Fake device reply: a pending pause, then success, a non-zero exit, or a timeout depending on what was typed. */
+async function demoScriptReply(script: string): Promise<Record<string, unknown>> {
+  await wait(900);
+  if (/timeout/i.test(script)) return { ok: false, error: "The script timed out after 120 seconds.", stdout: "", stderr: "" };
+  if (/fail/i.test(script)) return { ok: false, exit_code: 1, stdout: "Checking…\n", stderr: "demo: the service could not be reached\n" };
+  if (/silent/i.test(script)) return { ok: true, exit_code: 0, stdout: "", stderr: "" };
+  const long = "x".repeat(200);
+  return { ok: true, exit_code: 0, stdout: `Demo script completed\n${long}\n${Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n")}\n`, stderr: "" };
+}
+
 /** Fake agents, fleet summary, history reads, scripts and software endpoints. */
 export function demoAgentsApi(state: DemoState): Partial<ApiClient> {
   const { configuredInternet, removedAgents } = state;
@@ -108,14 +135,17 @@ export function demoAgentsApi(state: DemoState): Partial<ApiClient> {
     },
     agentSoftware: async (id) => ({ rows: demoSoftware(String(id)), last_captured_at: isoMinutesAgo(7), total: 5, limit: 100, offset: 0 }),
     collectAgentSoftware: async () => ({ ok: true }),
-    runAgentScript: async () => ({ ok: true, stdout: "Demo script completed", stderr: "", exit_code: 0 }),
+    runAgentScript: async (_id, body) => demoScriptReply(String(asRecord(body).script ?? "")),
     agentLogSources: async () => ({
       sources: [
         { id: "agent", label: "Agent log", path: "C:\\ProgramData\\Vantyr\\agent.log" },
         { id: "ui", label: "Settings UI log", path: "C:\\ProgramData\\Vantyr\\ui.log" },
       ],
     }),
-    agentLogTail: async (id, params) => ({ kind: String(asRecord(params).kind ?? "agent"), text: `[demo] ${id} connected\n[demo] telemetry batch uploaded\n` }),
+    agentLogTail: async (id, params) => {
+      const kind = String(asRecord(params).kind ?? "agent");
+      return { kind, text: demoLogText(String(id), kind) };
+    },
     bulkAgentScript: async (body) => ({
       results: asStringArray(asRecord(body).agent_ids).map((agentId) => ({ agent_id: agentId, ok: true, stdout: "Demo bulk script completed" })),
     }),

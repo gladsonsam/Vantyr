@@ -13,6 +13,14 @@ if (typeof window !== "undefined" && typeof (window as unknown as { PointerEvent
   (window as unknown as { PointerEvent?: unknown }).PointerEvent = MouseEvent;
 }
 
+// cmdk (the palette) needs these in jsdom.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+Element.prototype.scrollIntoView ??= () => {};
+
 let el: HTMLDivElement;
 let root: Root;
 
@@ -246,4 +254,33 @@ it("provides a mobile nav opener inside the shell and null outside it", async ()
     );
   });
   expect(el.querySelector('[data-testid="outside"]')!.textContent).toBe("no-opener");
+});
+
+it("offers the open device's tools in the palette, and none on other pages", async () => {
+  async function paletteGroups(path: string) {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={[path]}>
+          <AppShell
+            title="Agents"
+            onLogout={logout}
+            onShowPreferences={preferences}
+            notifications={[]}
+            onDismissNotification={dismiss}
+            agents={[online, offline]}
+            onSelectAgent={home}
+          >
+            <Probe />
+          </AppShell>
+        </MemoryRouter>,
+      );
+    });
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));
+    });
+    return [...document.querySelectorAll("[cmdk-group-heading]")].map((g) => g.textContent);
+  }
+  expect(await paletteGroups("/agents/online?tab=urls")).toEqual(["Tools · Online PC", "Devices", "Pages"]);
+  expect(document.body.textContent).toContain("Terminal");
+  expect(document.body.textContent).toContain("Device logs");
 });

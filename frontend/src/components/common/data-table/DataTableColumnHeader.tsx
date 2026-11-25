@@ -15,7 +15,7 @@ export function DataTableColumnHeader<TData extends RowData, TValue>({
       type="button"
       // First click uses the column's first direction (ascending unless `sortDescFirst`).
       onClick={() => column.toggleSorting(sorted ? sorted === "asc" : undefined)}
-      className="inline-flex items-center gap-1.5 hover:text-foreground"
+      className="inline-flex min-h-8 items-center gap-1.5 hover:text-foreground"
       aria-label={`Sort by ${title}`}
     >
       {title}
