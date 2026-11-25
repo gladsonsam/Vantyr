@@ -1,7 +1,7 @@
 {
   "productName": "Vantyr Agent",
   "mainBinaryName": "Vantyr Agent",
-  "version": "0.2.0",
+  "version": "0.1.6",
   "identifier": "com.vantyr.agent",
   "build": {
     "beforeDevCommand": {
