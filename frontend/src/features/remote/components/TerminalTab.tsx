@@ -5,12 +5,14 @@ import "@xterm/xterm/css/xterm.css";
 import { Info, RefreshCw, SquareTerminal, TriangleAlert } from "lucide-react";
 import { Alert, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { buildWsUrl } from "@/api/serverSettings";
 import type { AgentInfo, DashboardRole } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 import { cn } from "@/lib/utils";
 import { useRemoteEnvironment } from "@/features/remote/hooks/useRemoteEnvironment";
+import { terminalStatus, type TerminalConnection, type TerminalPhase, type TerminalStatus } from "@/features/remote/lib/terminalStatus";
 
 interface Props {
   agentId: string;
@@ -25,13 +27,8 @@ interface Props {
 const TERM_FONT = "'IBM Plex Mono', Consolas, 'Cascadia Mono', 'Courier New', monospace";
 const TERM_FONT_SIZE = 13;
 
-type Connection = "connecting" | "live" | "ended" | "refused" | "dropped";
-
-const CONNECTION_NOTICE: Partial<Record<Connection, string>> = {
-  refused: "The terminal was refused — the agent needs updating or this module authorised on the device.",
-  dropped: "The connection to the terminal was lost.",
-  ended: "The terminal session ended.",
-};
+type Connection = TerminalConnection;
+const TERM_BG = "#0c0d10";
 
 /**
  * Interactive remote terminal (xterm.js ↔ /ws/terminal ↔ agent ConPTY).
@@ -68,8 +65,6 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
     };
   }, [agentId, agentOnline, terminalAvailable, blockedByRole, terminalUnavailable, attempt]);
 
-  const notice = CONNECTION_NOTICE[connection];
-
   if (blockedByRole) {
     return (
       <Alert>
@@ -79,61 +74,68 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
     );
   }
 
-  if (terminalUnavailable) {
-    return (
-      <div className="rounded-xl bg-card p-6 text-sm text-muted-foreground">
-        {terminalUnavailable}
-      </div>
-    );
-  }
-  if (agentOnline === false) {
-    return (
-      <div className="rounded-xl bg-card p-6 text-sm text-muted-foreground">
-        Agent offline.
-      </div>
-    );
-  }
+  if (terminalUnavailable) return <Unavailable>{terminalUnavailable}</Unavailable>;
+  if (agentOnline === false) return <Unavailable>The device is offline. The terminal needs it online.</Unavailable>;
   if (!terminalAvailable) {
     return <CapabilityNotice info={agentInfo} capability="terminal" title="Terminal unavailable" />;
   }
 
-  if (attempt === 0) {
-    return (
-      <div className="flex flex-col items-start gap-4 rounded-xl bg-card p-6">
-        <div className="flex items-center gap-3">
-          <SquareTerminal className="size-5 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">Opens a shell on the device. It closes when you leave this tab.</span>
-        </div>
-        <Button onClick={() => setAttempt(1)}>
-          <SquareTerminal /> Start terminal
-        </Button>
-      </div>
-    );
-  }
+  const phase: TerminalPhase = attempt === 0 ? "idle" : connection;
+  const status = terminalStatus(phase);
 
   return (
-    <div className="relative rounded-xl bg-card p-2">
-      <div
-        ref={containerRef}
-        className="h-[460px] w-full overflow-hidden rounded-lg"
-        style={{ background: "#0c0d10" }}
+    <div className="flex flex-col gap-2">
+      <TerminalStatusBar
+        status={status}
+        connecting={phase === "connecting"}
+        onStart={() => setAttempt((n) => n + 1)}
+        onStop={() => setAttempt(0)}
       />
-      {notice && (
-        <div
-          className={cn(
-            "flex items-center justify-between gap-4 px-3 pt-3 pb-1 text-sm",
-            connection === "ended" ? "text-muted-foreground" : "text-warning",
-          )}
-          role="status"
-        >
-          <span className="flex items-center gap-2">
-            {connection !== "ended" && <TriangleAlert className="size-4 shrink-0" />}
-            {notice}
-          </span>
-          <Button variant="outline" size="sm" onClick={() => setAttempt((n) => n + 1)}>
-            <RefreshCw /> {connection === "refused" ? "Retry" : "Reconnect"}
-          </Button>
-        </div>
+      <div
+        className="h-[clamp(16rem,calc(100dvh-18rem),42rem)] overflow-hidden rounded-xl p-2"
+        style={{ background: TERM_BG }}
+      >
+        {attempt === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
+            <SquareTerminal className="size-6 text-white/50" aria-hidden="true" />
+            <p className="max-w-xs text-sm text-white/70">Opens a shell on this device. It closes when you leave this tab.</p>
+            <Button onClick={() => setAttempt(1)}>Start terminal</Button>
+          </div>
+        ) : (
+          <div ref={containerRef} aria-label="Remote terminal" role="group" className="h-full w-full overflow-hidden" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Unavailable({ children }: { children: string }) {
+  return <div className="rounded-xl bg-card p-6 text-sm text-muted-foreground">{children}</div>;
+}
+
+/** Connection state on the left, the one thing you can do about it on the right. */
+function TerminalStatusBar({ status, connecting, onStart, onStop }: {
+  status: TerminalStatus; connecting: boolean; onStart: () => void; onStop: () => void;
+}) {
+  const { action } = status;
+  return (
+    <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-2">
+      <p
+        role="status"
+        className={cn(
+          "flex min-w-0 flex-1 items-start gap-2 text-sm",
+          status.tone === "warn" ? "text-warning" : status.tone === "ok" ? "text-success" : "text-muted-foreground",
+        )}
+      >
+        {connecting ? <Spinner className="mt-0.5 shrink-0" /> : status.tone === "warn" ? <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> : (
+          <span className={cn("mt-[7px] size-[7px] shrink-0 rounded-full", status.tone === "ok" ? "bg-success" : "bg-muted-foreground/50")} aria-hidden="true" />
+        )}
+        <span className="min-w-0 break-words">{status.text}</span>
+      </p>
+      {action && (
+        <Button variant="outline" size="sm" className="pointer-coarse:h-9" onClick={action.kind === "start" ? onStart : onStop}>
+          {action.kind === "start" && <RefreshCw />} {action.label}
+        </Button>
       )}
     </div>
   );
@@ -159,7 +161,7 @@ async function startTerminalConnection(element: HTMLDivElement, agentId: string,
         lineHeight: 1.15,
         letterSpacing: 0,
         scrollback: 5000,
-        theme: { background: "#0c0d10", foreground: "#e6e6e6", cursor: "#20dd8f" },
+        theme: { background: TERM_BG, foreground: "#e6e6e6", cursor: "#20dd8f" },
       });
       const fit = new FitAddon();
       term.loadAddon(fit);
@@ -217,11 +219,12 @@ async function startTerminalConnection(element: HTMLDivElement, agentId: string,
       const resizeDisp = term.onResize(({ cols, rows }) => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "resize", cols, rows }));
       });
-      const onWinResize = () => safeFit();
-      window.addEventListener("resize", onWinResize);
+      // The frame follows the viewport height, so refit whenever its own size changes.
+      const resizeWatcher = new ResizeObserver(safeFit);
+      resizeWatcher.observe(element);
 
       return () => {
-        window.removeEventListener("resize", onWinResize);
+        resizeWatcher.disconnect();
         dataDisp.dispose();
         resizeDisp.dispose();
         try {

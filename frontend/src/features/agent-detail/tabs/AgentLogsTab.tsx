@@ -1,9 +1,6 @@
-import { RefreshCw, Info } from "lucide-react";
-import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { ArrowDownToLine, Search, WrapText, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
-import { Checkbox } from "@vantyr/ui/components/checkbox";
-import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
 import {
   Select,
   SelectContent,
@@ -11,14 +8,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@vantyr/ui/components/select";
-import { Spinner } from "@vantyr/ui/components/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { agentQueries } from "@/api/queries/agents";
 import { errorText } from "@/api";
+import { CopyTextButton } from "@/components/common/CopyTextButton";
+import { CopyValue } from "@/components/common/CopyValue";
+import { RefreshButton } from "@/components/common/RefreshButton";
+import { Switch } from "@/components/common/SettingsSwitch";
+import { LogViewer } from "@/features/agent-detail/components/LogViewer";
+import { LoadFailed } from "@/features/agent-detail/components/MonitoringToolbar";
+import { filterLog, logCountLabel, logPlaceholder } from "@/features/agent-detail/lib/logView";
+import { LOG_POLL_MS, isDefinitiveFailure, logPollInterval, logRetry } from "@/features/agent-detail/lib/logPolling";
 import { AuditTab } from "@/features/logs/AuditTab";
-import { isDefinitiveFailure, logPollInterval, logRetry } from "@/features/agent-detail/lib/logPolling";
+import { cn } from "@/lib/utils";
 
 type SubView = "agent" | "audit";
 
@@ -26,165 +30,153 @@ const NO_SOURCES: { id: string; label: string; path: string }[] = [];
 
 export function AgentLogsTab({ agentId }: { agentId: string }) {
   const [view, setView] = useState<SubView>("agent");
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const { sourceId, setSourceId, refreshing, sources, loadingSources, logText, error, pollingPaused, refreshTail, tailFailed, tailPending } = useAgentLogData(agentId, view, autoRefresh);
-
-  const viewportRef = useRef<HTMLTextAreaElement | null>(null);
-  const stickToBottomRef = useRef(true);
-  const initialScrollDoneRef = useRef(false);
-
-  const selectedSource = useMemo(
-    () => sources.find((s) => s.id === sourceId) ?? null,
-    [sources, sourceId],
-  );
-
-  // A new source (or coming back to this view) starts pinned to the bottom again.
-  useEffect(() => {
-    if (view !== "agent") return;
-    stickToBottomRef.current = true;
-    initialScrollDoneRef.current = false;
-  }, [view, sourceId, agentId]);
-
-  useEffect(() => {
-    if (view !== "agent") return;
-    const el = viewportRef.current;
-    if (!el) return;
-
-    const scrollToBottom = () => {
-      el.scrollTop = el.scrollHeight;
-    };
-
-    if (!initialScrollDoneRef.current) {
-      const timer = setTimeout(scrollToBottom, 50);
-      initialScrollDoneRef.current = true;
-      return () => clearTimeout(timer);
-    }
-
-    if (stickToBottomRef.current) {
-      const timer = setTimeout(scrollToBottom, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [view, logText]);
-
-  if (view === "audit") {
-    return (
-      <div className="flex flex-col gap-6">
-        <Tabs value={view} onValueChange={(v) => setView(v as SubView)}>
-          <TabsList aria-label="Logs">
-            <TabsTrigger value="agent">Agent logs</TabsTrigger>
-            <TabsTrigger value="audit">Audit log</TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <AuditTab agentId={agentId} />
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-3">
       <Tabs value={view} onValueChange={(v) => setView(v as SubView)}>
         <TabsList aria-label="Logs">
-          <TabsTrigger value="agent">Agent logs</TabsTrigger>
+          <TabsTrigger value="agent">Device logs</TabsTrigger>
           <TabsTrigger value="audit">Audit log</TabsTrigger>
         </TabsList>
       </Tabs>
-
-      {error ? (
-        <Alert variant="destructive">
-          <AlertDescription>
-            {pollingPaused ? `Auto-refresh paused: ${error}` : error}
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <div className="flex min-h-0 flex-col gap-3">
-        <Card>
-          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
-            <CardTitle>Live tail</CardTitle>
-            <div className="flex items-center gap-3">
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
-                <Checkbox
-                  checked={autoRefresh}
-                  onCheckedChange={(checked) => setAutoRefresh(checked === true)}
-                  aria-label="Auto-refresh logs"
-                />
-                Auto-refresh
-              </label>
-              <Button variant="outline" size="sm" disabled={refreshing} onClick={() => void refreshTail()}>
-                {refreshing && <Spinner />} <RefreshCw /> {pollingPaused ? "Retry" : "Refresh"}
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            <Field>
-              <FieldLabel htmlFor="agent-log-source">Log file</FieldLabel>
-              <FieldDescription>Last ~512 KiB.</FieldDescription>
-              <Select
-                value={sourceId}
-                disabled={loadingSources}
-                onValueChange={(v) => { if (v) setSourceId(v); }}
-              >
-                <SelectTrigger id="agent-log-source" className="w-full">
-                  <SelectValue placeholder={loadingSources ? "Loading…" : "Choose a log"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {sources.length === 0 ? (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">No log sources</div>
-                  ) : (
-                    sources.map((s) => (
-                      <SelectItem key={s.id} value={s.id} title={s.path}>
-                        {s.label}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </Field>
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Info className="size-3.5" />
-              Scroll up to pause following.
-            </p>
-          </CardContent>
-        </Card>
-
-        <div className="h-[500px] overflow-hidden rounded-xl bg-muted/50">
-          <textarea
-            ref={viewportRef}
-            aria-label="Agent log output"
-            value={logText || (tailFailed ? "Logs unavailable." : loadingSources || tailPending ? "Loading…" : "No log data.")}
-            readOnly
-            spellCheck={false}
-            wrap="off"
-            onScroll={() => {
-              const el = viewportRef.current;
-              if (!el) return;
-              const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-              stickToBottomRef.current = distanceFromBottom <= 25;
-            }}
-            className="block h-full w-full resize-none border-0 bg-transparent p-3 font-mono text-xs leading-relaxed whitespace-pre text-foreground outline-none"
-            onFocus={(e) => {
-              e.currentTarget.style.outline = "2px solid var(--success)";
-              e.currentTarget.style.outlineOffset = "2px";
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.outline = "none";
-              e.currentTarget.style.outlineOffset = "0";
-            }}
-          />
-        </div>
-        {selectedSource?.path && (
-          <p className="font-mono text-xs text-muted-foreground">{selectedSource.path}</p>
-        )}
-      </div>
+      {view === "audit" ? <AuditTab agentId={agentId} /> : <DeviceLog key={agentId} agentId={agentId} />}
     </div>
   );
 }
 
-function useAgentLogData(agentId: string, view: SubView, autoRefresh: boolean) {
+function DeviceLog({ agentId }: { agentId: string }) {
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [following, setFollowing] = useState(true);
+  const [wrap, setWrap] = useState(false);
+  const [filter, setFilter] = useState("");
+  const log = useAgentLogData(agentId, autoRefresh);
+
+  const selectedSource = useMemo(() => log.sources.find((s) => s.id === log.sourceId) ?? null, [log.sources, log.sourceId]);
+  const filtered = useMemo(() => filterLog(log.logText, filter), [log.logText, filter]);
+  const placeholder = logPlaceholder({ failed: log.tailFailed, waiting: log.loadingSources || log.tailPending, filtering: filter.trim() !== "", total: filtered.total });
+
+  return (
+    <div className="overflow-hidden rounded-xl bg-card">
+      <div className="flex flex-col gap-3 p-3 sm:p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <SourcePicker
+            sources={log.sources}
+            value={log.sourceId}
+            loading={log.loadingSources}
+            onChange={(id) => { log.setSourceId(id); setFollowing(true); }}
+          />
+          <FilterInput value={filter} onChange={setFilter} />
+          <RefreshButton
+            onClick={() => void log.refresh()}
+            loading={log.refreshing}
+            label={log.pollingPaused ? "Retry loading the log" : "Refresh log"}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-muted-foreground">
+          <p role="status" className="min-w-0 basis-full tabular-nums sm:flex-1 sm:basis-0">
+            <LogState autoRefresh={autoRefresh} following={following} paused={log.pollingPaused} count={logCountLabel(filtered)} empty={filtered.total === 0} />
+          </p>
+          {autoRefresh && !following && (
+            <Button variant="outline" size="sm" className="pointer-coarse:h-9" onClick={() => setFollowing(true)}>
+              <ArrowDownToLine /> Jump to latest
+            </Button>
+          )}
+          <label className="flex cursor-pointer items-center gap-2 pointer-coarse:min-h-9">
+            <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} aria-label="Auto-refresh" />
+            Auto-refresh
+          </label>
+          <Button variant="outline" size="sm" className="pointer-coarse:h-9" aria-pressed={wrap} onClick={() => setWrap((w) => !w)}>
+            <WrapText className={cn(wrap && "text-primary")} /> Wrap lines
+          </Button>
+          <CopyTextButton text={filtered.text} label="Copy" disabled={!filtered.text} />
+        </div>
+      </div>
+      {log.error ? (
+        <LoadFailed what={log.pollingPaused ? "the log (auto-refresh paused)" : "the log"} detail={log.error} onRetry={() => void log.refresh()} />
+      ) : null}
+      <div className="mt-3 h-[clamp(14rem,calc(100dvh-22rem),40rem)] border-t border-foreground/[0.06] bg-muted/40">
+        <LogViewer
+          label="Device log output"
+          text={filtered.text}
+          placeholder={placeholder}
+          wrap={wrap}
+          following={following}
+          onFollowingChange={setFollowing}
+        />
+      </div>
+      {selectedSource?.path && (
+        <div className="px-3 py-2 text-xs text-muted-foreground sm:px-4">
+          <CopyValue text={selectedSource.path} label="log path" mono className="text-xs" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SourcePicker({ sources, value, loading, onChange }: {
+  sources: { id: string; label: string; path: string }[]; value: string; loading: boolean; onChange: (id: string) => void;
+}) {
+  return (
+    <Select value={value} disabled={loading && sources.length === 0} onValueChange={(v) => { if (v) onChange(v); }}>
+      <SelectTrigger aria-label="Log file" className="w-full min-w-0 sm:w-72">
+        <SelectValue placeholder={loading ? "Loading…" : "Choose a log"} />
+      </SelectTrigger>
+      <SelectContent>
+        {sources.length === 0 ? (
+          <div className="px-2 py-1.5 text-xs text-muted-foreground">No logs on this device</div>
+        ) : (
+          sources.map((s) => (
+            <SelectItem key={s.id} value={s.id} title={s.path}>
+              {s.label}
+            </SelectItem>
+          ))
+        )}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function FilterInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <InputGroup className="h-9 min-w-0 flex-1 basis-48">
+      <InputGroupAddon>
+        <Search />
+      </InputGroupAddon>
+      <InputGroupInput aria-label="Filter log lines" placeholder="Filter lines" value={value} onChange={(e) => onChange(e.target.value)} />
+      {value && (
+        <InputGroupAddon align="inline-end">
+          <InputGroupButton size="icon-xs" aria-label="Clear filter" onClick={() => onChange("")}>
+            <X />
+          </InputGroupButton>
+        </InputGroupAddon>
+      )}
+    </InputGroup>
+  );
+}
+
+function LogState({ autoRefresh, following, paused, count, empty }: {
+  autoRefresh: boolean; following: boolean; paused: boolean; count: string; empty: boolean;
+}) {
+  const live = autoRefresh && !paused;
+  const state = paused ? "Auto-refresh paused"
+    : !autoRefresh ? "Auto-refresh off"
+    : following ? `Live · every ${LOG_POLL_MS / 1000} s`
+    : "Paused while you read";
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2">
+      <span className="inline-flex items-center gap-1.5">
+        <span className={cn("size-[7px] rounded-full", live && following ? "bg-success" : "bg-muted-foreground/50")} aria-hidden="true" />
+        {state}
+      </span>
+      {!empty && <span>· {count} · last 512 KiB</span>}
+    </span>
+  );
+}
+
+function useAgentLogData(agentId: string, autoRefresh: boolean) {
   const [sourceId, setSourceId] = useState<string>("local_agent");
   const [refreshing, setRefreshing] = useState(false);
 
-  const sourcesQuery = useQuery({ ...agentQueries.logSources(agentId), enabled: view === "agent" });
+  const sourcesQuery = useQuery(agentQueries.logSources(agentId));
   const sources = sourcesQuery.isError ? NO_SOURCES : sourcesQuery.data?.sources ?? NO_SOURCES;
   const loadingSources = sourcesQuery.isFetching;
   // Fall back to the first source the agent offers when the current pick isn't one of them.
@@ -194,7 +186,6 @@ function useAgentLogData(agentId: string, view: SubView, autoRefresh: boolean) {
 
   const tailQuery = useQuery({
     ...agentQueries.logTail(agentId, sourceId),
-    enabled: view === "agent",
     refetchInterval: (query) => logPollInterval(autoRefresh, query.state.error),
     retry: logRetry,
   });
@@ -203,14 +194,16 @@ function useAgentLogData(agentId: string, view: SubView, autoRefresh: boolean) {
   const error = failure ? errorText(failure) : null;
   const pollingPaused = autoRefresh && isDefinitiveFailure(tailQuery.error);
 
-  const refreshTail = async () => {
+  /** Reload the tail, and the list of logs too when that is what failed. */
+  const refresh = async () => {
     setRefreshing(true);
     try {
+      if (sourcesQuery.isError) await sourcesQuery.refetch();
       await tailQuery.refetch();
     } finally {
       setRefreshing(false);
     }
   };
 
-  return { sourceId, setSourceId, refreshing, sources, loadingSources, logText, error, pollingPaused, refreshTail, tailFailed: tailQuery.isError, tailPending: tailQuery.isPending };
+  return { sourceId, setSourceId, refreshing, sources, loadingSources, logText, error, pollingPaused, refresh, tailFailed: tailQuery.isError, tailPending: tailQuery.isPending };
 }

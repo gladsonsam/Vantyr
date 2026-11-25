@@ -83,10 +83,12 @@ export function MonitoringToolbar({
 }
 
 /** A failed load must not read as "nothing happened": say so and offer the retry. */
-export function LoadFailed({ what, onRetry }: { what: string; onRetry: () => void }) {
+export function LoadFailed({ what, detail, onRetry }: { what: string; /** Why, when the server said. */ detail?: string; onRetry: () => void }) {
   return (
     <div role="alert" className="mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive sm:mx-5">
-      <span>Couldn’t load {what}.</span>
+      <span className="min-w-0 break-words">
+        Couldn’t load {what}.{detail ? ` ${detail}` : ""}
+      </span>
       <Button variant="outline" size="sm" onClick={onRetry}>
         Try again
       </Button>
