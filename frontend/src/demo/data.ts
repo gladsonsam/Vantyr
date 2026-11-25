@@ -295,8 +295,8 @@ export const demoAppBlockRules: AppBlockRule[] = [
     match_mode: "contains",
     enabled: true,
     created_at: isoHoursAgo(12),
-    scopes: [{ kind: "group", group_id: "grp-workstations" }],
-    schedules: [],
+    scopes: [{ kind: "group", group_id: "grp-workstations" }, { kind: "group", group_id: "grp-kiosks" }, { kind: "agent", agent_id: "sitting-room" }],
+    schedules: [1, 2, 3, 4, 5].map((day_of_week) => ({ day_of_week, start_minute: 9 * 60, end_minute: 17 * 60 })),
   },
   {
     id: 14,
@@ -316,7 +316,10 @@ export const demoAppBlockRules: AppBlockRule[] = [
     enabled: true,
     created_at: isoHoursAgo(60),
     scopes: [{ kind: "group", group_id: "grp-kiosks" }],
-    schedules: [],
+    schedules: [
+      { day_of_week: 5, start_minute: 22 * 60, end_minute: 1440 },
+      { day_of_week: 6, start_minute: 0, end_minute: 6 * 60 },
+    ],
   },
 ];
 
@@ -328,6 +331,25 @@ export const demoInternetBlockRules: InternetBlockRule[] = [
     created_at: isoHoursAgo(72),
     scopes: [{ kind: "group", group_id: "grp-kiosks" }],
     schedules: [{ day_of_week: 1, start_minute: 18 * 60, end_minute: 23 * 60 + 59 }],
+  },
+  {
+    id: 21,
+    name: "",
+    enabled: false,
+    created_at: isoHoursAgo(30),
+    scopes: [{ kind: "all" }],
+    schedules: [],
+  },
+  {
+    id: 22,
+    name: "School nights",
+    enabled: true,
+    created_at: isoHoursAgo(10),
+    scopes: [{ kind: "group", group_id: "grp-workstations" }, { kind: "agent", agent_id: "sitting-room" }],
+    schedules: [
+      { day_of_week: 0, start_minute: 21 * 60, end_minute: 1440 },
+      { day_of_week: 1, start_minute: 0, end_minute: 7 * 60 },
+    ],
   },
 ];
 
@@ -342,7 +364,10 @@ export const demoScheduledScripts: ScheduledScript[] = [
     created_at: isoHoursAgo(24),
     updated_at: isoHoursAgo(4),
     scopes: [{ kind: "all", group_id: null, agent_id: null }],
-    schedules: [{ frequency: "daily", day_of_week: null, fire_minute: 3 * 60 }],
+    schedules: [
+      { frequency: "daily", day_of_week: null, fire_minute: 3 * 60 },
+      { frequency: "hourly", day_of_week: null, fire_minute: 15 },
+    ],
   },
   {
     id: 31,
@@ -361,7 +386,7 @@ export const demoScheduledScripts: ScheduledScript[] = [
     name: "Windows update check",
     shell: "powershell",
     script: "Get-WindowsUpdate -AcceptAll -Install -AutoReboot",
-    timeout_secs: 600,
+    timeout_secs: 300,
     enabled: true,
     created_at: isoHoursAgo(48),
     updated_at: isoHoursAgo(12),
@@ -501,14 +526,21 @@ export function demoSoftware(agentId: string): AgentSoftwareRow[] {
 }
 
 export function demoScheduledEvents(): ScheduledScriptEvent[] {
+  const outcomes = [
+    { status: "failed", output: "--- STDERR ---\nAccess is denied.\n--- ERROR ---\nExit code 1" },
+    { status: "success", output: "--- STDOUT ---\nOsName      OsVersion\n------      ---------\nWindows 11  10.0.26100\n" },
+    { status: "success", output: "--- STDOUT ---\nDiagnostics collected\n" },
+    { status: "skipped_offline", output: null },
+    { status: "fired", output: null },
+  ];
   return demoAgents.slice(0, 5).map((a, i) => ({
     script_id: demoScheduledScripts[0].id,
     agent_id: a.id,
     agent_name: a.name,
     rule_name: demoScheduledScripts[0].name,
-    status: i % 4 === 0 ? "failed" : "ok",
-    expected_fire_time: isoHoursAgo(i + 1),
-    output: i % 4 === 0 ? "Timed out in demo mode" : "Diagnostics collected",
+    status: outcomes[i].status,
+    expected_fire_time: isoHoursAgo(1),
+    output: outcomes[i].output,
     is_manual: i === 0,
   }));
 }

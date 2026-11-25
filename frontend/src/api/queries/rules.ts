@@ -31,6 +31,8 @@ export const ruleKeys = {
   /** Scheduled scripts list (`/scheduled-scripts`); their run events nest under it. */
   scheduledScripts: () => [...ruleKeys.all, "scheduled-scripts"] as const,
   scheduledScriptEventsAll: (params: ListParams) => [...ruleKeys.scheduledScripts(), "events", params] as const,
+  /** One script's run log; it nests under the scripts list so a refresh of the list reloads it too. */
+  scheduledScriptEventsForScript: (scriptId: number, params: ListParams) => [...ruleKeys.scheduledScripts(), "events", "script", scriptId, params] as const,
   /** Effective internet block for one agent (manual toggle or a matching rule). */
   internetBlocked: (agentId: string) => [...agentKeys.agent(agentId), "internet-blocked"] as const,
   /** Alert rules, app block rules and internet block that currently apply to one agent. */
@@ -96,6 +98,11 @@ export const ruleQueries = {
     queryOptions({
       queryKey: ruleKeys.scheduledScriptEventsAll(params),
       queryFn: () => api.scheduledScriptEventsAll(params),
+    }),
+  scheduledScriptEventsForScript: (scriptId: number, params: { limit?: number }) =>
+    queryOptions({
+      queryKey: ruleKeys.scheduledScriptEventsForScript(scriptId, params),
+      queryFn: () => api.scheduledScriptEventsForScript(scriptId, params),
     }),
   internetBlocked: (agentId: string) =>
     queryOptions({

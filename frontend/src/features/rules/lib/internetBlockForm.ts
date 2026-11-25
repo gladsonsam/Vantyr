@@ -1,9 +1,10 @@
 import { z } from "zod";
 import type { api } from "@/api";
 import { emptyScopeRow } from "../rulesUtils";
-import { emptyScheduleRow, expandScheduleRows, scheduleRowSchema } from "./scheduleRows";
+import { emptyScheduleRow, expandScheduleRows, scheduleRowSchema, scheduleRowsProblem, SCHEDULE_NEEDS_WINDOW } from "./scheduleRows";
+import { scopesProblem } from "./scopeRows";
 
-export const SCHEDULE_NEEDS_WINDOW = "Schedule is enabled but no valid windows were provided (use HH:MM).";
+export { SCHEDULE_NEEDS_WINDOW };
 
 export const internetBlockSchema = z
   .object({
@@ -17,16 +18,26 @@ export const internetBlockSchema = z
     schedule_rows: z.array(scheduleRowSchema),
   })
   .superRefine((form, ctx) => {
-    if (form.scheduled && expandScheduleRows(form.schedule_rows).length === 0) {
-      ctx.addIssue({ code: "custom", path: ["schedule_rows"], message: SCHEDULE_NEEDS_WINDOW });
-    }
+    const scopes = scopesProblem(form.scopes);
+    if (scopes) ctx.addIssue({ code: "custom", path: ["scopes"], message: scopes });
+    const schedule = form.scheduled ? scheduleRowsProblem(form.schedule_rows) : null;
+    if (schedule) ctx.addIssue({ code: "custom", path: ["schedule_rows"], message: schedule });
   });
 
 export type InternetBlockForm = z.infer<typeof internetBlockSchema>;
 
-/** Editing an existing rule's schedule only touches the windows. */
-export const internetScheduleSchema = z.object({ schedule_rows: z.array(scheduleRowSchema) });
+/** Editing an existing rule's schedule only touches the windows; without "only during set hours" it applies always. */
+export const internetScheduleSchema = z
+  .object({ scheduled: z.boolean(), schedule_rows: z.array(scheduleRowSchema) })
+  .superRefine((form, ctx) => {
+    const schedule = form.scheduled ? scheduleRowsProblem(form.schedule_rows) : null;
+    if (schedule) ctx.addIssue({ code: "custom", path: ["schedule_rows"], message: schedule });
+  });
 export type InternetScheduleForm = z.infer<typeof internetScheduleSchema>;
+
+/** Windows to store for the schedule form: none means the rule applies all the time. */
+export const internetScheduleWindows = (form: InternetScheduleForm) =>
+  form.scheduled ? expandScheduleRows(form.schedule_rows) : [];
 
 export type InternetBlockRuleBody = Parameters<typeof api.internetBlockRulesCreate>[0];
 

@@ -12,11 +12,56 @@ export function emptyScheduleRow(): ScheduleFormRow {
   return { day_of_week: 1, start: "00:00", end: "23:59" };
 }
 
+/** A window that may run past midnight (`endDay` differs from `day`). */
+export type Span = { day: number; start: number; endDay: number; end: number };
+
+/**
+ * Join the two stored halves of an overnight window (Mon 22:00–24:00 + Tue 00:00–06:00) back into the one
+ * window it was entered as. Only pairs the editor itself would split are joined, so re-saving is lossless.
+ */
+export function joinOvernight(windows: ScheduleWindow[]): Span[] {
+  const used = new Set<number>();
+  const spans: Span[] = [];
+  windows.forEach((w, i) => {
+    if (used.has(i)) return;
+    if (w.end_minute === 1440) {
+      const nextDay = (w.day_of_week + 1) % 7;
+      const j = windows.findIndex(
+        (x, k) => k !== i && !used.has(k) && x.day_of_week === nextDay && x.start_minute === 0 && x.end_minute > 0 && x.end_minute < w.start_minute,
+      );
+      if (j >= 0) {
+        used.add(j);
+        spans.push({ day: w.day_of_week, start: w.start_minute, endDay: nextDay, end: windows[j].end_minute });
+        return;
+      }
+    }
+    spans.push({ day: w.day_of_week, start: w.start_minute, endDay: w.day_of_week, end: w.end_minute });
+  });
+  return spans;
+}
+
+export const SCHEDULE_NEEDS_WINDOW = "Schedule is enabled but no valid windows were provided (use HH:MM).";
+
+/**
+ * Why these rows can't be saved as a schedule, or null when they can. A row the server would never receive
+ * (an unreadable time, or the same start and end) is named instead of being silently dropped.
+ */
+export function scheduleRowsProblem(rows: ScheduleFormRow[]): string | null {
+  if (expandScheduleRows(rows).length === 0) return SCHEDULE_NEEDS_WINDOW;
+  const bad = rows.findIndex((r) => {
+    const s = timeToMinute(r.start);
+    const e = timeToMinute(r.end);
+    return s == null || e == null || s === e;
+  });
+  return bad < 0 ? null : `Window ${bad + 1} needs two different times in HH:MM.`;
+}
+
 /** Editable rows for stored windows; a rule with none gets one default row to edit. */
 export function scheduleToRows(schedules: RuleSchedule[] | undefined | null): ScheduleFormRow[] {
   const list = Array.isArray(schedules) ? schedules : [];
   if (list.length === 0) return [emptyScheduleRow()];
-  return list.map((w) => ({ day_of_week: w.day_of_week, start: minuteToTime(w.start_minute), end: minuteToTime(w.end_minute) }));
+  // The two stored halves of an overnight window come back as the one row it was entered as.
+  return joinOvernight(list).map((s) => ({ day_of_week: s.day, start: minuteToTime(s.start), end: minuteToTime(s.end) }));
 }
 
 /**

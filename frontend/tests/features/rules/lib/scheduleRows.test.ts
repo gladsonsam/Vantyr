@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyScheduleRow, expandScheduleRows, scheduleToRows } from "@/features/rules/lib/scheduleRows";
+import { emptyScheduleRow, expandScheduleRows, scheduleRowsProblem, SCHEDULE_NEEDS_WINDOW, scheduleToRows } from "@/features/rules/lib/scheduleRows";
 import { updateScopeRow } from "@/features/rules/lib/scopeRows";
 
 describe("expandScheduleRows", () => {
@@ -41,6 +41,34 @@ describe("scheduleToRows", () => {
     expect(scheduleToRows([{ day_of_week: 4, start_minute: 65, end_minute: 1440 }])).toEqual([
       { day_of_week: 4, start: "01:05", end: "24:00" },
     ]);
+  });
+});
+
+describe("scheduleToRows overnight", () => {
+  it("returns the two stored halves of an overnight window as the one row it was entered as", () => {
+    const rows = [{ day_of_week: 6, start: "22:00", end: "06:00" }];
+    expect(scheduleToRows(expandScheduleRows(rows))).toEqual(rows);
+    // Editing and saving again stores exactly what was stored before.
+    expect(expandScheduleRows(scheduleToRows(expandScheduleRows(rows)))).toEqual(expandScheduleRows(rows));
+  });
+});
+
+describe("scheduleRowsProblem", () => {
+  it("accepts readable windows", () => {
+    expect(scheduleRowsProblem([{ day_of_week: 1, start: "09:00", end: "17:00" }])).toBeNull();
+  });
+
+  it("asks for a window when none can be stored", () => {
+    expect(scheduleRowsProblem([{ day_of_week: 1, start: "nope", end: "17:00" }])).toBe(SCHEDULE_NEEDS_WINDOW);
+  });
+
+  it("names a window that would otherwise be dropped silently beside valid ones", () => {
+    expect(
+      scheduleRowsProblem([
+        { day_of_week: 1, start: "09:00", end: "17:00" },
+        { day_of_week: 2, start: "10:00", end: "10:00" },
+      ]),
+    ).toBe("Window 2 needs two different times in HH:MM.");
   });
 });
 
