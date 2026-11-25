@@ -98,6 +98,18 @@ describe("browser notifications", () => {
     await click(toggle());
     expect(text()).toContain("Couldn't turn on notifications");
     expect(text()).toContain("Server said no");
+    expect(subscription).toBeNull();
+    expect(toggle().getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("reports a browser refusal to remove a subscription after the server accepted", async () => {
+    subscription = makeSub();
+    subscription.unsubscribe = vi.fn(async () => false);
+    await render();
+    await click(toggle());
+    expect(text()).toContain("Couldn't turn off notifications");
+    expect(text()).toContain("this browser could not remove its subscription");
+    expect(toggle().getAttribute("aria-checked")).toBe("true");
   });
 
   it("keeps the browser subscribed when the server cannot be told, so Off is never a lie", async () => {

@@ -34,15 +34,22 @@ async function fetchPushStatus(): Promise<PushStatus> {
 }
 
 async function registerPushSubscription(publicKey: string): Promise<void> {
+  const existing = await getExistingSubscription();
   const sub = await subscribeToPush(publicKey);
   const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
   if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
     throw new Error("Browser returned an incomplete push subscription.");
   }
-  await api.pushSubscribe({
-    endpoint: json.endpoint,
-    keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-  });
+  try {
+    await api.pushSubscribe({
+      endpoint: json.endpoint,
+      keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+    });
+  } catch (error) {
+    // Do not leave a new browser subscription looking enabled after registration failed.
+    if (!existing) await sub.unsubscribe();
+    throw error;
+  }
 }
 
 /** Tells the server first, so a refused request leaves this browser still subscribed and the switch still honest. */
@@ -50,7 +57,9 @@ async function removePushSubscription(): Promise<void> {
   const sub = await getExistingSubscription();
   if (!sub) return;
   await api.pushUnsubscribe(sub.endpoint);
-  await sub.unsubscribe().catch(() => undefined);
+  if (!(await sub.unsubscribe())) {
+    throw new Error("The server stopped notifications, but this browser could not remove its subscription. Try again.");
+  }
 }
 
 function usePushToggle(supported: boolean) {
