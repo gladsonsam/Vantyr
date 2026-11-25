@@ -1,4 +1,4 @@
-import { Activity, History, MoreHorizontal, Search, X } from "lucide-react";
+import { Activity, Check, Copy, History, MoreHorizontal } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import {
   DropdownMenu,
@@ -6,13 +6,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@vantyr/ui/components/dropdown-menu";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
 import { DataTable } from "@/components/common/data-table/DataTable";
 import { DataTableColumnHeader } from "@/components/common/data-table/DataTableColumnHeader";
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/api";
@@ -26,7 +25,8 @@ import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabiliti
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 import { isAdminRole } from "@/features/auth/permissions";
 import type { DashboardRole } from "@/api/types";
-import { RefreshButton } from "@/components/common/RefreshButton";
+import { LoadFailed, MonitoringToolbar, ROW_ACTIONS_CLASS, ROW_ACTION_BUTTON_CLASS } from "@/features/agent-detail/components/MonitoringToolbar";
+import { categoryOf, listCountLabel, sharedValue, splitUrl } from "@/features/agent-detail/lib/monitoring";
 import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
 function browserToExe(browserName: string | null | undefined): string | null {
@@ -40,11 +40,10 @@ function browserToExe(browserName: string | null | undefined): string | null {
   return null;
 }
 
-
-
 interface URLEvent {
   id: number;
   url: string;
+  title: string;
   browser: string;
   timestamp: string;
   user?: string | null;
@@ -57,35 +56,98 @@ interface UrlsTabProps {
   dashboardRole?: DashboardRole | null;
 }
 
-function normalizeHref(value: string | undefined): string {
-  const raw = (value || "").trim();
-  if (!raw) return "#";
-  if (/^https?:\/\//i.test(raw)) return raw;
-  return `https://${raw}`;
-}
-
 function matchesUrl(item: URLEvent, filteringText: string): boolean {
   const searchText = filteringText.toLowerCase();
   return (
     (item.url || "").toLowerCase().includes(searchText) ||
+    (item.title || "").toLowerCase().includes(searchText) ||
     (item.browser || "").toLowerCase().includes(searchText) ||
     (item.category || "").toLowerCase().includes(searchText) ||
     (item.user || "").toLowerCase().includes(searchText)
   );
 }
 
-const URLS_PAGE = { limit: 500 };
+const URLS_LIMIT = 500;
+const URLS_PAGE = { limit: URLS_LIMIT };
 const NO_URLS: URLEvent[] = [];
+const VISITS = { one: "visit", many: "visits" };
 
 function toUrlEvents({ rows }: { rows: UrlVisit[] }): URLEvent[] {
   return rows.map((row) => ({
     id: row.id ?? 0,
     url: row.url ?? "",
+    title: row.title?.trim() ?? "",
     browser: row.browser ?? "—",
     timestamp: row.ts ?? "",
     user: row.user ?? null,
-    category: row.category ?? null,
+    category: categoryOf(row.category) ?? null,
   }));
+}
+
+/** Copies the full address: the row shows it shortened, this is the way to get all of it. */
+function CopyUrlButton({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className={ROW_ACTION_BUTTON_CLASS}
+      aria-label={copied ? "URL copied" : "Copy full URL"}
+      title={copied ? "Copied" : "Copy full URL"}
+      onClick={() => {
+        copyUrl(url, () => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+    >
+      {copied ? <Check /> : <Copy />}
+    </Button>
+  );
+}
+
+function copyUrl(url: string, onCopied?: () => void) {
+  navigator.clipboard
+    ?.writeText(url)
+    .then(onCopied)
+    .catch(() => undefined);
+}
+
+/** Wide screens: three icon buttons. Phones: one menu, so the address keeps the width. */
+function UrlRowActions({ item, openInActivity, openInRecall }: {
+  item: URLEvent;
+  openInActivity: (q: string) => void;
+  openInRecall: (iso: string) => void;
+}) {
+  const hasUrl = item.url.trim() !== "";
+  if (!hasUrl && !item.timestamp) return null;
+  return (
+    <span className={ROW_ACTIONS_CLASS}>
+      <span className="flex items-center gap-0.5 max-sm:hidden">
+        {hasUrl ? <CopyUrlButton url={item.url} /> : null}
+        {hasUrl ? (
+          <Button variant="ghost" size="icon-sm" className={ROW_ACTION_BUTTON_CLASS} aria-label="Show in timeline" title="Show in timeline" onClick={() => openInActivity(item.url)}>
+            <Activity />
+          </Button>
+        ) : null}
+        {item.timestamp ? (
+          <Button variant="ghost" size="icon-sm" className={ROW_ACTION_BUTTON_CLASS} aria-label="Open in Recall" title="Open in Recall" onClick={() => openInRecall(item.timestamp)}>
+            <History />
+          </Button>
+        ) : null}
+      </span>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className={`${ROW_ACTION_BUTTON_CLASS} sm:hidden`} aria-label="Visit actions" title="Visit actions" />}>
+          <MoreHorizontal />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {hasUrl ? <DropdownMenuItem onClick={() => copyUrl(item.url)}>Copy full URL</DropdownMenuItem> : null}
+          {hasUrl ? <DropdownMenuItem onClick={() => openInActivity(item.url)}>Show in timeline</DropdownMenuItem> : null}
+          {item.timestamp ? <DropdownMenuItem onClick={() => openInRecall(item.timestamp)}>Open in Recall</DropdownMenuItem> : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </span>
+  );
 }
 
 const columnHelper = createDataTableColumns<URLEvent>();
@@ -109,38 +171,43 @@ function urlColumns(
       meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
     }),
     columnHelper.accessor("url", {
-      header: ({ column }) => <DataTableColumnHeader column={column} title="URL" />,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Website" />,
       cell: ({ row }) => {
         const item = row.original;
+        const { host, rest, href } = splitUrl(item.url);
         return (
-          <div className="flex min-w-0 items-center justify-between gap-2.5">
-            <span className="min-w-0 flex-1 truncate">
-              <a
-                href={normalizeHref(item.url)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[13px] text-primary hover:underline"
-              >
-                {item.url || "—"}
-              </a>
-            </span>
-            {/* Row actions appear on hover (mouse) and stay as small icons on touch screens. */}
-            <span className="flex shrink-0 items-center gap-1 transition-opacity focus-within:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover/row:opacity-100">
-              {item.url.trim() ? (
-                <Button variant="ghost" size="icon-xs" aria-label="Show in activity" title="Show in activity" onClick={() => openInActivity(item.url)}>
-                  <Activity />
-                </Button>
+          <div className="flex min-w-0 items-start justify-between gap-2.5">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-baseline gap-x-2 max-sm:flex-wrap">
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={item.url}
+                  className="max-w-full shrink-0 truncate text-sm font-medium text-foreground hover:underline"
+                >
+                  {host || "—"}
+                </a>
+                {item.title ? <span className="truncate text-[13px] text-muted-foreground max-sm:basis-full">{item.title}</span> : null}
+              </div>
+              {rest ? (
+                <div className="truncate text-xs text-muted-foreground" title={item.url}>
+                  {rest}
+                </div>
               ) : null}
-              {item.timestamp ? (
-                <Button variant="ghost" size="icon-xs" aria-label="Open in Recall" title="Open in Recall" onClick={() => openInRecall(item.timestamp)}>
-                  <History />
-                </Button>
-              ) : null}
-            </span>
+            </div>
+            <UrlRowActions item={item} openInActivity={openInActivity} openInRecall={openInRecall} />
           </div>
         );
       },
-      meta: { className: "max-sm:order-first max-sm:basis-full" },
+      meta: { className: "w-full max-w-0 max-sm:order-first max-sm:basis-full" },
+    }),
+    columnHelper.accessor((item) => item.category ?? undefined, {
+      id: "category",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Category" />,
+      cell: ({ row }) => row.original.category ?? <span className="text-muted-foreground">—</span>,
+      // Nothing categorised yet: a column of "Uncategorized" says nothing, so it stays hidden.
+      meta: { className: "whitespace-nowrap", hideWhenUniform: true },
     }),
     columnHelper.accessor("browser", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Browser" />,
@@ -160,15 +227,41 @@ function urlColumns(
           </div>
         );
       },
-      meta: { className: "whitespace-nowrap" },
-    }),
-    columnHelper.accessor((item) => item.category ?? undefined, {
-      id: "category",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Category" />,
-      cell: ({ row }) => row.original.category || "—",
-      meta: { className: "whitespace-nowrap" },
+      // One browser on every row is a fact about the list, not about each visit (see the line under the search).
+      meta: { className: "whitespace-nowrap", hideWhenUniform: true },
     }),
   ]);
+}
+
+/** Admin-only history actions. */
+function CategorizeMenu({ disabled, pending, onRun }: { disabled: boolean; pending: boolean; onRun: () => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="More URL actions" title="More" />}>
+        <MoreHorizontal />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          disabled={disabled || pending}
+          title={disabled ? "Nothing to categorize." : undefined}
+          onClick={onRun}
+        >
+          {pending ? "Categorizing…" : "Categorize history"}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** What every visit has in common (columns that hide while rows agree leave their one value here). */
+function SharedFacts({ values }: { values: string[] }) {
+  return (
+    <>
+      {values.filter(Boolean).map((value) => (
+        <span key={value}>· {value}</span>
+      ))}
+    </>
+  );
 }
 
 export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabProps) {
@@ -223,10 +316,10 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
   });
   const filteringText = String(table.state.globalFilter ?? "");
 
-  const hasUncategorized = useMemo(
-    () => items.some((r) => (r.category ?? "").trim() === ""),
-    [items]
-  );
+  const hasUncategorized = useMemo(() => items.some((r) => !r.category), [items]);
+  // Columns that hide while every row agrees still owe the reader that one value.
+  const sharedBrowser = useMemo(() => sharedValue(items.map((r) => r.browser)), [items]);
+  const sharedCategory = useMemo(() => sharedValue(items.map((r) => r.category ?? "")), [items]);
 
   if (!urlTrackingAvailable) {
     return <CapabilityNotice info={agentInfo} capability="url_tracking" title="URL tracking unavailable" />;
@@ -234,61 +327,34 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
 
   return (
     <div className="overflow-hidden rounded-xl bg-card">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
-        <h2 className="font-heading text-base font-medium">
-          Visits{" "}
-          <span className="ml-1 text-sm font-normal text-muted-foreground tabular-nums">{items.length}</span>
-        </h2>
-        <div className="flex items-center gap-2">
-          {canAdmin && (
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="More URL actions" title="More" />}>
-                <MoreHorizontal />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  disabled={!hasUncategorized || backfill.isPending}
-                  title={!hasUncategorized ? "Nothing to categorize." : undefined}
-                  onClick={() => { if (canAdmin) backfill.mutate(); }}
-                >
-                  {backfill.isPending ? "Categorizing…" : "Categorize history"}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          <RefreshButton onClick={() => void urlsQuery.refetch()} />
-        </div>
-      </div>
-      <div className="px-5 pt-3">
-        <InputGroup className="h-9">
-          <InputGroupAddon>
-            <Search />
-          </InputGroupAddon>
-          <InputGroupInput
-            aria-label="Search URLs"
-            placeholder="URL or browser"
-            value={filteringText}
-            onChange={(e) => table.setGlobalFilter(e.target.value)}
-          />
-          {filteringText && (
-            <InputGroupAddon align="inline-end">
-              <InputGroupButton
-                size="icon-xs"
-                aria-label="Clear search"
-                onClick={() => table.setGlobalFilter("")}
-              >
-                <X />
-              </InputGroupButton>
-            </InputGroupAddon>
-          )}
-        </InputGroup>
-      </div>
+      <MonitoringToolbar
+        title="Websites visited"
+        searchLabel="Search URLs"
+        placeholder="Search websites"
+        query={filteringText}
+        onQueryChange={table.setGlobalFilter}
+        count={listCountLabel({
+          shown: table.getFilteredRowModel().rows.length,
+          loaded: items.length,
+          limit: URLS_LIMIT,
+          noun: VISITS,
+        })}
+        detail={<SharedFacts values={[sharedBrowser === "—" ? "" : sharedBrowser, sharedCategory]} />}
+        onRefresh={() => void urlsQuery.refetch()}
+        refreshing={loading && items.length > 0}
+        actions={
+          canAdmin ? (
+            <CategorizeMenu disabled={!hasUncategorized} pending={backfill.isPending} onRun={() => backfill.mutate()} />
+          ) : null
+        }
+      />
+      {urlsQuery.isError ? <LoadFailed what="website visits" onRetry={() => void urlsQuery.refetch()} /> : null}
       <div className="px-2 py-2">
         <DataTable dayGroupColumn="timestamp"
           table={table}
           loading={loading}
-          loadingText="Loading URLs…"
-          emptyText="No visits yet"
+          loadingText="Loading websites…"
+          emptyText={urlsQuery.isError ? "Nothing to show." : filteringText ? "No visits match this search." : "No websites visited yet."}
           bodyClassName="[&_td]:align-top"
         />
       </div>

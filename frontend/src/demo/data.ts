@@ -396,10 +396,13 @@ export function demoUrls(agentId: string, count = 24): UrlVisit[] {
     "https://news.ycombinator.com/",
     "https://outlook.office.com/mail/",
   ];
+  // Every few rows: a campaign link with a wall of tracking parameters, and a bare domain with no title.
+  const trackedUrl =
+    "https://www.example-shop.test/products/garden-chairs/summer-sale?utm_source=ads&utm_medium=cpc&utm_campaign=AU_EN_KWD_ACQ&ad_group=164750731181&gad_campaignid=21746669725&gclid=Cj0KCQiAdemoTrackingValue0123456789";
   return range(count).map((i) => ({
     id: i + 1,
-    url: urls[(i + agentId.length) % urls.length],
-    title: ["GitHub", "Tokio docs", "Cloudscape", "Hacker News", "Outlook"][i % 5],
+    url: i % 7 === 3 ? trackedUrl : i % 9 === 4 ? "https://example.org/" : urls[(i + agentId.length) % urls.length],
+    title: i % 9 === 4 ? null : i % 7 === 3 ? "Garden chairs — summer sale" : ["GitHub", "Tokio docs", "Cloudscape", "Hacker News", "Outlook"][i % 5],
     browser: i % 2 === 0 ? "Chrome" : "Edge",
     ts: isoMinutesAgo(i * 13 + 4),
     user: demoUserFor(agentId),
@@ -413,7 +416,10 @@ export function demoKeys(agentId: string, count = 12): KeySession[] {
     app: i % 2 === 0 ? "Code.exe" : "WindowsTerminal.exe",
     app_display: i % 2 === 0 ? "Visual Studio Code" : "Terminal",
     window_title: i % 2 === 0 ? "Vantyr - Visual Studio Code" : "PowerShell",
-    text: "[demo keystroke session redacted]",
+    text:
+      i % 3 === 0
+        ? "[demo keystroke session redacted] " + "Meeting notes for the quarterly review: budget, hiring plan and roadmap. ".repeat(6) + "[⌫][⌫]\nNext steps:\n- send summary\n- book follow-up\n- archive the old board"
+        : "[demo keystroke session redacted]",
     started_at: isoMinutesAgo(i * 17 + 5),
     updated_at: isoMinutesAgo(i * 17 + 2),
     user: demoUserFor(agentId),
