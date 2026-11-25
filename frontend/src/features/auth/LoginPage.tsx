@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
 import { Input } from "@vantyr/ui/components/input";
+import { Separator } from "@vantyr/ui/components/separator";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { AuthLayout } from "./AuthLayout";
-import { api, apiUrl, isApiError } from "@/api";
+import { api, apiUrl } from "@/api";
 import { authQueries } from "@/api/queries/auth";
+import { loginFailure } from "./loginErrors";
 import { canAutoRedirectToSso, redirectToSso } from "./sso";
 
 interface LoginPageProps {
@@ -21,6 +23,9 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [totpRequired, setTotpRequired] = useState(false);
   const [totpCode, setTotpCode] = useState("");
+  const usernameRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const totpRef = useRef<HTMLInputElement>(null);
 
   // A failed config load just leaves the SSO button hidden.
   const authConfig = useQuery(authQueries.config()).data;
@@ -37,13 +42,20 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     if (ssoRedirecting) redirectToSso();
   }, [ssoRedirecting]);
 
+  const goToSso = () => {
+    window.location.href = apiUrl("/auth/oidc/login");
+  };
+
   const handleSubmit = async () => {
+    if (loading) return;
     if (!username.trim()) {
       setError("Username is required");
+      usernameRef.current?.focus();
       return;
     }
     if (!password.trim()) {
       setError("Password is required");
+      passwordRef.current?.focus();
       return;
     }
 
@@ -52,38 +64,16 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
     try {
       await api.login(username, password, totpRequired ? totpCode.trim() : undefined);
-        onLoginSuccess();
+      onLoginSuccess();
     } catch (err) {
-      if (isApiError(err)) {
-        const payload = (err.payload ?? {}) as {
-          error?: string;
-          attempts_remaining?: number;
-          max_attempts_per_window?: number;
-          retry_after_secs?: number;
-          totp_required?: boolean;
-        };
-        const base = payload.error ?? err.message ?? "Login failed";
-        if (payload.totp_required) {
-          const attempted = totpRequired && totpCode.trim().length > 0;
-          setTotpRequired(true);
-          // Reveal the code field silently the first time; only show an error
-          // once the user has actually submitted a (wrong) code.
-          setError(attempted ? base : null);
-        } else if (err.status === 429 && typeof payload.retry_after_secs === "number") {
-          setError(`${base} Retry in about ${Math.ceil(payload.retry_after_secs)}s.`);
-        } else if (err.status === 401 && typeof payload.attempts_remaining === "number") {
-          const n = payload.attempts_remaining;
-          const max = payload.max_attempts_per_window;
-          const suffix = ` ${n} attempt${n === 1 ? "" : "s"} remaining before lockout${
-            typeof max === "number" ? ` (limit: ${max} wrong passwords / 15 min)` : ""
-          }.`;
-          setError(base + suffix);
-        } else {
-          setError(base);
-        }
-      } else {
-        setError("Failed to connect to server. Please try again.");
-      }
+      const failure = loginFailure(err, totpRequired && totpCode.trim().length > 0);
+      if (failure.totpRequired) setTotpRequired(true);
+      setError(failure.message);
+      // Point focus at what to fix: a refused code is selected for retyping, anything else goes back to
+      // the password.
+      const target = failure.totpRequired ? totpRef.current : passwordRef.current;
+      target?.focus();
+      target?.select();
       console.error("Login error:", err);
     } finally {
       setLoading(false);
@@ -94,13 +84,10 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     return (
       <AuthLayout>
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-muted-foreground">Redirecting to single sign-on…</p>
-          <Button
-            variant="outline"
-            onClick={() => {
-              window.location.href = apiUrl("/auth/oidc/login");
-            }}
-          >
+          <p role="status" className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Spinner /> Redirecting to single sign-on…
+          </p>
+          <Button variant="outline" size="lg" onClick={goToSso}>
             Continue to SSO
           </Button>
         </div>
@@ -109,8 +96,10 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   }
 
   return (
-    <AuthLayout>
+    <AuthLayout subtitle={totpRequired ? "Two-step verification" : undefined}>
       <form
+        aria-busy={loading}
+        noValidate
         onSubmit={(event) => {
           event.preventDefault();
           void handleSubmit();
@@ -128,13 +117,16 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             <FieldLabel htmlFor="login-username">Username</FieldLabel>
             <Input
               id="login-username"
+              ref={usernameRef}
               value={username}
               onChange={(event) => setUsername(event.target.value)}
-              placeholder="Enter username"
-              disabled={loading}
+              readOnly={loading}
               autoFocus
               autoComplete="username"
-              className="h-9"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="h-9 pointer-coarse:h-10"
             />
           </Field>
 
@@ -142,13 +134,13 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             <FieldLabel htmlFor="login-password">Password</FieldLabel>
             <Input
               id="login-password"
+              ref={passwordRef}
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Enter password"
-              disabled={loading}
+              readOnly={loading}
               autoComplete="current-password"
-              className="h-9"
+              className="h-9 pointer-coarse:h-10"
             />
           </Field>
 
@@ -157,14 +149,17 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
               <FieldLabel htmlFor="login-totp">Authenticator code</FieldLabel>
               <Input
                 id="login-totp"
+                ref={totpRef}
                 value={totpCode}
                 onChange={(event) => setTotpCode(event.target.value)}
                 placeholder="123456"
-                disabled={loading}
+                readOnly={loading}
                 autoFocus
                 autoComplete="one-time-code"
-                inputMode="numeric"
-                className="h-9"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className="h-9 pointer-coarse:h-10"
               />
               <FieldDescription>
                 Enter the 6-digit code from your authenticator app, or a recovery code.
@@ -172,26 +167,25 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             </Field>
           )}
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             <Button
               type="submit"
               size="lg"
               disabled={loading || !username.trim() || !password.trim() || (totpRequired && !totpCode.trim())}
             >
-              {loading && <Spinner />} Sign in
+              {loading && <Spinner />} {loading ? "Signing in…" : "Sign in"}
             </Button>
             {oidcEnabled && (
-              <Button
-                type="button"
-                variant="outline"
-                size="lg"
-                onClick={() => {
-                  window.location.href = apiUrl("/auth/oidc/login");
-                }}
-                disabled={loading}
-              >
-                Sign in with Authentik
-              </Button>
+              <>
+                <div role="presentation" className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <Separator className="flex-1" />
+                  or
+                  <Separator className="flex-1" />
+                </div>
+                <Button type="button" variant="outline" size="lg" onClick={goToSso} disabled={loading}>
+                  Sign in with Authentik
+                </Button>
+              </>
             )}
           </div>
         </div>
