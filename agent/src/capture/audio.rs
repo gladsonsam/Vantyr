@@ -117,7 +117,27 @@ unsafe fn capture_loop(
     let capture: IAudioCaptureClient = client.GetService().context("GetService")?;
     client.Start().context("IAudioClient::Start")?;
 
+    // Loopback can produce no packets while the desktop is silent. Announce the
+    // running format immediately so a connected viewer does not time out waiting
+    // for somebody to play a sound. The server relays this as its six-byte header.
+    let mut header = AUDIO_FRAME_MAGIC.to_vec();
+    header.extend_from_slice(&sample_rate.to_le_bytes());
+    header.extend_from_slice(&channels.to_le_bytes());
+    let _ = frame_tx.blocking_send(crate::permissions::tag_binary(
+        header.clone(),
+        Some(generation),
+    ));
+    let mut last_announcement = std::time::Instant::now();
+
     while !stop.load(Ordering::Relaxed) && generation.valid() {
+        // Keep the server's idle watchdog alive without inventing PCM samples.
+        if last_announcement.elapsed() >= std::time::Duration::from_secs(5) {
+            let _ = frame_tx.try_send(crate::permissions::tag_binary(
+                header.clone(),
+                Some(generation),
+            ));
+            last_announcement = std::time::Instant::now();
+        }
         let packet_frames = capture.GetNextPacketSize().unwrap_or(0);
         if packet_frames == 0 {
             std::thread::sleep(std::time::Duration::from_millis(10));
@@ -137,16 +157,19 @@ unsafe fn capture_loop(
 
         if frames > 0 {
             let byte_count = frames as usize * block_align;
-            let raw = std::slice::from_raw_parts(buf_ptr, byte_count);
-
             const SILENT_FLAG: u32 = 0x2; // AUDCLNT_BUFFERFLAGS_SILENT
             let pcm_floats: Vec<f32> = if (raw_flags & SILENT_FLAG) != 0 {
                 vec![0.0f32; frames as usize * channels as usize]
+            } else if buf_ptr.is_null() {
+                let _ = capture.ReleaseBuffer(frames);
+                continue;
             } else if is_float && bits == 32 {
+                let raw = std::slice::from_raw_parts(buf_ptr, byte_count);
                 raw.chunks_exact(4)
                     .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
                     .collect()
             } else if bits == 16 {
+                let raw = std::slice::from_raw_parts(buf_ptr, byte_count);
                 raw.chunks_exact(2)
                     .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0)
                     .collect()

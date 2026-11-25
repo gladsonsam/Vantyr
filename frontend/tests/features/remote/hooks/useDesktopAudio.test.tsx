@@ -31,7 +31,7 @@ beforeEach(async () => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   await act(async () => root.render(<Harness />));
 });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 it("unlocks audio before fetching and reports unavailable audio instead of appearing active", async () => {
   const pending = deferred<Response>();
@@ -67,7 +67,8 @@ it("stops playback when the device or permission changes", async () => {
   await act(async () => { pending.resolve(new Response(null, { status: 403 })); await started; });
   expect(audio.error).toBe("");
 });
-it("reports live audio only after receiving a valid format header", async () => {
+it("keeps silent audio connected after receiving a valid format header", async () => {
+  vi.useFakeTimers();
   let stream!: ReadableStreamDefaultController<Uint8Array>;
   const body = new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } });
   vi.stubGlobal("fetch", vi.fn(async () => new Response(body)));
@@ -77,6 +78,9 @@ it("reports live audio only after receiving a valid format header", async () => 
   view.setUint32(0, 48000, true); view.setUint16(4, 2, true);
   await act(async () => stream.enqueue(header));
   expect(audio.connecting).toBe(false); expect(audio.active).toBe(true);
+  await act(async () => vi.advanceTimersByTime(16_000));
+  expect(audio.active).toBe(true); expect(audio.error).toBe("");
+  expect(contexts[0].createBufferSource).not.toHaveBeenCalled();
   await act(async () => { stream.close(); await started; });
   expect(audio.active).toBe(false); expect(audio.error).toContain("disconnected");
 });
