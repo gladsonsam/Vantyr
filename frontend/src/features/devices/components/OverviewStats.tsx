@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { StatCard } from "@/components/common/StatCard";
 import { useDnsStatsQuery } from "@/features/network/runtime/useRuntimeQueries";
 
@@ -5,15 +6,33 @@ const pct = (part: number, total: number) =>
   total === 0 ? "0%" : `${Math.round((part / total) * 100)}%`;
 
 /** Coloured figures with a trend line each: this device's DNS over the last day. Nothing if it can't load. */
-export function OverviewDnsStats({ deviceId }: { deviceId: string }) {
+export function OverviewDnsStats({
+  deviceId,
+  leading = [],
+}: {
+  deviceId: string;
+  /** Cards from the agent that share this row, before the DNS ones. */
+  leading?: ReactNode[];
+}) {
   const query = useDnsStatsQuery({ deviceId, range: "24h" });
-  if (query.isPending) return <div className="h-40" />;
-  if (query.isError || query.data.state === "unavailable") return null;
+  if (query.isPending) return leading.length > 0 ? <div className="grid grid-cols-2 gap-5">{leading}</div> : <div className="h-40" />;
+  if (query.isError || query.data.state === "unavailable") {
+    return leading.length > 0 ? <div className="grid grid-cols-2 gap-5">{leading}</div> : null;
+  }
   const stats = query.data.data;
   const allowed = stats.total - stats.blocked;
   const top = stats.topBlocked[0];
   return (
-    <div className={top ? "grid grid-cols-2 gap-5 lg:grid-cols-4" : "grid grid-cols-2 gap-5 lg:grid-cols-3"}>
+    <div
+      className={
+        leading.length > 0
+          ? "grid grid-cols-2 gap-5 lg:grid-cols-3 xl:grid-cols-6"
+          : top
+            ? "grid grid-cols-2 gap-5 lg:grid-cols-4"
+            : "grid grid-cols-2 gap-5 lg:grid-cols-3"
+      }
+    >
+      {leading}
       <StatCard
         label="Queries"
         value={stats.total.toLocaleString()}

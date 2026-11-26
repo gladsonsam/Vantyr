@@ -4,7 +4,7 @@ import { ConnectionCard } from "@/features/devices/components/ConnectionCard";
 import { DeviceDecisions } from "@/features/devices/components/DeviceDecisions";
 import { DeviceRules } from "@/features/devices/components/DeviceRules";
 import { OverviewCard } from "@/features/devices/components/OverviewCard";
-import { OverviewAgentFacts, OverviewAgentStats } from "@/features/devices/components/OverviewAgentStats";
+import { OverviewAgent } from "@/features/devices/components/OverviewAgent";
 import { OverviewDnsStats } from "@/features/devices/components/OverviewStats";
 import {
   CONNECTION_KINDS,
@@ -39,8 +39,14 @@ export function DeviceOverviewPage() {
   const showDns = hasDns && device.deviceId !== null;
   return (
     <div className="space-y-6">
-      {hasAgent && device.agentId ? <OverviewAgentStats agentId={device.agentId} /> : null}
-      {showDns && device.deviceId ? <OverviewDnsStats deviceId={device.deviceId} /> : null}
+      {hasAgent && device.agentId ? (
+        <OverviewAgent
+          agentId={device.agentId}
+          base={base}
+          dnsDeviceId={showDns ? device.deviceId : null}
+        />
+      ) : null}
+      {!hasAgent && showDns && device.deviceId ? <OverviewDnsStats deviceId={device.deviceId} /> : null}
       {!hasAgent && !showDns ? (
         <div className="grid grid-cols-2 gap-5 lg:grid-cols-3">
           <Figure
@@ -56,7 +62,6 @@ export function DeviceOverviewPage() {
           />
         </div>
       ) : null}
-      {hasAgent && device.agentId ? <OverviewAgentFacts agentId={device.agentId} /> : null}
       <OverviewCard title="Connections">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {present.map((kind) => (
