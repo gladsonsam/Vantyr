@@ -18,7 +18,6 @@ export function startVideoStream(url: string, options: VideoStreamOptions): { ca
   let configuration = "";
   let serial = 0;
   const decodeStarted = new Map<number, number>();
-  let transferStarted = 0;
   const pending = new Map<number, VideoPacket>();
   const end = (error = "") => {
     if (!alive) return;
@@ -36,16 +35,11 @@ export function startVideoStream(url: string, options: VideoStreamOptions): { ca
   );
   const receive = (packet: VideoPacket) => {
     if (!alive || !decoder || decoder.state === "closed") return;
-    options.metrics?.frame(
-      packet.data.byteLength,
-      transferStarted ? performance.now() - transferStarted : 0,
-      {
-        sourceMs: packet.timestamp / 1000,
-        arrivalMs: Date.now(),
-        capture: packet.geometry.capture_id,
-      },
-    );
-    transferStarted = 0;
+    options.metrics?.frame(packet.data.byteLength, null, {
+      sourceMs: packet.timestamp / 1000,
+      arrivalMs: Date.now(),
+      capture: packet.geometry.capture_id,
+    });
     if (pending.size >= 3 || decoder.decodeQueueSize >= 2) {
       options.metrics?.dropped();
       return;
@@ -108,7 +102,6 @@ export function startVideoStream(url: string, options: VideoStreamOptions): { ca
         new WritableStream<Uint8Array>({
           write: (chunk) => {
             if (alive) {
-              if (!transferStarted) transferStarted = performance.now();
               parser.push(chunk, receive);
             }
           },

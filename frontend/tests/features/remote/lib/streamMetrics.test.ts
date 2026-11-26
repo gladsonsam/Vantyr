@@ -58,3 +58,16 @@ test("sparse heartbeats do not build healthy or congested windows", () => {
     expect(c.sample(t, 33)).toBe(2);
   }
 });
+test("unknown or zero transfer timing never proves recovery", () => {
+  for (const transfer of [null, 0]) {
+    const c = new AutoStreamController();
+    c.reset(0);
+    for (let t = 2000; t <= 40000; t += 2000) {
+      for (let i = 0; i < 16; i++) {
+        c.frame(100000, transfer);
+        c.decoded(2);
+      }
+      expect(c.sample(t, 33)).toBe(2);
+    }
+  }
+});

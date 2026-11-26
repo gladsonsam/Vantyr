@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { mjpegStreamUrl } from "@/api";
 import { tuneScreenStream } from "@/api/endpoints/remote";
+import { StreamTuningQueue } from "../lib/streamTuningQueue";
 import { AutoStreamController } from "../lib/streamMetrics";
 import type { DisplayedRemoteFrame } from "@/features/remote/hooks/useMjpegFrames";
 import { useScreenStreamSource } from "@/features/remote/hooks/useScreenStreamSource";
@@ -89,25 +90,33 @@ export function useScreenStream({
     }, 2000);
     return () => window.clearInterval(timer);
   }, [controller, preset, useVideo]);
-  const tuningQueue = useRef<Promise<unknown> | null>(null);
+  const tuningQueue = useMemo(() => new StreamTuningQueue(), []);
+  const [failedTuning, setFailedTuning] = useState<{
+    session: string;
+    tuning: typeof tuning;
+  } | null>(null);
+  const tuningError = failedTuning?.session === session && failedTuning.tuning === tuning;
   const appliedTuning = useRef({ session: "", tuning: initialTuning });
   useEffect(() => {
-    if (!session || !streamEnabled) return;
+    if (!session || !streamEnabled || !online || blockedByRole) return;
     if (appliedTuning.current.session !== session)
       appliedTuning.current = { session, tuning: initialTuning };
-    const applied = appliedTuning.current.tuning;
-    if (tuning.jpegQ === applied.jpegQ && tuning.intervalMs === applied.intervalMs) return;
-    appliedTuning.current = { session, tuning };
-    // Serialize fast manual changes so an older request cannot win last.
-    tuningQueue.current = (tuningQueue.current ?? Promise.resolve())
-      .catch(() => {})
-      .then(() => tuneScreenStream(agentId, session, tuning))
-      .catch(() => {
-        // Allow a subsequent render/change to retry instead of remembering a failure.
-        if (appliedTuning.current.session === session && appliedTuning.current.tuning === tuning)
-          appliedTuning.current = { session, tuning: applied };
-      });
-  }, [agentId, session, streamEnabled, tuning, initialTuning]);
+    // Always queue the latest value: an earlier in-flight request may still settle.
+    return tuningQueue.enqueue(
+      async () => {
+        const applied = appliedTuning.current;
+        if (
+          applied.session === session &&
+          tuning.jpegQ === applied.tuning.jpegQ &&
+          tuning.intervalMs === applied.tuning.intervalMs
+        )
+          return;
+        await tuneScreenStream(agentId, session, tuning);
+        if (appliedTuning.current.session === session) appliedTuning.current = { session, tuning };
+      },
+      () => setFailedTuning({ session, tuning }),
+    );
+  }, [agentId, session, streamEnabled, online, blockedByRole, tuning, initialTuning, tuningQueue]);
   const streamUrl = useMemo(
     () =>
       streamEnabled && session
@@ -211,7 +220,8 @@ export function useScreenStream({
     session,
     streaming,
     everLoaded,
-    error,
+    error: error || tuningError,
+    tuningError,
     aspectRatio,
     stalled,
     preset,

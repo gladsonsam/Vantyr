@@ -143,7 +143,6 @@ export function startMjpegStream(
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   let parser: MultipartJpegParser | null = null;
   let active = true;
-  let transferStarted = 0;
   const stop = (error: Error | null) => {
     if (!active) return;
     active = false;
@@ -212,16 +211,11 @@ export function startMjpegStream(
           stop(new Error("Screen stream ended. Reconnect to continue."));
           break;
         }
-        if (!transferStarted) transferStarted = performance.now();
         for (let p = 0; p < value.length && active; p += 256) {
           parser.push(value.subarray(p, p + 256));
           let frame: RemoteFrame | undefined;
           while ((frame = parser.takeFrame()) && active) {
-            options.metrics?.frame(
-              frame.jpeg.byteLength,
-              transferStarted ? performance.now() - transferStarted : 0,
-            );
-            transferStarted = 0;
+            options.metrics?.frame(frame.jpeg.byteLength, null);
             options.lane.offer({
               metrics: options.metrics,
               owner,
