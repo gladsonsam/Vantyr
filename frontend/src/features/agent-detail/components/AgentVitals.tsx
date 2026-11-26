@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Agent, AgentInfo, AgentLiveStatus, AgentMetricsResponse } from "@/api/types";
 import { agentQueries } from "@/api/queries/agents";
@@ -28,6 +27,8 @@ interface Vital {
   /** 0–100: draws a ring gauge beside the value. */
   pct?: number;
   ring?: "cpu" | "memory";
+  /** Status fact: shown first, with a coloured dot. */
+  dot?: boolean;
 }
 
 function latestCpuPct(res: AgentMetricsResponse): number | null {
@@ -82,6 +83,7 @@ function vitalList(
             label: "Session",
             value: activity === "afk" ? "Away" : "Active",
             tone: activity === "afk" ? "text-warning" : "text-success",
+            dot: true,
           },
         ]
       : []),
@@ -105,6 +107,7 @@ function vitalList(
         : internetBlocked === false
           ? "text-success"
           : "text-muted-foreground",
+      dot: true,
     },
   ];
 }
@@ -145,43 +148,44 @@ export function AgentVitals({
     internetBlocked,
   );
 
+  const renderVital = (vital: Vital) => (
+    <div
+      key={vital.label}
+      className="flex min-w-0 items-center gap-2.5 px-4 py-2.5 not-first:border-l not-first:border-border/60 max-sm:not-first:border-l-0"
+    >
+      {vital.pct != null && vital.ring ? (
+        <MetricRing percent={vital.pct} variant={vital.ring} size={26} stroke={3.5} />
+      ) : vital.dot ? (
+        <span className={cn("size-2 shrink-0 rounded-full bg-current", vital.tone)} aria-hidden="true" />
+      ) : null}
+      <div className="min-w-0">
+        <dt className="text-xs text-muted-foreground">{vital.label}</dt>
+        <dd
+          className={cn(
+            "m-0 min-w-0 truncate text-sm font-medium tabular-nums",
+            vital.tone,
+            vital.mono && "font-mono",
+          )}
+          title={vital.extra ? `${vital.value} · ${vital.extra}` : vital.value}
+        >
+          {vital.value}
+          {vital.extra && (
+            <span className="hidden font-normal text-muted-foreground sm:inline"> · {vital.extra}</span>
+          )}
+        </dd>
+      </div>
+    </div>
+  );
+
   return (
     <dl
       aria-label="Device summary"
-      style={{ "--vital-count": vitals.length } as CSSProperties}
       className={cn(
-        "m-0 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-[repeat(var(--vital-count),minmax(0,1fr))]",
+        "m-0 flex flex-wrap items-stretch rounded-xl border border-border/70 bg-card/10",
         className,
       )}
     >
-      {vitals.map((vital) => (
-        <div
-          key={vital.label}
-          className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/10 px-4 py-3"
-        >
-          <div className="min-w-0">
-            <dt className="shrink-0 text-xs text-muted-foreground">{vital.label}</dt>
-            <dd
-              className={cn(
-                "m-0 mt-0.5 min-w-0 truncate text-sm font-semibold tabular-nums",
-                vital.tone,
-              )}
-              title={vital.extra ? `${vital.value} · ${vital.extra}` : vital.value}
-            >
-              {vital.value}
-              {vital.extra && (
-                <span className="hidden font-normal text-muted-foreground sm:inline">
-                  {" "}
-                  · {vital.extra}
-                </span>
-              )}
-            </dd>
-          </div>
-          {vital.pct != null && vital.ring ? (
-            <MetricRing percent={vital.pct} variant={vital.ring} size={30} stroke={4} />
-          ) : null}
-        </div>
-      ))}
+      {vitals.map(renderVital)}
     </dl>
   );
 }
