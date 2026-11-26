@@ -66,6 +66,9 @@ export function CommandMenu({
   const toggleOpen = useEffectEvent(() => onOpenChange(!open));
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // A focused surface that already handled the chord (the remote desktop forwarding Ctrl+K)
+      // owns it. Fullscreen hides this palette, so opening it there would only steal keys.
+      if (event.defaultPrevented || document.fullscreenElement) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         toggleOpen();

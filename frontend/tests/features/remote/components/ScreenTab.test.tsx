@@ -9,6 +9,7 @@ import { withWsBus } from "@tests/support/wsBus";
 import type { ReactNode } from "react";
 import { demoScreenStreamSource } from "@/demo/demoScreenStreamSource";
 import { mjpegScreenStreamSource } from "@/features/remote/hooks/mjpegStreamSource";
+import { CommandMenu } from "@/app/shell/CommandMenu";
 import { ScreenStreamSourceContext } from "@/features/remote/hooks/useScreenStreamSource";
 const wsBus = createWsBus();
 
@@ -24,7 +25,7 @@ let host: HTMLDivElement, root: Root;
 const send = vi.fn();
 beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  mode.demo = true;
+  mode.demo = true; palette = null;
   grants.off.clear();
   clipboardApi.me.mockReset().mockResolvedValue({id:"operator",role:"operator"});
   clipboardApi.agentModules.mockReset().mockResolvedValue({online:true,authorization_current:true,state:{modules:[{module:"clipboard",available:true,enabled:true,authorization_required:false}]}});
@@ -34,8 +35,11 @@ beforeEach(() => {
   vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); Reflect.deleteProperty(navigator, "clipboard"); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+/** Extra sibling of the screen (e.g. the global palette) for tests about shortcut routing; reset per test. */
+let palette: ReactNode = null;
 async function render(active = true, online = true, id = "device", monitors?: AgentInfo["monitors"]) {
-  await act(async () => root.render(withWsBus(withSource(<ScreenTab agentId={id} embedded streamActive={active} online={online} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported", clipboard: "supported", screen_capture: "supported"},monitors}} />), wsBus)));
+  const screen = <ScreenTab agentId={id} embedded streamActive={active} online={online} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported", clipboard: "supported", screen_capture: "supported"},monitors}} />;
+  await act(async () => root.render(withWsBus(withSource(palette ? <>{palette}{screen}</> : screen), wsBus)));
 }
 async function takeControl() {
   await render(); closeTools();
@@ -472,4 +476,143 @@ it("does not paste after control ends", async () => {
   Object.defineProperty(paste, "clipboardData", { value: { getData: () => "private" } });
   act(() => overlay.dispatchEvent(paste));
   expect(commands()).toEqual([]);
+});
+
+// ---- Fullscreen keyboard capture (Ctrl+W / Ctrl+T reach the remote desktop) ----
+const keyboardLock = vi.fn(), keyboardUnlock = vi.fn();
+let fullscreenElement: Element | null = null;
+function installKeyboardLock() { Object.defineProperty(navigator, "keyboard", { configurable: true, value: { lock: keyboardLock, unlock: keyboardUnlock } }); }
+function installNativeFullscreen() {
+  fullscreenElement = null;
+  const changed = () => document.dispatchEvent(new Event("fullscreenchange"));
+  Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => fullscreenElement });
+  Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: true });
+  Object.defineProperty(document, "exitFullscreen", { configurable: true, value: vi.fn(() => { fullscreenElement = null; changed(); return Promise.resolve(); }) });
+  Object.defineProperty(HTMLElement.prototype, "requestFullscreen", { configurable: true, value: { requestFullscreen() { fullscreenElement = this as unknown as Element; changed(); return Promise.resolve(); } }.requestFullscreen });
+}
+beforeEach(() => { keyboardLock.mockReset().mockResolvedValue(undefined); keyboardUnlock.mockReset(); installKeyboardLock(); installNativeFullscreen(); });
+afterEach(() => {
+  Reflect.deleteProperty(navigator, "keyboard"); Reflect.deleteProperty(document, "fullscreenElement"); Reflect.deleteProperty(document, "fullscreenEnabled");
+  Reflect.deleteProperty(document, "exitFullscreen"); Reflect.deleteProperty(HTMLElement.prototype, "requestFullscreen"); fullscreenElement = null;
+});
+function chord(target: EventTarget, value: string, init: KeyboardEventInit = {}) {
+  const event = new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true, ...init });
+  act(() => { target.dispatchEvent(event); });
+  return event;
+}
+const toolbarText = () => host.querySelector(".screen-remote-tools")?.textContent ?? "";
+async function revokeLease() { await act(async () => wsBus.emit({ event: "control_lease", agent_id: "device", status: "revoked", lease_token: "test-lease" })); }
+
+it("captures browser shortcuts only after native fullscreen starts with control held, and sends them to the device", async () => {
+  const overlay = await takeControl();
+  expect(keyboardLock).not.toHaveBeenCalled();
+  await click("Maximize view");
+  expect(keyboardLock).toHaveBeenCalledTimes(1); expect(keyboardLock).toHaveBeenCalledWith(undefined);
+  expect(toolbarText()).toContain("Browser shortcuts like Ctrl+W go to this desktop");
+  expect(toolbarText()).toContain("Hold Esc");
+  chord(overlay, "Control", { ctrlKey: true });
+  const ctrlW = chord(overlay, "w", { ctrlKey: true });
+  expect(ctrlW.defaultPrevented).toBe(true);
+  expect(commands()).toEqual([{ type: "KeyDown", key: "control" }, { type: "KeyChar", char: "w" }]);
+});
+it("focuses the screen after fullscreen starts so the first shortcut is captured, not the Fullscreen button", async () => {
+  const overlay = await takeControl();
+  host.querySelector<HTMLButtonElement>('button[aria-label="Maximize view"]')!.focus();
+  await click("Maximize view");
+  expect(document.activeElement).toBe(overlay);
+});
+it("releases the keyboard on exiting fullscreen and on releasing control", async () => {
+  await takeControl(); await click("Maximize view"); keyboardUnlock.mockClear();
+  await click("Exit fullscreen");
+  expect(keyboardUnlock).toHaveBeenCalledTimes(1);
+  await click("Maximize view"); expect(keyboardLock).toHaveBeenCalledTimes(2); keyboardUnlock.mockClear();
+  await click("Release control");
+  expect(keyboardUnlock).toHaveBeenCalledTimes(1);
+  expect(toolbarText()).toContain("Viewing only. Take control to send keys to this desktop.");
+});
+it("releases the keyboard when the control lease is lost or the device goes offline", async () => {
+  await takeControl(); await click("Maximize view"); keyboardUnlock.mockClear();
+  await revokeLease();
+  expect(keyboardUnlock).toHaveBeenCalledTimes(1); expect(host.querySelector('[role="application"]')).toBeNull();
+  await click("Take control");
+  const request = send.mock.calls.filter(call => call[0].type === "control_acquire").slice(-1)[0][0];
+  await act(async () => wsBus.emit({ event: "control_lease", agent_id: "device", request_id: request.request_id, status: "granted", lease_token: "second", expires_in_ms: 15000 }));
+  expect(keyboardLock).toHaveBeenCalledTimes(2); keyboardUnlock.mockClear();
+  await render(true, false);
+  expect(keyboardUnlock).toHaveBeenCalledTimes(1);
+});
+it("does not capture the keyboard or forward keys in fullscreen when only viewing", async () => {
+  await render(); await click("Maximize view");
+  expect(keyboardLock).not.toHaveBeenCalled(); expect(host.querySelector('[role="application"]')).toBeNull();
+  expect(toolbarText()).toContain("Viewing only. Take control to send keys to this desktop.");
+  chord(document.body, "w", { ctrlKey: true });
+  expect(commands()).toEqual([]);
+});
+it("never captures the keyboard for a read-only viewer, but still allows fullscreen", async () => {
+  await act(async () => root.render(withWsBus(withSource(<ScreenTab agentId="device" embedded sendWsMessage={send} dashboardRole="viewer" agentInfo={{ capabilities: { remote_input: "supported", screen_capture: "supported" } }} />), wsBus)));
+  await click("Maximize view");
+  expect(document.fullscreenElement).not.toBeNull();
+  expect(keyboardLock).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="application"]')).toBeNull();
+  expect(toolbarText()).not.toContain("Viewing only. Take control");
+});
+it("does not capture the keyboard in the CSS-overlay maximized view", async () => {
+  Reflect.deleteProperty(HTMLElement.prototype, "requestFullscreen");
+  await takeControl(); await click("Maximize view");
+  expect(host.querySelector(".screen-remote-maximized")).not.toBeNull(); expect(keyboardLock).not.toHaveBeenCalled();
+  expect(toolbarText()).toContain("Click the screen to type");
+});
+it("says so honestly when the browser blocks shortcut capture, and keeps fullscreen and typing working", async () => {
+  keyboardLock.mockRejectedValue(new DOMException("denied", "NotAllowedError"));
+  const overlay = await takeControl(); await click("Maximize view");
+  expect(toolbarText()).toContain("blocked shortcut capture"); expect(toolbarText()).toContain("re-enter fullscreen");
+  expect(document.fullscreenElement).not.toBeNull();
+  chord(overlay, "a");
+  expect(commands()).toEqual([{ type: "TypeText", text: "a" }]);
+  await click("Exit fullscreen"); await click("Maximize view");
+  expect(keyboardLock).toHaveBeenCalledTimes(2);
+});
+it("explains an unsupported browser without blocking normal fullscreen", async () => {
+  Reflect.deleteProperty(navigator, "keyboard");
+  await takeControl(); await click("Maximize view");
+  expect(document.fullscreenElement).not.toBeNull();
+  expect(toolbarText()).toContain("Chrome and Edge");
+});
+it("retries a failed lock when the screen is clicked", async () => {
+  keyboardLock.mockRejectedValueOnce(new DOMException("bad", "InvalidStateError"));
+  const overlay = await takeControl(); imageGeometry(); await click("Maximize view");
+  expect(toolbarText()).toContain("Click the screen to try again");
+  await act(async () => { overlay.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, clientY: 100, bubbles: true, cancelable: true })); });
+  expect(keyboardLock).toHaveBeenCalledTimes(2); expect(toolbarText()).toContain("go to this desktop");
+});
+it("unlocks a keyboard request that resolves after control already ended", async () => {
+  const pending = deferred<void>(); keyboardLock.mockReturnValue(pending.promise);
+  await takeControl(); await click("Maximize view");
+  expect(toolbarText()).toContain("Allow keyboard capture");
+  await click("Release control"); keyboardUnlock.mockClear();
+  await act(async () => pending.resolve());
+  expect(keyboardUnlock).toHaveBeenCalledTimes(1);
+});
+it("keeps Ctrl+V as a browser paste while the keyboard is captured", async () => {
+  const overlay = await takeControl(); await click("Maximize view");
+  const paste = chord(overlay, "v", { ctrlKey: true });
+  expect(paste.defaultPrevented).toBe(false); expect(commands()).toEqual([]);
+});
+it("gives Ctrl+K to the remote desktop instead of opening the Vantyr palette", async () => {
+  const toggle = vi.fn();
+  palette = <CommandMenu open={false} onOpenChange={toggle} pages={[]} />;
+  const overlay = await takeControl(); await click("Maximize view");
+  const forwarded = chord(overlay, "k", { ctrlKey: true });
+  expect(forwarded.defaultPrevented).toBe(true); expect(toggle).not.toHaveBeenCalled();
+  expect(commands()).toEqual([{ type: "KeyChar", char: "k" }]);
+  await click("Exit fullscreen");
+  chord(document.body, "k", { ctrlKey: true });
+  expect(toggle).toHaveBeenCalledTimes(1);
+});
+it("keeps the Vantyr palette from opening behind a fullscreen desktop it cannot show", async () => {
+  const toggle = vi.fn();
+  palette = <CommandMenu open={false} onOpenChange={toggle} pages={[]} />;
+  await render(); await click("Maximize view");
+  chord(document.body, "k", { ctrlKey: true });
+  expect(toggle).not.toHaveBeenCalled();
 });

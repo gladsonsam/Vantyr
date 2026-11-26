@@ -107,3 +107,31 @@ it("finds tools by whole words like the in-page switcher and does not fuzzy-matc
   expect(labels).toHaveLength(1);
   expect(labels[0]).toContain("Device logs");
 });
+
+function chord(init: KeyboardEventInit = {}, prevent = false) {
+  const event = new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true, ...init });
+  if (prevent) document.body.addEventListener("keydown", e => e.preventDefault(), { once: true });
+  act(() => { document.body.dispatchEvent(event); });
+}
+async function renderClosed() {
+  const onOpenChange = vi.fn();
+  await act(async () => { root.render(<CommandMenu open={false} onOpenChange={onOpenChange} pages={[]} />); });
+  return onOpenChange;
+}
+
+it("opens on Ctrl+K and ⌘K", async () => {
+  const onOpenChange = await renderClosed();
+  chord(); chord({ ctrlKey: false, metaKey: true });
+  expect(onOpenChange).toHaveBeenCalledTimes(2);
+});
+it("leaves Ctrl+K alone when a focused surface already handled it", async () => {
+  const onOpenChange = await renderClosed();
+  chord({}, true);
+  expect(onOpenChange).not.toHaveBeenCalled();
+});
+it("does not open behind a fullscreen element it cannot show", async () => {
+  const onOpenChange = await renderClosed();
+  Object.defineProperty(document, "fullscreenElement", { configurable: true, value: document.body });
+  try { chord(); } finally { Reflect.deleteProperty(document, "fullscreenElement"); }
+  expect(onOpenChange).not.toHaveBeenCalled();
+});

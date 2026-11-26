@@ -8,9 +8,11 @@ import { RemoteSoftwareKeyboard, type RemoteKeyboardHandle } from "./RemoteSoftw
  */
 type ToolbarProps = {
   control: { active: boolean; acquiring: boolean; allowed: boolean; onToggle: () => void };
+  /** Keyboard note beside the session mode (empty when there is nothing to say). */
+  hint: string;
   keyboard: { open: boolean; enabled: boolean; ref: RefObject<RemoteKeyboardHandle | null>; onToggle: () => void; onText: (text: string) => boolean };
   tools: { open: boolean; triggerRef: RefObject<HTMLButtonElement | null>; onOpen: () => void };
-  maximize: { maximized: boolean; disabled: boolean; onToggle: () => void };
+  maximize: { maximized: boolean; disabled: boolean; onToggle: () => void; title?: string };
   clipboard: { ref: RefObject<HTMLButtonElement | null>; open: boolean; enabled: boolean; onOpen: () => void };
   audio: { show: boolean; active: boolean; connecting: boolean; disabled: boolean; onToggle: () => void };
   onReconnect: (() => void) | null;
@@ -22,6 +24,7 @@ type ToolbarProps = {
 
 export function StreamToolbar({
   control,
+  hint,
   keyboard: { open: keyboardOpen, enabled: keyboardEnabled, ref: keyboardRef, onToggle: onToggleKeyboard, onText: onKeyboardText },
   tools: { open: toolsOpen, triggerRef, onOpen: onOpenTools },
   maximize,
@@ -33,7 +36,7 @@ export function StreamToolbar({
 }: ToolbarProps) {
   return (
     <div className="screen-remote-tools" aria-label="Remote input tools">
-      <div className="remote-session-status"><span className={`remote-session-mode${control.active ? " is-controlling" : ""}`}>{control.active ? "You’re controlling this desktop" : "Viewing desktop"}</span>{control.active && <span className="remote-input-hint">Click the screen to type · Paste with Ctrl/⌘ V</span>}</div>
+      <div className="remote-session-status"><span className={`remote-session-mode${control.active ? " is-controlling" : ""}`}>{control.active ? "You’re controlling this desktop" : "Viewing desktop"}</span>{hint && <span className="remote-input-hint" aria-live="polite">{hint}</span>}</div>
       <div className="remote-primary-actions">
         <ControlButton control={control} />
         <button type="button" data-short-label="Keyboard" aria-label="Software keyboard" title="Software keyboard" disabled={!keyboardEnabled} aria-expanded={keyboardOpen} className={keyboardOpen ? "is-active" : ""} onClick={onToggleKeyboard}><Keyboard size={18} aria-hidden="true" /><span>Keyboard</span></button>
@@ -65,5 +68,5 @@ function AudioButton({ audio }: Pick<ToolbarProps, "audio">) {
 
 function MaximizeButton({ maximize }: Pick<ToolbarProps, "maximize">) {
   const maximizeLabel = maximize.maximized ? "Exit fullscreen" : "Maximize view";
-  return <button type="button" data-short-label={maximize.maximized ? "Exit" : "Expand"} aria-label={maximizeLabel} title={maximizeLabel} disabled={maximize.disabled} onClick={maximize.onToggle}>{maximize.maximized ? <Minimize2 size={18} aria-hidden="true" /> : <Maximize2 size={18} aria-hidden="true" />}<span className="remote-fullscreen-label">{maximize.maximized ? "Exit fullscreen" : "Fullscreen"}</span></button>;
+  return <button type="button" data-short-label={maximize.maximized ? "Exit" : "Expand"} aria-label={maximizeLabel} title={maximize.title ?? maximizeLabel} disabled={maximize.disabled} onClick={maximize.onToggle}>{maximize.maximized ? <Minimize2 size={18} aria-hidden="true" /> : <Maximize2 size={18} aria-hidden="true" />}<span className="remote-fullscreen-label">{maximize.maximized ? "Exit fullscreen" : "Fullscreen"}</span></button>;
 }

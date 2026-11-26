@@ -41,6 +41,7 @@ export function useRemoteInput({
   keyboardRef,
   beforeDisplayRef,
   layout,
+  onScreenGesture,
 }: {
   agentId: string;
   sendWsMessage: (msg: unknown) => void;
@@ -56,6 +57,8 @@ export function useRemoteInput({
   beforeDisplayRef: RefObject<(frame: DisplayedRemoteFrame | null) => void>;
   /** Layout inputs that move the frame on screen (re-place the trackpad cursor marker). */
   layout: { fullscreen: boolean; pseudoFs: boolean; aspectRatio: string | null };
+  /** A click on the screen: the user gesture a failed keyboard lock needs to be retried. */
+  onScreenGesture?: () => void;
 }) {
   const { surface, inputStamp, verifiedNow } = frames;
   const lastPresentedIdentity = useRef<string | null>(null);
@@ -91,12 +94,15 @@ export function useRemoteInput({
   }, []);
 
   // Auto-focus overlay so keyboard events are captured immediately when
-  // remote control is toggled on.
+  // remote control is toggled on, and again after fullscreen starts or ends:
+  // the Fullscreen button that was just clicked would otherwise keep focus and
+  // swallow the first keys (Enter/Space would re-toggle fullscreen).
+  const inFullscreen = layout.fullscreen || layout.pseudoFs;
   useEffect(() => {
     if (inputEnabled) {
       overlayRef.current?.focus();
     }
-  }, [inputEnabled, overlayRef]);
+  }, [inputEnabled, inFullscreen, overlayRef]);
 
   const ctrl = useCallback(
     (cmd: Record<string, unknown>, release = false) => {
@@ -273,6 +279,7 @@ export function useRemoteInput({
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === "touch" || touchAction === "pan") { beginTouch(e); return; }
+    onScreenGesture?.();
     if (!pointerAllowedNow() || !surface()) return;
     const pt = pointerToImageCoords(surface()!, e.clientX, e.clientY);
     if (!pt) return;

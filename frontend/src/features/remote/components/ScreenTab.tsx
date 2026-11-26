@@ -10,6 +10,7 @@ import { useDesktopAudio } from "@/features/remote/hooks/useDesktopAudio";
 import { useFullscreen } from "@/features/remote/hooks/useFullscreen";
 import type { DisplayedRemoteFrame } from "@/features/remote/hooks/useMjpegFrames";
 import { useRemoteControlLease } from "@/features/remote/hooks/useRemoteControlLease";
+import { useRemoteKeyboardCapture } from "@/features/remote/hooks/useKeyboardLock";
 import { useRemoteInput } from "@/features/remote/hooks/useRemoteInput";
 import { useScreenStream } from "@/features/remote/hooks/useScreenStream";
 import type { StreamPreset } from "@/features/remote/lib/streamPresets";
@@ -82,6 +83,7 @@ export function ScreenTab({
   const lease = useRemoteControlLease(agentId, remoteControlAllowed, sendWsMessage, { captureSession: stream.session || null, getCaptureStamp: frames.leaseStamp });
   const inputEnabled = remoteControlAllowed && lease.token !== null;
   const releaseLease = lease.release;
+  const keyboardCapture = useRemoteKeyboardCapture({ controlling: inputEnabled, canControl: remoteControlAllowed, nativeFullscreen: fullscreen, pseudoFs });
   const input = useRemoteInput({
     agentId,
     sendWsMessage,
@@ -94,6 +96,7 @@ export function ScreenTab({
     keyboardRef,
     beforeDisplayRef,
     layout: { fullscreen, pseudoFs, aspectRatio: stream.aspectRatio },
+    onScreenGesture: keyboardCapture.retry,
   });
   const { ctrl, releaseHeldInput, setInputError, touchAction } = input;
   const pointerEnabled = inputEnabled && frames.verified;
@@ -146,6 +149,7 @@ export function ScreenTab({
     inputEnabled={inputEnabled} pointerEnabled={pointerEnabled} remoteControlAllowed={remoteControlAllowed}
     audioAvailable={audioAvailable} canOperate={canOperate} online={online} blockedByRole={blockedByRole}
     streamEnabled={streamEnabled} maximized={fullscreen || pseudoFs} onMaximize={() => toggleMaximized(releaseHeldInput)}
+    shortcutHint={keyboardCapture.hint} fullscreenTitle={keyboardCapture.fullscreenTitle}
     toolsTrigger={toolsTrigger} clipboardTrigger={clipboardTrigger} keyboardRef={keyboardRef}
     panels={{ toolsOpen, keyboardOpen, clipboardOpen, clipboardTriggerUsed, setToolsOpen, setKeyboardOpen, setClipboardOpen, setClipboardTriggerUsed, setShowNotificationModal }}
     canReconnect={canReconnect} connectionNote={connectionNote} errorText={errorText} placeholderSub={placeholderSub}
@@ -241,7 +245,7 @@ interface ScreenToolsProps {
   input: ReturnType<typeof useRemoteInput>; audio: ReturnType<typeof useDesktopAudio>;
   inputEnabled: boolean; pointerEnabled: boolean; remoteControlAllowed: boolean;
   audioAvailable: boolean; canOperate: boolean; online: boolean; blockedByRole: boolean;
-  streamEnabled: boolean; maximized: boolean; onMaximize: () => void;
+  streamEnabled: boolean; maximized: boolean; onMaximize: () => void; shortcutHint: string; fullscreenTitle?: string;
   toolsTrigger: RefObject<HTMLButtonElement | null>; clipboardTrigger: RefObject<HTMLButtonElement | null>;
   keyboardRef: RefObject<RemoteKeyboardHandle | null>;
   panels: {
@@ -254,7 +258,7 @@ interface ScreenToolsProps {
   applyStreamPreset: (preset: StreamPreset) => void; applyMonitor: (index: number) => void; reconnectStream: () => void;
 }
 function ScreenTools({ agentId, agentInfo, stream, lease, input, audio, inputEnabled, pointerEnabled, remoteControlAllowed,
-  audioAvailable, canOperate, online, blockedByRole, streamEnabled, maximized, onMaximize, toolsTrigger, clipboardTrigger, keyboardRef,
+  audioAvailable, canOperate, online, blockedByRole, streamEnabled, maximized, onMaximize, shortcutHint, fullscreenTitle, toolsTrigger, clipboardTrigger, keyboardRef,
   panels, canReconnect, connectionNote, errorText, placeholderSub, applyStreamPreset, applyMonitor, reconnectStream }: ScreenToolsProps) {
   const { toolsOpen, keyboardOpen, clipboardOpen, clipboardTriggerUsed, setToolsOpen, setKeyboardOpen, setClipboardOpen, setClipboardTriggerUsed, setShowNotificationModal } = panels;
   const { source, monitorIndex } = stream;
@@ -265,10 +269,11 @@ function ScreenTools({ agentId, agentInfo, stream, lease, input, audio, inputEna
   const audioControls = remoteAudioControls(audio, source, canOperate, audioAvailable, online);
   return <>
     <StreamToolbar
+      hint={shortcutHint}
       control={{ active: inputEnabled, acquiring: lease.acquiring, allowed: remoteControlAllowed, onToggle: () => { if (!inputEnabled) { setInputError(""); lease.acquire(); } else lease.release(); } }}
       keyboard={{ open: keyboardOpen, enabled: inputEnabled, ref: keyboardRef, onToggle: () => { releaseHeldInput(); setKeyboardOpen(open => !open); }, onText: input.sendText }}
       tools={{ open: toolsOpen, triggerRef: toolsTrigger, onOpen: () => { releaseHeldInput(); setKeyboardOpen(false); setClipboardTriggerUsed(false); setToolsOpen(true); } }}
-      maximize={{ maximized, disabled: !streamEnabled, onToggle: onMaximize }}
+      maximize={{ maximized, disabled: !streamEnabled, onToggle: onMaximize, title: fullscreenTitle }}
       clipboard={{ ref: clipboardTrigger, open: toolsOpen && clipboardOpen, enabled: inputEnabled, onOpen: () => { releaseHeldInput(); setKeyboardOpen(false); setClipboardOpen(true); setClipboardTriggerUsed(true); setToolsOpen(true); } }}
       audio={{ ...audioControls, connecting: audio.connecting, onToggle: toggleAudio }}
       onReconnect={canReconnect ? reconnectStream : null}
