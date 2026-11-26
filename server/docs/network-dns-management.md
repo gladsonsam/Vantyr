@@ -205,10 +205,12 @@ worker crate has unrelated in-flight work).
 intended to run the server and worker together, on a fresh migrated database
 in a dedicated throwaway PostgreSQL only (`vantyr-netinv-test-8bdde55a`,
 `127.0.0.1:58743`); no household database, no live provider and no real
-credential is read or printed. This harness is implemented but has not yet
-compiled or run: its first compile attempt was blocked by in-flight worker
-changes. The assertions below describe its intended coverage, not passing
-evidence. Reproduce after the worker compile gate is clear with:
+credential is read or printed. The tester reports that an earlier version
+compiled and reached real worker application and server-admitted status. The
+cache-root fidelity correction and full restart/refresh flow have not yet been
+rerun against the pending cache-lifecycle fix. The assertions below describe
+intended coverage, not a passing end-to-end result. Reproduce against the
+committed worker fix with:
 
 ```sh
 SQLX_OFFLINE=true \

@@ -616,6 +616,11 @@ No substantive UI or Supabase changes were made in this step.
   the supplied cache root and masked the production layout. These findings are
   being fixed; both worker and real-server tests must honor that root before
   their results can close the integration gate.
+  Harness follow-up `a1b7b3e5` corrects its resolver factory to honor the supplied
+  cache root and checks the downloaded cache identity/timestamps after restart.
+  The tester reports an earlier successful compile and real worker application
+  with server-admitted status; the final corrected restart/refresh flow has not
+  yet been rerun and is not claimed as passing.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
   accepted separately from encrypted inbound listeners. Fresh review passed all
   91 DNS tests, including eight real-TLS upstream tests, and strict clippy.
