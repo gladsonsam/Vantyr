@@ -578,7 +578,12 @@ No substantive UI or Supabase changes were made in this step.
   Follow-up `590aacc1` adds coordinator-loop, current-token and unchanged-age
   coverage plus an enabled-only fetch correction; the implementer reports 162
   affected tests. These additions are included as context for the active review.
-  It is not yet accepted or ready for dashboard handoff.
+  Worker review rejected this slice: a missing refresh-expiry field rejects real
+  server responses, automatic list refresh can discard managed state, delayed
+  preparation can restore stale local material, failed candidates replace active
+  fetchers, receipt reporting exceeds the server contract, and management version
+  rollback/conflict checks are missing. Substantive fixes and fresh independent
+  review are required. It is not accepted or ready for dashboard handoff.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
   accepted separately from encrypted inbound listeners. Fresh review passed all
   91 DNS tests, including eight real-TLS upstream tests, and strict clippy.
