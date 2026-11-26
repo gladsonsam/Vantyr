@@ -5,6 +5,7 @@ import { Button } from "@vantyr/ui/components/button";
 import { HelpTip } from "@/components/common/HelpTip";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@vantyr/ui/components/input-group";
 import RubberSegment from "@/components/react-bits/RubberSegment";
+import { sourceSupported, unsupportedSourceText } from "@/features/network/activity/evidenceLib";
 import { RetentionLine } from "@/features/network/activity/RetentionLine";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
 import { useDebouncedCommit } from "@/features/network/lib/useDebouncedCommit";
@@ -68,6 +69,7 @@ export function QueryLog({
   const data = query.data?.state === "ready" ? query.data.data : null;
   const events = data?.events ?? [];
   const total = data?.total ?? null;
+  const unsupported = data ? !sourceSupported(data.capabilities, source) : false;
   const first = page * PAGE + 1;
   const last = page * PAGE + events.length;
 
@@ -119,6 +121,8 @@ export function QueryLog({
           <UnavailableSection title={copy.unavailable} reason={query.data.reason} />
         ) : query.isError ? (
           <UnavailableSection title={copy.unavailable} reason={copy.failed} />
+        ) : unsupported ? (
+          <p className="py-6 text-sm text-muted-foreground">{unsupportedSourceText(source)}</p>
         ) : events.length === 0 && !query.isPending ? (
           <p className="py-6 text-sm text-muted-foreground">{copy.empty}</p>
         ) : (

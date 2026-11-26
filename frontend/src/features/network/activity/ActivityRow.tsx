@@ -5,7 +5,7 @@ import { TimeAgo } from "@/features/network/components/TimeAgo";
 import type { NetworkEvent } from "@/features/network/runtime/types";
 import { cn, fmtDateTimePrecise } from "@/lib/utils";
 import { EvidenceLabel } from "./EvidenceLabel";
-import { evidenceLabel } from "./evidenceLib";
+import { eventDevice, eventPerson } from "./evidenceLib";
 
 const SOURCE_LABEL = { dns: "DNS", proxy: "Proxy", agent: "Agent" } as const;
 
@@ -13,6 +13,8 @@ const SOURCE_LABEL = { dns: "DNS", proxy: "Proxy", agent: "Agent" } as const;
 export function ActivityRow({ event, grouped }: { event: NetworkEvent; grouped: boolean }) {
   const detailId = useId();
   const [open, setOpen] = useState(false);
+  const person = eventPerson(event);
+  const device = eventDevice(event);
   const blocked = event.effect === "deny";
   const seen =
     grouped || event.observations > 1
@@ -52,10 +54,10 @@ export function ActivityRow({ event, grouped }: { event: NetworkEvent; grouped: 
         </span>
       </button>
       <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-        <span>{event.deviceLabel}</span>
+        <span>{device.label}</span>
         <span aria-hidden="true">·</span>
-        <span>{event.personLabel ?? "No person identified"}</span>
-        <EvidenceLabel evidence={event.evidence} />
+        <span>{person.name ?? person.fallback}</span>
+        {person.name ? <EvidenceLabel evidence={person.evidence} /> : null}
       </p>
       <p className="text-xs text-muted-foreground">
         {event.reason}
@@ -88,7 +90,7 @@ export function ActivityRow({ event, grouped }: { event: NetworkEvent; grouped: 
               r{event.revision}
             </KeyValueCard>
             <KeyValueCard label="Identity evidence" format="text">
-              {evidenceLabel(event.evidence)}
+              {person.evidenceText}
             </KeyValueCard>
             <KeyValueCard label="Times seen" format="text">
               {event.observations.toLocaleString()}

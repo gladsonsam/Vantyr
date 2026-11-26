@@ -191,7 +191,22 @@ export interface DnsSettingsStatus {
   reportedAt: string | null;
 }
 
+/**
+ * Which DNS runtime settings the server actually supports. The first real slice may support only the
+ * cache; a control whose flag is `false` shows "Not available yet" instead of a working control. When
+ * omitted, every setting is treated as supported (the demo).
+ */
+export interface DnsSupportedSettings {
+  cache: boolean;
+  serveExpired: boolean;
+  ttlBounds: boolean;
+  rateLimit: boolean;
+  retention: boolean;
+  responseMode: boolean;
+}
+
 export interface DnsView {
+  supportedSettings?: DnsSupportedSettings;
   /** Where these settings came from. Only the demo supplies them today; the real source is unavailable. */
   source?: "demo" | "server";
   /** Counter for DNS runtime settings only. It is not the policy revision. Used for compare-and-set. */
@@ -266,6 +281,8 @@ export interface ProxyCredentialView {
   id: string;
   /** Equals the device label when issued for one device, so a device's Proxy tab can match by label. */
   label: string;
+  /** The person this credential belongs to. Actions on a person use this id, never the display name. */
+  personId: string | null;
   personLabel: string | null;
   deviceId: string | null;
   createdAt: string;
@@ -318,8 +335,11 @@ export interface NetworkEvent {
   /** For a grouped row, the most recent observation. */
   at: string;
   source: EventSource;
-  deviceId: string;
+  /** `null` for a client the server could not map to a device, such as an unmapped IP address. */
+  deviceId: string | null;
   deviceLabel: string;
+  /** The client address, when the server reports one. Shown for an unrecognised device. */
+  clientAddress?: string;
   personLabel: string | null;
   evidence: IdentityEvidence;
   /** A domain for DNS. DNS is a domain decision, not a visited URL. */
@@ -344,6 +364,8 @@ export type EventsGrouping = "raw" | "by_host";
 export interface EventsQuery {
   /** Only this device's events. Household-wide when omitted. */
   deviceId?: string;
+  /** Only events from clients that map to no known device. Wins over `deviceId`. */
+  unrecognisedDevices?: boolean;
   /** Case-insensitive substring match on the domain or host. */
   search?: string;
   source?: EventSource | "all";
@@ -369,8 +391,18 @@ export interface EventsRetention {
   capCount: number | null;
 }
 
+/**
+ * What the event store can answer. The first real backend records DNS only, so proxy or agent history
+ * and by-host grouping can be unsupported. Unsupported is not "no activity": never show it as empty.
+ */
+export interface EventsCapabilities {
+  sources: EventSource[];
+  grouping: EventsGrouping[];
+}
+
 export interface EventsPage {
   events: NetworkEvent[];
+  capabilities: EventsCapabilities;
   /** Rows matching the query, or `null` when the source cannot count cheaply. */
   total?: number | null;
   hasMore: boolean;
@@ -402,7 +434,14 @@ export interface StatsWindow {
   /** Whole days of data that exist inside the request. */
   retainedDays: number;
   shortened: boolean;
+  /**
+   * Why the window is shorter than requested: the configured retention in days, the event count cap
+   * evicting older rows, or neither (`none`, not shortened).
+   */
+  limitedBy: StatsLimit;
 }
+
+export type StatsLimit = "days" | "count_cap" | "none";
 
 export interface DomainCount {
   domain: string;
@@ -470,8 +509,8 @@ export interface DnsUpdateOptions {
 
 export interface DnsCacheClearResult {
   clearedAt: string;
-  /** Cache entries that were dropped. */
-  entries: number;
+  /** Cache entries dropped, or `null` when the server does not report a count. Never required. */
+  entries: number | null;
 }
 
 /** A compare-and-set write lost to a newer version. Reload before retrying. */

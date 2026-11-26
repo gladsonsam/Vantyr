@@ -16,6 +16,8 @@ export const BACKEND_ASKS: readonly BackendAsk[] = [
       "Optional grouping=by_host: one row per device + host + decision, with observations (count), firstSeenAt and lastSeenAt",
       "Filters: deviceId (household-wide when omitted), source (dns|proxy|agent|all), decision (allowed|blocked|all), search (host/domain substring), from/to (ISO)",
       "Pagination: limit plus cursor or offset; response has total (nullable), hasMore and nextCursor",
+      "capabilities on every page: sources and grouping the store supports. The first backend may be DNS-only, so proxy/agent and by_host can be unsupported (not empty)",
+      "deviceId may be null (unmapped client); optional clientAddress. DNS events identify a device, not a person",
       "Retention block on every page: keepDays, oldestStoredAt (nullable), storedCount, capCount (nullable), plus truncated when the requested range reaches before oldestStoredAt",
     ],
     notes:
@@ -26,7 +28,7 @@ export const BACKEND_ASKS: readonly BackendAsk[] = [
     need: [
       "Query by optional deviceId and requestedRange (24h|7d|30d)",
       "Response: total observations, blocked observations, time series buckets, top domains/hosts, top blocked, and for proxy the inspected count",
-      "Response window: requested, actualStart, actualEnd, retainedDays, shortened",
+      "Response window: requested, actualStart, actualEnd, retainedDays, shortened, limitedBy (days|count_cap|none)",
     ],
     notes:
       "The UI must say how many days actually exist (for example 9 of 30) and never claim the requested range when shortened is true.",
@@ -34,7 +36,7 @@ export const BACKEND_ASKS: readonly BackendAsk[] = [
   {
     area: "Proxy sign-in credentials and sessions",
     need: [
-      "List credentials: id, label, personLabel, deviceId, createdAt, expiresAt, lastUsedAt, revoked, revokedAt, scopes",
+      "List credentials: id, label, personId, personLabel, deviceId, createdAt, expiresAt, lastUsedAt, revoked, revokedAt, scopes",
       "Issue credential for personId + optional deviceId + label + expiresInHours; the secret is returned once in that response and never listed",
       "Revoke one credential by id; revoke all credentials and sessions for a person",
       "List live sessions: id, credentialId, deviceId, personLabel, startedAt, lastActiveAt, expiresAt, revoked; end one session by id",

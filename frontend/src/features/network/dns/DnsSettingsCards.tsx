@@ -10,11 +10,25 @@ import { useDebouncedCommit } from "@/features/network/lib/useDebouncedCommit";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { HoldAction } from "@/features/network/gateways/HoldAction";
 import { useClearDnsCacheMutation } from "@/features/network/runtime/useRuntimeQueries";
-import type { DnsResponseMode, DnsView } from "@/features/network/runtime/types";
+import type { DnsResponseMode, DnsSupportedSettings, DnsView } from "@/features/network/runtime/types";
 import { useDnsSettingsEdit } from "./dnsSettingsEdit";
 import { SettingRow } from "./SettingRow";
 
 type Ready<K extends keyof DnsView> = Extract<DnsView[K], { state: "ready" }>["data"];
+
+const UNSUPPORTED_REASON: Record<keyof DnsSupportedSettings, string> = {
+  cache: "This server doesn’t manage the DNS cache yet.",
+  serveExpired: "This server can’t serve expired answers yet.",
+  ttlBounds: "This server doesn’t apply answer lifetime limits yet.",
+  rateLimit: "This server doesn’t apply a query rate limit yet.",
+  retention: "This server doesn’t set query log retention yet.",
+  responseMode: "This server always answers blocked names its own way for now.",
+};
+
+/** Stands in for a control the server doesn’t support, so a missing feature never looks adjustable. */
+function NotAvailableYet() {
+  return <span className="text-sm text-muted-foreground">Not available yet</span>;
+}
 
 const SWITCH = {
   trackColor: "var(--muted)",
@@ -41,15 +55,23 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-export function FilteringCard({ filtering }: { filtering: Ready<"filtering"> }) {
+export function FilteringCard({
+  filtering,
+  supported,
+}: {
+  filtering: Ready<"filtering">;
+  supported: DnsSupportedSettings;
+}) {
   const edit = useDnsSettingsEdit();
   const version = edit.version;
   return (
     <Panel title="Filtering">
       <SettingRow
         label="When a domain is blocked"
+        description={supported.responseMode ? undefined : UNSUPPORTED_REASON.responseMode}
         help="NXDOMAIN says the name doesn’t exist. Refused says the server won’t answer. A sinkhole answers with an address that goes nowhere."
       >
+        {supported.responseMode ? (
         <div inert={edit.disabled || undefined} className={edit.disabled ? "opacity-50" : undefined}>
         <RubberSegment
           aria-label="Blocked response"
@@ -67,6 +89,9 @@ export function FilteringCard({ filtering }: { filtering: Ready<"filtering"> }) 
           activeTextColor="var(--primary-foreground)"
         />
         </div>
+        ) : (
+          <NotAvailableYet />
+        )}
       </SettingRow>
       <SettingRow label="Always allowed">
         <span className="font-mono text-[0.8125rem]">
@@ -82,75 +107,114 @@ export function FilteringCard({ filtering }: { filtering: Ready<"filtering"> }) 
   );
 }
 
-export function CacheCard({ cache, demo }: { cache: Ready<"cache">; demo: boolean }) {
+export function CacheCard({
+  cache,
+  demo,
+  supported,
+}: {
+  cache: Ready<"cache">;
+  demo: boolean;
+  supported: DnsSupportedSettings;
+}) {
   const edit = useDnsSettingsEdit();
   const version = edit.version;
   const clear = useClearDnsCacheMutation();
   const patch = (change: Partial<Ready<"cache">>) => edit.commit({ cache: change }, version);
   const result = clear.data;
   const clearUnavailable = result?.state === "unavailable" ? result.reason : null;
-  const canClear = demo && !clearUnavailable && !edit.disabled;
+  const canClear = demo && supported.cache && !clearUnavailable && !edit.disabled;
   return (
     <Panel title="Cache">
       <SettingRow
         label="Cache answers"
+        description={supported.cache ? undefined : UNSUPPORTED_REASON.cache}
         help="Remembering answers makes repeat lookups instant and reduces what leaves the network."
       >
-        <SquishSwitch
-          {...SWITCH}
-          ariaLabel="Cache answers"
-          disabled={edit.disabled}
-          checked={cache.enabled}
-          onChange={(enabled) => patch({ enabled })}
-        />
+        {supported.cache ? (
+          <SquishSwitch
+            {...SWITCH}
+            ariaLabel="Cache answers"
+            disabled={edit.disabled}
+            checked={cache.enabled}
+            onChange={(enabled) => patch({ enabled })}
+          />
+        ) : (
+          <NotAvailableYet />
+        )}
       </SettingRow>
       <SettingRow
         label="Serve expired answers while refreshing"
+        description={supported.serveExpired ? undefined : UNSUPPORTED_REASON.serveExpired}
         help="Keeps names resolving through a short upstream outage, at the risk of briefly stale answers."
       >
-        <SquishSwitch
-          {...SWITCH}
-          ariaLabel="Serve expired answers"
-          disabled={edit.disabled}
-          checked={cache.serveStale}
-          onChange={(serveStale) => patch({ serveStale })}
-        />
+        {supported.serveExpired ? (
+          <SquishSwitch
+            {...SWITCH}
+            ariaLabel="Serve expired answers"
+            disabled={edit.disabled}
+            checked={cache.serveStale}
+            onChange={(serveStale) => patch({ serveStale })}
+          />
+        ) : (
+          <NotAvailableYet />
+        )}
       </SettingRow>
-      <SettingRow label="Shortest time to keep an answer">
-        <ScrubField
-          {...SCRUB}
-          suffix="s"
-          min={0}
-          max={3600}
-          step={5}
-          disabled={edit.disabled}
-          value={cache.minTtlSeconds}
-          onCommit={(minTtlSeconds) => patch({ minTtlSeconds })}
-        />
+      <SettingRow
+        label="Shortest time to keep an answer"
+        description={supported.ttlBounds ? undefined : UNSUPPORTED_REASON.ttlBounds}
+      >
+        {supported.ttlBounds ? (
+          <ScrubField
+            {...SCRUB}
+            suffix="s"
+            min={0}
+            max={3600}
+            step={5}
+            disabled={edit.disabled}
+            value={cache.minTtlSeconds}
+            onCommit={(minTtlSeconds) => patch({ minTtlSeconds })}
+          />
+        ) : (
+          <NotAvailableYet />
+        )}
       </SettingRow>
-      <SettingRow label="Longest time to keep an answer">
-        <ScrubField
-          {...SCRUB}
-          suffix="s"
-          min={60}
-          max={86_400}
-          step={60}
-          disabled={edit.disabled}
-          value={cache.maxTtlSeconds}
-          onCommit={(maxTtlSeconds) => patch({ maxTtlSeconds })}
-        />
+      <SettingRow
+        label="Longest time to keep an answer"
+        description={supported.ttlBounds ? undefined : UNSUPPORTED_REASON.ttlBounds}
+      >
+        {supported.ttlBounds ? (
+          <ScrubField
+            {...SCRUB}
+            suffix="s"
+            min={60}
+            max={86_400}
+            step={60}
+            disabled={edit.disabled}
+            value={cache.maxTtlSeconds}
+            onCommit={(maxTtlSeconds) => patch({ maxTtlSeconds })}
+          />
+        ) : (
+          <NotAvailableYet />
+        )}
       </SettingRow>
-      <SettingRow label="Time to remember “no such name”">
-        <ScrubField
-          {...SCRUB}
-          suffix="s"
-          min={0}
-          max={3600}
-          step={30}
-          disabled={edit.disabled}
-          value={cache.negativeTtlSeconds}
-          onCommit={(negativeTtlSeconds) => patch({ negativeTtlSeconds })}
-        />
+      <SettingRow
+        label="Time to remember “no such name”"
+        description={supported.ttlBounds ? undefined : UNSUPPORTED_REASON.ttlBounds}
+      >
+        {supported.ttlBounds ? (
+          <ScrubField
+            {...SCRUB}
+            suffix="s"
+            min={0}
+            max={3600}
+            step={30}
+            disabled={edit.disabled}
+            value={cache.negativeTtlSeconds}
+            onCommit={(negativeTtlSeconds) => patch({ negativeTtlSeconds })}
+          />
+        ) : (
+          <NotAvailableYet />
+        )}
       </SettingRow>
       <SettingRow label="Answers cached now">
         <span className="tabular-nums text-sm text-muted-foreground">
@@ -163,7 +227,7 @@ export function CacheCard({ cache, demo }: { cache: Ready<"cache">; demo: boolea
       >
         <div className="flex flex-wrap items-center justify-end gap-3">
           <span className="text-[0.8125rem] text-muted-foreground" role="status">
-            {!demo || clearUnavailable ? (
+            {!demo || !supported.cache || clearUnavailable ? (
               "Not available on this server yet"
             ) : clear.isError ? (
               <span className="text-destructive">
@@ -171,9 +235,11 @@ export function CacheCard({ cache, demo }: { cache: Ready<"cache">; demo: boolea
               </span>
             ) : result?.state === "ready" ? (
               <>
-                Cleared {result.data.entries.toLocaleString()}{" "}
-                {result.data.entries === 1 ? "entry" : "entries"} at <TimeAgo iso={result.data.clearedAt} />.
-                The settings version did not change.
+                Cache cleared at <TimeAgo iso={result.data.clearedAt} />
+                {typeof result.data.entries === "number"
+                  ? ` · ${result.data.entries.toLocaleString()} ${result.data.entries === 1 ? "entry" : "entries"}`
+                  : null}
+                . The settings version did not change.
               </>
             ) : (
               "Hold to clear. The settings version does not change."
@@ -194,7 +260,13 @@ export function CacheCard({ cache, demo }: { cache: Ready<"cache">; demo: boolea
   );
 }
 
-export function AccessCard({ access }: { access: Ready<"access"> }) {
+export function AccessCard({
+  access,
+  supported,
+}: {
+  access: Ready<"access">;
+  supported: DnsSupportedSettings;
+}) {
   const edit = useDnsSettingsEdit();
   const version = edit.version;
   const shown = access.rateLimitPerSecond ?? 30;
@@ -211,8 +283,10 @@ export function AccessCard({ access }: { access: Ready<"access"> }) {
     <Panel title="Access">
       <SettingRow
         label="Queries per second, per device"
+        description={supported.rateLimit ? undefined : UNSUPPORTED_REASON.rateLimit}
         help="A device asking faster than this is slowed down. It protects the server from a device stuck in a loop."
       >
+        {supported.rateLimit ? (
         <WakeSlider
           ariaLabel="Queries per second per device"
           min={1}
@@ -228,6 +302,9 @@ export function AccessCard({ access }: { access: Ready<"access"> }) {
           trackColor="var(--muted)"
           formatValue={(value) => `${Math.round(value)}/s`}
         />
+        ) : (
+          <NotAvailableYet />
+        )}
       </SettingRow>
       <SettingRow
         label="Who may ask"
@@ -241,25 +318,36 @@ export function AccessCard({ access }: { access: Ready<"access"> }) {
   );
 }
 
-export function LoggingCard({ logging }: { logging: Ready<"logging"> }) {
+export function LoggingCard({
+  logging,
+  supported,
+}: {
+  logging: Ready<"logging">;
+  supported: DnsSupportedSettings;
+}) {
   const edit = useDnsSettingsEdit();
   const version = edit.version;
   return (
     <Panel title="Query log">
       <SettingRow
         label="Keep queries for"
+        description={supported.retention ? undefined : UNSUPPORTED_REASON.retention}
         help="Older queries are deleted. The log records domains, not pages, and no request contents."
       >
-        <ScrubField
-          {...SCRUB}
-          suffix="days"
-          min={1}
-          max={30}
-          step={1}
-          disabled={edit.disabled}
-          value={logging.retentionDays}
-          onCommit={(retentionDays) => edit.commit({ retentionDays }, version)}
-        />
+        {supported.retention ? (
+          <ScrubField
+            {...SCRUB}
+            suffix="days"
+            min={1}
+            max={30}
+            step={1}
+            disabled={edit.disabled}
+            value={logging.retentionDays}
+            onCommit={(retentionDays) => edit.commit({ retentionDays }, version)}
+          />
+        ) : (
+          <NotAvailableYet />
+        )}
       </SettingRow>
       <SettingRow label="Keep the device address">
         <span className="text-sm text-muted-foreground">

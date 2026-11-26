@@ -11,6 +11,7 @@ import type {
   DomainMatch,
   DnsCacheClearResult,
   DnsUpdateOptions,
+  EventsCapabilities,
   EventsPage,
   EventsQuery,
   IssueProxyCredentialInput,
@@ -213,11 +214,14 @@ const RANGE_DAYS: Record<StatsRange, number> = { "24h": 1, "7d": 7, "30d": 30 };
 const RANGE_STEP_MINUTES: Record<StatsRange, number> = { "24h": 60, "7d": 360, "30d": 1440 };
 /** Days of data the demo gateway has actually stored, whatever the retention setting allows. */
 const DEMO_STORED_DAYS = 14;
+/** The proxy store keeps fewer rows, so its count cap evicts history sooner than the retention days do. */
+const DEMO_PROXY_STORED_DAYS = 9;
 
 /** What a request really covers: never more than is stored, and never more than the retention allows. */
-function statsWindow(q: DnsStatsQuery, keepDays: number) {
+function statsWindow(q: DnsStatsQuery, keepDays: number, storedDays = DEMO_STORED_DAYS) {
   const requested = q.requestedRange ?? q.range;
-  const retainedDays = Math.max(1, Math.min(RANGE_DAYS[requested], DEMO_STORED_DAYS, keepDays));
+  const retainedDays = Math.max(1, Math.min(RANGE_DAYS[requested], storedDays, keepDays));
+  const shortened = retainedDays < RANGE_DAYS[requested];
   const stepMinutes = RANGE_STEP_MINUTES[requested];
   const buckets = Math.max(1, Math.round((retainedDays * 1440) / stepMinutes));
   const window: StatsWindow = {
@@ -225,7 +229,9 @@ function statsWindow(q: DnsStatsQuery, keepDays: number) {
     actualStart: ago(retainedDays * 1440),
     actualEnd: new Date().toISOString(),
     retainedDays,
-    shortened: retainedDays < RANGE_DAYS[requested],
+    shortened,
+    // Fewer days are stored than the retention allows only when the row count cap evicted them.
+    limitedBy: !shortened ? "none" : keepDays <= storedDays ? "days" : "count_cap",
   };
   return { window, buckets, stepMinutes };
 }
@@ -287,7 +293,7 @@ function buildStats(q: DnsStatsQuery, keepDays: number): DnsStats {
  * the demo proxy events (malware.example for the MacBook, games.example for the desktop).
  */
 function buildProxyStats(q: ProxyStatsQuery, inspectedShare: number, keepDays: number): ProxyStats {
-  const { window, buckets, stepMinutes } = statsWindow(q, keepDays);
+  const { window, buckets, stepMinutes } = statsWindow(q, keepDays, DEMO_PROXY_STORED_DAYS);
   const seed = [...(q.deviceId ?? "all")].reduce((acc, ch) => acc + ch.charCodeAt(0) * 3, 0);
   const scale = q.deviceId ? 0.3 + (seed % 5) / 10 : 1.5;
   const series = Array.from({ length: buckets }, (_, i) => {
@@ -328,6 +334,18 @@ function buildProxyStats(q: ProxyStatsQuery, inspectedShare: number, keepDays: n
   };
 }
 
+/** Demo name for a client that maps to no known device. */
+const UNRECOGNISED = "Unrecognised";
+
+/**
+ * What the demo event store can answer. Remove a source or "by_host" to see the UI degrade the way it
+ * will on a DNS-only backend.
+ */
+export const DEMO_EVENT_CAPABILITIES: EventsCapabilities = {
+  sources: ["dns", "proxy", "agent"],
+  grouping: ["raw", "by_host"],
+};
+
 function buildEvents(): NetworkEvent[] {
   const rows: Omit<NetworkEvent, "id" | "at" | "correlationId" | "observations">[][] = [];
   const visit = (
@@ -342,8 +360,9 @@ function buildEvents(): NetworkEvent[] {
     rows.push(
       sources.map((source) => ({
         source,
-        deviceId: DEVICE_IDS[device] ?? device,
-        deviceLabel: device,
+        deviceId: device === UNRECOGNISED ? null : (DEVICE_IDS[device] ?? device),
+        deviceLabel: device === UNRECOGNISED ? "Unrecognised device" : device,
+        ...(device === UNRECOGNISED ? { clientAddress: "192.168.1.77" } : {}),
         personLabel: person,
         evidence,
         subject: domain,
@@ -397,6 +416,9 @@ function buildEvents(): NetworkEvent[] {
     "Household baseline: known malware host",
     ["dns"],
   );
+  visit(UNRECOGNISED, null, "unknown", "telemetry.example", "deny", "Household baseline: tracker", [
+    "dns",
+  ]);
   visit("MacBook", "Jo", "verified", "news.example", "allow", "Household default", ["proxy"]);
   visit(
     "MacBook",
@@ -471,6 +493,7 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
     {
       id: "c1",
       label: "Desktop",
+      personId: "per-sam",
       personLabel: "Sam",
       deviceId: "dev-desktop",
       createdAt: ago(60 * 24 * 20),
@@ -483,6 +506,7 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
     {
       id: "c2",
       label: "MacBook",
+      personId: "per-jo",
       personLabel: "Jo",
       deviceId: "dev-macbook",
       createdAt: ago(60 * 24 * 10),
@@ -643,6 +667,14 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
     async dns() {
       return ready<DnsView>({
         source: "demo",
+        supportedSettings: {
+          cache: true,
+          serveExpired: true,
+          ttlBounds: true,
+          rateLimit: true,
+          retention: true,
+          responseMode: true,
+        },
         settingsVersion: dnsState.version,
         settingsStatus: {
           saved: true,
@@ -750,6 +782,7 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
       const credential: ProxyCredentialView = {
         id: `c${nextId++}`,
         label: input.label.trim() || deviceLabel || "Proxy sign-in",
+        personId: input.personId in PEOPLE ? input.personId : null,
         personLabel: PEOPLE[input.personId] ?? null,
         deviceId: input.deviceId,
         createdAt: new Date().toISOString(),
@@ -773,9 +806,13 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
     },
 
     async revokeAllForPerson(personId: string) {
-      const person = PEOPLE[personId];
-      for (const c of credentialStore) if (c.personLabel === person) revokeCredential(c.id);
-      for (const s of sessionStore) if (s.personLabel === person) s.revoked = true;
+      const credentialIds = new Set<string>();
+      for (const c of credentialStore) {
+        if (c.personId !== personId) continue;
+        credentialIds.add(c.id);
+        revokeCredential(c.id);
+      }
+      for (const s of sessionStore) if (credentialIds.has(s.credentialId)) s.revoked = true;
       return ready(proxyAccessView());
     },
 
@@ -796,24 +833,31 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
     },
 
     async events(q: EventsQuery) {
-      const stored = storedEvents();
+      const capabilities = DEMO_EVENT_CAPABILITIES;
+      const stored = storedEvents().filter((e) => capabilities.sources.includes(e.source));
       const decision = q.decision && q.decision !== "all" ? q.decision : q.effect;
       const needle = q.search?.trim().toLowerCase();
       const filtered = stored.filter(
         (e) =>
-          (!q.deviceId || e.deviceId === q.deviceId) &&
+          (q.unrecognisedDevices
+            ? e.deviceId === null
+            : !q.deviceId || e.deviceId === q.deviceId) &&
           (!needle || e.subject.toLowerCase().includes(needle)) &&
           (!q.source || q.source === "all" || e.source === q.source) &&
           (!decision || e.effect === decision) &&
           (!q.from || e.at >= q.from) &&
           (!q.to || e.at <= q.to),
       );
-      let rows = filtered;
-      if (q.grouping === "by_host") {
+      // An unsupported source or grouping answers with nothing; `capabilities` says it is unsupported.
+      const supported =
+        (!q.source || q.source === "all" || capabilities.sources.includes(q.source)) &&
+        (!q.grouping || capabilities.grouping.includes(q.grouping));
+      let rows = supported ? filtered : [];
+      if (supported && q.grouping === "by_host") {
         // One row per device + source + host + decision; `filtered` is newest first.
         const groups = new Map<string, NetworkEvent>();
         for (const e of filtered) {
-          const key = `${e.deviceId}|${e.source}|${e.subject}|${e.effect}`;
+          const key = `${e.deviceId ?? e.clientAddress}|${e.source}|${e.subject}|${e.effect}`;
           const g = groups.get(key);
           if (!g) {
             groups.set(key, {
@@ -836,6 +880,7 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
       const oldestStoredAt = stored.length ? stored[stored.length - 1].at : null;
       return ready<EventsPage>({
         events: slice,
+        capabilities: { sources: [...capabilities.sources], grouping: [...capabilities.grouping] },
         total: rows.length,
         hasMore,
         nextCursor: hasMore ? String(start + q.limit) : null,

@@ -8,6 +8,7 @@ import { UnavailableSection } from "@/features/network/components/AvailabilityGa
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { useEventsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import type { EventSource } from "@/features/network/runtime/types";
+import { eventPerson, sourceSupported, unsupportedSourceText } from "@/features/network/activity/evidenceLib";
 import { cn } from "@/lib/utils";
 
 const SOURCE_LABEL: Record<EventSource, string> = { dns: "DNS", proxy: "Proxy", agent: "Agent" };
@@ -40,7 +41,20 @@ export function DeviceDecisions({
   if (query.data.state === "unavailable") {
     return <UnavailableSection title={title} reason={query.data.reason} />;
   }
-  const { events } = query.data.data;
+  const { events, capabilities } = query.data.data;
+  if (!sourceSupported(capabilities, source) && source) {
+    return compact ? (
+      <OverviewCard title={title} className={className}>
+        <p className="text-base text-muted-foreground">{unsupportedSourceText(source)}</p>
+      </OverviewCard>
+    ) : (
+      <DetailSection title={title} icon={ListChecks}>
+        <div className="rounded-xl border border-border/70 bg-card/10 p-5">
+          <p className="pt-2 text-sm text-muted-foreground">{unsupportedSourceText(source)}</p>
+        </div>
+      </DetailSection>
+    );
+  }
   if (compact) {
     return (
       <OverviewCard
@@ -122,6 +136,7 @@ export function DeviceDecisions({
             gap={0}
             renderItem={(_, index) => {
               const event = events[index];
+              const person = eventPerson(event);
               return (
                 <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-border px-1 py-3 text-sm">
                   <span className="flex items-baseline gap-3">
@@ -137,6 +152,7 @@ export function DeviceDecisions({
                   </span>
                   <span className="text-muted-foreground">
                     {source ? null : `${SOURCE_LABEL[event.source]} · `}
+                    {`${person.name ?? person.fallback} · `}
                     {event.reason} · <TimeAgo iso={event.at} />
                   </span>
                 </div>

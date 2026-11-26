@@ -28,6 +28,12 @@ import { fmtDayLabel, parseTimestamp } from "@/lib/utils";
 import { ActivityRow } from "./ActivityRow";
 import { ActivityStats } from "./ActivityStats";
 import { EvidenceHelp } from "./EvidenceLabel";
+import {
+  groupingSupported,
+  NOT_AVAILABLE_YET,
+  sourceSupported,
+  unsupportedSourceText,
+} from "./evidenceLib";
 import { RetentionLine } from "./RetentionLine";
 import { useActivityEvents } from "./useActivityEvents";
 
@@ -41,6 +47,8 @@ const SOURCE_LABEL: Record<(typeof SOURCES)[number], string> = {
   agent: "Agent",
 };
 type SourceFilter = (typeof SOURCES)[number];
+/** The device filter's value for clients that map to no known device. */
+const UNRECOGNISED = "__unrecognised__";
 type DecisionFilter = "all" | Effect;
 
 function initialSource(value: string | null): SourceFilter {
@@ -95,7 +103,8 @@ export function NetworkActivityPage() {
 
   const eventsQuery = useMemo(
     () => ({
-      deviceId: device === "all" ? undefined : device,
+      deviceId: device === "all" || device === UNRECOGNISED ? undefined : device,
+      unrecognisedDevices: device === UNRECOGNISED ? true : undefined,
       source,
       decision,
       search: search.trim() || undefined,
@@ -181,12 +190,20 @@ export function NetworkActivityPage() {
     else days.push({ ...day, events: [event] });
   }
 
+  const capabilities = firstPage.data.capabilities;
+  const sourceMissing = !sourceSupported(capabilities, source);
+  const groupingMissing = !groupingSupported(capabilities, grouping);
+  const someSourcesMissing = SOURCES.some(
+    (value) => value !== "all" && !sourceSupported(capabilities, value),
+  );
   const deviceOptions = deviceRows.filter((row) => row.deviceId);
   const fieldLabel = "text-xs font-medium text-muted-foreground";
   return (
     <div className="space-y-6">
       {header}
-      <ActivityStats deviceId={device === "all" ? undefined : device} />
+      {device === UNRECOGNISED ? null : (
+        <ActivityStats deviceId={device === "all" ? undefined : device} />
+      )}
 
       <div className="space-y-4 rounded-xl border border-border/70 bg-card/10 p-4">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -200,6 +217,7 @@ export function NetworkActivityPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All devices</SelectItem>
+                <SelectItem value={UNRECOGNISED}>Unrecognised devices</SelectItem>
                 {deviceOptions.map((row) => (
                   <SelectItem key={row.key} value={row.deviceId as string}>
                     {row.label}
@@ -218,8 +236,15 @@ export function NetworkActivityPage() {
               </SelectTrigger>
               <SelectContent>
                 {SOURCES.map((value) => (
-                  <SelectItem key={value} value={value}>
+                  <SelectItem
+                    key={value}
+                    value={value}
+                    disabled={!sourceSupported(capabilities, value)}
+                  >
                     {SOURCE_LABEL[value]}
+                    {sourceSupported(capabilities, value) ? null : (
+                      <span className="text-xs text-muted-foreground">{NOT_AVAILABLE_YET}</span>
+                    )}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -287,7 +312,7 @@ export function NetworkActivityPage() {
           </div>
           <div className="space-y-1.5">
             <span className={fieldLabel}>Group</span>
-            <div>
+            <div className="space-y-1">
               <RubberSegment
                 aria-label="Grouping"
                 items={[
@@ -297,11 +322,17 @@ export function NetworkActivityPage() {
                 value={grouping}
                 onChange={(next) => setGrouping(next as EventsGrouping)}
                 size="sm"
+                disabled={!capabilities.grouping.includes("by_host")}
                 trackColor="var(--muted)"
                 thumbColor="var(--primary)"
                 textColor="var(--muted-foreground)"
                 activeTextColor="var(--primary-foreground)"
               />
+              {capabilities.grouping.includes("by_host") ? null : (
+                <p className="text-xs text-muted-foreground">
+                  Grouping by host: {NOT_AVAILABLE_YET.toLowerCase()}
+                </p>
+              )}
             </div>
           </div>
           <div className="space-y-1.5">
@@ -348,7 +379,21 @@ export function NetworkActivityPage() {
         <RetentionLine page={firstPage.data} />
       </div>
 
-      {days.length === 0 ? (
+      {sourceMissing && source !== "all" ? (
+        <EmptyState
+          title={unsupportedSourceText(source)}
+          description="This server doesn’t record it yet. That is not the same as nothing happening."
+          icon={<Activity className="size-5" />}
+          iconVariant="icon"
+        />
+      ) : groupingMissing ? (
+        <EmptyState
+          title="Grouping by host isn’t available yet"
+          description="Switch back to each lookup to see activity."
+          icon={<Activity className="size-5" />}
+          iconVariant="icon"
+        />
+      ) : days.length === 0 ? (
         <EmptyState
           title="No activity matches these filters"
           description={
@@ -384,6 +429,16 @@ export function NetworkActivityPage() {
           ))}
         </div>
       )}
+
+      {source === "all" && someSourcesMissing ? (
+        <p className="text-xs text-muted-foreground">
+          Only{" "}
+          {SOURCES.filter((value) => value !== "all" && sourceSupported(capabilities, value))
+            .map((value) => SOURCE_LABEL[value])
+            .join(" and ")}{" "}
+          history is recorded on this server yet.
+        </p>
+      ) : null}
 
       {hasMore ? (
         <div className="flex justify-center">

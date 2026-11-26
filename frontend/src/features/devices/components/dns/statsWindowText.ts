@@ -4,6 +4,13 @@ import type { StatsWindow } from "@/features/network/runtime/types";
 export function shortenedWindowText(window: StatsWindow): string {
   const days = window.retainedDays;
   const unit = days === 1 ? "day" : "days";
-  return `Showing the last ${days} ${unit} — only ${days} ${unit} ${days === 1 ? "is" : "are"} retained`;
+  const reason =
+    window.limitedBy === "count_cap"
+      ? "event count limit"
+      : window.limitedBy === "days"
+        ? "retention limit"
+        : null;
+  return reason
+    ? `Showing the last ${days} ${unit} — older history was removed (${reason})`
+    : `Showing the last ${days} ${unit} — older history is not available`;
 }
-

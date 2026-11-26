@@ -1,3 +1,4 @@
+import { resolveSupported } from "./dnsSupport";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { LoadFailedCard } from "@/components/common/LoadFailedCard";
 import { useNetworkHousehold } from "@/features/network/access/networkScope";
@@ -10,7 +11,12 @@ import { DnsStatusPanel } from "@/features/network/dns-status/DnsStatusPanel";
 import type { DnsView } from "@/features/network/runtime/types";
 import { useDnsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import { SettingsPageHeader } from "@/features/settings/components/SettingsLayout";
-import { AccessCard, CacheCard, FilteringCard, LoggingCard } from "./DnsSettingsCards";
+import {
+  AccessCard,
+  CacheCard,
+  FilteringCard,
+  LoggingCard,
+} from "./DnsSettingsCards";
 import { EncryptedCard, RewritesCard, UpstreamsCard } from "./DnsReadOnlyCards";
 import { DnsManagementSections } from "./DnsManagementSections";
 import { PendingDnsSection } from "./PendingDnsSection";
@@ -21,6 +27,7 @@ import { DnsSettingsEditContext, useDnsSettingsEditState } from "./dnsSettingsEd
 function ReadyDnsSections({ dns }: { dns: DnsView }) {
   const edit = useDnsSettingsEditState(dns.settingsVersion);
   const demo = dns.source === "demo";
+  const supported = resolveSupported(dns);
   return (
     <DnsSettingsEditContext.Provider value={edit}>
       <div className="space-y-3">
@@ -33,7 +40,7 @@ function ReadyDnsSections({ dns }: { dns: DnsView }) {
         <DnsSettingsNotices />
       </div>
       <AvailabilityGate title="Filtering" value={dns.filtering}>
-        {(value) => <FilteringCard filtering={value} />}
+        {(value) => <FilteringCard filtering={value} supported={supported} />}
       </AvailabilityGate>
       <AvailabilityGate title="Upstream servers" value={dns.upstreams}>
         {(upstreams) => <UpstreamsCard upstreams={upstreams} />}
@@ -45,13 +52,13 @@ function ReadyDnsSections({ dns }: { dns: DnsView }) {
         {(encrypted) => <EncryptedCard encrypted={encrypted} />}
       </AvailabilityGate>
       <AvailabilityGate title="Cache" value={dns.cache}>
-        {(value) => <CacheCard cache={value} demo={demo} />}
+        {(value) => <CacheCard cache={value} demo={demo} supported={supported} />}
       </AvailabilityGate>
       <AvailabilityGate title="Access" value={dns.access}>
-        {(value) => <AccessCard access={value} />}
+        {(value) => <AccessCard access={value} supported={supported} />}
       </AvailabilityGate>
       <AvailabilityGate title="Query log" value={dns.logging}>
-        {(value) => <LoggingCard logging={value} />}
+        {(value) => <LoggingCard logging={value} supported={supported} />}
       </AvailabilityGate>
     </DnsSettingsEditContext.Provider>
   );

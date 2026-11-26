@@ -30,20 +30,20 @@ export function SignInCredentialsCard({
 }) {
   const revoke = useRevokeCredentialMutation();
   const revokeAll = useRevokeAllForPersonMutation();
-  const persons = useQuery({ ...networkQueries.persons(household), enabled: isAdmin });
   const devices = useQuery(networkQueries.devices(household));
   const deviceLabel = new Map((devices.data?.devices ?? []).map((d) => [d.id, d.label]));
   const [now] = useState(() => Date.now());
 
   const credentials = [...access.credentials].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // Matched by person id only: a display name is not an identity. A credential without one gets no
+  // "revoke all" action (it can still be revoked on its own).
   const activePeople = [
-    ...new Set(
+    ...new Map(
       credentials
-        .filter((c) => credentialStatus(c, now) === "active" && c.personLabel)
-        .map((c) => c.personLabel as string),
+        .filter((c) => credentialStatus(c, now) === "active" && c.personId)
+        .map((c) => [c.personId as string, c.personLabel ?? "This person"] as const),
     ),
   ];
-  const personIdByName = new Map((persons.data?.persons ?? []).map((p) => [p.display_name, p.id]));
 
   return (
     <SettingsSection
@@ -144,25 +144,20 @@ export function SignInCredentialsCard({
             </HelpTip>
           </h4>
           <ul className="space-y-2">
-            {activePeople.map((name) => {
-              const id = personIdByName.get(name);
-              return (
-                <li key={name} className="flex flex-wrap items-center justify-between gap-3">
-                  <span className="text-sm">{name}</span>
-                  {id ? (
-                    <HoldAction
-                      icon={<UserX className="size-4" />}
-                      ariaLabel={`Hold to revoke all credentials for ${name}`}
-                      doneLabel="Revoked"
-                      disabled={revokeAll.isPending}
-                      onHold={() => revokeAll.mutate(id)}
-                    >
-                      Revoke all for {name}
-                    </HoldAction>
-                  ) : null}
-                </li>
-              );
-            })}
+            {activePeople.map(([personId, name]) => (
+              <li key={personId} className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-sm">{name}</span>
+                <HoldAction
+                  icon={<UserX className="size-4" />}
+                  ariaLabel={`Hold to revoke all credentials for ${name}`}
+                  doneLabel="Revoked"
+                  disabled={revokeAll.isPending}
+                  onHold={() => revokeAll.mutate(personId)}
+                >
+                  Revoke all for {name}
+                </HoldAction>
+              </li>
+            ))}
           </ul>
         </div>
       ) : null}
