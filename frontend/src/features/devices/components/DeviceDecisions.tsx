@@ -47,8 +47,8 @@ export function DeviceDecisions({
         title={title}
         help={
           <HelpTip label="About decisions">
-            A DNS decision is about a domain name. It is not a record of the pages someone
-            visited.
+            Each row is a domain or host a gateway observed, with its decision. It is not browser
+            history or a record of pages visited, and only hostnames are kept, never full URLs.
           </HelpTip>
         }
         action={
@@ -144,8 +144,16 @@ export function DeviceDecisions({
             }}
           />
         )}
-        <p className="pt-3 text-xs text-muted-foreground">
-          A DNS decision is about a domain name. It is not a record of the pages someone visited.
+        <p className="flex flex-wrap items-center justify-between gap-3 pt-3 text-xs text-muted-foreground">
+          <span>
+            Domains and hosts a gateway observed, not browser history. Hostnames only, never URLs.
+          </span>
+          <Link
+            to={`/network/activity?device=${encodeURIComponent(deviceId)}`}
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            View all activity
+          </Link>
         </p>
       </div>
     </DetailSection>

@@ -6,11 +6,45 @@ import {
   AvailabilityGate,
   UnavailableSection,
 } from "@/features/network/components/AvailabilityGate";
-import { useProxyQuery } from "@/features/network/runtime/useRuntimeQueries";
+import { useNetworkHousehold } from "@/features/network/access/networkScope";
+import { useNetworkAdmin } from "@/features/network/access/useNetworkAdmin";
+import {
+  useProxyAccessQuery,
+  useProxyQuery,
+} from "@/features/network/runtime/useRuntimeQueries";
 import { KeyValueCard, KeyValueGrid } from "@/components/common/resource-detail/KeyValueCard";
 import { SettingsPageHeader } from "@/features/settings/components/SettingsLayout";
-import { CredentialsCard } from "./CredentialsCard";
+import { SignInCredentialsCard } from "./CredentialsCard";
+import { SessionsCard } from "./SessionsCard";
 import { InspectionCard } from "./InspectionCard";
+
+/** Proxy sign-in credentials and sessions, or the standard unavailable state. */
+function ProxyAccessSections() {
+  const household = useNetworkHousehold();
+  const isAdmin = useNetworkAdmin(household.id);
+  const query = useProxyAccessQuery();
+  if (query.isPending) return null;
+  if (query.isError) {
+    return (
+      <LoadFailedCard
+        message="Couldn’t load proxy sign-in."
+        onRetry={() => void query.refetch()}
+      />
+    );
+  }
+  if (query.data.state === "unavailable") {
+    return (
+      <UnavailableSection title="Sign-in credentials" reason="Proxy sign-in isn’t available on this server yet." />
+    );
+  }
+  const access = query.data.data;
+  return (
+    <>
+      <SignInCredentialsCard household={household.id} access={access} isAdmin={isAdmin} />
+      <SessionsCard household={household.id} access={access} isAdmin={isAdmin} />
+    </>
+  );
+}
 
 /** The Vantyr proxy: where it listens, who may use it, and whether HTTPS inspection is on. */
 export function NetworkProxyPage() {
@@ -52,9 +86,7 @@ export function NetworkProxyPage() {
           </SettingsSection>
         )}
       </AvailabilityGate>
-      <AvailabilityGate title="Credentials" value={proxy.credentials}>
-        {(credentials) => <CredentialsCard credentials={credentials} />}
-      </AvailabilityGate>
+      <ProxyAccessSections />
       <AvailabilityGate title="HTTPS inspection" value={proxy.inspection}>
         {(inspection) => <InspectionCard inspection={inspection} />}
       </AvailabilityGate>

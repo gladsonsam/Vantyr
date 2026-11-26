@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { fmtDateTime } from "@/lib/utils";
-import type { DnsStats } from "@/features/network/runtime/types";
+import type { DnsStats, StatsWindow } from "@/features/network/runtime/types";
 
 export type ChartSeries = DnsStats["series"];
 
@@ -13,10 +13,13 @@ const H = 160;
  */
 export function QueryChart({
   series,
-  title = "Queries over time",
-  noun = "queries",
+  title = "Observations over time",
+  noun = "observations",
+  window,
 }: {
   series: ChartSeries;
+  /** What the data really covers: its start and end label the axis, never the requested range. */
+  window?: StatsWindow;
   title?: string;
   /** What the buckets count, for the chart's accessible name. */
   noun?: string;
@@ -28,6 +31,8 @@ export function QueryChart({
   const first = series[0];
   const last = series[series.length - 1];
   const middle = series[Math.floor(series.length / 2)];
+  const startAt = window?.actualStart ?? first?.at;
+  const endAt = window?.actualEnd ?? last?.at;
   const active = hover === null ? null : series[hover];
   return (
     <div className="space-y-4">
@@ -113,9 +118,9 @@ export function QueryChart({
         ) : null}
       </div>
       <div className="flex justify-between text-xs text-muted-foreground">
-        <span>{first ? fmtDateTime(first.at) : ""}</span>
+        <span>{startAt ? fmtDateTime(startAt) : ""}</span>
         <span className="hidden sm:inline">{middle ? fmtDateTime(middle.at) : ""}</span>
-        <span>{last ? fmtDateTime(last.at) : ""}</span>
+        <span>{endAt ? fmtDateTime(endAt) : ""}</span>
       </div>
     </div>
   );

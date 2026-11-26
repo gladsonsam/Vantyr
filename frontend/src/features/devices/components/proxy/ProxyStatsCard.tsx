@@ -13,42 +13,42 @@ function Figure({ value }: { value: number }) {
   return <Counter value={value} fontSize={24} fontWeight={600} textColor="currentColor" />;
 }
 
-/** How many requests this device sent through the proxy and how many were blocked, over a chosen range. */
+/** How many times the proxy observed this device reaching a host, and how many were blocked, over a chosen range. */
 export function ProxyStatsCard({ deviceId }: { deviceId: string }) {
   const [range, setRange] = useState<StatsRange>("24h");
   const query = useProxyStatsQuery({ deviceId, range });
-  const picker = <RangePicker value={range} onChange={setRange} />;
 
   if (query.isPending) {
     return (
       <div className="space-y-6">
-        {picker}
+        <RangePicker value={range} onChange={setRange} />
         <div className="h-52" />
       </div>
     );
   }
   if (query.isError) {
-    return <UnavailableSection title="Requests" reason="Couldn’t load the statistics." />;
+    return <UnavailableSection title="Observations" reason="Couldn’t load the statistics." />;
   }
   if (query.data.state === "unavailable") {
-    return <UnavailableSection title="Requests" reason={query.data.reason} />;
+    return <UnavailableSection title="Observations" reason={query.data.reason} />;
   }
   const stats = query.data.data;
-  const allowed = stats.total - stats.blocked;
-  const inspectedShare = stats.total === 0 ? 0 : (stats.inspected / stats.total) * 100;
-  const pct = (part: number) =>
-    stats.total === 0 ? "0%" : `${Math.round((part / stats.total) * 100)}%`;
+  const observed = stats.observations;
+  const blocked = stats.blockedObservations;
+  const allowed = observed - blocked;
+  const inspectedShare = observed === 0 ? 0 : (stats.inspected / observed) * 100;
+  const pct = (part: number) => (observed === 0 ? "0%" : `${Math.round((part / observed) * 100)}%`);
   const totals = stats.series.map((bucket) => bucket.total);
   const allowedSeries = stats.series.map((bucket) => bucket.total - bucket.blocked);
   const blockedSeries = stats.series.map((bucket) => bucket.blocked);
 
   return (
     <div className="space-y-6">
-      {picker}
+      <RangePicker value={range} onChange={setRange} window={stats.window} />
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
-          label="Requests"
-          value={<Figure value={stats.total} />}
+          label="Observations"
+          value={<Figure value={observed} />}
           trend={totals}
           hue="text-primary"
         />
@@ -61,8 +61,8 @@ export function ProxyStatsCard({ deviceId }: { deviceId: string }) {
         />
         <StatCard
           label="Blocked"
-          value={<Figure value={stats.blocked} />}
-          delta={pct(stats.blocked)}
+          value={<Figure value={blocked} />}
+          delta={pct(blocked)}
           trend={blockedSeries}
           hue="text-destructive"
         />
@@ -73,15 +73,26 @@ export function ProxyStatsCard({ deviceId }: { deviceId: string }) {
           hue="text-warning"
         />
       </div>
-      <p className="flex items-center gap-1.5 text-[0.8125rem] text-muted-foreground">
+      <p className="flex flex-wrap items-center gap-x-1.5 text-[0.8125rem] text-muted-foreground">
+        Host observations by the proxy
+        <HelpTip label="About these counts">
+          Each count is how many times a host was observed, not a visit or a page view. Vantyr does
+          not keep browser history, and only hostnames are recorded, never full URLs.
+        </HelpTip>
+        <span aria-hidden="true">·</span>
         Inspected traffic is what was observed
         <HelpTip label="About inspected traffic">
-          The share of requests observed as inspected. It is observed traffic, not verified
+          The share of observations seen as inspected. It is observed traffic, not verified
           coverage: it does not show that everything from this device is inspected.
         </HelpTip>
       </p>
       <div className="rounded-xl border border-border/70 bg-card/10 p-5">
-        <QueryChart series={stats.series} title="Requests over time" noun="requests" />
+        <QueryChart
+          series={stats.series}
+          title="Observations over time"
+          noun="observations"
+          window={stats.window}
+        />
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <TopDomains title="Top hosts" rows={stats.topHosts} tone="neutral" total={allowed} />
@@ -89,7 +100,7 @@ export function ProxyStatsCard({ deviceId }: { deviceId: string }) {
           title="Top blocked hosts"
           rows={stats.topBlocked}
           tone="blocked"
-          total={stats.blocked}
+          total={blocked}
         />
       </div>
     </div>

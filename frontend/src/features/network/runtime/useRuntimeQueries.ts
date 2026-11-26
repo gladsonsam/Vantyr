@@ -6,7 +6,9 @@ import type {
   DnsSettingsPatch,
   DnsStatsQuery,
   EventsQuery,
+  IssueProxyCredentialInput,
   PolicyEdit,
+  ProxyStatsQuery,
 } from "./types";
 
 const runtimeKey = (...parts: unknown[]) => [...networkKeys.all, "runtime", ...parts] as const;
@@ -56,7 +58,7 @@ export function useDnsStatsQuery(query: DnsStatsQuery) {
   });
 }
 
-export function useProxyStatsQuery(query: DnsStatsQuery) {
+export function useProxyStatsQuery(query: ProxyStatsQuery) {
   const runtime = useNetworkRuntime();
   return useQuery({
     queryKey: runtimeKey("proxy-stats", query),
@@ -81,8 +83,59 @@ export function useUpdateDnsMutation() {
   const runtime = useNetworkRuntime();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (patch: DnsSettingsPatch) => runtime.updateDns(patch),
+    // Pass `expectedSettingsVersion` for a compare-and-set write; a stale one rejects with RuntimeConflictError.
+    mutationFn: ({
+      expectedSettingsVersion,
+      ...patch
+    }: DnsSettingsPatch & { expectedSettingsVersion?: number }) =>
+      runtime.updateDns(patch, { expectedSettingsVersion }),
+    // Also on error: after a conflict the screen needs the newer settings.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: runtimeKey("dns") }),
+  });
+}
+
+export function useClearDnsCacheMutation() {
+  const runtime = useNetworkRuntime();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => runtime.clearDnsCache(),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey("dns") }),
+  });
+}
+
+export function useProxyAccessQuery() {
+  const runtime = useNetworkRuntime();
+  return useQuery({
+    // Nested under "proxy" so proxy mutations refresh it too.
+    queryKey: runtimeKey("proxy", "access"),
+    queryFn: () => runtime.proxyAccess(),
+  });
+}
+
+export function useIssueProxyCredentialMutation() {
+  const runtime = useNetworkRuntime();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: IssueProxyCredentialInput) => runtime.issueProxyCredential(input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey("proxy") }),
+  });
+}
+
+export function useEndProxySessionMutation() {
+  const runtime = useNetworkRuntime();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => runtime.endProxySession(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey("proxy") }),
+  });
+}
+
+export function useRevokeAllForPersonMutation() {
+  const runtime = useNetworkRuntime();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (personId: string) => runtime.revokeAllForPerson(personId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey("proxy") }),
   });
 }
 

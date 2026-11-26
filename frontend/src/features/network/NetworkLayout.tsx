@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, Outlet } from "react-router-dom";
 import {
+  Activity,
   Globe,
   Home,
   KeyRound,
@@ -32,6 +33,7 @@ const SECTIONS = [
   { id: "gateways", to: "/network/gateways", label: "Gateways", icon: Server },
   { id: "dns", to: "/network/dns", label: "DNS", icon: Globe },
   { id: "proxy", to: "/network/proxy", label: "Proxy", icon: Waypoints },
+  { id: "activity", to: "/network/activity", label: "Activity", icon: Activity },
   { id: "household", to: "/network/household", label: "Household", icon: Home },
   { id: "audit", to: "/network/audit", label: "Audit", icon: ScrollText },
 ] as const;

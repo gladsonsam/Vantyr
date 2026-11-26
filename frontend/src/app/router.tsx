@@ -78,6 +78,11 @@ const GatewayDetailPage = lazy(() =>
     default: m.GatewayDetailPage,
   })),
 );
+const NetworkActivityPage = lazy(() =>
+  import("@/features/network/activity/NetworkActivityPage").then((m) => ({
+    default: m.NetworkActivityPage,
+  })),
+);
 const NetworkAuditPage = lazy(() =>
   import("@/features/network/audit/NetworkAuditPage").then((m) => ({
     default: m.NetworkAuditPage,
@@ -236,6 +241,7 @@ export function AppRoutes() {
           <Route path="gateways" element={<NetworkGatewaysPage />} />
           <Route path="gateways/:gatewayId" element={<GatewayDetailPage />} />
           <Route path="household" element={<NetworkHouseholdPage />} />
+          <Route path="activity" element={<NetworkActivityPage />} />
           <Route path="audit" element={<NetworkAuditPage />} />
           <Route path="access" element={<NetworkAccessPage />} />
           <Route path="*" element={<Navigate to="/network" replace />} />

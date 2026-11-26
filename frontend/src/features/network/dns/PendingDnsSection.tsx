@@ -13,7 +13,7 @@ const MANAGEMENT: PendingItem[] = [
     meaning: "Currently set only in the gateway’s command line or config file, not from here.",
   },
   { name: "Local records", meaning: "Add, edit or remove a local A, AAAA or CNAME record." },
-  { name: "Cache controls", meaning: "Clear the cache and test that a name resolves." },
+  { name: "Cache controls", meaning: "Clear the cache and test that a name resolves. Only the demo preview can clear the cache for now." },
   { name: "CIDR allow list", meaning: "Edit the address ranges (CIDR) that may ask this server." },
   { name: "Per-device overrides", meaning: "Give one device its own DNS settings." },
   { name: "Blocked response mode", meaning: "Choose NXDOMAIN, refused or a sinkhole answer for blocked names." },

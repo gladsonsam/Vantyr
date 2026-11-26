@@ -1,10 +1,13 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Search } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { HelpTip } from "@/components/common/HelpTip";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@vantyr/ui/components/input-group";
 import RubberSegment from "@/components/react-bits/RubberSegment";
+import { RetentionLine } from "@/features/network/activity/RetentionLine";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
+import { useDebouncedCommit } from "@/features/network/lib/useDebouncedCommit";
 import { useEventsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import type { Effect, EventSource } from "@/features/network/runtime/types";
 import { fmtDateTime } from "@/lib/utils";
@@ -15,26 +18,24 @@ type ResultFilter = "all" | Effect;
 
 const COPY = {
   dns: {
-    title: "Recent queries",
-    helpLabel: "About the query log",
-    help: "A DNS decision is about a domain name. It is not a record of the pages someone visited.",
+    title: "Recent lookups",
+    helpLabel: "About the lookup log",
+    help: "Each row is a domain name a gateway observed, with its decision. It is not browser history or a record of pages visited, and only hostnames are kept, never full URLs.",
     placeholder: "Search domains…",
-    searchLabel: "Search the query log",
-    unavailable: "Query log",
-    failed: "Couldn’t load the query log.",
-    empty: "No queries match.",
-    noun: "queries",
+    searchLabel: "Search the lookup log",
+    unavailable: "Lookup log",
+    failed: "Couldn’t load the lookup log.",
+    empty: "No lookups match.",
   },
   proxy: {
     title: "Recent requests",
     helpLabel: "About the request log",
-    help: "A proxy decision is about a destination host. Vantyr does not keep the pages or content someone viewed.",
+    help: "Each row is a destination host the proxy observed, with its decision. It is not browser history or a record of pages visited, and only hostnames are kept, never full URLs.",
     placeholder: "Search hosts…",
     searchLabel: "Search the request log",
     unavailable: "Request log",
     failed: "Couldn’t load the request log.",
     empty: "No requests match.",
-    noun: "requests",
   },
 } as const;
 
@@ -48,19 +49,27 @@ export function QueryLog({
 }) {
   const copy = COPY[source];
   const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   const [result, setResult] = useState<ResultFilter>("all");
-  const [limit, setLimit] = useState(PAGE);
+  const [page, setPage] = useState(0);
+  const commitSearch = useDebouncedCommit<string>((value) => {
+    setAppliedSearch(value);
+    setPage(0);
+  });
   const query = useEventsQuery({
     deviceId,
     source,
-    search: search.trim() || undefined,
-    effect: result === "all" ? undefined : result,
-    limit,
+    search: appliedSearch.trim() || undefined,
+    decision: result,
+    limit: PAGE,
+    offset: page * PAGE,
   });
 
-  const events = query.data?.state === "ready" ? query.data.data.events : [];
-  const retention = query.data?.state === "ready" ? query.data.data : null;
-  const more = query.data?.state === "ready" ? query.data.data.nextCursor !== null : false;
+  const data = query.data?.state === "ready" ? query.data.data : null;
+  const events = data?.events ?? [];
+  const total = data?.total ?? null;
+  const first = page * PAGE + 1;
+  const last = page * PAGE + events.length;
 
   return (
     <div className="space-y-5 rounded-xl border border-border/70 bg-card/10 p-5">
@@ -81,7 +90,7 @@ export function QueryLog({
               value={result}
               onChange={(next) => {
                 setResult(next as ResultFilter);
-                setLimit(PAGE);
+                setPage(0);
               }}
               size="sm"
               trackColor="var(--muted)"
@@ -97,7 +106,7 @@ export function QueryLog({
                 value={search}
                 onChange={(event) => {
                   setSearch(event.target.value);
-                  setLimit(PAGE);
+                  commitSearch(event.target.value);
                 }}
                 placeholder={copy.placeholder}
                 aria-label={copy.searchLabel}
@@ -147,23 +156,42 @@ export function QueryLog({
           </ul>
         )}
 
+        {data ? <RetentionLine page={data} /> : null}
+
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {retention && source === "dns" ? (
-            <p className="text-xs text-muted-foreground">
-              Keeping {retention.retention.days} days. {retention.usage.events.toLocaleString()} of{" "}
-              {retention.retention.maxEvents.toLocaleString()} {copy.noun} stored.
-            </p>
-          ) : (
-            <span />
-          )}
-          {more ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setLimit((current) => current + PAGE)}
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            {events.length > 0 ? (
+              <span aria-live="polite">
+                {first.toLocaleString()}–{last.toLocaleString()}
+                {total === null ? "" : ` of ${total.toLocaleString()}`}
+              </span>
+            ) : null}
+            <Link
+              to={`/network/activity?device=${encodeURIComponent(deviceId)}&source=${source}`}
+              className="font-medium text-primary underline-offset-4 hover:underline"
             >
-              Show more
-            </Button>
+              View all activity
+            </Link>
+          </div>
+          {page > 0 || data?.hasMore ? (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page === 0}
+                onClick={() => setPage((current) => Math.max(0, current - 1))}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!data?.hasMore}
+                onClick={() => setPage((current) => current + 1)}
+              >
+                Next
+              </Button>
+            </div>
           ) : null}
         </div>
       </div>

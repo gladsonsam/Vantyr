@@ -7,9 +7,11 @@ import SquishSwitch from "@/components/react-bits/SquishSwitch";
 import WakeSlider from "@/components/react-bits/WakeSlider";
 import { matchText } from "@/features/devices/lib/format";
 import { useDebouncedCommit } from "@/features/network/lib/useDebouncedCommit";
-import { useUpdateDnsMutation } from "@/features/network/runtime/useRuntimeQueries";
+import { TimeAgo } from "@/features/network/components/TimeAgo";
+import { HoldAction } from "@/features/network/gateways/HoldAction";
+import { useClearDnsCacheMutation } from "@/features/network/runtime/useRuntimeQueries";
 import type { DnsResponseMode, DnsView } from "@/features/network/runtime/types";
-import { Button } from "@vantyr/ui/components/button";
+import { useDnsSettingsEdit } from "./dnsSettingsEdit";
 import { SettingRow } from "./SettingRow";
 
 type Ready<K extends keyof DnsView> = Extract<DnsView[K], { state: "ready" }>["data"];
@@ -40,13 +42,15 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 }
 
 export function FilteringCard({ filtering }: { filtering: Ready<"filtering"> }) {
-  const update = useUpdateDnsMutation();
+  const edit = useDnsSettingsEdit();
+  const version = edit.version;
   return (
     <Panel title="Filtering">
       <SettingRow
         label="When a domain is blocked"
         help="NXDOMAIN says the name doesn’t exist. Refused says the server won’t answer. A sinkhole answers with an address that goes nowhere."
       >
+        <div inert={edit.disabled || undefined} className={edit.disabled ? "opacity-50" : undefined}>
         <RubberSegment
           aria-label="Blocked response"
           size="sm"
@@ -56,12 +60,13 @@ export function FilteringCard({ filtering }: { filtering: Ready<"filtering"> }) 
             { value: "sinkhole", label: "Sinkhole" },
           ]}
           value={filtering.responseMode}
-          onChange={(next) => update.mutate({ responseMode: next as DnsResponseMode })}
+          onChange={(next) => edit.commit({ responseMode: next as DnsResponseMode }, version)}
           trackColor="var(--muted)"
           thumbColor="var(--primary)"
           textColor="var(--muted-foreground)"
           activeTextColor="var(--primary-foreground)"
         />
+        </div>
       </SettingRow>
       <SettingRow label="Always allowed">
         <span className="font-mono text-[0.8125rem]">
@@ -77,9 +82,14 @@ export function FilteringCard({ filtering }: { filtering: Ready<"filtering"> }) 
   );
 }
 
-export function CacheCard({ cache }: { cache: Ready<"cache"> }) {
-  const update = useUpdateDnsMutation();
-  const patch = (change: Partial<Ready<"cache">>) => update.mutate({ cache: change });
+export function CacheCard({ cache, demo }: { cache: Ready<"cache">; demo: boolean }) {
+  const edit = useDnsSettingsEdit();
+  const version = edit.version;
+  const clear = useClearDnsCacheMutation();
+  const patch = (change: Partial<Ready<"cache">>) => edit.commit({ cache: change }, version);
+  const result = clear.data;
+  const clearUnavailable = result?.state === "unavailable" ? result.reason : null;
+  const canClear = demo && !clearUnavailable && !edit.disabled;
   return (
     <Panel title="Cache">
       <SettingRow
@@ -89,6 +99,7 @@ export function CacheCard({ cache }: { cache: Ready<"cache"> }) {
         <SquishSwitch
           {...SWITCH}
           ariaLabel="Cache answers"
+          disabled={edit.disabled}
           checked={cache.enabled}
           onChange={(enabled) => patch({ enabled })}
         />
@@ -100,6 +111,7 @@ export function CacheCard({ cache }: { cache: Ready<"cache"> }) {
         <SquishSwitch
           {...SWITCH}
           ariaLabel="Serve expired answers"
+          disabled={edit.disabled}
           checked={cache.serveStale}
           onChange={(serveStale) => patch({ serveStale })}
         />
@@ -111,6 +123,7 @@ export function CacheCard({ cache }: { cache: Ready<"cache"> }) {
           min={0}
           max={3600}
           step={5}
+          disabled={edit.disabled}
           value={cache.minTtlSeconds}
           onCommit={(minTtlSeconds) => patch({ minTtlSeconds })}
         />
@@ -122,6 +135,7 @@ export function CacheCard({ cache }: { cache: Ready<"cache"> }) {
           min={60}
           max={86_400}
           step={60}
+          disabled={edit.disabled}
           value={cache.maxTtlSeconds}
           onCommit={(maxTtlSeconds) => patch({ maxTtlSeconds })}
         />
@@ -133,6 +147,7 @@ export function CacheCard({ cache }: { cache: Ready<"cache"> }) {
           min={0}
           max={3600}
           step={30}
+          disabled={edit.disabled}
           value={cache.negativeTtlSeconds}
           onCommit={(negativeTtlSeconds) => patch({ negativeTtlSeconds })}
         />
@@ -144,15 +159,35 @@ export function CacheCard({ cache }: { cache: Ready<"cache"> }) {
       </SettingRow>
       <SettingRow
         label="Clear cache"
-        help="Forgets every cached answer so names are looked up again. The server has no way to do this yet."
+        help="Forgets every cached answer so names are looked up again. It does not change the settings version."
       >
-        <div className="flex items-center gap-3">
-          <span className="text-[0.8125rem] text-muted-foreground">
-            Not available on this server yet
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <span className="text-[0.8125rem] text-muted-foreground" role="status">
+            {!demo || clearUnavailable ? (
+              "Not available on this server yet"
+            ) : clear.isError ? (
+              <span className="text-destructive">
+                {clear.error instanceof Error ? clear.error.message : String(clear.error)}
+              </span>
+            ) : result?.state === "ready" ? (
+              <>
+                Cleared {result.data.entries.toLocaleString()}{" "}
+                {result.data.entries === 1 ? "entry" : "entries"} at <TimeAgo iso={result.data.clearedAt} />.
+                The settings version did not change.
+              </>
+            ) : (
+              "Hold to clear. The settings version does not change."
+            )}
           </span>
-          <Button variant="outline" size="sm" disabled>
+          <HoldAction
+            ariaLabel="Clear cache"
+            doneLabel="Cleared"
+            destructive={false}
+            disabled={!canClear || clear.isPending}
+            onHold={() => clear.mutate()}
+          >
             Clear cache
-          </Button>
+          </HoldAction>
         </div>
       </SettingRow>
     </Panel>
@@ -160,9 +195,18 @@ export function CacheCard({ cache }: { cache: Ready<"cache"> }) {
 }
 
 export function AccessCard({ access }: { access: Ready<"access"> }) {
-  const update = useUpdateDnsMutation();
-  const [rate, setRate] = useState(access.rateLimitPerSecond ?? 30);
-  const save = useDebouncedCommit((value: number) => update.mutate({ rateLimitPerSecond: value }));
+  const edit = useDnsSettingsEdit();
+  const version = edit.version;
+  const shown = access.rateLimitPerSecond ?? 30;
+  // A dragged value only holds until the saved setting or its version changes.
+  const [draft, setDraft] = useState<{ key: string; value: number } | null>(null);
+  const key = `${shown}:${version}`;
+  const rate = draft && draft.key === key ? draft.value : shown;
+  const setRate = (value: number) => setDraft({ key, value });
+  // The commit carries the version the slider was dragged on, not the latest one when the timer fires.
+  const save = useDebouncedCommit((change: { value: number; version: number }) =>
+    edit.commit({ rateLimitPerSecond: change.value }, change.version),
+  );
   return (
     <Panel title="Access">
       <SettingRow
@@ -175,9 +219,10 @@ export function AccessCard({ access }: { access: Ready<"access"> }) {
           max={200}
           step={1}
           value={rate}
+          disabled={edit.disabled}
           onChange={(value) => {
             setRate(value);
-            save(value);
+            save({ value, version });
           }}
           fillColor="var(--primary)"
           trackColor="var(--muted)"
@@ -197,7 +242,8 @@ export function AccessCard({ access }: { access: Ready<"access"> }) {
 }
 
 export function LoggingCard({ logging }: { logging: Ready<"logging"> }) {
-  const update = useUpdateDnsMutation();
+  const edit = useDnsSettingsEdit();
+  const version = edit.version;
   return (
     <Panel title="Query log">
       <SettingRow
@@ -210,8 +256,9 @@ export function LoggingCard({ logging }: { logging: Ready<"logging"> }) {
           min={1}
           max={30}
           step={1}
+          disabled={edit.disabled}
           value={logging.retentionDays}
-          onCommit={(retentionDays) => update.mutate({ retentionDays })}
+          onCommit={(retentionDays) => edit.commit({ retentionDays }, version)}
         />
       </SettingRow>
       <SettingRow label="Keep the device address">

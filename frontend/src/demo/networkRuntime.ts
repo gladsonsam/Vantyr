@@ -9,9 +9,19 @@ import type {
   DnsStatsQuery,
   DnsView,
   DomainMatch,
+  DnsCacheClearResult,
+  DnsUpdateOptions,
   EventsPage,
   EventsQuery,
+  IssueProxyCredentialInput,
+  IssuedProxyCredential,
   NetworkEvent,
+  ProxyAccessView,
+  ProxyCredentialView,
+  ProxySessionView,
+  ProxyStatsQuery,
+  StatsRange,
+  StatsWindow,
   NetworkOverview,
   PolicyEdit,
   PolicyRule,
@@ -23,6 +33,7 @@ import type {
   ScopedRules,
   TrustState,
 } from "@/features/network/runtime/types";
+import { RuntimeConflictError } from "@/features/network/runtime/types";
 import type { NetworkRuntimeSource } from "@/features/network/runtime/NetworkRuntimeSource";
 
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
@@ -198,10 +209,30 @@ const DEVICE_IDS: Record<string, string> = {
   "Kitchen tablet": "dev-tablet",
 };
 
+const RANGE_DAYS: Record<StatsRange, number> = { "24h": 1, "7d": 7, "30d": 30 };
+const RANGE_STEP_MINUTES: Record<StatsRange, number> = { "24h": 60, "7d": 360, "30d": 1440 };
+/** Days of data the demo gateway has actually stored, whatever the retention setting allows. */
+const DEMO_STORED_DAYS = 14;
+
+/** What a request really covers: never more than is stored, and never more than the retention allows. */
+function statsWindow(q: DnsStatsQuery, keepDays: number) {
+  const requested = q.requestedRange ?? q.range;
+  const retainedDays = Math.max(1, Math.min(RANGE_DAYS[requested], DEMO_STORED_DAYS, keepDays));
+  const stepMinutes = RANGE_STEP_MINUTES[requested];
+  const buckets = Math.max(1, Math.round((retainedDays * 1440) / stepMinutes));
+  const window: StatsWindow = {
+    requested,
+    actualStart: ago(retainedDays * 1440),
+    actualEnd: new Date().toISOString(),
+    retainedDays,
+    shortened: retainedDays < RANGE_DAYS[requested],
+  };
+  return { window, buckets, stepMinutes };
+}
+
 /** Deterministic per-device DNS statistics: a daily rhythm, a blocked share, and a few repeat domains. */
-function buildStats(q: DnsStatsQuery): DnsStats {
-  const buckets = q.range === "24h" ? 24 : q.range === "7d" ? 28 : 30;
-  const stepMinutes = q.range === "24h" ? 60 : q.range === "7d" ? 360 : 1440;
+function buildStats(q: DnsStatsQuery, keepDays: number): DnsStats {
+  const { window, buckets, stepMinutes } = statsWindow(q, keepDays);
   // A stable number per device, so each one looks different but never flickers between renders.
   const seed = [...(q.deviceId ?? "all")].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
   const scale = q.deviceId ? 0.6 + (seed % 7) / 10 : 3;
@@ -242,6 +273,9 @@ function buildStats(q: DnsStatsQuery): DnsStats {
   return {
     total,
     blocked,
+    observations: total,
+    blockedObservations: blocked,
+    window,
     series,
     topDomains: spread(domains, total - blocked),
     topBlocked: spread(blockedDomains, blocked),
@@ -252,9 +286,8 @@ function buildStats(q: DnsStatsQuery): DnsStats {
  * Deterministic per-device proxy statistics. Only some devices use the proxy, and what it blocks matches
  * the demo proxy events (malware.example for the MacBook, games.example for the desktop).
  */
-function buildProxyStats(q: DnsStatsQuery, inspectedShare: number): ProxyStats {
-  const buckets = q.range === "24h" ? 24 : q.range === "7d" ? 28 : 30;
-  const stepMinutes = q.range === "24h" ? 60 : q.range === "7d" ? 360 : 1440;
+function buildProxyStats(q: ProxyStatsQuery, inspectedShare: number, keepDays: number): ProxyStats {
+  const { window, buckets, stepMinutes } = statsWindow(q, keepDays);
   const seed = [...(q.deviceId ?? "all")].reduce((acc, ch) => acc + ch.charCodeAt(0) * 3, 0);
   const scale = q.deviceId ? 0.3 + (seed % 5) / 10 : 1.5;
   const series = Array.from({ length: buckets }, (_, i) => {
@@ -285,6 +318,9 @@ function buildProxyStats(q: DnsStatsQuery, inspectedShare: number): ProxyStats {
   return {
     total,
     blocked,
+    observations: total,
+    blockedObservations: blocked,
+    window,
     inspected: Math.round(total * inspectedShare),
     series,
     topHosts: spread(hosts, total - blocked),
@@ -293,7 +329,7 @@ function buildProxyStats(q: DnsStatsQuery, inspectedShare: number): ProxyStats {
 }
 
 function buildEvents(): NetworkEvent[] {
-  const rows: Omit<NetworkEvent, "id" | "at" | "correlationId">[][] = [];
+  const rows: Omit<NetworkEvent, "id" | "at" | "correlationId" | "observations">[][] = [];
   const visit = (
     device: string,
     person: string | null,
@@ -376,11 +412,18 @@ function buildEvents(): NetworkEvent[] {
   ]);
   visit("MacBook", "Jo", "verified", "search.example", "allow", "Household default", ["proxy"]);
   const events: NetworkEvent[] = [];
-  for (let i = 0; i < 48; i++) {
+  // 54 groups (69 events) spread over almost 14 days: dense recently, sparse further back.
+  for (let i = 0; i < 54; i++) {
     const group = rows[i % rows.length];
     const correlationId = `cor-${i}`;
     group.forEach((row, k) =>
-      events.push({ ...row, id: `evt-${i}-${k}`, at: ago(i * 7 + k), correlationId }),
+      events.push({
+        ...row,
+        id: `evt-${i}-${k}`,
+        at: ago(i * 7 + i * i * 7 + k),
+        correlationId,
+        observations: 1,
+      }),
     );
   }
   return events.sort((a, b) => b.at.localeCompare(a.at));
@@ -398,7 +441,12 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
     );
     return p;
   })();
-  const events = buildEvents();
+  const allEvents = buildEvents();
+  /** Only events inside the retention window are stored. */
+  const storedEvents = () => {
+    const cutoff = new Date(Date.now() - dnsState.retentionDays * 86_400_000).toISOString();
+    return allEvents.filter((e) => e.at >= cutoff);
+  };
   let nextId = 100;
   // DNS and proxy settings live here so the controls change what the demo shows.
   const dnsState = {
@@ -412,8 +460,65 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
     },
     rateLimit: 30 as number | null,
     retentionDays: 14,
+    version: 7,
+    // What the demo gateway last reported applying. It trails a save by a few seconds.
+    reportedVersion: 7 as number | null,
+    reportedAt: ago(2) as string | null,
+    cacheEntries: 1840,
   };
-  const revokedCredentials = new Set<string>();
+  const PEOPLE: Record<string, string> = { "per-alex": "Alex", "per-sam": "Sam", "per-jo": "Jo" };
+  const credentialStore: ProxyCredentialView[] = [
+    {
+      id: "c1",
+      label: "Desktop",
+      personLabel: "Sam",
+      deviceId: "dev-desktop",
+      createdAt: ago(60 * 24 * 20),
+      expiresAt: ahead(60 * 24 * 70),
+      lastUsedAt: ago(3),
+      revoked: false,
+      revokedAt: null,
+      scopes: ["proxy:connect"],
+    },
+    {
+      id: "c2",
+      label: "MacBook",
+      personLabel: "Jo",
+      deviceId: "dev-macbook",
+      createdAt: ago(60 * 24 * 10),
+      expiresAt: null,
+      lastUsedAt: ago(2),
+      revoked: false,
+      revokedAt: null,
+      scopes: ["proxy:connect"],
+    },
+  ];
+  const sessionStore: ProxySessionView[] = [
+    {
+      id: "s1",
+      credentialId: "c1",
+      deviceId: "dev-desktop",
+      personLabel: "Sam",
+      startedAt: ago(95),
+      lastActiveAt: ago(3),
+      expiresAt: ahead(60 * 6),
+      evidence: "proxy sign-in",
+      revoked: false,
+    },
+  ];
+  const proxyAccessView = (): ProxyAccessView => ({
+    credentials: credentialStore.map((c) => ({ ...c })),
+    sessions: sessionStore.map((s) => ({ ...s })),
+    enrollment: { available: true },
+  });
+  const revokeCredential = (id: string) => {
+    const credential = credentialStore.find((c) => c.id === id);
+    if (!credential || credential.revoked) return;
+    credential.revoked = true;
+    credential.revokedAt = new Date().toISOString();
+    // A revoked credential can no longer hold a session open.
+    for (const s of sessionStore) if (s.credentialId === id) s.revoked = true;
+  };
   const inspectionState = { enabled: false, trust: "not_enabled" as TrustState };
   const inspection = (): ProxyInspection => ({
     enabled: inspectionState.enabled,
@@ -537,6 +642,13 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
 
     async dns() {
       return ready<DnsView>({
+        source: "demo",
+        settingsVersion: dnsState.version,
+        settingsStatus: {
+          saved: true,
+          appliedVersion: dnsState.reportedVersion,
+          reportedAt: dnsState.reportedAt,
+        },
         filtering: ready({
           responseMode: dnsState.responseMode,
           allow: [exact("homework.example")],
@@ -557,7 +669,7 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
           bootstrap: ["9.9.9.9"],
           fallback: ["1.1.1.1"],
         }),
-        cache: ready({ entries: 1840, ...dnsState.cache }),
+        cache: ready({ entries: dnsState.cacheEntries, ...dnsState.cache }),
         access: ready({
           rateLimitPerSecond: dnsState.rateLimit,
           allowedClients: ["192.168.1.0/24"],
@@ -568,22 +680,40 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
       });
     },
 
-    async updateDns(patch: DnsSettingsPatch) {
+    async updateDns(patch: DnsSettingsPatch, options?: DnsUpdateOptions) {
+      // Demo only: omitting the expected version means "the current one". The UI passes it explicitly.
+      const expected = options?.expectedSettingsVersion ?? dnsState.version;
+      if (expected !== dnsState.version) throw new RuntimeConflictError();
       if (patch.responseMode) dnsState.responseMode = patch.responseMode;
       if (patch.cache) Object.assign(dnsState.cache, patch.cache);
       if (patch.rateLimitPerSecond !== undefined) dnsState.rateLimit = patch.rateLimitPerSecond;
       if (patch.retentionDays !== undefined) dnsState.retentionDays = patch.retentionDays;
+      dnsState.version += 1;
+      const saved = dnsState.version;
+      // The gateway reports back a moment later. Until then the saved version is not "applied".
+      setTimeout(() => {
+        if (dnsState.version >= saved) {
+          dnsState.reportedVersion = saved;
+          dnsState.reportedAt = new Date().toISOString();
+        }
+      }, 3000);
       return this.dns();
     },
 
-    async dnsStats(q: DnsStatsQuery) {
-      return ready<DnsStats>(buildStats(q));
+    async clearDnsCache() {
+      const entries = dnsState.cacheEntries;
+      dnsState.cacheEntries = 0;
+      return ready<DnsCacheClearResult>({ clearedAt: new Date().toISOString(), entries });
     },
 
-    async proxyStats(q: DnsStatsQuery) {
+    async dnsStats(q: DnsStatsQuery) {
+      return ready<DnsStats>(buildStats(q, dnsState.retentionDays));
+    },
+
+    async proxyStats(q: ProxyStatsQuery) {
       // Nothing is inspected until devices report trusting the CA.
       const inspected = inspectionState.trust === "trusted" ? 0.6 : 0;
-      return ready<ProxyStats>(buildProxyStats(q, inspected));
+      return ready<ProxyStats>(buildProxyStats(q, inspected, dnsState.retentionDays));
     },
 
     async proxy() {
@@ -594,30 +724,59 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
           destinationPolicy: "Private, loopback and metadata addresses are refused.",
         }),
         credentials: ready(
-          [
-            {
-              id: "c1",
-              label: "Desktop",
-              createdAt: ago(60 * 24 * 20),
-              lastUsedAt: ago(3),
-              revoked: false,
-            },
-            {
-              id: "c2",
-              label: "MacBook",
-              createdAt: ago(60 * 24 * 10),
-              lastUsedAt: ago(2),
-              revoked: false,
-            },
-          ].map((c) => ({ ...c, revoked: revokedCredentials.has(c.id) })),
+          credentialStore.map((c) => ({
+            id: c.id,
+            label: c.label,
+            createdAt: c.createdAt,
+            lastUsedAt: c.lastUsedAt,
+            revoked: c.revoked,
+          })),
         ),
         inspection: ready(inspection()),
       });
     },
 
     async revokeProxyCredential(id: string) {
-      revokedCredentials.add(id);
+      revokeCredential(id);
       return this.proxy();
+    },
+
+    async proxyAccess() {
+      return ready(proxyAccessView());
+    },
+
+    async issueProxyCredential(input: IssueProxyCredentialInput) {
+      const deviceLabel = Object.entries(DEVICE_IDS).find(([, id]) => id === input.deviceId)?.[0];
+      const credential: ProxyCredentialView = {
+        id: `c${nextId++}`,
+        label: input.label.trim() || deviceLabel || "Proxy sign-in",
+        personLabel: PEOPLE[input.personId] ?? null,
+        deviceId: input.deviceId,
+        createdAt: new Date().toISOString(),
+        expiresAt: ahead(input.expiresInHours * 60),
+        lastUsedAt: null,
+        revoked: false,
+        revokedAt: null,
+        scopes: ["proxy:connect"],
+      };
+      credentialStore.push(credential);
+      // Returned once here; the store and every listing hold no secret.
+      const bytes = crypto.getRandomValues(new Uint8Array(18));
+      const secret = `vpx_${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+      return ready<IssuedProxyCredential>({ credential: { ...credential }, secret });
+    },
+
+    async endProxySession(id: string) {
+      const session = sessionStore.find((s) => s.id === id);
+      if (session) session.revoked = true;
+      return ready(proxyAccessView());
+    },
+
+    async revokeAllForPerson(personId: string) {
+      const person = PEOPLE[personId];
+      for (const c of credentialStore) if (c.personLabel === person) revokeCredential(c.id);
+      for (const s of sessionStore) if (s.personLabel === person) s.revoked = true;
+      return ready(proxyAccessView());
     },
 
     async setInspection(enabled: boolean) {
@@ -637,21 +796,56 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
     },
 
     async events(q: EventsQuery) {
-      const filtered = events.filter(
+      const stored = storedEvents();
+      const decision = q.decision && q.decision !== "all" ? q.decision : q.effect;
+      const needle = q.search?.trim().toLowerCase();
+      const filtered = stored.filter(
         (e) =>
           (!q.deviceId || e.deviceId === q.deviceId) &&
-          (!q.search || e.subject.toLowerCase().includes(q.search.toLowerCase())) &&
-          (!q.source || e.source === q.source) &&
-          (!q.effect || e.effect === q.effect),
+          (!needle || e.subject.toLowerCase().includes(needle)) &&
+          (!q.source || q.source === "all" || e.source === q.source) &&
+          (!decision || e.effect === decision) &&
+          (!q.from || e.at >= q.from) &&
+          (!q.to || e.at <= q.to),
       );
-      const start = q.cursor ? Number(q.cursor) : 0;
-      const slice = filtered.slice(start, start + q.limit);
-      const next = start + q.limit < filtered.length ? String(start + q.limit) : null;
+      let rows = filtered;
+      if (q.grouping === "by_host") {
+        // One row per device + source + host + decision; `filtered` is newest first.
+        const groups = new Map<string, NetworkEvent>();
+        for (const e of filtered) {
+          const key = `${e.deviceId}|${e.source}|${e.subject}|${e.effect}`;
+          const g = groups.get(key);
+          if (!g) {
+            groups.set(key, {
+              ...e,
+              id: `grp-${e.id}`,
+              observations: e.observations,
+              firstSeenAt: e.at,
+              lastSeenAt: e.at,
+            });
+          } else {
+            g.observations += e.observations;
+            g.firstSeenAt = e.at;
+          }
+        }
+        rows = [...groups.values()];
+      }
+      const start = q.cursor ? Number(q.cursor) || 0 : (q.offset ?? 0);
+      const slice = rows.slice(start, start + q.limit);
+      const hasMore = start + q.limit < rows.length;
+      const oldestStoredAt = stored.length ? stored[stored.length - 1].at : null;
       return ready<EventsPage>({
         events: slice,
-        nextCursor: next,
-        retention: { days: dnsState.retentionDays, maxEvents: 50_000, maxBytes: 20_000_000 },
-        usage: { events: events.length, bytes: events.length * 420 },
+        total: rows.length,
+        hasMore,
+        nextCursor: hasMore ? String(start + q.limit) : null,
+        retention: {
+          keepDays: dnsState.retentionDays,
+          oldestStoredAt,
+          storedCount: stored.length,
+          capCount: 50_000,
+        },
+        truncated: Boolean(q.from && oldestStoredAt && q.from < oldestStoredAt),
       });
     },
   };

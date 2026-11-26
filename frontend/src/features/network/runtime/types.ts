@@ -178,7 +178,25 @@ export interface DnsRewrite {
   value: string;
 }
 
+/**
+ * What the DNS gateway reports about the settings version it runs. "Applied" is gateway-reported and
+ * never independently verified.
+ */
+export interface DnsSettingsStatus {
+  /** The latest settings are durably stored on the server. */
+  saved: boolean;
+  /** The settings version the gateway last reported applying, or `null` if it never has. */
+  appliedVersion: number | null;
+  /** When the gateway reported `appliedVersion`. */
+  reportedAt: string | null;
+}
+
 export interface DnsView {
+  /** Where these settings came from. Only the demo supplies them today; the real source is unavailable. */
+  source?: "demo" | "server";
+  /** Counter for DNS runtime settings only. It is not the policy revision. Used for compare-and-set. */
+  settingsVersion: number;
+  settingsStatus: DnsSettingsStatus;
   filtering: Availability<{
     responseMode: "nxdomain" | "refused" | "sinkhole";
     allow: DomainMatch[];
@@ -237,6 +255,59 @@ export interface ProxyInspection {
   pinnedApps: { id: string; name: string; note: string }[];
 }
 
+// ── Proxy access ────────────────────────────────────────────────────────────
+
+/**
+ * A proxy sign-in credential: how the proxy tells which person is using a device. It is NOT any of:
+ * a gateway worker token (how a gateway authenticates to the server), a BYOD setup grant (how a device
+ * is enrolled), or HTTPS-inspection CA trust (what lets the proxy read encrypted traffic).
+ */
+export interface ProxyCredentialView {
+  id: string;
+  /** Equals the device label when issued for one device, so a device's Proxy tab can match by label. */
+  label: string;
+  personLabel: string | null;
+  deviceId: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  revoked: boolean;
+  revokedAt: string | null;
+  scopes: string[];
+}
+
+/** A live proxy sign-in. The evidence it earns is "proxy sign-in", nothing stronger. */
+export interface ProxySessionView {
+  id: string;
+  credentialId: string;
+  deviceId: string;
+  personLabel: string;
+  startedAt: string;
+  lastActiveAt: string;
+  expiresAt: string;
+  evidence: "proxy sign-in";
+  revoked: boolean;
+}
+
+export interface ProxyAccessView {
+  credentials: ProxyCredentialView[];
+  sessions: ProxySessionView[];
+  enrollment: { available: boolean; reason?: string };
+}
+
+export interface IssueProxyCredentialInput {
+  personId: string;
+  deviceId: string | null;
+  label: string;
+  expiresInHours: number;
+}
+
+export interface IssuedProxyCredential {
+  credential: ProxyCredentialView;
+  /** Shown once, when issued. It is never listed again and cannot be recovered. */
+  secret: string;
+}
+
 // ── Events ──────────────────────────────────────────────────────────────────
 
 export type EventSource = "dns" | "proxy" | "agent";
@@ -244,6 +315,7 @@ export type IdentityEvidence = "verified" | "asserted" | "weak" | "unknown";
 
 export interface NetworkEvent {
   id: string;
+  /** For a grouped row, the most recent observation. */
   at: string;
   source: EventSource;
   deviceId: string;
@@ -257,24 +329,55 @@ export interface NetworkEvent {
   revision: number;
   /** Events describing one action share this id, so one visit is not counted three times. */
   correlationId: string;
+  /**
+   * How many times the gateway observed this host or domain in this row (1 for a raw row). These are
+   * observations of a domain or host, not browser visits or page history.
+   */
+  observations: number;
+  /** Only on grouped rows (`grouping: "by_host"`). */
+  firstSeenAt?: string;
+  lastSeenAt?: string;
 }
 
+export type EventsGrouping = "raw" | "by_host";
+
 export interface EventsQuery {
-  /** Only this device's events. */
+  /** Only this device's events. Household-wide when omitted. */
   deviceId?: string;
-  /** Case-insensitive match on the domain or host. */
+  /** Case-insensitive substring match on the domain or host. */
   search?: string;
-  source?: EventSource;
+  source?: EventSource | "all";
+  decision?: Effect | "all";
+  /** Older spelling of `decision` for a single effect. */
   effect?: Effect;
+  /** ISO timestamps, inclusive. */
+  from?: string;
+  to?: string;
+  /** "raw" is one row per observation; "by_host" collapses repeats of a host per device and decision. */
+  grouping?: EventsGrouping;
   cursor?: string;
+  /** Skips this many rows. Ignored when `cursor` is set. */
+  offset?: number;
   limit: number;
+}
+
+export interface EventsRetention {
+  keepDays: number;
+  oldestStoredAt: string | null;
+  storedCount: number;
+  /** The most rows the store keeps, or `null` when there is no row cap. */
+  capCount: number | null;
 }
 
 export interface EventsPage {
   events: NetworkEvent[];
+  /** Rows matching the query, or `null` when the source cannot count cheaply. */
+  total?: number | null;
+  hasMore: boolean;
   nextCursor: string | null;
-  retention: { days: number; maxEvents: number; maxBytes: number };
-  usage: { events: number; bytes: number };
+  retention: EventsRetention;
+  /** The requested range reaches back further than anything stored. */
+  truncated: boolean;
 }
 
 // ── DNS statistics ──────────────────────────────────────────────────────────
@@ -285,6 +388,20 @@ export interface DnsStatsQuery {
   /** Only this device's queries; omit for the whole household. */
   deviceId?: string;
   range: StatsRange;
+  /** Same meaning as `range`; wins when both are set. */
+  requestedRange?: StatsRange;
+}
+
+export type ProxyStatsQuery = DnsStatsQuery;
+
+/** What a statistics response actually covers. Never claim `requested` when `shortened` is true. */
+export interface StatsWindow {
+  requested: StatsRange;
+  actualStart: string;
+  actualEnd: string;
+  /** Whole days of data that exist inside the request. */
+  retainedDays: number;
+  shortened: boolean;
 }
 
 export interface DomainCount {
@@ -296,6 +413,10 @@ export interface DomainCount {
 export interface DnsStats {
   total: number;
   blocked: number;
+  /** Same figures as `total`/`blocked`, named for what they are: observations, not visits. */
+  observations: number;
+  blockedObservations: number;
+  window: StatsWindow;
   /** Oldest first; evenly spaced buckets across the range. */
   series: { at: string; total: number; blocked: number }[];
   topDomains: DomainCount[];
@@ -306,6 +427,9 @@ export interface DnsStats {
 export interface ProxyStats {
   total: number;
   blocked: number;
+  observations: number;
+  blockedObservations: number;
+  window: StatsWindow;
   /** Requests whose HTTPS traffic was inspected (needs a trusted CA on the device). */
   inspected: number;
   /** Oldest first; evenly spaced buckets across the range. */
@@ -337,4 +461,24 @@ export interface DnsSettingsPatch {
   }>;
   rateLimitPerSecond?: number | null;
   retentionDays?: number;
+}
+
+/** Pass as `expectedSettingsVersion` so a stale write is rejected rather than overwriting someone else. */
+export interface DnsUpdateOptions {
+  expectedSettingsVersion?: number;
+}
+
+export interface DnsCacheClearResult {
+  clearedAt: string;
+  /** Cache entries that were dropped. */
+  entries: number;
+}
+
+/** A compare-and-set write lost to a newer version. Reload before retrying. */
+export class RuntimeConflictError extends Error {
+  readonly kind = "conflict";
+  constructor(message = "The DNS settings changed since you loaded them") {
+    super(message);
+    this.name = "RuntimeConflictError";
+  }
 }

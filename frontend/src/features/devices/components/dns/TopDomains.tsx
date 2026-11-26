@@ -13,12 +13,15 @@ export function TopDomains({
   rows,
   tone,
   total,
+  noun = "observations",
 }: {
   title: string;
   rows: DomainCount[];
   tone: "neutral" | "blocked";
   /** What the share is a share of (all queries, or all blocked ones). */
   total: number;
+  /** What the counts are, for the heading and tooltips. These are never visits. */
+  noun?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const max = Math.max(1, ...rows.map((row) => row.count));
@@ -30,9 +33,11 @@ export function TopDomains({
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="font-medium">{title}</h3>
         <span
+          title={`${total.toLocaleString()} ${noun}`}
           className={cn("text-sm font-medium tabular-nums", blocked ? "text-destructive" : "text-primary")}
         >
           {total.toLocaleString()}
+          <span className="ml-1.5 text-xs font-normal text-muted-foreground">{noun}</span>
         </span>
       </div>
       {rows.length === 0 ? (
@@ -52,6 +57,7 @@ export function TopDomains({
                   {row.domain}
                 </span>
                 <span
+                  title={`Seen ${row.count.toLocaleString()} times`}
                   className={cn(
                     "shrink-0 tabular-nums",
                     blocked ? "text-destructive" : "text-foreground",
