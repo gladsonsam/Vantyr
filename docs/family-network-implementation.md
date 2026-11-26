@@ -1,18 +1,36 @@
-# Family network layer — implementation checklist (step 1: compatibility proof)
+# Vantyr Network — backend implementation checklist
 
-Status: **step 1 only**. Backend feasibility and durable contracts. No live
+## Current delivery status
+
+- Shared policy core: independently accepted; 16 tests.
+- DNS immutable snapshots: independently accepted; no catalog lock across I/O.
+- Vantyr DNS executable: committed with 14 tests, pending independent review;
+  real policy-connected UDP/TCP filtering and CNAME target checks.
+- Network runtime: independently accepted; 22 tests covering local process-restart
+  policy persistence and bounded events with out-of-order expiry. Integration
+  into the DNS executable is still pending.
+- Isolated DNS lab: independently accepted; currently verifies the controlled
+  upstream, not an integrated Vantyr deployment.
+- Management API: inventory and explicit scoped grants under implementation.
+- Management UI: proceeds in a separate thread; mobile apps remain deferred.
+- DHCP serving is excluded. The router continues assigning addresses.
+
+The sections below retain the foundation checkpoint and outstanding behavior
+contracts; they are not a claim that all service capabilities are implemented.
+
+Foundation checkpoint: **step 1 only**. Backend feasibility and durable contracts. No live
 household, DHCP, router, firewall, DNS resolver, proxy, Supabase or React UI
 changes. The integrated Network UI is deliberately deferred and is not a
 prerequisite for backend work.
 
 Related doc: [operations/security runbook](family-network-operations.md)
-(accepted). The full native DNS/DHCP behaviour scope is listed neutrally below
+(accepted). The full native DNS behaviour scope is listed neutrally below
 and remains future work; none of it overrides Vantyr's scope/OIDC boundaries.
 
 ## What step 1 actually delivers
 
 1. A pure policy crate (`family-policy`) with the shared data contracts and a
-   deterministic evaluator, including 13 passing tests.
+   deterministic evaluator, including 16 passing tests.
 2. A Hickory DNS worker crate (`family-dns`) with 3 passing loopback tests:
    UDP+TCP A/AAAA/CNAME/NXDOMAIN/TTL, caller-supplied sinkhole zone revisions,
    and forwarding to a loopback upstream. Policy evaluation is not yet wired
@@ -27,7 +45,7 @@ and remains future work; none of it overrides Vantyr's scope/OIDC boundaries.
    `Cargo.lock`.
 
 It does **not** deliver a running network proxy listener, TLS MITM, the full
-native DNS/DHCP capability set, or UI. Those are bounded later steps below.
+native DNS capability set, or UI. Those are bounded later steps below.
 
 ## Reproducible commands (run from repo root)
 
@@ -38,7 +56,7 @@ cargo test -p family-proxy
 cargo run  -p gateway-compat-spike
 ```
 
-Recorded results in this checkout: `family-policy` 11 passed / 0 failed;
+Recorded results in this checkout: `family-policy` 16 passed / 0 failed;
 `family-dns` 3 passed / 0 failed; `family-proxy` 5 passed / 0 failed; spike
 binary exits 0 and prints `device_profile_deny` for the TV example. All
 listeners used in tests are `127.0.0.1:0` ephemeral sockets; no privileged
@@ -124,8 +142,8 @@ termination remains future work.
    and bounded event retention. Still no UI.
 3. **Native DNS backend capability slices.** Work from the full behaviour list
    below one slice at a time: filtered forwarding, local/split DNS, filter
-   syntax and client grouping first; DHCP and encrypted DNS are explicitly in
-   scope and are not silently dropped. Validate each slice on one test device
+   syntax and client grouping first; encrypted DNS remains in scope.
+   DHCP address assignment stays on the router and is outside this product. Validate each slice on one test device
    before any broader use.
 4. **Pure policy evaluation hardening.** More precedence/expiry/schedule
    tests, then wire the effective policy snapshot into the DNS worker. No
@@ -267,7 +285,7 @@ pagination with bounded retention, exception create/revoke with expiry, and
 gateway credential enrollment/revocation. Authz is by the independent grants
 above, not by remote-desktop or Recall consent.
 
-## Native DNS/DHCP backend capability checklist
+## Native DNS backend capability checklist
 
 Full native DNS behaviour is **not** claimed in step 1; only Hickory local
 zone and forwarding primitives are exercised. Later backend slices must
@@ -277,8 +295,9 @@ explicitly account for, and report the disposition of, at minimum:
   negative caching, local/split DNS, upstream failover and cache behaviour.
 - Filter syntax, allow/deny list subscription and update, block-page and
   sinkhole responses, and per-client/group rule application.
-- DHCP server/lease behaviour and its interaction with client identity;
-  encrypted DNS (DoT/DoH/DoQ) as client and upstream paths.
+- Encrypted DNS (DoT/DoH/DoQ) as client and upstream paths.
+- Optional future read-only router lease enrichment as weak device evidence;
+  no DHCP server, lease allocation or router configuration management.
 - Query logs, bounded retention, and status during controller/upstream outage.
 - Client configuration and enrollment, including what is asserted versus
   verified.
@@ -331,16 +350,16 @@ external product's auth or config format is a requirement.
    must never be presented as actual runtime verification.
 2. Confirm the `GatewayCredential` command set and whether ack must be signed
    per worker or per gateway instance.
-3. Implement durable worker-local last-known-good persistence across ack
-   outages.
+3. Integrate accepted worker-local policy persistence into DNS and the
+   authenticated policy-distribution path, including lost-ack recovery.
 4. Decide the rcgen leaf-issuer design for Rama 0.4 MITM and add a real
    upstream certificate/hostname rejection test.
 5. Define concurrent-session handling for fast user switching on shared PCs.
 6. Agree retention defaults and audit-log linkage; the accepted operations
    runbook is not duplicated here.
-7. DNS worker: replace the mutex held across query I/O with a short-held
-   `RwLock<Arc<Catalog>>` snapshot so an upstream stall cannot serialise local
-   queries. Delegated separately; evidence is pending independent review.
-8. Enforce a hard event count cap in addition to time-based pruning.
+7. Integrate the runnable DNS executable with the isolated lab and test
+   configuration reload, runtime acknowledgments and restart recovery.
+8. Integrate the accepted bounded runtime queue with DNS and control-plane
+   event ingestion; no unbounded event buffers.
 
 No substantive UI or Supabase changes were made in this step.

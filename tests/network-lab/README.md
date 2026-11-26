@@ -10,12 +10,11 @@ privileged port, Docker socket mount or production data is involved.
 **Supported now:** the upstream resolver contract and DNS wire behaviour
 (over UDP and TCP) using maintained tooling.
 
-**Not supported now:** the Vantyr DNS worker is a library crate
-(`crates/family-dns`) with loopback unit tests only. There is no worker
-executable and no policy-to-DNS wiring in this checkout. This lab does **not**
-claim filtering, rewrites, policy-driven sinkholes, cache behaviour, last-known-
-good persistence, encrypted transports (DoT/DoH/DoQ) or DHCP. Those remain
-later backend slices; see [Retained scope](#retained-scope).
+**Integration pending:** the Vantyr DNS executable now exists and has separate
+real-process and socket tests. This lab still verifies the controlled upstream
+only; its worker-service template does not yet run Vantyr filtering. Integrated
+filtering, cache, restart, policy acknowledgment and encrypted-transport assertions
+remain future lab work. DHCP serving is outside the product scope.
 
 ## Verified toolchain and pins
 
@@ -192,10 +191,11 @@ rediscovering the fixture:
 The full native backend capability set remains in scope for later slices:
 UDP/TCP authoritative and forwarding resolution, local and split DNS, filter
 syntax and list updates, per-client and per-group rules, query logs with bounded
-retention, outage behaviour, DHCP lease handling and client identity, encrypted
+retention, outage behaviour, client identity, encrypted
 DNS (DoT/DoH/DoQ) as client and upstream paths, and enrollment that separates
 asserted from verified identity. This lab deliberately covers only the
-deterministic upstream and DNS-behaviour foundation.
+deterministic upstream and DNS-behaviour foundation. DHCP remains on the router;
+optional read-only lease enrichment is a future convenience, not identity proof.
 
 ## Validation commands
 
