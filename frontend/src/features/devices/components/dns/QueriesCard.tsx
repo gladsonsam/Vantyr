@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { Card, CardContent } from "@vantyr/ui/components/card";
+import { BarChart3, Globe2 } from "lucide-react";
+import { DetailSection } from "@/components/common/resource-detail/DetailSection";
+import { KeyValueCard, KeyValueGrid } from "@/components/common/resource-detail/KeyValueCard";
+import { MetricRing } from "@/components/common/MetricRing";
 import Counter from "@/components/react-bits/Counter";
 import RubberSegment from "@/components/react-bits/RubberSegment";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
@@ -14,15 +17,13 @@ const RANGES: { key: StatsRange; label: string }[] = [
   { key: "30d", label: "30 days" },
 ];
 
-function Figure({ label, value, suffix }: { label: string; value: number; suffix?: string }) {
+function Figure({ label, value }: { label: string; value: number }) {
   return (
-    <div>
-      <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="mt-1 text-3xl font-semibold tabular-nums tracking-tight">
-        <Counter value={value} fontSize={30} fontWeight={600} textColor="currentColor" />
-        {suffix}
+    <KeyValueCard label={label} format="custom">
+      <div className="text-2xl font-semibold tabular-nums tracking-tight">
+        <Counter value={value} fontSize={24} fontWeight={600} textColor="currentColor" />
       </div>
-    </div>
+    </KeyValueCard>
   );
 }
 
@@ -44,39 +45,46 @@ export function QueriesCard({ deviceId }: { deviceId: string }) {
     const share = stats.total === 0 ? 0 : (stats.blocked / stats.total) * 100;
     return (
       <div className="space-y-8">
-        <Card className="gap-0 py-0">
-          <CardContent className="space-y-6 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-6">
-              <div className="flex flex-wrap gap-x-12 gap-y-4">
-                <Figure label="Queries" value={stats.total} />
-                <Figure label="Allowed" value={allowed} />
-                <Figure label="Blocked" value={stats.blocked} />
-                <div>
-                  <div className="text-sm text-muted-foreground">Share blocked</div>
-                  <div className="mt-1 text-3xl font-semibold tabular-nums tracking-tight">
-                    {share.toFixed(1)}%
-                  </div>
-                </div>
+        <DetailSection
+          title="Queries"
+          icon={BarChart3}
+          action={
+            <RubberSegment
+              aria-label="Time range"
+              items={RANGES.map((r) => ({ value: r.key, label: r.key }))}
+              value={range}
+              onChange={(next) => setRange(next as StatsRange)}
+              size="sm"
+              trackColor="var(--muted)"
+              thumbColor="var(--primary)"
+              textColor="var(--muted-foreground)"
+              activeTextColor="var(--primary-foreground)"
+            />
+          }
+        >
+          <KeyValueGrid>
+            <Figure label="Queries" value={stats.total} />
+            <Figure label="Allowed" value={allowed} />
+            <Figure label="Blocked" value={stats.blocked} />
+            <KeyValueCard label="Share blocked" format="custom">
+              <div className="flex items-center gap-3">
+                <MetricRing percent={share} variant="cpu" size={40} stroke={5} />
+                <span className="text-2xl font-semibold tabular-nums tracking-tight">
+                  {share.toFixed(1)}%
+                </span>
               </div>
-              <RubberSegment
-                aria-label="Time range"
-                items={RANGES.map((r) => ({ value: r.key, label: r.key }))}
-                value={range}
-                onChange={(next) => setRange(next as StatsRange)}
-                size="sm"
-                trackColor="var(--muted)"
-                thumbColor="var(--primary)"
-                textColor="var(--muted-foreground)"
-                activeTextColor="var(--primary-foreground)"
-              />
-            </div>
+            </KeyValueCard>
+          </KeyValueGrid>
+          <div className="rounded-xl border border-border/70 bg-card/10 p-5">
             <QueryChart series={stats.series} />
-          </CardContent>
-        </Card>
-        <div className="grid gap-6 lg:grid-cols-2">
-          <TopDomains title="Top domains" rows={stats.topDomains} tone="neutral" />
-          <TopDomains title="Top blocked domains" rows={stats.topBlocked} tone="blocked" />
-        </div>
+          </div>
+        </DetailSection>
+        <DetailSection title="Domains" icon={Globe2}>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <TopDomains title="Top domains" rows={stats.topDomains} tone="neutral" />
+            <TopDomains title="Top blocked domains" rows={stats.topBlocked} tone="blocked" />
+          </div>
+        </DetailSection>
       </div>
     );
   })();

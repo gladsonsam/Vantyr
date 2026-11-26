@@ -159,7 +159,7 @@ export function PairingCodeList({
   };
 
   return (
-    <section aria-labelledby="pairing-codes-heading" className="rounded-lg bg-muted/50 px-3.5 py-3">
+    <section aria-labelledby="pairing-codes-heading" className="rounded-xl border border-border/70 bg-card/10 px-4 py-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3
           id="pairing-codes-heading"

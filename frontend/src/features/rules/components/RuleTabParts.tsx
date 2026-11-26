@@ -76,7 +76,7 @@ export function RuleSearch({
   onChange: (query: string) => void;
 }) {
   return (
-    <InputGroup className="h-9 min-w-0 sm:max-w-md">
+    <InputGroup className="h-9 min-w-0 basis-full sm:w-64 sm:basis-auto">
       <InputGroupAddon>
         <Search />
       </InputGroupAddon>

@@ -1,4 +1,4 @@
-import { Camera, Clock, History, MoreHorizontal, Pencil, Trash2, Users } from "lucide-react";
+import { BellRing, Camera, Clock, History, MoreHorizontal, Pencil, Trash2, Users } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import {
   DropdownMenu,
@@ -7,6 +7,7 @@ import {
   DropdownMenuTrigger,
 } from "@vantyr/ui/components/dropdown-menu";
 import { Switch } from "@/components/common/SettingsSwitch";
+import { RuleIconTile } from "./RuleListRow";
 import type { Agent, AgentGroup, AlertRule } from "@/api/types";
 import {
   channelLabel,
@@ -79,15 +80,9 @@ function AlertRuleItem({
   const takesScreenshot = r.take_screenshot && r.channel !== "agent_offline";
 
   return (
-    <li className="flex flex-col gap-3 border-b border-border/60 p-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4 transition-colors hover:bg-muted/20">
-      <div className="flex min-w-0 flex-1 items-start gap-3">
-        <Switch
-          className="mt-0.5 after:absolute after:-inset-1.5 after:content-['']"
-          aria-label={`Enable rule ${title}`}
-          checked={r.enabled}
-          disabled={switchDisabled}
-          onCheckedChange={() => onToggle(r)}
-        />
+    <li className="flex flex-col gap-3 border-b border-border/60 p-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4 transition-colors hover:bg-muted/40">
+      <div className="flex min-w-0 flex-1 items-start gap-3.5">
+        <RuleIconTile icon={BellRing} enabled={r.enabled} />
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-base font-medium">{title}</h3>
           <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground">
@@ -122,7 +117,14 @@ function AlertRuleItem({
           </p>
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2 pl-[3.25rem] sm:pl-0">
+      <div className="flex shrink-0 items-center gap-2 pl-[3.5rem] sm:pl-0">
+        <Switch
+          className="after:absolute after:-inset-1.5 after:content-['']"
+          aria-label={`Enable rule ${title}`}
+          checked={r.enabled}
+          disabled={switchDisabled}
+          onCheckedChange={() => onToggle(r)}
+        />
         <Button
           variant="outline"
           className="pointer-coarse:h-9"

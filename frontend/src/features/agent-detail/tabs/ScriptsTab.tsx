@@ -81,7 +81,7 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
     <div className="flex flex-col gap-4">
       <ScriptAvailabilityNotice viewer={blockedByRole} remoteOk={remoteOk} />
 
-      <section className="flex flex-col gap-3 rounded-xl bg-card p-3 sm:p-4">
+      <section className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/10 p-3 sm:p-4">
         <div className="flex items-center gap-3">
           <label htmlFor="scripts-shell" className="text-sm text-muted-foreground">
             Shell
@@ -183,7 +183,7 @@ function ScriptResultPanel({
   return (
     <section
       aria-label="Script result"
-      className="flex flex-col gap-3 rounded-xl bg-card p-3 sm:p-4"
+      className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/10 p-3 sm:p-4"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <p

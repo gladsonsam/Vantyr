@@ -1,6 +1,8 @@
+import { SETTINGS_TAB_TRIGGER_CLASS } from "@/features/settings/components/settingsNav";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
+import { Bell, Database, Laptop, Server } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { api, errorText } from "@/api";
 import { enrollmentKeys, enrollmentQueries } from "@/api/queries/enrollment";
@@ -8,6 +10,11 @@ import { settingsKeys, settingsQueries } from "@/api/queries/settings";
 import { useSession } from "@/app/providers/useSession";
 import { AgentEnrollmentSettings } from "@/features/enrollment/AgentEnrollmentSettings";
 import type { PendingAgentClaim } from "@/features/enrollment/PendingApprovalsCard";
+import {
+  SETTINGS_TAB_LIST_CLASS,
+  SETTINGS_TABS_ROOT_CLASS,
+  SettingsPageHeader,
+} from "./components/SettingsLayout";
 import { DataRetentionSettings } from "./DataRetentionSettings";
 import { RecallCaptureSettings } from "@/features/recall/components/RecallCaptureSettings";
 import { UrlCategorizationSettings } from "./UrlCategorizationSettings";
@@ -25,18 +32,25 @@ const NO_CLAIMS: PendingAgentClaim[] = [];
 
 /** The sections, in tab order; `hint` says what is inside so nobody opens each one to find out. */
 const SECTIONS = [
-  { id: "agents", label: "Agents", hint: "Enroll new devices and approve the ones waiting." },
+  {
+    id: "agents",
+    label: "Agents",
+    icon: Laptop,
+    hint: "Enroll new devices and approve the ones waiting.",
+  },
   {
     id: "data",
     label: "Data",
+    icon: Database,
     hint: "How long data is kept, screen capture defaults and website categories.",
   },
   {
     id: "alerts",
     label: "Alerts",
+    icon: Bell,
     hint: "Where alert matches are sent, and notifications on this browser.",
   },
-  { id: "system", label: "System", hint: "Version, updates and storage." },
+  { id: "system", label: "System", icon: Server, hint: "Version, updates and storage." },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
 
@@ -129,29 +143,30 @@ export function SettingsPage() {
     <Tabs
       value={section}
       onValueChange={(next) => setParams({ section: String(next) }, { replace: true })}
-      className="gap-5"
+      className={SETTINGS_TABS_ROOT_CLASS}
     >
-      <TabsList
-        aria-label="Settings sections"
-        className="h-auto w-full justify-start gap-1 rounded-none border-b border-border/70 bg-transparent p-0"
-      >
-        {SECTIONS.map(({ id, label }) => (
-          <TabsTrigger
-            key={id}
-            value={id}
-            className="flex-none rounded-none border-b-2 border-transparent px-4 py-2.5 data-active:border-primary data-active:bg-transparent data-active:text-foreground data-active:shadow-none"
-          >
+      <TabsList aria-label="Settings sections" className={SETTINGS_TAB_LIST_CLASS}>
+        {SECTIONS.map(({ id, label, icon: Icon }) => (
+          <TabsTrigger key={id} value={id} className={SETTINGS_TAB_TRIGGER_CLASS}>
+            <Icon aria-hidden="true" />
             {label}
           </TabsTrigger>
         ))}
       </TabsList>
-      <p className="text-sm text-muted-foreground">
-        {hint}
-        {!isAdmin && " You can view these settings; only admins can change them."}
-      </p>
+
+      <div className="flex min-w-0 flex-1 flex-col gap-6">
+        <SettingsPageHeader
+          title={SECTIONS.find((s) => s.id === section)?.label}
+          description={
+            <>
+              {hint}
+              {!isAdmin && " You can view these settings; only admins can change them."}
+            </>
+          }
+        />
 
       {/* Panels stay mounted so a half-edited form survives switching tabs. */}
-      <TabsContent value="agents" keepMounted className="flex flex-col gap-6">
+      <TabsContent value="agents" keepMounted className="flex flex-col gap-8">
         <AgentEnrollmentSettings
           isAdmin={isAdmin}
           enrollClaims={enrollClaims}
@@ -177,20 +192,20 @@ export function SettingsPage() {
         <SecuritySettings />
       </TabsContent>
 
-      <TabsContent value="data" keepMounted className="flex flex-col gap-6">
+      <TabsContent value="data" keepMounted className="flex flex-col gap-8">
         <DataRetentionSettings isAdmin={isAdmin} form={retention} />
         <RecallCaptureSettings isAdmin={isAdmin} />
         <UrlCategorizationSettings isAdmin={isAdmin} urlCat={urlCat} />
       </TabsContent>
 
-      <TabsContent value="alerts" keepMounted className="flex flex-col gap-6">
+      <TabsContent value="alerts" keepMounted className="flex flex-col gap-8">
         {/* This browser's switch is for everyone, so it leads for people who cannot configure channels. */}
         {!isAdmin && <BrowserPushToggle />}
         <NotificationsSettings isAdmin={isAdmin} />
         {isAdmin && <BrowserPushToggle />}
       </TabsContent>
 
-      <TabsContent value="system" keepMounted className="flex flex-col gap-6">
+      <TabsContent value="system" keepMounted className="flex flex-col gap-8">
         <SystemAboutSettings
           isAdmin={isAdmin}
           storage={{
@@ -216,6 +231,7 @@ export function SettingsPage() {
           }}
         />
       </TabsContent>
+      </div>
     </Tabs>
   );
 }

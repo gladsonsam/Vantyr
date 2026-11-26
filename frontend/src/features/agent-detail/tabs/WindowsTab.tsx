@@ -242,7 +242,7 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
   const topChips = topItems.filter((t) => t.title.trim() || t.app).slice(0, TOP_CHIPS);
 
   return (
-    <div className="overflow-hidden rounded-xl bg-card">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
       <MonitoringToolbar
         title="App windows"
         searchLabel="Search windows"

@@ -1,6 +1,15 @@
 import { EmptyState } from "@/components/common/EmptyState";
 import { useMemo, useState, type ComponentProps } from "react";
-import { FolderPlus, Plus, SearchX, ServerOff, SquareTerminal, Trash2, X } from "lucide-react";
+import {
+  FolderPlus,
+  Plus,
+  RotateCcw,
+  SearchX,
+  ServerOff,
+  SquareTerminal,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import {
   AlertDialog,
@@ -20,8 +29,11 @@ import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import type { FleetRow } from "@/features/fleet/types";
 import { useFleetTable, type FleetTableProps } from "@/features/fleet/hooks/useFleetTable";
 import type { AgentActionHandlers, PowerAction } from "./AgentActionsMenu";
-import { FleetGridView } from "./FleetGridView";
+import { FLEET_GRID_CLASS, FleetGridView } from "./FleetGridView";
 import { FleetTableView } from "./FleetTableView";
+import { DEFAULT_FLEET_COLUMNS, FLEET_COLUMNS, type FleetColumnId } from "@/features/fleet/lib/fleetColumns";
+import { TablePager } from "@/components/common/data-table/TablePager";
+import { paginate } from "@/components/common/data-table/pagination";
 import { FleetToolbar, type StatusCounts } from "./FleetToolbar";
 import { FleetStatStrip } from "./FleetStatStrip";
 import { BulkScriptModal } from "./BulkScriptModal";
@@ -54,11 +66,28 @@ const POWER_COPY: Record<
   },
 };
 
+/** Arcane's grid-view skeleton: outlined cards with a header row and a couple of meta lines. */
 function FleetSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-5 md:grid-cols-2 min-[87.5rem]:grid-cols-3 min-[120rem]:grid-cols-4">
+    <div className={FLEET_GRID_CLASS}>
       {Array.from({ length: 6 }, (_, index) => (
-        <Skeleton key={index} className="h-72 rounded-xl" />
+        <div
+          key={index}
+          className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/10 p-4"
+        >
+          <div className="flex items-center gap-3 border-b border-border/40 pb-3">
+            <Skeleton className="size-10 rounded-xl" />
+            <div className="flex flex-1 flex-col gap-2">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-20" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+            <Skeleton className="col-span-2 h-8 w-full" />
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        </div>
       ))}
     </div>
   );
@@ -73,7 +102,12 @@ export function FleetOverview({ loadingAgents, onAddAgent, ...props }: Props) {
   if (loadingAgents) {
     return (
       <div className="flex flex-col gap-6">
-        <Skeleton className="h-11 w-full max-w-md rounded-xl" />
+        <Skeleton className="h-5 w-72" />
+        <div className="flex flex-wrap items-center gap-2">
+          <Skeleton className="h-9 w-64 rounded-lg" />
+          <Skeleton className="h-9 w-24 rounded-lg" />
+          <Skeleton className="ml-auto h-9 w-20 rounded-lg" />
+        </div>
         <FleetSkeleton />
       </div>
     );
@@ -143,6 +177,27 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
   } | null>(null);
   const [bulkScriptIds, setBulkScriptIds] = useState<string[] | null>(null);
   const [bulkGroupIds, setBulkGroupIds] = useState<string[] | null>(null);
+  const [columns, setColumns] = useState<ReadonlySet<FleetColumnId>>(DEFAULT_FLEET_COLUMNS);
+  const [pageSize, setPageSize] = useState(20);
+  // The page resets to the first whenever the filters or sort change.
+  const pageSignature = [
+    query,
+    currentFilters.status,
+    currentFilters.favoritesOnly,
+    fleetSort.key,
+    fleetSort.direction,
+    pageSize,
+  ].join("|");
+  const [pageState, setPageState] = useState({ signature: pageSignature, page: 1 });
+  const page = pageState.signature === pageSignature ? pageState.page : 1;
+  const setPage = (next: number) => setPageState({ signature: pageSignature, page: next });
+  const toggleColumn = (id: string) =>
+    setColumns((previous) => {
+      const next = new Set(previous);
+      if (next.has(id as FleetColumnId)) next.delete(id as FleetColumnId);
+      else next.add(id as FleetColumnId);
+      return next;
+    });
 
   const counts = useMemo(() => countFleetStatuses(rows), [rows]);
   const updates = useMemo(() => rows.filter((row) => row.updateNeeded).length, [rows]);
@@ -168,6 +223,9 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
     onToggleFavorite: preferenceScope ? toggleFavorite : undefined,
     latestAgentVersion: versionPayload?.latest_agent_version,
     handlers,
+    sort: fleetSort,
+    onSort: setFleetSort,
+    columns,
     selection: canDelete
       ? {
           selected,
@@ -189,7 +247,12 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
 
   return (
     <div className="flex flex-col gap-6">
-      <FleetStatStrip counts={counts} updates={updates} />
+      <FleetStatStrip
+        counts={counts}
+        updates={updates}
+        status={currentFilters.status}
+        onStatus={setStatus}
+      />
       <FleetToolbar
         key={preferenceScope ?? "unverified"}
         current={{
@@ -231,6 +294,12 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
           }))
         }
         onClear={clearFilters}
+        columns={FLEET_COLUMNS.map((column) => ({
+          id: column.id,
+          label: column.label,
+          visible: columns.has(column.id),
+        }))}
+        onToggleColumn={toggleColumn}
       />
 
       <FleetRows
@@ -241,6 +310,10 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
         viewMode={viewMode}
         isMobile={isMobile}
         clearFilters={clearFilters}
+        page={page}
+        pageSize={pageSize}
+        onPage={setPage}
+        onPageSize={setPageSize}
       />
 
       <FleetSelectionBar
@@ -315,7 +388,7 @@ function FleetSelectionBar({
     <>
       {canDelete && selectedIds.length > 0 && (
         <div className="pointer-events-none sticky bottom-4 z-20 flex justify-center">
-          <div className="pointer-events-auto flex max-w-[calc(100vw-2rem)] flex-wrap items-center justify-center gap-1 rounded-xl bg-popover p-1.5 pl-3.5 text-sm shadow-2xl shadow-black/50 ring-1 ring-foreground/10 animate-in fade-in-0 slide-in-from-bottom-2">
+          <div className="pointer-events-auto flex max-w-[calc(100vw-2rem)] flex-wrap items-center justify-center gap-1 rounded-xl border border-border/70 bg-popover p-1.5 pl-3.5 text-sm animate-in fade-in-0 slide-in-from-bottom-2">
             <span className="mr-2 font-medium tabular-nums">{selectedIds.length} selected</span>
             {selectedIds.length < filteredRows.length && (
               <Button
@@ -498,6 +571,10 @@ function FleetRows({
   viewMode,
   isMobile,
   clearFilters,
+  page,
+  pageSize,
+  onPage,
+  onPageSize,
 }: {
   viewProps: Omit<ComponentProps<typeof FleetGridView>, "extra">;
   otherDevices: DeviceRow[];
@@ -506,51 +583,77 @@ function FleetRows({
   viewMode: ReturnType<typeof useFleetTable>["viewMode"];
   isMobile: boolean;
   clearFilters: () => void;
+  page: number;
+  pageSize: number;
+  onPage: (page: number) => void;
+  onPageSize: (size: number) => void;
 }) {
-  return (
-    <>
-      {" "}
-      {viewProps.rows.length === 0 && otherDevices.length === 0 ? (
-        <EmptyState
-          title="No devices match"
-          description={
-            query.trim() ? `Nothing matches “${query.trim()}”.` : "No device matches these filters."
-          }
-          icon={
+  if (viewProps.rows.length === 0 && otherDevices.length === 0) {
+    return (
+      <EmptyState
+        title="No devices match"
+        description={
+          query.trim() ? `Nothing matches “${query.trim()}”.` : "No device matches these filters."
+        }
+        icon={
+          <>
+            <SearchX />
+          </>
+        }
+        iconVariant="icon"
+        action={
+          filtered && (
             <>
-              <SearchX />
+              <Button variant="outline" onClick={clearFilters}>
+                <RotateCcw /> Clear filters
+              </Button>
             </>
-          }
-          iconVariant="icon"
-          action={
-            filtered && (
-              <>
-                <Button variant="outline" onClick={clearFilters}>
-                  Clear filters
-                </Button>
-              </>
-            )
-          }
-        />
-      ) : viewMode === "table" && !isMobile && viewProps.rows.length > 0 ? (
-        <>
-          <FleetTableView {...viewProps} />
-          {otherDevices.length > 0 && (
-            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 min-[87.5rem]:grid-cols-3 min-[120rem]:grid-cols-4">
-              {otherDevices.map((row) => (
-                <DeviceCard key={row.key} row={row} />
-              ))}
-            </div>
-          )}
-        </>
-      ) : (
-        <FleetGridView
-          {...viewProps}
-          extra={otherDevices.map((row) => (
-            <DeviceCard key={row.key} row={row} />
-          ))}
-        />
-      )}
-    </>
+          )
+        }
+      />
+    );
+  }
+
+  // Agent devices come first, then the devices that connect without one; the pager walks both.
+  const combined = [
+    ...viewProps.rows.map((row) => ({ agent: row })),
+    ...otherDevices.map((row) => ({ other: row })),
+  ];
+  const paged = paginate(combined, page, pageSize);
+  const pageRows = paged.items.flatMap((entry) => ("agent" in entry ? [entry.agent] : []));
+  const pageOthers = paged.items.flatMap((entry) => ("other" in entry ? [entry.other] : []));
+  const pager = (
+    <TablePager
+      total={combined.length}
+      page={paged.page}
+      pages={paged.pages}
+      pageSize={pageSize}
+      onPage={onPage}
+      onPageSize={onPageSize}
+    />
+  );
+  const otherCards = pageOthers.map((row) => <DeviceCard key={row.key} row={row} />);
+  const pagerBar = (
+    <div className="rounded-xl border border-border/70 bg-card/10 px-4 py-2.5">{pager}</div>
+  );
+
+  if (viewMode === "table" && !isMobile && pageRows.length > 0) {
+    return (
+      <div className="flex flex-col gap-4">
+        <FleetTableView {...viewProps} rows={pageRows} footer={otherCards.length ? undefined : pager} />
+        {otherCards.length > 0 && (
+          <>
+            <div className={FLEET_GRID_CLASS}>{otherCards}</div>
+            {pagerBar}
+          </>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-4">
+      <FleetGridView {...viewProps} rows={pageRows} extra={otherCards} />
+      {pagerBar}
+    </div>
   );
 }

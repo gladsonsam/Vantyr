@@ -3,13 +3,12 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { api, errorText } from "@/api";
 import { notificationQueries } from "@/api/queries/notifications";
 import type { NotificationProviderInfo, NotificationTestResult } from "@/api/types";
-import { HelpTip } from "@/components/common/HelpTip";
 import { RefreshButton } from "@/components/common/RefreshButton";
+import { SettingsCardBody, SettingsSection } from "./components/SettingsLayout";
 
 interface NotificationsSettingsProps {
   isAdmin: boolean;
@@ -40,7 +39,7 @@ function SetupGuide({ url, label }: { url: string; label: string }) {
 /** A channel that delivers alerts: its name and, when there is one, its setup guide. */
 function ConfiguredRow({ p }: { p: NotificationProviderInfo }) {
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-foreground/[0.06] py-2.5 first:border-t-0 first:pt-0">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
       <Check aria-hidden="true" className="size-4 shrink-0 text-success" />
       <span className="font-medium">{p.label}</span>
       <span className="text-xs font-medium text-success">Configured</span>
@@ -52,7 +51,7 @@ function ConfiguredRow({ p }: { p: NotificationProviderInfo }) {
 /** A channel that is not set up: what it is and which server variables turn it on. */
 function UnconfiguredRow({ p }: { p: NotificationProviderInfo }) {
   return (
-    <li className="flex flex-col gap-1.5 border-t border-foreground/[0.06] py-3 first:border-t-0 first:pt-0 last:pb-0">
+    <li className="flex flex-col gap-1.5 py-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="font-medium">{p.label}</span>
         {p.docs_url ? <SetupGuide url={p.docs_url} label={p.label} /> : null}
@@ -170,7 +169,7 @@ function ChannelList({
         </RefreshNotice>
       )}
       {configured.length > 0 && (
-        <ul>
+        <ul className="divide-y divide-border/50 rounded-xl border border-border/70 px-4">
           {configured.map((p) => (
             <ConfiguredRow key={p.id} p={p} />
           ))}
@@ -178,13 +177,13 @@ function ChannelList({
       )}
       {unconfigured.length > 0 && (
         <details
-          className="group rounded-lg bg-muted/50 px-3.5 py-3"
+          className="group rounded-xl border border-border/70 px-4 py-3"
           open={configured.length === 0 ? true : undefined}
         >
           <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
             {configured.length === 0 ? "Available channels" : "Not set up"} ({unconfigured.length})
           </summary>
-          <ul className="pt-3">
+          <ul className="divide-y divide-border/50 pt-2">
             {unconfigured.map((p) => (
               <UnconfiguredRow key={p.id} p={p} />
             ))}
@@ -231,30 +230,29 @@ function ChannelsBody({ isAdmin, query }: { isAdmin: boolean; query: StatusQuery
 export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
   const statusQuery = useStatusQuery(isAdmin);
   return (
-    <Card className="gap-0 py-0">
-      <CardHeader className="border-b border-border/70 px-5 py-4">
-        <CardTitle className="flex items-center gap-1.5">
-          Alert channels
-          <HelpTip>
-            Fired alert rules (URL, keystroke, resource threshold, agent offline) are delivered to
-            every channel configured here. Set a channel&apos;s variables in the server environment
-            (see <code className="font-sans">.env.example</code>), then restart. Secrets stay on the
-            server.
-          </HelpTip>
-        </CardTitle>
-        {isAdmin && (
-          <CardAction>
-            <RefreshButton
-              onClick={() => void statusQuery.refetch()}
-              loading={statusQuery.isFetching}
-              label="Refresh channels"
-            />
-          </CardAction>
-        )}
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4 px-5 pb-5">
+    <SettingsSection
+      title="Alert channels"
+      help={
+        <>
+          Fired alert rules (URL, keystroke, resource threshold, agent offline) are delivered to
+          every channel configured here. Set a channel&apos;s variables in the server environment
+          (see <code className="font-sans">.env.example</code>), then restart. Secrets stay on the
+          server.
+        </>
+      }
+      action={
+        isAdmin ? (
+          <RefreshButton
+            onClick={() => void statusQuery.refetch()}
+            loading={statusQuery.isFetching}
+            label="Refresh channels"
+          />
+        ) : undefined
+      }
+    >
+      <SettingsCardBody className="space-y-4">
         <ChannelsBody isAdmin={isAdmin} query={statusQuery} />
-      </CardContent>
-    </Card>
+      </SettingsCardBody>
+    </SettingsSection>
   );
 }

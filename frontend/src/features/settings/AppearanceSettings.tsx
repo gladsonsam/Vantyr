@@ -1,7 +1,6 @@
 import { Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
-import { HelpTip } from "@/components/common/HelpTip";
+import { SettingsRow, SettingsSection } from "./components/SettingsLayout";
 import type { ThemeMode } from "@/hooks/useTheme";
 
 interface AppearanceSettingsProps {
@@ -18,17 +17,12 @@ const THEME_OPTIONS: { label: string; value: ThemeMode; icon: LucideIcon }[] = [
 /** Your own theme: one press to switch, always one option chosen. Remembered in this browser only. */
 export function AppearanceSettings({ themeMode, onThemeChange }: AppearanceSettingsProps) {
   return (
-    <Card className="gap-0 py-0">
-      <CardHeader className="px-5 pt-5 pb-3">
-        <CardTitle className="flex items-center gap-1.5">
-          Appearance
-          <HelpTip>
-            Applies only to you, and is remembered in this browser. System follows your device’s
-            light or dark setting.
-          </HelpTip>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="px-5 pb-5">
+    <SettingsSection title="Appearance">
+      <SettingsRow
+        label="Theme"
+        description="Applies only to you, and is remembered in this browser. System follows your device’s light or dark setting."
+        controlClassName="md:justify-end"
+      >
         <ToggleGroup
           size="lg"
           spacing={0}
@@ -51,7 +45,7 @@ export function AppearanceSettings({ themeMode, onThemeChange }: AppearanceSetti
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
-      </CardContent>
-    </Card>
+      </SettingsRow>
+    </SettingsSection>
   );
 }

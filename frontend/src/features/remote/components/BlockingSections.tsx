@@ -31,7 +31,7 @@ import {
 } from "@/features/remote/lib/blocking";
 import { cn } from "@/lib/utils";
 
-const SECTION = "overflow-hidden rounded-xl bg-card";
+const SECTION = "overflow-hidden rounded-xl border border-border/70 bg-card/10";
 const ROW_PADDING = "px-4 sm:px-5";
 
 function Problem({ children, retry }: { children: string; retry?: () => void }) {

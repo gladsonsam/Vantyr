@@ -201,7 +201,7 @@ function AlertEventsTable({
   const filteringText = String(table.state.globalFilter ?? "");
 
   return (
-    <div className="overflow-hidden rounded-xl bg-card">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
       <MonitoringToolbar
         title="Alert events"
         searchLabel="Filter alert events"
@@ -320,7 +320,7 @@ function AppBlockEventsTable({
   const filteringText = String(table.state.globalFilter ?? "");
 
   return (
-    <div className="overflow-hidden rounded-xl bg-card">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
       <MonitoringToolbar
         title="Blocked apps"
         searchLabel="Filter blocked apps"
@@ -412,7 +412,7 @@ function AlertRulesTable({ rules }: { rules: AlertRuleRow[] }) {
       <p className="text-[13px] text-muted-foreground">No alert rules apply to this device.</p>
     );
   return (
-    <div className="overflow-x-auto rounded-xl bg-muted/50">
+    <div className="overflow-x-auto rounded-xl border border-border/70 bg-card/10">
       <Table>
         <TableHeader className={RULE_TABLE_HEAD}>
           <TableRow className="hover:bg-transparent">
@@ -443,7 +443,7 @@ function AppRulesTable({ agentId, rules }: { agentId: string; rules: AppBlockRul
   if (rules.length === 0)
     return <p className="text-[13px] text-muted-foreground">No apps are blocked on this device.</p>;
   return (
-    <div className="overflow-x-auto rounded-xl bg-muted/50">
+    <div className="overflow-x-auto rounded-xl border border-border/70 bg-card/10">
       <Table>
         <TableHeader className={RULE_TABLE_HEAD}>
           <TableRow className="hover:bg-transparent">
@@ -497,7 +497,7 @@ function ActiveRules({ agentId }: { agentId: string }) {
   const state = rulesQuery.isPending ? "pending" : rulesQuery.isError ? "failed" : "ready";
 
   return (
-    <details className="group rounded-xl bg-card">
+    <details className="group rounded-xl border border-border/70 bg-card/10">
       <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-5 [&::-webkit-details-marker]:hidden">
         <span className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
           <span className="font-heading text-base font-medium">Active rules</span>

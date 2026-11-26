@@ -17,7 +17,7 @@ export function ListPagination({
 }) {
   if (pages <= 1 && count === undefined) return null;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
       <p className="text-xs text-muted-foreground tabular-nums">
         {pages > 1 && `Page ${page} of ${pages}`}
         {pages > 1 && count !== undefined && " · "}

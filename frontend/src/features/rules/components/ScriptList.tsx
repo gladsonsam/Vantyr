@@ -1,4 +1,4 @@
-import { CalendarClock, History, Pencil, Play, Users } from "lucide-react";
+import { CalendarClock, SquareTerminal, History, Pencil, Play, Users } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import type { Agent, AgentGroup, ScheduledScript } from "@/api/types";
 import type { LastRuns } from "../hooks/useScheduledScriptRuns";
@@ -44,6 +44,7 @@ export function ScriptList({
           <RuleRow
             key={r.id}
             enabled={r.enabled}
+            icon={SquareTerminal}
             switchLabel={`Enable script ${title}`}
             switchDisabled={switchesDisabled}
             onToggle={() => onToggle(r)}

@@ -121,7 +121,7 @@ export function PendingApprovalsCard({
 
   return (
     <>
-      <Card className="gap-0 border-warning/25 bg-linear-to-br from-warning/[0.10] to-transparent to-50% py-0">
+      <Card className="gap-0 border-warning/25 rounded-xl bg-card/10 py-0 shadow-none ring-0 border">
         {!single && (
           <CardHeader className="px-4 pt-3.5 pb-0 sm:px-5">
             <CardTitle className="flex items-center gap-2">

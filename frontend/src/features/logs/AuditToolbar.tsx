@@ -54,28 +54,9 @@ export function AuditToolbar(props: AuditToolbarProps) {
   } = props;
   const OrderIcon = newestFirst ? ArrowDown : ArrowUp;
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <p role="status" className="min-w-0 text-sm text-muted-foreground tabular-nums">
-          {summary}
-        </p>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground pointer-coarse:h-9"
-            aria-label={
-              newestFirst ? "Newest first. Show oldest first" : "Oldest first. Show newest first"
-            }
-            onClick={onToggleOrder}
-          >
-            <OrderIcon /> {newestFirst ? "Newest" : "Oldest"}
-          </Button>
-          <RefreshButton onClick={onRefresh} loading={refreshing} label="Refresh audit log" />
-        </div>
-      </div>
+    <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <InputGroup className="h-9 min-w-0 basis-full sm:basis-72 sm:max-w-md sm:flex-1">
+        <InputGroup className="h-9 min-w-0 basis-full sm:w-64 sm:basis-auto">
           <InputGroupAddon>
             <Search />
           </InputGroupAddon>
@@ -120,7 +101,24 @@ export function AuditToolbar(props: AuditToolbarProps) {
           />
           Page views
         </label>
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground pointer-coarse:h-9"
+            aria-label={
+              newestFirst ? "Newest first. Show oldest first" : "Oldest first. Show newest first"
+            }
+            onClick={onToggleOrder}
+          >
+            <OrderIcon /> {newestFirst ? "Newest" : "Oldest"}
+          </Button>
+          <RefreshButton onClick={onRefresh} loading={refreshing} label="Refresh audit log" />
+        </div>
       </div>
+      <p role="status" className="min-w-0 text-sm text-muted-foreground tabular-nums">
+        {summary}
+      </p>
     </div>
   );
 }

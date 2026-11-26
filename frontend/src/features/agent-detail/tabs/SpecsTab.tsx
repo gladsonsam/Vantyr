@@ -1,13 +1,16 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { ChevronDown, Cpu, HardDrive, Network } from "lucide-react";
+import { Card, CardContent } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { Button } from "@vantyr/ui/components/button";
 import { agentQueries } from "@/api/queries/agents";
 import type { AgentInfo } from "@/api/types";
 import { cn } from "@/lib/utils";
 import { CopyValue } from "@/components/common/CopyValue";
+import { MetricRing } from "@/components/common/MetricRing";
+import { DetailSection } from "@/components/common/resource-detail/DetailSection";
+import { KeyValueCard, KeyValueGrid } from "@/components/common/resource-detail/KeyValueCard";
 import { ResourceHistory } from "@/features/agent-detail/components/ResourceHistory";
 import {
   capabilityLabel,
@@ -34,24 +37,19 @@ type Adapter = NonNullable<AgentInfo["adapters"]>[number];
 function FactList({ facts }: { facts: Fact[] }) {
   if (facts.length === 0) return null;
   return (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:gap-x-8 lg:grid-cols-3">
+    <KeyValueGrid>
       {facts.map((fact) => (
-        // Short facts pair up on phones; identifiers and long values keep the full width.
-        <div
-          key={fact.label}
-          className={cn("min-w-0", (fact.copy || fact.value.length > 22) && "max-sm:col-span-2")}
-        >
-          <dt className="mb-0.5 text-xs font-medium text-muted-foreground">{fact.label}</dt>
-          <dd className="text-sm wrap-break-word text-foreground">
+        <KeyValueCard key={fact.label} label={fact.label} format="custom">
+          <div className="text-sm wrap-break-word text-foreground">
             {fact.copy ? (
               <CopyValue text={fact.value} label={fact.label.toLowerCase()} mono />
             ) : (
               fact.value
             )}
-          </dd>
-        </div>
+          </div>
+        </KeyValueCard>
       ))}
-    </dl>
+    </KeyValueGrid>
   );
 }
 
@@ -66,7 +64,7 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <details className="group rounded-xl bg-muted/50 px-4 py-3">
+    <details className="group rounded-xl border border-border/70 bg-card/10 px-4 py-3">
       <summary className="flex min-h-7 cursor-pointer list-none items-center justify-between gap-3 rounded-md text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none [&::-webkit-details-marker]:hidden">
         <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
           {title}
@@ -116,7 +114,7 @@ export function SpecsTab({ agentId, cachedInfo }: SpecsTabProps) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <SystemSpecs info={info} />
       <DriveSpecs info={info} />
       <NetworkSpecs info={info} />
@@ -180,11 +178,8 @@ function SystemSpecs({ info }: { info: AgentInfo }) {
     { label: "Time zone", value: info.timezone },
   ]);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>System</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+    <DetailSection title="System" icon={Cpu}>
+      <div className="flex flex-col gap-4">
         {facts.length > 0 ? (
           <FactList facts={facts} />
         ) : (
@@ -193,8 +188,8 @@ function SystemSpecs({ info }: { info: AgentInfo }) {
         <HardwareIds info={info} />
         <InstallConfiguration info={info} />
         <Capabilities info={info} />
-      </CardContent>
-    </Card>
+      </div>
+    </DetailSection>
   );
 }
 
@@ -268,21 +263,19 @@ function Capabilities({ info }: { info: AgentInfo }) {
           : `${entries.length} available`
       }
     >
-      <dl className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+      <KeyValueGrid>
         {entries.map(([key, value], index) => (
-          <div
+          <KeyValueCard
             key={key}
-            className="flex items-baseline justify-between gap-3 border-b border-foreground/[0.06] pb-1.5"
+            label={capabilityLabel(key as CapabilityKey)}
+            format="custom"
           >
-            <dt className="text-[13px] text-muted-foreground">
-              {capabilityLabel(key as CapabilityKey)}
-            </dt>
-            <dd className={cn("text-right text-[13px] wrap-break-word", TONE_CLASS[tones[index]])}>
+            <div className={cn("text-sm wrap-break-word", TONE_CLASS[tones[index]])}>
               {value.replace(/_/g, " ")}
-            </dd>
-          </div>
+            </div>
+          </KeyValueCard>
         ))}
-      </dl>
+      </KeyValueGrid>
     </Section>
   );
 }
@@ -297,18 +290,15 @@ function DriveSpecs({ info }: { info: AgentInfo }) {
   const drives = info.drives ?? [];
   const totalFree = drives.reduce((sum, drive) => sum + (drive.available_gb ?? 0), 0);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Storage</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5">
+    <DetailSection title="Storage" icon={HardDrive}>
+      <div className="grid gap-4 lg:grid-cols-2">
         {drives.length > 1 ? (
-          <p className="-mt-2 text-[13px] text-muted-foreground tabular-nums">
+          <p className="text-[13px] lg:col-span-2 text-muted-foreground tabular-nums">
             {drives.length} drives · {formatGb(totalFree)} free
           </p>
         ) : null}
         {drives.length === 0 ? (
-          <p className="text-sm text-muted-foreground">This device reported no drives.</p>
+          <p className="text-sm text-muted-foreground lg:col-span-2">This device reported no drives.</p>
         ) : null}
         {drives.map((drive, idx) => {
           const usage = driveUsage(drive);
@@ -320,10 +310,20 @@ function DriveSpecs({ info }: { info: AgentInfo }) {
           return (
             <div
               key={`${drive.mount_point ?? ""}|${drive.name ?? ""}`}
-              className="flex flex-col gap-2"
+              className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/10 p-4"
             >
-              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
-                <h3 className="flex flex-wrap items-baseline gap-x-2 font-heading text-sm font-medium">
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-0.5">
+                <h3 className="flex flex-wrap items-center gap-x-2 font-heading text-sm font-medium">
+                  {known ? (
+                    <MetricRing
+                      percent={usage.pct}
+                      variant="disk"
+                      tone={usage.pct >= 90 ? "destructive" : usage.pct >= 80 ? "warning" : "default"}
+                      size={28}
+                      stroke={4}
+                      className="mr-1"
+                    />
+                  ) : null}
                   {name}
                   {drive.file_system ? (
                     <span className="text-xs font-normal text-muted-foreground">
@@ -368,8 +368,8 @@ function DriveSpecs({ info }: { info: AgentInfo }) {
             </div>
           );
         })}
-      </CardContent>
-    </Card>
+      </div>
+    </DetailSection>
   );
 }
 
@@ -384,7 +384,7 @@ function AdapterRow({ adapter, index }: { adapter: Adapter; index: number }) {
   const description = adapter.description?.trim();
   const mac = adapter.mac?.trim();
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/10 p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
         <h3 className="flex flex-wrap items-baseline gap-x-2 font-heading text-sm font-medium">
           {name}
@@ -396,7 +396,7 @@ function AdapterRow({ adapter, index }: { adapter: Adapter; index: number }) {
           <CopyValue text={mac} label="MAC address" mono className="text-muted-foreground" />
         ) : null}
       </div>
-      <dl className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-3">
+      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <AdapterValues label="IPv4" values={v4} />
         <AdapterValues label="Gateway" values={gateways} />
         <AdapterValues label="DNS" values={dns} />
@@ -425,8 +425,8 @@ function AdapterRow({ adapter, index }: { adapter: Adapter; index: number }) {
 function AdapterValues({ label, values }: { label: string; values: string[] }) {
   if (values.length === 0) return null;
   return (
-    <div className="min-w-0">
-      <dt className="mb-0.5 text-xs font-medium text-muted-foreground">{label}</dt>
+    <div className="min-w-0 rounded-xl border border-border/70 p-3">
+      <dt className="mb-0.5 text-xs text-muted-foreground">{label}</dt>
       <dd className="flex flex-col items-start">
         {values.map((value) => (
           <CopyValue key={value} text={value} label={`${label} address`} mono />
@@ -440,11 +440,8 @@ function NetworkSpecs({ info }: { info: AgentInfo }) {
   const adapters = info.adapters ?? [];
   const { active, inactive } = partitionAdapters(adapters);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Network</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5">
+    <DetailSection title="Network" icon={Network}>
+      <div className="flex flex-col gap-4">
         {adapters.length === 0 ? (
           <p className="text-sm text-muted-foreground">This device reported no network adapters.</p>
         ) : null}
@@ -472,7 +469,7 @@ function NetworkSpecs({ info }: { info: AgentInfo }) {
             </div>
           </Section>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </DetailSection>
   );
 }

@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
 import { AlertTriangle, Info, Network, Server } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardContent } from "@vantyr/ui/components/card";
 import { HelpTip } from "@/components/common/HelpTip";
+import { KeyValueCard, KeyValueGrid } from "@/components/common/resource-detail/KeyValueCard";
+import { SettingsRow, SettingsSection } from "@/features/settings/components/SettingsLayout";
 import { cn } from "@/lib/utils";
 import {
   CoverageStatus,
@@ -45,76 +46,65 @@ function Warning({ warning }: { warning: GatewayWarning }) {
 export function GatewayCard({ gateway }: { gateway: Gateway }) {
   const Icon = gateway.kind === "dns" ? Server : Network;
   return (
-    <Card className="gap-0 overflow-hidden py-0">
-      <div className="flex items-start justify-between gap-4 border-b border-border/50 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <span
-              className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-              aria-hidden="true"
-            >
-              <Icon className="size-4" />
+    <SettingsSection
+      title={gateway.name}
+      icon={<Icon />}
+      description={
+        <>
+          Last report <TimeAgo iso={gateway.lastSeenAt} />
+        </>
+      }
+      action={<OnlineStatus online={gateway.online} />}
+      variant="plain"
+    >
+      <KeyValueGrid className="sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
+        <KeyValueCard label="Applied revision" format="text">
+          {gateway.appliedRevision === null ? (
+            "None"
+          ) : (
+            <>
+              {gateway.appliedRevision}
+              <span className="font-normal text-muted-foreground">
+                {" "}
+                · acknowledged <TimeAgo iso={gateway.acknowledgedAt} />
+              </span>
+            </>
+          )}
+        </KeyValueCard>
+        <KeyValueCard
+          label={
+            <span className="flex items-center gap-1.5">
+              Verification
+              <HelpTip label="About verification">
+                Acknowledging a revision only means the gateway received it. Verified means a check
+                from the gateway confirmed the rules behave as expected.
+              </HelpTip>
             </span>
-            <div>
-              <h3 className="text-sm font-semibold">{gateway.name}</h3>
-              <p className="text-sm text-muted-foreground">
-                Last report <TimeAgo iso={gateway.lastSeenAt} />
-              </p>
-            </div>
-          </div>
-          <OnlineStatus online={gateway.online} />
-      </div>
-      <CardContent className="space-y-0 divide-y divide-border/50 p-0">
-        <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-3 px-5 py-4 text-sm">
-          <dt className="text-muted-foreground">Applied revision</dt>
-          <dd>
-            {gateway.appliedRevision === null ? (
-              "None"
-            ) : (
-              <>
-                {gateway.appliedRevision}
-                <span className="text-muted-foreground">
-                  {" "}
-                  · acknowledged <TimeAgo iso={gateway.acknowledgedAt} />
-                </span>
-              </>
-            )}
-          </dd>
-          <dt className="flex items-center gap-1.5 text-muted-foreground">
-            Verification
-            <HelpTip label="About verification">
-              Acknowledging a revision only means the gateway received it. Verified means a check
-              from the gateway confirmed the rules behave as expected.
-            </HelpTip>
-          </dt>
-          <dd className="flex flex-wrap items-center gap-3">
+          }
+          format="custom"
+        >
+          <div className="flex flex-wrap items-center gap-3">
             <VerificationStatus verification={gateway.verification} />
             {gateway.verifiedAt ? (
-              <span className="text-muted-foreground">
+              <span className="text-sm text-muted-foreground">
                 <TimeAgo iso={gateway.verifiedAt} />
               </span>
             ) : null}
-          </dd>
-        </dl>
+          </div>
+        </KeyValueCard>
+      </KeyValueGrid>
 
-        <ul className="divide-y divide-border/50 px-5">
-          {gateway.capabilities.map((capability) => (
-            <li
-              key={capability.id}
-              className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"
-            >
-              <span className="flex items-center gap-1.5">
-                {CAPABILITY_LABEL[capability.id]}
-                {capability.detail ? (
-                  <HelpTip label={`About ${CAPABILITY_LABEL[capability.id]}`}>
-                    {capability.detail}
-                  </HelpTip>
-                ) : null}
-              </span>
-              <CoverageStatus coverage={capability.coverage} />
-            </li>
-          ))}
-        </ul>
-
+      <div className="divide-y divide-border/50 overflow-hidden rounded-xl border border-border/70 bg-card/10">
+        {gateway.capabilities.map((capability) => (
+          <SettingsRow
+            key={capability.id}
+            label={CAPABILITY_LABEL[capability.id]}
+            help={capability.detail}
+            layout="switch"
+          >
+            <CoverageStatus coverage={capability.coverage} />
+          </SettingsRow>
+        ))}
         {gateway.warnings.length > 0 ? (
           <ul className="space-y-3 px-5 py-4">
             {gateway.warnings.map((warning) => (
@@ -122,7 +112,7 @@ export function GatewayCard({ gateway }: { gateway: Gateway }) {
             ))}
           </ul>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </SettingsSection>
   );
 }

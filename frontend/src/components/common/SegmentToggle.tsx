@@ -4,6 +4,9 @@ export type SegmentToggleOption<T extends string = string> = {
   value: T;
   label: React.ReactNode;
   disabled?: boolean;
+  /** Accessible name for icon-only options. */
+  ariaLabel?: string;
+  title?: string;
 };
 
 type SegmentToggleProps<T extends string = string> = {
@@ -40,12 +43,14 @@ export function SegmentToggle<T extends string = string>({
             role="radio"
             aria-checked={active}
             disabled={option.disabled}
+            aria-label={option.ariaLabel}
+            title={option.title}
             onClick={() => onChange(option.value)}
             className={cn(
               "inline-flex items-center justify-center rounded-sm px-2 py-1 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
               active
                 ? "bg-primary/15 font-medium text-primary"
-                : "text-muted-foreground hover:text-primary",
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             {option.label}

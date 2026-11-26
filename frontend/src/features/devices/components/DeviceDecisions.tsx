@@ -1,4 +1,5 @@
-import { Card, CardContent } from "@vantyr/ui/components/card";
+import { ListChecks } from "lucide-react";
+import { DetailSection } from "@/components/common/resource-detail/DetailSection";
 import AnimatedList from "@/components/react-bits/AnimatedList";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
@@ -30,9 +31,8 @@ export function DeviceDecisions({
   }
   const { events } = query.data.data;
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="space-y-1 p-5">
-        <h3 className="font-medium">{title}</h3>
+    <DetailSection title={title} icon={ListChecks}>
+      <div className="rounded-xl border border-border/70 bg-card/10 p-5">
         {events.length === 0 ? (
           <p className="pt-2 text-sm text-muted-foreground">
             Nothing recorded for this device yet.
@@ -76,7 +76,7 @@ export function DeviceDecisions({
         <p className="pt-3 text-xs text-muted-foreground">
           A DNS decision is about a domain name. It is not a record of the pages someone visited.
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </DetailSection>
   );
 }

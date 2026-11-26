@@ -206,7 +206,7 @@ function EventRow({
   const { label, Icon, className } = TYPE_META[r.type];
   const when = fmtDateTime(r.time);
   return (
-    <li className="flex flex-col gap-2 border-b border-border/60 p-4 last:border-b-0 sm:flex-row sm:items-start sm:gap-4">
+    <li className="flex flex-col gap-2 border-b border-border/60 p-4 last:border-b-0 sm:flex-row sm:items-start sm:gap-4 hover:bg-muted/40">
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span

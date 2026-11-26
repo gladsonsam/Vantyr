@@ -68,6 +68,7 @@ export function PolicyLifecycle({ policy, gateways }: { policy: PolicyView; gate
   return (
     <SettingsSection
       title="Where this policy stands"
+      description="Saved, applied and verified are three separate facts."
       icon={<Route />}
       action={
         <HelpTip label="About saved, applied and verified">
@@ -75,11 +76,11 @@ export function PolicyLifecycle({ policy, gateways }: { policy: PolicyView; gate
           that revision, and that is separate from confirming the rules really work.
         </HelpTip>
       }
-      bodyClassName="divide-y-0 py-5"
     >
-        <ol className="space-y-4">
-          {steps.map((step) => (
-            <li key={step.id} className="flex items-start gap-4">
+      <ol className="divide-y divide-border/50">
+        {steps.map((step, index) => (
+          <li key={step.id} className="flex items-start gap-4 px-5 py-4">
+            <div className="flex flex-col items-center">
               <StatusMark
                 status={step.status}
                 size={22}
@@ -87,13 +88,19 @@ export function PolicyLifecycle({ policy, gateways }: { policy: PolicyView; gate
                 doneColor="var(--success)"
                 errorColor="var(--destructive)"
               />
-              <div className="space-y-0.5">
-                <div className="text-sm font-medium">{step.label}</div>
-                <div className="text-sm text-muted-foreground">{step.detail}</div>
+            </div>
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold">{step.label}</div>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  Step {index + 1} of {steps.length}
+                </span>
               </div>
-            </li>
-          ))}
-        </ol>
+              <div className="text-[0.8125rem] leading-5 text-muted-foreground">{step.detail}</div>
+            </div>
+          </li>
+        ))}
+      </ol>
     </SettingsSection>
   );
 }

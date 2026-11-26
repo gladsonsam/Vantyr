@@ -19,7 +19,7 @@ export function CredentialsCard({ credentials }: { credentials: Credentials }) {
           {credentials.map((credential) => (
             <li
               key={credential.id}
-              className="flex flex-wrap items-center justify-between gap-4 py-4"
+              className="flex flex-wrap items-center justify-between gap-4 px-5 py-4"
             >
               <div className="space-y-0.5">
                 <div className="text-sm font-medium">{credential.label}</div>

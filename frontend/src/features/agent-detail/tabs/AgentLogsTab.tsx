@@ -77,7 +77,7 @@ function DeviceLog({ agentId }: { agentId: string }) {
   });
 
   return (
-    <div className="overflow-hidden rounded-xl bg-card">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
       <div className="flex flex-col gap-3 p-3 sm:p-4">
         <div className="flex flex-wrap items-center gap-2">
           <SourcePicker

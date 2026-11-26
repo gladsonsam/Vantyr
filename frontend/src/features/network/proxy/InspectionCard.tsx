@@ -1,5 +1,5 @@
 import { ScanEye } from "lucide-react";
-import { SettingsSection } from "@/features/network/components/SettingsSection";
+import { SettingsCardBody, SettingsSection } from "@/features/network/components/SettingsSection";
 import SlideCommit from "@/components/react-bits/SlideCommit";
 import Stepper, { Step } from "@/components/react-bits/Stepper";
 import { HelpTip } from "@/components/common/HelpTip";
@@ -43,8 +43,8 @@ export function InspectionCard({ inspection }: { inspection: ProxyInspection }) 
           certificates stop working, and the private key never leaves the server.
         </HelpTip>
       }
-      bodyClassName="divide-y-0 space-y-6 py-5"
     >
+      <SettingsCardBody>
 
         <Stepper
           step={step}
@@ -115,6 +115,7 @@ export function InspectionCard({ inspection }: { inspection: ProxyInspection }) 
             </ul>
           </div>
         ) : null}
+      </SettingsCardBody>
     </SettingsSection>
   );
 }

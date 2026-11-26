@@ -48,7 +48,7 @@ function ManageMenu({
           <Button
             variant="outline"
             size="sm"
-            className="pointer-coarse:h-9"
+            className="w-[5.5rem] pointer-coarse:h-9"
             aria-label={`Manage ${label}`}
             data-manage-user={user.id}
           />
@@ -132,33 +132,42 @@ function UserRow({
   const RoleIcon = ROLE_ICON[user.role];
   const created = createdOn(user.created_at);
   return (
-    <li className="flex flex-col gap-3 border-b border-border/50 p-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 border-b border-border/60 px-4 py-3 last:border-b-0 hover:bg-muted/40 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+      <div className="flex min-w-0 items-center gap-3">
         <DashboardUserAvatar
           username={user.username}
           displayName={user.display_name}
           displayIcon={user.display_icon}
-          size={40}
+          size={36}
         />
         <div className="min-w-0 flex-1">
-          <h3 className="flex min-w-0 items-baseline gap-2 text-base font-medium">
+          <h3 className="flex min-w-0 items-baseline gap-2 text-sm font-medium">
             <span className="truncate">{label}</span>
             {user.id === meId && (
               <span className="shrink-0 text-xs font-normal text-muted-foreground">You</span>
             )}
           </h3>
-          {hasName && <p className="truncate text-sm text-muted-foreground">@{user.username}</p>}
-          <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
-            <span
-              className={`inline-flex items-center gap-1.5 text-sm font-medium ${ROLE_TEXT[user.role]}`}
-            >
-              <RoleIcon className="size-3.5" aria-hidden /> {user.role}
-            </span>
-            {created && <span title={created.full}>Created {created.short}</span>}
-          </p>
+          {hasName && <p className="truncate text-xs text-muted-foreground">@{user.username}</p>}
         </div>
       </div>
-      <div className="shrink-0 pl-[3.25rem] sm:pl-0">
+      <div className="row-start-2 col-start-1 flex items-center gap-4 pl-12 sm:contents">
+        <span
+          className={`inline-flex items-center gap-1.5 text-sm font-medium sm:col-start-2 sm:row-start-1 ${ROLE_TEXT[user.role]}`}
+        >
+          <RoleIcon className="size-4" aria-hidden /> {user.role}
+        </span>
+        {created ? (
+          <span
+            className="text-sm text-muted-foreground sm:col-start-3 sm:row-start-1"
+            title={created.full}
+          >
+            Created {created.short}
+          </span>
+        ) : (
+          <span className="sm:col-start-3" />
+        )}
+      </div>
+      <div className="col-start-2 row-start-1 shrink-0 sm:col-start-4">
         <ManageMenu user={user} allUsers={allUsers} meId={meId} actions={actions} />
       </div>
     </li>
@@ -178,10 +187,21 @@ export function UsersList({
   actions: UserActions;
 }) {
   return (
-    <ul aria-label="Users" className="rounded-xl border border-border/70 bg-card/10">
-      {users.map((u) => (
-        <UserRow key={u.id} user={u} allUsers={allUsers} meId={meId} actions={actions} />
-      ))}
-    </ul>
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
+      <div
+        aria-hidden
+        className="hidden grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-x-4 border-b border-border/70 px-4 py-2.5 text-xs font-medium text-muted-foreground sm:grid"
+      >
+        <span>User</span>
+        <span>Role</span>
+        <span>Created</span>
+        <span className="w-[5.5rem]" />
+      </div>
+      <ul aria-label="Users">
+        {users.map((u) => (
+          <UserRow key={u.id} user={u} allUsers={allUsers} meId={meId} actions={actions} />
+        ))}
+      </ul>
+    </div>
   );
 }

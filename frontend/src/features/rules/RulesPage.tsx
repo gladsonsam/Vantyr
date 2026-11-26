@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
@@ -72,23 +72,14 @@ export function RulesPage() {
   const groups = useQuery({ ...groupQueries.list(), select: toGroups }).data ?? NO_GROUPS;
   const agents = useQuery({ ...agentQueries.overview(), select: toAgents }).data ?? NO_AGENTS;
 
-  // On a narrow screen the strip scrolls: keep the open section in view and hint that more lies to the right.
+  // On a narrow screen the strip scrolls: keep the open section in view.
   const stripRef = useRef<HTMLDivElement>(null);
-  const [moreRight, setMoreRight] = useState(false);
   useEffect(() => {
     const strip = stripRef.current;
     if (!strip) return;
-    const update = () => setMoreRight(strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 4);
     strip
       .querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
       ?.scrollIntoView?.({ inline: "nearest", block: "nearest" });
-    update();
-    strip.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
-    return () => {
-      strip.removeEventListener("scroll", update);
-      window.removeEventListener("resize", update);
-    };
   }, [activeTab]);
 
   return (
@@ -99,17 +90,17 @@ export function RulesPage() {
         className="gap-4"
       >
         <div className="flex flex-col gap-2">
-          <div className="flex items-end gap-4 border-b border-border/60">
+          <div className="flex items-end gap-4 border-b border-border/70">
             <div
               ref={stripRef}
-              className={`-mb-px min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${moreRight ? "[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)]" : ""}`}
+              className="-mb-px min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
               <TabsList variant="line" aria-label="Rules sections" className="h-11! gap-2 p-0">
                 {RULE_TABS.map((tab) => (
                   <TabsTrigger
                     key={tab.id}
                     value={tab.id}
-                    className="h-full! flex-none gap-2 px-2.5 after:bottom-0!"
+                    className="h-full! flex-none gap-2 px-3 text-sm after:bottom-0! hover:bg-muted/40"
                   >
                     {tab.label}
                   </TabsTrigger>

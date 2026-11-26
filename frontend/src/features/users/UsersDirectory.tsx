@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Plus, RefreshCw, Search, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import {
@@ -31,13 +31,13 @@ interface UsersDirectoryProps {
 
 function RoleGuide() {
   return (
-    <details className="rounded-xl border border-border/70 bg-card/10 px-4 py-3">
+    <details className="rounded-xl border border-border/70 bg-card/10 px-4 py-3.5">
       <summary className="cursor-pointer rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
         What each role can do
       </summary>
       <dl className="mt-3 flex flex-col gap-3">
         {ROLE_OPTIONS.map((r) => (
-          <div key={r.value} className="rounded-lg bg-muted/50 px-3.5 py-3">
+          <div key={r.value} className="rounded-lg border border-border/60 px-3.5 py-3">
             <dt className="text-sm font-semibold">{r.label}</dt>
             <dd className="mt-0.5 text-sm text-muted-foreground">{r.description}</dd>
           </div>
@@ -98,17 +98,20 @@ function DirectoryBody({
 
 function DirectoryToolbar({
   summary,
+  search,
   fetching,
   onReload,
   onCreate,
 }: {
   summary: string | null;
+  search?: ReactNode;
   fetching: boolean;
   onReload: () => void;
   onCreate: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      {search}
       <p role="status" className="min-w-0 flex-1 text-sm text-muted-foreground tabular-nums">
         {summary}
       </p>
@@ -131,7 +134,7 @@ function DirectoryToolbar({
 
 function UserSearch({ query, onChange }: { query: string; onChange: (query: string) => void }) {
   return (
-    <InputGroup className="h-9 min-w-0 sm:max-w-md">
+    <InputGroup className="h-9 min-w-0 basis-full sm:w-64 sm:basis-auto">
       <InputGroupAddon>
         <Search />
       </InputGroupAddon>
@@ -179,11 +182,11 @@ export function UsersDirectory({
     <div className="flex flex-col gap-4">
       <DirectoryToolbar
         summary={summary}
+        search={canSearch ? <UserSearch query={query} onChange={setQuery} /> : undefined}
         fetching={fetching}
         onReload={onReload}
         onCreate={onCreate}
       />
-      {canSearch && <UserSearch query={query} onChange={setQuery} />}
       {users && loadError && (
         <ErrorBanner
           message={`Couldn't refresh users: ${loadError}. Showing the list from the last successful load.`}

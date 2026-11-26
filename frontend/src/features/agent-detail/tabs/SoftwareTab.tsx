@@ -183,7 +183,7 @@ export function SoftwareTab({
           <AlertDescription>Re-scan failed. {String(collect.error)}</AlertDescription>
         </Alert>
       )}
-      <div className="overflow-hidden rounded-xl bg-card pb-2">
+      <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10 pb-2">
         <MonitoringToolbar
           title="Installed software"
           searchLabel="Find software"

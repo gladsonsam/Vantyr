@@ -9,7 +9,7 @@ export function UrlCategorizationJob({ status }: { status: UrlCategorizationStat
   const progress = urlCatJobProgress(status);
   const known = !!job?.bytes_total && job.bytes_total > 0;
   return (
-    <div className="flex flex-col gap-2 rounded-lg bg-info/10 px-3.5 py-3">
+    <div className="flex flex-col gap-2 rounded-xl border border-border/70 px-4 py-3">
       <p role="status" className="flex items-center gap-2 text-sm text-info">
         <Spinner />
         {job?.state === "downloading" ? "Downloading the lists…" : "Importing the lists…"}

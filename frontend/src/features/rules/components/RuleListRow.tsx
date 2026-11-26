@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
-import { MoreHorizontal, Trash2 } from "lucide-react";
+import { MoreHorizontal, Trash2, Zap } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import {
   DropdownMenu,
@@ -12,6 +12,27 @@ import { Switch } from "@/components/common/SettingsSwitch";
 /** The list of rule rows inside a card; each row is a `RuleRow`. */
 export function RuleList({ label, children }: { label: string; children: ReactNode }) {
   return <ul aria-label={label}>{children}</ul>;
+}
+
+/** The rounded icon tile at the start of a row; the dot in its corner is the rule's state (mint on, grey off). */
+export function RuleIconTile({
+  icon: Icon = Zap,
+  enabled,
+}: {
+  icon?: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  enabled: boolean;
+}) {
+  return (
+    <span
+      aria-hidden
+      className="relative flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/30 text-muted-foreground"
+    >
+      <Icon className="size-5" aria-hidden />
+      <span
+        className={`absolute -right-1 -top-1 size-2.5 rounded-full border-2 border-background ${enabled ? "bg-primary" : "bg-muted-foreground/50"}`}
+      />
+    </span>
+  );
 }
 
 /** One small fact about a rule: an icon, then text that may be long and wraps instead of being cut off. */
@@ -38,6 +59,7 @@ export function RuleFact({
  */
 export function RuleRow({
   enabled,
+  icon,
   switchLabel,
   switchDisabled,
   onToggle,
@@ -48,6 +70,7 @@ export function RuleRow({
   actions,
 }: {
   enabled: boolean;
+  icon?: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
   switchLabel: string;
   switchDisabled: boolean;
   onToggle: () => void;
@@ -60,15 +83,9 @@ export function RuleRow({
   actions: ReactNode;
 }) {
   return (
-    <li className="flex flex-col gap-3 border-b border-border/60 p-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4 transition-colors hover:bg-muted/20">
-      <div className="flex min-w-0 flex-1 items-start gap-3">
-        <Switch
-          className="mt-0.5 after:absolute after:-inset-1.5 after:content-['']"
-          aria-label={switchLabel}
-          checked={enabled}
-          disabled={switchDisabled}
-          onCheckedChange={onToggle}
-        />
+    <li className="flex flex-col gap-3 border-b border-border/60 p-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4 transition-colors hover:bg-muted/40">
+      <div className="flex min-w-0 flex-1 items-start gap-3.5">
+        <RuleIconTile icon={icon} enabled={enabled} />
         <div className="min-w-0 flex-1">
           <h3 className="break-words text-sm font-medium">{title}</h3>
           {(lead || state) && (
@@ -82,7 +99,14 @@ export function RuleRow({
           </p>
         </div>
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 pl-[3.25rem] sm:pl-0">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 pl-[3.5rem] sm:pl-0">
+        <Switch
+          className="after:absolute after:-inset-1.5 after:content-['']"
+          aria-label={switchLabel}
+          checked={enabled}
+          disabled={switchDisabled}
+          onCheckedChange={onToggle}
+        />
         {actions}
       </div>
     </li>

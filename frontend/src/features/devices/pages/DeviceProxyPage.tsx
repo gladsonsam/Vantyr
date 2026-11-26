@@ -1,8 +1,9 @@
-import { Card, CardContent } from "@vantyr/ui/components/card";
-import { ConnectionStatus } from "@/features/devices/components/ConnectionStatus";
+import { KeyRound } from "lucide-react";
+import { DetailSection } from "@/components/common/resource-detail/DetailSection";
+import { KeyValueCard, KeyValueGrid } from "@/components/common/resource-detail/KeyValueCard";
+import { ConnectionFacts } from "@/features/devices/components/ConnectionFacts";
 import { DeviceDecisions } from "@/features/devices/components/DeviceDecisions";
 import { useDevice } from "@/features/devices/deviceContext";
-import { IDENTITY_NOTE } from "@/features/devices/lib/identity";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
 import { useProxyQuery } from "@/features/network/runtime/useRuntimeQueries";
@@ -21,34 +22,33 @@ function Credential({ label }: { label: string }) {
   }
   const mine = credentials.data.filter((c) => c.label === label);
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="space-y-3 p-5">
-        <h3 className="font-medium">Credential</h3>
-        {mine.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No credential is issued to this device.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {mine.map((credential) => (
-              <li
-                key={credential.id}
-                className="flex items-baseline justify-between gap-4 py-2.5 text-sm"
-              >
-                <span>{credential.revoked ? "Revoked" : "Active"}</span>
-                <span className="text-muted-foreground">
-                  {credential.lastUsedAt ? (
-                    <>
-                      Last used <TimeAgo iso={credential.lastUsedAt} />
-                    </>
-                  ) : (
-                    "Never used"
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+    <DetailSection title="Credential" icon={KeyRound}>
+      {mine.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No credential is issued to this device.</p>
+      ) : (
+        <KeyValueGrid>
+          {mine.map((credential) => (
+            <KeyValueCard
+              key={credential.id}
+              label={
+                credential.lastUsedAt ? (
+                  <>
+                    Last used <TimeAgo iso={credential.lastUsedAt} />
+                  </>
+                ) : (
+                  "Never used"
+                )
+              }
+              format="text"
+            >
+              <span className={credential.revoked ? "text-muted-foreground" : "text-success"}>
+                {credential.revoked ? "Revoked" : "Active"}
+              </span>
+            </KeyValueCard>
+          ))}
+        </KeyValueGrid>
+      )}
+    </DetailSection>
   );
 }
 
@@ -58,20 +58,7 @@ export function DeviceProxyPage() {
   const proxy = device.connections.proxy;
   return (
     <div className="space-y-8">
-      <Card className="gap-0 py-0">
-        <CardContent className="flex flex-wrap items-center justify-between gap-6 p-5">
-          <div className="space-y-1">
-            <div className="flex items-center gap-4">
-              <h3 className="font-medium">Vantyr proxy</h3>
-              <ConnectionStatus state={proxy.state} />
-            </div>
-            <p className="text-sm text-muted-foreground">{IDENTITY_NOTE.proxy}</p>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Last request <TimeAgo iso={proxy.lastSeenAt} />
-          </p>
-        </CardContent>
-      </Card>
+      <ConnectionFacts title="Vantyr proxy" connection={proxy} seenLabel="Last request" />
       <Credential label={device.label} />
       {device.deviceId ? (
         <DeviceDecisions

@@ -47,11 +47,17 @@ export function UsersPage() {
       )}
       {m.canManage ? (
         <Tabs value={tab} onValueChange={(value) => setTab(value as AccountTab)}>
-          <TabsList aria-label="Account sections">
-            <TabsTrigger value="users">Users{m.users ? ` (${m.users.length})` : ""}</TabsTrigger>
-            <TabsTrigger value="profile">My profile</TabsTrigger>
-          </TabsList>
-          <TabsContent value="users" className="pt-2">
+          <div className="mb-4 border-b border-border/70">
+            <TabsList variant="line" aria-label="Account sections" className="h-11! gap-2 p-0">
+              <TabsTrigger value="users" className="h-full! flex-none px-3 after:bottom-0!">
+                Users{m.users ? ` (${m.users.length})` : ""}
+              </TabsTrigger>
+              <TabsTrigger value="profile" className="h-full! flex-none px-3 after:bottom-0!">
+                My profile
+              </TabsTrigger>
+            </TabsList>
+          </div>
+          <TabsContent value="users" className="pt-0">
             <UsersDirectory
               users={m.users}
               fetching={m.usersFetching}
@@ -86,7 +92,7 @@ export function UsersPage() {
               }}
             />
           </TabsContent>
-          <TabsContent value="profile" className="pt-2">
+          <TabsContent value="profile" className="pt-0">
             {profile}
           </TabsContent>
         </Tabs>

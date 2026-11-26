@@ -1,5 +1,6 @@
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
+import { Button } from "@vantyr/ui/components/button";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { usePageHeader } from "@/app/shell/usePageHeader";
@@ -55,55 +56,61 @@ export function DeviceLayout() {
 
   return (
     <DeviceContext.Provider value={row}>
-      <div className="space-y-8">
-        <div className="space-y-4">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" aria-hidden="true" /> Devices
-          </Link>
-          <div className="flex items-center gap-3">
-            <div
-              className={
-                online
-                  ? "flex size-10 shrink-0 items-center justify-center rounded-xl bg-success/10 text-success"
-                  : "flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground"
-              }
-              aria-hidden="true"
+      <div className="space-y-6">
+        <header className="border-b" aria-label="Device header">
+          <div className="flex flex-wrap items-start gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              nativeButton={false}
+              render={<Link to="/" />}
             >
-              <TypeIcon size={19} />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2.5">
-                <span className="truncate text-lg font-semibold tracking-tight">{row.label}</span>
-                <span
-                  className={
-                    online
-                      ? "inline-flex items-center gap-1.5 text-xs font-medium text-success"
-                      : "inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-                  }
-                >
-                  <span className="size-2 rounded-full bg-current" aria-hidden="true" />
-                  {online ? "Connected" : "Not connected"}
-                </span>
+              <ArrowLeft className="size-4" aria-hidden="true" /> Devices
+            </Button>
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div
+                className={
+                  online
+                    ? "flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/70 text-success"
+                    : "flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/70 text-muted-foreground"
+                }
+                aria-hidden="true"
+              >
+                <TypeIcon size={19} />
               </div>
-              <div className="truncate text-xs text-muted-foreground">
-                {[DEVICE_TYPE_LABEL[row.type], people].filter(Boolean).join(" · ")}
+              <div className="min-w-0">
+                <div className="flex items-center gap-2.5">
+                  <span className="truncate text-lg font-semibold tracking-tight">{row.label}</span>
+                  <span
+                    className={
+                      online
+                        ? "inline-flex items-center gap-1.5 text-xs font-medium text-success"
+                        : "inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+                    }
+                  >
+                    <span className="size-2 rounded-full bg-current" aria-hidden="true" />
+                    {online ? "Connected" : "Not connected"}
+                  </span>
+                </div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {[DEVICE_TYPE_LABEL[row.type], people].filter(Boolean).join(" · ")}
+                </div>
               </div>
             </div>
           </div>
-          <Tabs value={active} onValueChange={(value) => navigate(String(value))}>
-            <TabsList variant="line" aria-label="Device sections">
-              <TabsTrigger value={base}>Overview</TabsTrigger>
-              {present.map((kind) => (
-                <TabsTrigger key={kind} value={`${base}/${kind}`}>
-                  {CONNECTION_LABEL[kind]}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </div>
+          <div className="mt-4 -mb-px">
+            <Tabs value={active} onValueChange={(value) => navigate(String(value))}>
+              <TabsList variant="line" aria-label="Device sections">
+                <TabsTrigger value={base}>Overview</TabsTrigger>
+                {present.map((kind) => (
+                  <TabsTrigger key={kind} value={`${base}/${kind}`}>
+                    {CONNECTION_LABEL[kind]}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
+        </header>
         <Outlet />
       </div>
     </DeviceContext.Provider>

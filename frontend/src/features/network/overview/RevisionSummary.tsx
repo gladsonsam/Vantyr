@@ -1,16 +1,15 @@
 import { Link } from "react-router-dom";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardContent } from "@vantyr/ui/components/card";
 import CountUp from "@/components/react-bits/CountUp";
 import { HelpTip } from "@/components/common/HelpTip";
+import { KeyValueCard, KeyValueGrid } from "@/components/common/resource-detail/KeyValueCard";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import type { RevisionState } from "@/features/network/runtime/types";
 
 function Revision({ label, value }: { label: string; value: number | null }) {
   return (
-    <div className="min-w-24">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-0.5 text-xl font-semibold tabular-nums tracking-tight">
+    <KeyValueCard label={label} format="custom">
+      <div className="text-2xl font-semibold tracking-tight tabular-nums">
         {value === null ? (
           <span className="text-muted-foreground">—</span>
         ) : (
@@ -19,7 +18,7 @@ function Revision({ label, value }: { label: string; value: number | null }) {
           </>
         )}
       </div>
-    </div>
+    </KeyValueCard>
   );
 }
 
@@ -39,13 +38,13 @@ export function RevisionSummary({ revisions }: { revisions: RevisionState }) {
   else message = `Gateways are enforcing revision ${applied}. There is no pending proposal.`;
 
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="flex flex-wrap items-center justify-between gap-x-10 gap-y-4 px-5 py-4">
-        <div className="flex flex-wrap gap-x-10 gap-y-3">
-          <Revision label="Applied by gateways" value={applied} />
-          <Revision label="Saved proposal" value={pending ? proposal : null} />
-        </div>
-        <div className="max-w-md space-y-2 text-sm">
+    <div className="space-y-3">
+      <KeyValueGrid className="sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
+        <Revision label="Applied by gateways" value={applied} />
+        <Revision label="Saved proposal" value={pending ? proposal : null} />
+      </KeyValueGrid>
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-xl border border-border/70 bg-card/10 px-5 py-4 text-sm">
+        <div className="min-w-0 space-y-1">
           <p className="flex items-start gap-1.5 text-muted-foreground">
             <span>{message}</span>
             <HelpTip label="About saved and applied">
@@ -59,18 +58,18 @@ export function RevisionSummary({ revisions }: { revisions: RevisionState }) {
               Saved <TimeAgo iso={revisions.proposalSavedAt} />
             </p>
           ) : null}
-          {pending ? (
-            <Button
-              variant="outline"
-              size="sm"
-              nativeButton={false}
-              render={<Link to="/network/policies" />}
-            >
-              Review the proposal
-            </Button>
-          ) : null}
         </div>
-      </CardContent>
-    </Card>
+        {pending ? (
+          <Button
+            variant="outline"
+            size="sm"
+            nativeButton={false}
+            render={<Link to="/network/policies" />}
+          >
+            Review the proposal
+          </Button>
+        ) : null}
+      </div>
+    </div>
   );
 }

@@ -2,17 +2,11 @@ import { useState } from "react";
 import { AlertTriangle, CheckCircle2, CircleDashed } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { Switch } from "@/components/common/SettingsSwitch";
 import { LoadFailedCard } from "@/components/common/LoadFailedCard";
 import { RefreshButton } from "@/components/common/RefreshButton";
+import { SettingsCardBody, SettingsRow, SettingsSection } from "./components/SettingsLayout";
 import { CategoryManagerModal } from "./CategoryManagerModal";
 import { UrlCategorizationJob } from "./components/UrlCategorizationJob";
 import { UrlOverridesDialog } from "./components/UrlOverridesDialog";
@@ -39,15 +33,11 @@ export function UrlCategorizationSettings({ isAdmin, urlCat }: UrlCatSettingsPro
 
   if (!isAdmin) {
     return (
-      <Card className="gap-0 py-0">
-        <CardHeader className="border-b border-border/70 px-5 py-4">
-          <CardTitle>{TITLE}</CardTitle>
-          <CardDescription>{WHAT_IT_DOES}</CardDescription>
-        </CardHeader>
-        <CardContent className="px-5 pb-5 text-sm text-muted-foreground">
+      <SettingsSection title={TITLE} description={WHAT_IT_DOES}>
+        <SettingsCardBody className="text-sm text-muted-foreground">
           Only admins can view or change these settings.
-        </CardContent>
-      </Card>
+        </SettingsCardBody>
+      </SettingsSection>
     );
   }
 
@@ -64,14 +54,9 @@ export function UrlCategorizationSettings({ isAdmin, urlCat }: UrlCatSettingsPro
 
   return (
     <>
-      <Card className="gap-0 py-0">
-        <CardHeader className="border-b border-border/70 px-5 py-4">
-          <CardTitle>{TITLE}</CardTitle>
-          <CardDescription>{WHAT_IT_DOES}</CardDescription>
-        </CardHeader>
-        <CardContent className="px-5 pt-3 pb-5">
+      <SettingsSection title={TITLE} description={WHAT_IT_DOES}>
           {!status || initialLoading ? (
-            <p className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+            <p className="flex items-center gap-2 px-5 py-4 text-sm text-muted-foreground">
               <Spinner /> Loading…
             </p>
           ) : (
@@ -82,8 +67,7 @@ export function UrlCategorizationSettings({ isAdmin, urlCat }: UrlCatSettingsPro
               onOpenCategories={() => setCategoriesOpen(true)}
             />
           )}
-        </CardContent>
-      </Card>
+      </SettingsSection>
 
       <CategoryManagerModal visible={categoriesOpen} onDismiss={() => setCategoriesOpen(false)} />
       <UrlOverridesDialog
@@ -116,13 +100,16 @@ function CategorizationBody({
   };
 
   return (
-    <div className="flex flex-col gap-5">
+    <>
       {actionError && (
-        <Alert variant="destructive">
-          <AlertDescription>Not changed. {actionError}</AlertDescription>
-        </Alert>
+        <div className="px-5 py-4">
+          <Alert variant="destructive">
+            <AlertDescription>Not changed. {actionError}</AlertDescription>
+          </Alert>
+        </div>
       )}
       {loadError && (
+        <div className="px-5 py-4">
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             <span>Couldn't refresh the status. What's shown may be out of date. {loadError}</span>
@@ -131,9 +118,9 @@ function CategorizationBody({
             </Button>
           </AlertDescription>
         </Alert>
+        </div>
       )}
 
-      <div className="flex flex-col gap-4">
         <SwitchRow
           id="urlcat-enabled"
           label="Categorize website visits"
@@ -150,19 +137,22 @@ function CategorizationBody({
           disabled={saving || !enabled}
           onChange={(checked) => void urlCat.save({ auto_update: checked })}
         />
+
+      <div className="px-5 py-4">
+        <UrlSourceForm
+          status={status}
+          version={urlCat.version}
+          saving={saving}
+          onSave={(sourceUrl) => urlCat.save({ source_url: sourceUrl })}
+        />
       </div>
 
-      <UrlSourceForm
-        status={status}
-        version={urlCat.version}
-        saving={saving}
-        onSave={(sourceUrl) => urlCat.save({ source_url: sourceUrl })}
-      />
+      <div className="flex flex-col gap-3 px-5 py-4">
+        <ListStatus status={status} />
+        {jobRunning && <UrlCategorizationJob status={status} />}
+      </div>
 
-      <ListStatus status={status} />
-      {jobRunning && <UrlCategorizationJob status={status} />}
-
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 px-5 py-4">
         <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
@@ -195,10 +185,10 @@ function CategorizationBody({
         </p>
       </div>
 
-      <p className="text-xs text-muted-foreground">
+      <p className="px-5 py-3 text-xs text-muted-foreground">
         Category lists: UT1 (<code className="font-sans">olbat/ut1-blacklists</code>), CC BY-SA 4.0.
       </p>
-    </div>
+    </>
   );
 }
 
@@ -218,22 +208,20 @@ function SwitchRow({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="flex items-start gap-3">
+    <SettingsRow
+      layout="switch"
+      htmlFor={id}
+      label={<span id={`${id}-label`}>{label}</span>}
+      description={hint}
+    >
       <Switch
         id={id}
         checked={checked}
         onCheckedChange={onChange}
         disabled={disabled}
         aria-labelledby={`${id}-label`}
-        className="mt-0.5"
       />
-      <div className="min-w-0">
-        <label id={`${id}-label`} htmlFor={id} className="block text-sm font-medium">
-          {label}
-        </label>
-        <p className="text-sm text-muted-foreground">{hint}</p>
-      </div>
-    </div>
+    </SettingsRow>
   );
 }
 
@@ -260,7 +248,7 @@ function ListStatus({ status }: { status: UrlCategorizationStatus }) {
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg bg-muted/50 px-3.5 py-3">
+    <div className="flex flex-col gap-2 rounded-xl border border-border/70 px-4 py-3">
       <p className={`flex items-start gap-2 text-sm font-medium ${tone}`}>
         <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <span>{headline}</span>

@@ -1,48 +1,28 @@
 import { useState, type FormEvent } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Network, ShieldOff, Unplug } from "lucide-react";
+import { Outlet } from "react-router-dom";
+import { Globe, LayoutDashboard, Network, ShieldCheck, ShieldOff, Unplug, Waypoints } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardContent } from "@vantyr/ui/components/card";
 import { Input } from "@vantyr/ui/components/input";
 import { Spinner } from "@vantyr/ui/components/spinner";
-import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { errorText } from "@/api";
 import { useBootstrapNetworkMutation } from "@/api/queries/network";
 import { usePageHeader } from "@/app/shell/usePageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadFailedCard } from "@/components/common/LoadFailedCard";
+import { SettingsArea, SettingsNavLinks } from "@/features/settings/components/SettingsLayout";
 import { NetworkScopeContext } from "./access/networkScope";
 import { useNetworkAccess } from "./access/useNetworkAccess";
 
-const TABS = [
-  { path: "/network", label: "Overview" },
-  { path: "/network/policies", label: "Policies" },
-  { path: "/network/dns", label: "DNS" },
-  { path: "/network/proxy", label: "Proxy" },
+const SECTIONS = [
+  { id: "overview", to: "/network", label: "Overview", icon: LayoutDashboard },
+  { id: "policies", to: "/network/policies", label: "Policies", icon: ShieldCheck },
+  { id: "dns", to: "/network/dns", label: "DNS", icon: Globe },
+  { id: "proxy", to: "/network/proxy", label: "Proxy", icon: Waypoints },
 ] as const;
 
-function SectionTabs() {
-  const { pathname } = useLocation();
-  const navigate = useNavigate();
-  // The longest matching path wins, so "/network" is only active on the overview itself.
-  const active =
-    [...TABS].reverse().find((tab) => pathname === tab.path || pathname.startsWith(`${tab.path}/`))
-      ?.path ?? "/network";
-  return (
-    <Tabs value={active} onValueChange={(value) => navigate(String(value))}>
-      <TabsList
-        variant="line"
-        aria-label="Network sections"
-        className="max-w-full justify-start overflow-x-auto border-b border-border/50"
-      >
-        {TABS.map((tab) => (
-          <TabsTrigger key={tab.path} value={tab.path}>
-            {tab.label}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-    </Tabs>
-  );
+/** The longest matching path wins, so "/network" is only active on the overview itself. */
+function SectionNav() {
+  return <SettingsNavLinks items={SECTIONS} label="Network sections" />;
 }
 
 /** Admin-only, one time: creates the first household and the first `network_admin` grant. */
@@ -55,8 +35,8 @@ function SetupCard() {
     if (trimmed) bootstrap.mutate(trimmed);
   };
   return (
-    <Card className="mx-auto w-full max-w-lg gap-0 py-0">
-      <CardContent className="space-y-5 p-6">
+    <div className="mx-auto w-full max-w-lg rounded-xl border border-border/70 bg-card/10">
+      <div className="space-y-5 p-6">
         <div className="flex items-center gap-3">
           <Network className="size-5 text-primary" aria-hidden="true" />
           <h2 className="text-lg font-medium">Set up Vantyr Network</h2>
@@ -84,8 +64,8 @@ function SetupCard() {
             {errorText(bootstrap.error)}
           </p>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -137,10 +117,9 @@ export function NetworkLayout() {
     case "ready":
       return (
         <NetworkScopeContext.Provider value={access.household}>
-          <div className="space-y-6">
-            <SectionTabs />
+          <SettingsArea nav={<SectionNav />}>
             <Outlet />
-          </div>
+          </SettingsArea>
         </NetworkScopeContext.Provider>
       );
   }

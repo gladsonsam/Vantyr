@@ -16,6 +16,12 @@ interface AuditRowItemProps {
   showDevice: boolean;
 }
 
+const STATUS_DOT: Record<string, string> = {
+  ok: "bg-primary",
+  error: "bg-destructive",
+  rejected: "bg-warning",
+};
+
 const TOGGLE_CLASS =
   "group/detail flex min-h-8 w-full items-start gap-1.5 rounded-md py-1 text-left text-[13px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 pointer-coarse:min-h-9";
 
@@ -32,7 +38,14 @@ export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRo
     showDevice && row.agent_id ? (deviceName ?? `Device ${row.agent_id.slice(0, 8)}`) : null;
 
   return (
-    <li className="flex flex-col gap-1 border-b border-border/50 px-5 py-3.5 last:border-b-0">
+    <li className="relative flex flex-col gap-1 border-b border-border/60 py-3 pr-4 pl-10 last:border-b-0 hover:bg-muted/40">
+      <span
+        aria-hidden
+        className={cn(
+          "absolute top-[1.15rem] left-4 size-2 rounded-full",
+          STATUS_DOT[(row.status || "").toLowerCase()] ?? "bg-muted-foreground/50",
+        )}
+      />
       <div className="flex items-baseline justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
           <span className="min-w-0 break-words font-medium">{action}</span>
@@ -103,9 +116,9 @@ export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRo
           {open && (
             <div
               id={detailId}
-              className="mb-1 flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 text-[13px]"
+              className="mb-1 flex flex-col gap-3 rounded-lg border border-border/70 p-3 text-[13px]"
             >
-              <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[max-content_minmax(0,1fr)]">
+              <dl className="grid gap-x-4 gap-y-1.5 sm:grid-cols-[max-content_minmax(0,1fr)]">
                 <Fact label="When" value={fmtDateTimePrecise(row.ts)} />
                 <Fact label="Record" value={`#${row.id}`} />
               </dl>
@@ -113,7 +126,7 @@ export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRo
                 <pre
                   tabIndex={0}
                   aria-label={`Raw record for ${action}`}
-                  className="max-h-56 overflow-auto rounded-md bg-background/60 p-2 font-sans text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  className="max-h-56 overflow-auto rounded-md border border-border/60 p-2 font-sans text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
                   {full}
                 </pre>

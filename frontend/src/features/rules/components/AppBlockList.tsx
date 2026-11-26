@@ -1,4 +1,4 @@
-import { Clock, History, Pencil, Users } from "lucide-react";
+import { Clock, ShieldBan, History, Pencil, Users } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { AppIcon } from "@/components/common/AppIcon";
 import type { Agent, AgentGroup, AppBlockRule } from "@/api/types";
@@ -40,6 +40,7 @@ export function AppBlockList({
           <RuleRow
             key={r.id}
             enabled={r.enabled}
+            icon={ShieldBan}
             switchLabel={`Enable block rule ${title}`}
             switchDisabled={switchesDisabled}
             onToggle={() => onToggle(r)}

@@ -2,14 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Copy } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@vantyr/ui/components/card";
 import { errorText } from "@/api/client";
+import { SettingsCardBody, SettingsSection } from "@/features/settings/components/SettingsLayout";
 import { PendingApprovalsCard } from "./PendingApprovalsCard";
 import type { PendingAgentClaim } from "./PendingApprovalsCard";
 import { EnrollmentTokenForm } from "./EnrollmentTokenForm";
@@ -112,15 +106,11 @@ export function AgentEnrollmentSettings({
   if (!isAdmin) return null;
 
   return (
-    <Card className="gap-0 py-0">
-      <CardHeader className="border-b border-border/70 px-5 py-4">
-        <CardTitle>Agent enrollment</CardTitle>
-        <CardDescription>
-          Generate a pairing code and enter it on the new device. A device that asks to join without
-          a code waits below for your approval.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-6 px-5 pt-3 pb-5">
+    <SettingsSection
+      title="Agent enrollment"
+      description="Generate a pairing code and enter it on the new device. A device that asks to join without a code waits below for your approval."
+    >
+      <SettingsCardBody className="flex flex-col gap-6 space-y-0">
         {enrollClaimsError ? (
           <Alert variant="destructive">
             <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
@@ -139,7 +129,7 @@ export function AgentEnrollmentSettings({
           onReject={onRejectClaim}
         />
         <section aria-labelledby="new-code-heading" className="flex flex-col gap-4">
-          <h3 id="new-code-heading" className="font-heading text-base font-medium">
+          <h3 id="new-code-heading" className="text-base font-semibold">
             New pairing code
           </h3>
           <EnrollmentTokenForm
@@ -196,7 +186,7 @@ export function AgentEnrollmentSettings({
           onListUses={onListTokenUses}
           onClearError={() => setEnrollTokensError(null)}
         />
-      </CardContent>
-    </Card>
+      </SettingsCardBody>
+    </SettingsSection>
   );
 }

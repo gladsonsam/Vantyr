@@ -110,7 +110,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           void handleSubmit();
         }}
       >
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-4">
           {error && (
             <Alert variant="destructive">
               <AlertTitle>Sign-in failed</AlertTitle>
@@ -199,6 +199,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                   type="button"
                   variant="outline"
                   size="lg"
+                  className="hover:bg-muted/40"
                   onClick={goToSso}
                   disabled={loading}
                 >

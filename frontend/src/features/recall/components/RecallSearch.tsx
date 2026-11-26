@@ -751,7 +751,7 @@ function optionsSummary(model: SearchModel): string {
 }
 
 const selectClass =
-  "h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+  "h-9 rounded-lg border border-border/70 bg-transparent px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
 
 /** Everything beyond the query box — one disclosure whose summary says what a search will cover. */
 function SearchOptions({ model, props }: SearchPanelProps) {

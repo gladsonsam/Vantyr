@@ -7,6 +7,8 @@ import {
   UnavailableSection,
 } from "@/features/network/components/AvailabilityGate";
 import { useProxyQuery } from "@/features/network/runtime/useRuntimeQueries";
+import { KeyValueCard, KeyValueGrid } from "@/components/common/resource-detail/KeyValueCard";
+import { SettingsPageHeader } from "@/features/settings/components/SettingsLayout";
 import { CredentialsCard } from "./CredentialsCard";
 import { InspectionCard } from "./InspectionCard";
 
@@ -15,7 +17,7 @@ export function NetworkProxyPage() {
   const query = useProxyQuery();
   if (query.isPending) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-xl bg-card py-12 text-sm text-muted-foreground">
+      <div className="flex items-center justify-center gap-2 rounded-xl border border-border/70 bg-card/10 py-12 text-sm text-muted-foreground">
         <Spinner /> Loading…
       </div>
     );
@@ -30,22 +32,23 @@ export function NetworkProxyPage() {
   }
   const proxy = query.data.data;
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      <SettingsPageHeader
+        title="Proxy"
+        description="Where the proxy listens, who may use it, and whether HTTPS inspection is on."
+      />
       <AvailabilityGate title="Listener" value={proxy.listener}>
         {(listener) => (
-          <SettingsSection title="Listener" icon={<Radio />} bodyClassName="divide-y-0 py-4">
-              <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-3 text-sm">
-                <dt className="text-muted-foreground">Address</dt>
-                <dd className="font-mono text-[0.8125rem]">{listener.address}</dd>
-                <dt className="text-muted-foreground">Accepts</dt>
-                <dd>
-                  {listener.protocols
-                    .map((p) => (p === "connect" ? "CONNECT" : "HTTP"))
-                    .join(" and ")}
-                </dd>
-                <dt className="text-muted-foreground">Destinations</dt>
-                <dd>{listener.destinationPolicy}</dd>
-              </dl>
+          <SettingsSection title="Listener" icon={<Radio />} variant="plain">
+            <KeyValueGrid className="sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
+              <KeyValueCard label="Address">{listener.address}</KeyValueCard>
+              <KeyValueCard label="Accepts" format="text">
+                {listener.protocols.map((p) => (p === "connect" ? "CONNECT" : "HTTP")).join(" and ")}
+              </KeyValueCard>
+              <KeyValueCard label="Destinations" format="text">
+                {listener.destinationPolicy}
+              </KeyValueCard>
+            </KeyValueGrid>
           </SettingsSection>
         )}
       </AvailabilityGate>

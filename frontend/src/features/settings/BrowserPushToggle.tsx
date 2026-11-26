@@ -3,13 +3,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { api, errorText } from "@/api";
 import { getExistingSubscription, isPushSupported, subscribeToPush } from "@/lib/pwa";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { Switch } from "@/components/common/SettingsSwitch";
-import { HelpTip } from "@/components/common/HelpTip";
+import {
+  SettingsCardBody,
+  SettingsRow,
+  SettingsSection,
+} from "./components/SettingsLayout";
 
 type NotifPermission = "default" | "granted" | "denied";
 
@@ -165,21 +168,28 @@ function PushSwitch({ toggle, data }: { toggle: PushToggle; data: PushStatus }) 
           </AlertDescription>
         </Alert>
       )}
-      <div className="flex flex-wrap items-center gap-3">
-        <Switch
-          checked={data.subscribed}
-          disabled={busy || (data.permission === "denied" && !data.subscribed)}
-          onCheckedChange={toggle.toggle}
-          aria-label="Alert notifications on this browser"
-        />
-        <span className="text-sm font-medium">Alert notifications on this browser</span>
-        {busy && <Spinner />}
-        <span
-          className={`text-sm font-medium ${data.subscribed ? "text-success" : "text-muted-foreground"}`}
-        >
-          {state}
-        </span>
-      </div>
+      <SettingsRow
+        layout="switch"
+        label="Alert notifications on this browser"
+        description={
+          <span
+            className={data.subscribed ? "font-medium text-success" : "font-medium"}
+          >
+            {state}
+          </span>
+        }
+        className="px-0 py-0"
+      >
+        <div className="flex items-center gap-3">
+          {busy && <Spinner />}
+          <Switch
+            checked={data.subscribed}
+            disabled={busy || (data.permission === "denied" && !data.subscribed)}
+            onCheckedChange={toggle.toggle}
+            aria-label="Alert notifications on this browser"
+          />
+        </div>
+      </SettingsRow>
       {data.permission === "denied" && (
         <p className="text-sm text-muted-foreground">
           Notifications are blocked for this site. Allow them in your browser&apos;s site settings
@@ -244,28 +254,20 @@ export function BrowserPushToggle() {
   const actionError = toggle.enable.error ?? toggle.disable.error;
 
   return (
-    <Card className="gap-0 py-0">
-      <CardHeader className="border-b border-border/70 px-5 py-4">
-        <CardTitle className="flex items-center gap-1.5">
-          Browser notifications
-          <HelpTip>
-            Get OS notifications for alert-rule matches on this device, even when the dashboard tab
-            is closed. This is per-browser: turn it on in each browser you want notified.
-          </HelpTip>
-        </CardTitle>
-        {canInstall ? (
-          <CardAction>
-            <Button variant="outline" size="sm" onClick={() => void promptInstall()}>
-              <Download /> Install app
-            </Button>
-          </CardAction>
+    <SettingsSection
+      title="Browser notifications"
+      help="Get OS notifications for alert-rule matches on this device, even when the dashboard tab is closed. This is per-browser: turn it on in each browser you want notified."
+      action={
+        canInstall ? (
+          <Button variant="outline" size="sm" onClick={() => void promptInstall()}>
+            <Download /> Install app
+          </Button>
         ) : installed ? (
-          <CardAction>
-            <span className="text-sm font-medium text-success">App installed</span>
-          </CardAction>
-        ) : undefined}
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4 px-5 pb-5">
+          <span className="text-sm font-medium text-success">App installed</span>
+        ) : undefined
+      }
+    >
+      <SettingsCardBody className="space-y-4">
         <PushBody supported={supported} toggle={toggle} />
         {actionError && (
           <Alert variant="destructive">
@@ -277,7 +279,7 @@ export function BrowserPushToggle() {
             <AlertDescription>{errorText(actionError)}</AlertDescription>
           </Alert>
         )}
-      </CardContent>
-    </Card>
+      </SettingsCardBody>
+    </SettingsSection>
   );
 }

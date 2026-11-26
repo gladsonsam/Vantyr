@@ -37,7 +37,7 @@ export function AgentDetailHeader({
   return (
     <section
       aria-label="Agent header"
-      className="flex shrink-0 items-center gap-2 border-b border-foreground/[0.06] px-3 py-3 sm:gap-3 sm:px-5 sm:py-4 md:px-8 [@media(max-height:480px)]:py-2"
+      className="flex shrink-0 items-center gap-2 border-b px-3 py-3 sm:gap-3 sm:px-5 sm:py-4 md:px-8 [@media(max-height:480px)]:py-2"
     >
       {/* Left: back/menu nav buttons (a sibling of identity so they can share the
           top row with the action buttons on mobile) */}

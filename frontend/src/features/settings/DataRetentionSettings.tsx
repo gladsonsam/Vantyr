@@ -11,13 +11,11 @@ import {
 } from "@vantyr/ui/components/alert-dialog";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Input } from "@vantyr/ui/components/input";
-import { Label } from "@vantyr/ui/components/label";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { errorText } from "@/api";
-import { HelpTip } from "@/components/common/HelpTip";
 import { LoadFailedCard } from "@/components/common/LoadFailedCard";
+import { SettingsRow, SettingsSection } from "./components/SettingsLayout";
 import type { RetentionSettingsForm } from "./hooks/useRetentionSettings";
 import {
   describeRetention,
@@ -42,9 +40,16 @@ function RetentionRow({
   const hintId = `${id}-hint`;
   const parsed = form.parsed![name];
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      <div className="flex items-center gap-2">
+    <SettingsRow
+      htmlFor={id}
+      label={label}
+      description={
+        <span id={hintId} className={parsed.error ? "text-destructive" : undefined}>
+          {parsed.error ?? describeRetention(parsed, form.saved![name])}
+        </span>
+      }
+    >
+      <div className="flex w-full items-center gap-2 md:max-w-56">
         <Input
           id={id}
           inputMode="numeric"
@@ -55,15 +60,9 @@ function RetentionRow({
           onChange={(event) => form.edit(name, event.target.value)}
           className="h-9"
         />
-        <span className="shrink-0 text-muted-foreground">days</span>
+        <span className="shrink-0 text-sm text-muted-foreground">days</span>
       </div>
-      <p
-        id={hintId}
-        className={parsed.error ? "text-xs text-destructive" : "text-xs text-muted-foreground"}
-      >
-        {parsed.error ?? describeRetention(parsed, form.saved![name])}
-      </p>
-    </div>
+    </SettingsRow>
   );
 }
 
@@ -119,8 +118,9 @@ function ShorteningDialog({
 
 function RetentionNotices({ form }: { form: RetentionSettingsForm }) {
   const { query } = form;
+  if (!query.isError && !form.saveError && !form.justSaved) return null;
   return (
-    <>
+    <div className="flex flex-col gap-3 px-5 py-4 text-sm">
       {query.isError && (
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
@@ -149,7 +149,7 @@ function RetentionNotices({ form }: { form: RetentionSettingsForm }) {
             : "Nothing is deleted automatically."}
         </p>
       )}
-    </>
+    </div>
   );
 }
 
@@ -191,11 +191,11 @@ export function DataRetentionSettings({
 
   if (query.isPending) {
     return (
-      <Card className="gap-0 py-0">
-        <CardContent className="flex items-center justify-center gap-2 p-5 py-8 text-sm text-muted-foreground">
+      <SettingsSection title="Data retention">
+        <div className="flex items-center justify-center gap-2 px-5 py-8 text-sm text-muted-foreground">
           <Spinner /> Loading retention…
-        </CardContent>
-      </Card>
+        </div>
+      </SettingsSection>
     );
   }
   // No form without the saved limits: blank boxes would read as "keep forever" and Save would erase the real ones.
@@ -221,28 +221,19 @@ export function DataRetentionSettings({
   const save = () => (form.shortened.length > 0 ? setConfirming(true) : form.save());
 
   return (
-    <Card className="gap-0 py-0">
-      <CardHeader className="border-b border-border/70 px-5 py-4">
-        <CardTitle className="flex items-center gap-1.5">
-          Data retention
-          <HelpTip>
-            Days to keep raw rows, from 1 to {MAX_RETENTION_DAYS}; blank or 0 keeps them forever.
-            Top URL and window totals are kept separately. Individual devices can override these
-            from their own Settings tab.
-          </HelpTip>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5 px-5 pb-5 text-sm">
-        <p className="text-muted-foreground">{summary}. Blank or 0 keeps data forever.</p>
-        <RetentionNotices form={form} />
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-          {RETENTION_KINDS.map(({ key, label }) => (
-            <RetentionRow key={key} form={form} name={key} label={label} disabled={locked} />
-          ))}
-        </div>
+    <SettingsSection
+      title="Data retention"
+      description={`${summary}. Blank or 0 keeps data forever.`}
+      help={`Days to keep raw rows, from 1 to ${MAX_RETENTION_DAYS}; blank or 0 keeps them forever. Top URL and window totals are kept separately. Individual devices can override these from their own Settings tab.`}
+    >
+      <RetentionNotices form={form} />
+      {RETENTION_KINDS.map(({ key, label }) => (
+        <RetentionRow key={key} form={form} name={key} label={label} disabled={locked} />
+      ))}
+      <div className="px-5 py-4">
         <RetentionActions form={form} isAdmin={isAdmin} onSave={save} />
-      </CardContent>
+      </div>
       <ShorteningDialog form={form} open={confirming} onClose={() => setConfirming(false)} />
-    </Card>
+    </SettingsSection>
   );
 }

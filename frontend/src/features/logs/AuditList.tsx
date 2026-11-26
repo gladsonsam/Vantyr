@@ -56,7 +56,7 @@ export function AuditList({
     >
       {days.map((day) => (
         <Fragment key={day.key}>
-          <h3 className="border-b border-border/50 bg-muted/20 px-5 py-2 text-xs font-medium text-muted-foreground">
+          <h3 className="border-b border-border/70 px-4 py-2 text-xs font-medium text-muted-foreground">
             {day.label}
           </h3>
           <ul aria-label={`${title}, ${day.label}, ${newestFirst ? "newest" : "oldest"} first`}>

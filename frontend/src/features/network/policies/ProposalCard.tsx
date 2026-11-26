@@ -1,5 +1,5 @@
 import { FileClock, Trash2 } from "lucide-react";
-import { SettingsSection } from "@/features/network/components/SettingsSection";
+import { SettingsCardBody, SettingsSection } from "@/features/network/components/SettingsSection";
 import HoldButton from "@/components/react-bits/HoldButton";
 import { RuleGroup } from "@/features/devices/components/RuleList";
 import { useEditPolicyMutation } from "@/features/network/runtime/useRuntimeQueries";
@@ -30,7 +30,6 @@ export function ProposalCard({
       title={`Saved proposal r${proposal.revision}`}
       description="Not enforced. Gateways still use the applied revision."
       icon={<FileClock />}
-      bodyClassName="divide-y-0 space-y-6 py-5"
       action={
           <HoldButton
             icon={<Trash2 className="size-4" />}
@@ -47,8 +46,10 @@ export function ProposalCard({
           </HoldButton>
       }
     >
+      <SettingsCardBody>
         <RuleGroup title="Would add" rules={added} empty="Adds no rules." />
         <RuleGroup title="Would remove" rules={removed} empty="Removes no rules." />
+      </SettingsCardBody>
     </SettingsSection>
   );
 }

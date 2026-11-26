@@ -418,7 +418,7 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
   }
 
   return (
-    <div className="overflow-hidden rounded-xl bg-card">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
       <MonitoringToolbar
         title="Websites visited"
         searchLabel="Search URLs"

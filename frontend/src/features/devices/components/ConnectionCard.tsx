@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { Button } from "@vantyr/ui/components/button";
-import SpotlightCard from "@/components/react-bits/SpotlightCard";
+import { KeyValueCard, KeyValueGrid } from "@/components/common/resource-detail/KeyValueCard";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { IDENTITY_NOTE, CONNECTION_LABEL } from "@/features/devices/lib/identity";
 import type { ConnectionSummary } from "@/features/devices/lib/deviceModel";
@@ -29,50 +29,34 @@ export function ConnectionCard({
   to: string;
 }) {
   return (
-    <SpotlightCard
-      theme="dark"
-      spotlightColor="#2bb6c9"
-      intensity={0.25}
-      className="hover-glow-card-subtle !rounded-xl !p-0"
-      style={
-        {
-          "--spotlight-card-surface": "color-mix(in oklch, var(--ui-card), transparent 90%)",
-        } as React.CSSProperties
-      }
-    >
-      <div className="flex h-full flex-col gap-4 p-5">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="font-medium">{CONNECTION_LABEL[connection.kind]}</h3>
-          <ConnectionStatus state={connection.state} />
-        </div>
-        <dl className="space-y-1.5 text-sm">
-          <div className="flex justify-between gap-4">
-            <dt className="text-muted-foreground">Last seen</dt>
-            <dd>
-              <TimeAgo iso={connection.lastSeenAt} />
-            </dd>
-          </div>
-          {connection.provenance ? (
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted-foreground">Evidence</dt>
-              <dd>{EVIDENCE[connection.provenance]}</dd>
-            </div>
-          ) : null}
-        </dl>
-        <p className="text-sm text-muted-foreground">{IDENTITY_NOTE[connection.kind]}</p>
-        {deviceId && connection.kind !== "agent" ? (
-          <RunCheck deviceId={deviceId} kind={connection.kind} deviceLabel={deviceLabel} />
-        ) : null}
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-auto self-start"
-          nativeButton={false}
-          render={<Link to={to} />}
-        >
-          Open {CONNECTION_LABEL[connection.kind]}
-        </Button>
+    <div className="flex h-full flex-col gap-4 rounded-xl border border-border/70 bg-card/10 p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-medium">{CONNECTION_LABEL[connection.kind]}</h3>
+        <ConnectionStatus state={connection.state} />
       </div>
-    </SpotlightCard>
+      <KeyValueGrid className="sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
+        <KeyValueCard label="Last seen" format="text">
+          <TimeAgo iso={connection.lastSeenAt} />
+        </KeyValueCard>
+        {connection.provenance ? (
+          <KeyValueCard label="Evidence" format="text">
+            {EVIDENCE[connection.provenance]}
+          </KeyValueCard>
+        ) : null}
+      </KeyValueGrid>
+      <p className="text-sm text-muted-foreground">{IDENTITY_NOTE[connection.kind]}</p>
+      {deviceId && connection.kind !== "agent" ? (
+        <RunCheck deviceId={deviceId} kind={connection.kind} deviceLabel={deviceLabel} />
+      ) : null}
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-auto self-start"
+        nativeButton={false}
+        render={<Link to={to} />}
+      >
+        Open {CONNECTION_LABEL[connection.kind]}
+      </Button>
+    </div>
   );
 }

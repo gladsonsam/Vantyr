@@ -6,6 +6,7 @@ import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { agentQueries } from "@/api/queries/agents";
 import type { AgentMetricPoint } from "@/api/types";
+import { MetricRing, type MetricRingVariant } from "@/components/common/MetricRing";
 
 const RANGES: { key: string; label: string; hours: number }[] = [
   { key: "1h", label: "1h", hours: 1 },
@@ -16,16 +17,23 @@ const RANGES: { key: string; label: string; hours: number }[] = [
 
 type SeriesKey = "cpu_pct" | "mem_pct" | "disk_pct";
 
-const SERIES: { key: SeriesKey; label: string; sub: (p: AgentMetricPoint) => string }[] = [
-  { key: "cpu_pct", label: "CPU", sub: () => "" },
+const SERIES: {
+  key: SeriesKey;
+  label: string;
+  ring: MetricRingVariant;
+  sub: (p: AgentMetricPoint) => string;
+}[] = [
+  { key: "cpu_pct", label: "CPU", ring: "cpu", sub: () => "" },
   {
     key: "mem_pct",
     label: "Memory",
+    ring: "memory",
     sub: (p) => `${(p.mem_used_mb / 1024).toFixed(1)} / ${(p.mem_total_mb / 1024).toFixed(1)} GB`,
   },
   {
     key: "disk_pct",
     label: "Disk",
+    ring: "disk",
     sub: (p) => `${p.disk_used_gb.toFixed(0)} / ${p.disk_total_gb.toFixed(0)} GB`,
   },
 ];
@@ -106,17 +114,17 @@ export function ResourceHistory({ agentId }: { agentId: string }) {
         <CardTitle>Resource history</CardTitle>
         <RangePicker value={rangeKey} onChange={setRangeKey} />
       </CardHeader>
-      <CardContent className="flex flex-col gap-5">
+      <CardContent className="grid gap-4 lg:grid-cols-3">
         {loading ? (
-          <div className="flex items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
+          <div className="flex items-center justify-center gap-2 p-6 text-sm text-muted-foreground lg:col-span-3">
             <Spinner /> Loading…
           </div>
         ) : error ? (
-          <Alert variant="destructive">
+          <Alert variant="destructive" className="lg:col-span-3">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : !points || points.length === 0 ? (
-          <div className="p-6 text-center text-sm text-muted-foreground">No samples yet.</div>
+          <div className="p-6 text-center text-sm text-muted-foreground lg:col-span-3">No samples yet.</div>
         ) : (
           SERIES.map((s) => {
             const vals = points.map((p) => p[s.key]);
@@ -124,9 +132,17 @@ export function ResourceHistory({ agentId }: { agentId: string }) {
             const peak = vals.reduce((m, v) => Math.max(m, v), 0);
             const subText = latest ? s.sub(latest) : "";
             return (
-              <div key={s.key}>
-                <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                  <span className="font-semibold">{s.label}</span>
+              <div
+                key={s.key}
+                className="rounded-xl border border-border/70 bg-card/10 p-4"
+              >
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                  <span className="flex items-center gap-2.5 font-semibold">
+                    <MetricRing percent={cur} variant={s.ring} size={32} stroke={4}>
+                      <span className="text-[9px] font-medium tabular-nums">{cur.toFixed(0)}</span>
+                    </MetricRing>
+                    {s.label}
+                  </span>
                   <span className="text-xs text-muted-foreground tabular-nums break-words">
                     {cur.toFixed(0)}%{subText ? ` · ${subText}` : ""} · peak {peak.toFixed(0)}%
                   </span>

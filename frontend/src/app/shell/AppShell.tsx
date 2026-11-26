@@ -497,7 +497,7 @@ export function AppShell({
           <SidebarRail />
         </Sidebar>
 
-        <SidebarInset className="min-w-0 overflow-hidden md:peer-data-[variant=inset]:backdrop-blur-xl">
+        <SidebarInset className="min-w-0 overflow-hidden">
           {!hideTopBar && (
             // Phones only: desktop navigates and searches from the sidebar.
             <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border/60 px-3 md:hidden">

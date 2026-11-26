@@ -39,7 +39,7 @@ export function AgentSectionNav({ agentName, activeTab, onTabChange }: AgentSect
   return (
     <nav
       aria-label="Agent tools"
-      className="agent-detail-section-tabs sticky top-0 z-20 mt-4 border-b border-foreground/[0.06] bg-background/90 backdrop-blur [@media(max-height:480px)]:static"
+      className="agent-detail-section-tabs sticky top-0 z-20 mt-4 border-b bg-background [@media(max-height:480px)]:static"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 sm:px-5 md:px-8">
         <AgentToolSwitcher agentName={agentName} activeTab={activeTab} onSelect={onTabChange} />
@@ -50,7 +50,7 @@ export function AgentSectionNav({ agentName, activeTab, onTabChange }: AgentSect
               onValueChange={(next) => onTabChange(next as TabKey)}
               className="min-w-0"
             >
-              <TabsList aria-label={`${AGENT_SECTION_META[section].label} tools`} className="h-9!">
+              <TabsList variant="line" aria-label={`${AGENT_SECTION_META[section].label} tools`} className="h-9!">
                 {siblings.map((tab) => {
                   const meta = AGENT_TAB_META[tab];
                   const Icon = meta.icon;

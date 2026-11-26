@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ArrowUpCircle, MonitorPlay } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
@@ -10,6 +11,7 @@ import {
   TableRow,
 } from "@vantyr/ui/components/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@vantyr/ui/components/tooltip";
+import { SortHeaderButton } from "@/components/common/data-table/SortHeaderButton";
 import { cn } from "@/lib/utils";
 import {
   formatLastSeen,
@@ -18,7 +20,9 @@ import {
   normalizeVersion,
   lastReportedTooltip,
 } from "@/features/fleet/lib/fleetUtils";
+import type { FleetSort } from "@/features/fleet/lib/fleetSort";
 import type { FleetRow } from "@/features/fleet/types";
+import { DEFAULT_FLEET_COLUMNS, type FleetColumnId } from "@/features/fleet/lib/fleetColumns";
 import { AgentActionsMenu, type AgentActionHandlers } from "./AgentActionsMenu";
 import { ActivityCell } from "./ActivityCell";
 import { FavoriteToggle } from "./FavoriteToggle";
@@ -37,10 +41,43 @@ export interface FleetViewProps {
   };
   latestAgentVersion?: string | null;
   handlers: AgentActionHandlers;
+  /** Active sort and its setter; the list headers sort when both are given. */
+  sort?: FleetSort;
+  onSort?: (sort: FleetSort) => void;
+  /** Visible optional columns of the list view. */
+  columns?: ReadonlySet<FleetColumnId>;
+  /** Footer row of the list card (pagination). */
+  footer?: ReactNode;
 }
 
-const ACTIONS_CELL =
-  "sticky right-0 z-10 w-28 bg-background pr-5! shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.5)] group-hover:bg-muted group-data-[state=selected]:bg-muted";
+const ACTIONS_CELL = "w-28 pr-5!";
+
+function SortHead({
+  title,
+  sortKey,
+  sort,
+  onSort,
+}: {
+  title: string;
+  sortKey: FleetSort["key"];
+  sort?: FleetSort;
+  onSort?: (sort: FleetSort) => void;
+}) {
+  if (!sort || !onSort) return <>{title}</>;
+  const active = sort.key === sortKey;
+  return (
+    <SortHeaderButton
+      title={title}
+      direction={active ? sort.direction : null}
+      onClick={() =>
+        onSort({
+          key: sortKey,
+          direction: active && sort.direction === "asc" ? "desc" : "asc",
+        })
+      }
+    />
+  );
+}
 
 export function FleetTableView({
   rows,
@@ -49,16 +86,21 @@ export function FleetTableView({
   selection,
   latestAgentVersion,
   handlers,
+  sort,
+  onSort,
+  columns = DEFAULT_FLEET_COLUMNS,
+  footer,
 }: FleetViewProps) {
   const selectedVisible = selection
     ? rows.filter((row) => selection.selected.has(row.id)).length
     : 0;
   const allSelected = rows.length > 0 && selectedVisible === rows.length;
+  const show = (id: FleetColumnId) => columns.has(id);
   return (
     <div className="@container overflow-hidden rounded-xl border border-border/70 bg-card/10">
       <Table>
-        <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
-          <TableRow className="hover:bg-transparent">
+        <TableHeader className="[&_tr]:border-border/40 [&_th]:h-10 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+          <TableRow className="bg-muted/20 hover:bg-muted/20">
             {selection && (
               <TableHead className="w-12 pl-5!">
                 <Checkbox
@@ -72,11 +114,24 @@ export function FleetTableView({
                 />
               </TableHead>
             )}
-            <TableHead className={cn("min-w-48", !selection && "pl-5!")}>Device</TableHead>
-            <TableHead className="w-36">Status</TableHead>
-            <TableHead className="min-w-44">Current activity</TableHead>
-            <TableHead className="hidden w-32 @2xl:table-cell">Uptime</TableHead>
-            <TableHead className="hidden w-28 @4xl:table-cell">Version</TableHead>
+            <TableHead className={cn("min-w-48", !selection && "pl-5!")}>
+              <SortHead title="Device" sortKey="name" sort={sort} onSort={onSort} />
+            </TableHead>
+            <TableHead className="w-36">
+              <SortHead title="Status" sortKey="connectivity" sort={sort} onSort={onSort} />
+            </TableHead>
+            {show("activity") && <TableHead className="min-w-44">Current activity</TableHead>}
+            {show("uptime") && <TableHead className="hidden w-32 @2xl:table-cell">Uptime</TableHead>}
+            {show("lastSeen") && (
+              <TableHead className="hidden w-32 @2xl:table-cell">
+                <SortHead title="Last seen" sortKey="last_seen" sort={sort} onSort={onSort} />
+              </TableHead>
+            )}
+            {show("version") && (
+              <TableHead className="hidden w-28 @4xl:table-cell">
+                <SortHead title="Version" sortKey="agent_version" sort={sort} onSort={onSort} />
+              </TableHead>
+            )}
             <TableHead className={cn(ACTIONS_CELL, "text-right")}>
               <span className="sr-only">Actions</span>
             </TableHead>
@@ -91,7 +146,7 @@ export function FleetTableView({
                 key={row.id}
                 data-state={checked ? "selected" : undefined}
                 onClick={() => handlers.onOpen(row)}
-                className="group cursor-pointer"
+                className="group cursor-pointer border-border/40 hover:bg-muted/40 data-[state=selected]:bg-muted/40"
               >
                 {selection && (
                   <TableCell className="pl-5!" onClick={(event) => event.stopPropagation()}>
@@ -128,7 +183,7 @@ export function FleetTableView({
                         ) : (
                           <span className="truncate">No IP reported</span>
                         )}
-                        {row.updateNeeded && (
+                        {row.updateNeeded && show("version") && (
                           <ArrowUpCircle
                             className="size-3.5 shrink-0 text-warning @4xl:hidden"
                             aria-label="Update available"
@@ -147,39 +202,51 @@ export function FleetTableView({
                     <PolicyBadges row={row} />
                   </div>
                 </TableCell>
-                <TableCell className="max-w-80">
-                  <ActivityCell row={row} />
-                </TableCell>
-                <TableCell className="hidden text-xs tabular-nums @2xl:table-cell" title={stored}>
-                  {row.online ? (
-                    formatUptime(row.effectiveUptimeSecs)
-                  ) : (
-                    <span className="text-muted-foreground">
-                      seen {formatLastSeen(row.last_seen)}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell className="hidden text-xs tabular-nums @4xl:table-cell">
-                  <div className="flex items-center gap-1.5">
-                    {row.version ? (
-                      <span className="rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]">
-                        v{normalizeVersion(row.version)}
-                      </span>
+                {show("activity") && (
+                  <TableCell className="max-w-80">
+                    <ActivityCell row={row} />
+                  </TableCell>
+                )}
+                {show("uptime") && (
+                  <TableCell className="hidden text-xs tabular-nums @2xl:table-cell" title={stored}>
+                    {row.online ? (
+                      formatUptime(row.effectiveUptimeSecs)
                     ) : (
-                      <span className="font-sans text-muted-foreground">Unknown</span>
+                      <span className="text-muted-foreground">
+                        seen {formatLastSeen(row.last_seen)}
+                      </span>
                     )}
-                    {row.updateNeeded && (
-                      <Tooltip>
-                        <TooltipTrigger render={<span className="inline-flex text-warning" />}>
-                          <ArrowUpCircle className="size-3.5" aria-label="Update available" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          Update to v{normalizeVersion(latestAgentVersion)} available
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                </TableCell>
+                  </TableCell>
+                )}
+                {show("lastSeen") && (
+                  <TableCell
+                    className="hidden text-xs text-muted-foreground tabular-nums @2xl:table-cell"
+                    title={stored}
+                  >
+                    {formatLastSeen(row.last_seen)}
+                  </TableCell>
+                )}
+                {show("version") && (
+                  <TableCell className="hidden @4xl:table-cell">
+                    <div className="flex items-center gap-1.5">
+                      {row.version ? (
+                        <span className="font-mono text-xs">v{normalizeVersion(row.version)}</span>
+                      ) : (
+                        <span className="font-sans text-xs text-muted-foreground">Unknown</span>
+                      )}
+                      {row.updateNeeded && (
+                        <Tooltip>
+                          <TooltipTrigger render={<span className="inline-flex text-warning" />}>
+                            <ArrowUpCircle className="size-3.5" aria-label="Update available" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Update to v{normalizeVersion(latestAgentVersion)} available
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
                 <TableCell className={ACTIONS_CELL} onClick={(event) => event.stopPropagation()}>
                   <div className="flex items-center justify-end gap-0.5">
                     <FavoriteToggle
@@ -197,7 +264,6 @@ export function FleetTableView({
                             aria-label={`Live screen for ${row.displayName}`}
                             disabled={!row.online}
                             onClick={() => handlers.onLive(row)}
-                            className="hover:bg-primary hover:text-primary-foreground"
                           />
                         }
                       >
@@ -213,6 +279,7 @@ export function FleetTableView({
           })}
         </TableBody>
       </Table>
+      {footer ? <div className="border-t border-border/40 px-4 py-2.5">{footer}</div> : null}
     </div>
   );
 }

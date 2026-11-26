@@ -2,7 +2,6 @@ import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import {
   Table,
   TableBody,
@@ -15,7 +14,8 @@ import { Spinner } from "@vantyr/ui/components/spinner";
 import { errorText } from "@/api";
 import type { SettingsVersionPayload } from "@/api/serverVersionStore";
 import { Switch } from "@/components/common/SettingsSwitch";
-import { HelpTip } from "@/components/common/HelpTip";
+import { KeyValueCard, KeyValueGrid } from "@/components/common/resource-detail/KeyValueCard";
+import { SettingsCardBody, SettingsRow, SettingsSection } from "./components/SettingsLayout";
 
 interface StorageTableItem {
   name: string;
@@ -66,32 +66,20 @@ function clock(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-/** A card title with its help text and the one button that asks the server again. */
-function RefreshHeader({
-  title,
-  help,
+/** The one button that asks the server again. */
+function RefreshAction({
   action,
   loading,
   onClick,
 }: {
-  title: string;
-  help: string;
   action: string;
   loading: boolean;
   onClick: () => void;
 }) {
   return (
-    <CardHeader className="border-b border-border/70 px-5 py-4">
-      <CardTitle className="flex items-center gap-1.5">
-        {title}
-        <HelpTip>{help}</HelpTip>
-      </CardTitle>
-      <CardAction>
-        <Button variant="outline" size="sm" disabled={loading} onClick={onClick}>
-          {loading ? <Spinner /> : <RefreshCw />} {action}
-        </Button>
-      </CardAction>
-    </CardHeader>
+    <Button variant="outline" size="sm" disabled={loading} onClick={onClick}>
+      {loading ? <Spinner /> : <RefreshCw />} {action}
+    </Button>
   );
 }
 
@@ -149,15 +137,18 @@ function UpdatesCard({
 }: Pick<SystemAboutSettingsProps, "isAdmin" | "version" | "autoUpdate">) {
   const payload = version.data;
   return (
-    <Card className="gap-0 py-0">
-      <RefreshHeader
-        title="Server version"
-        help="The latest tag comes from the newest GitHub release, the same source as the server Docker images."
-        action="Check for updates"
-        loading={version.loading}
-        onClick={version.onReload}
-      />
-      <CardContent className="flex flex-col gap-5 px-5 pb-5">
+    <SettingsSection
+      title="Server version"
+      help="The latest tag comes from the newest GitHub release, the same source as the server Docker images."
+      action={
+        <RefreshAction
+          action="Check for updates"
+          loading={version.loading}
+          onClick={version.onReload}
+        />
+      }
+    >
+      <SettingsCardBody className="space-y-5">
         {version.error && (
           <StaleNotice loading={version.loading} onRetry={version.onReload}>
             {payload
@@ -172,9 +163,9 @@ function UpdatesCard({
             <Spinner /> Checking for updates…
           </div>
         ) : null}
-        <AutoUpdatePolicy isAdmin={isAdmin} autoUpdate={autoUpdate} />
-      </CardContent>
-    </Card>
+      </SettingsCardBody>
+      <AutoUpdatePolicy isAdmin={isAdmin} autoUpdate={autoUpdate} />
+    </SettingsSection>
   );
 }
 
@@ -200,11 +191,11 @@ function VersionDetails({
           <span className="font-normal text-muted-foreground"> · checked {clock(checkedAt)}</span>
         )}
       </p>
-      <dl className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-3">
+      <KeyValueGrid className="lg:grid-cols-3 xl:grid-cols-3">
         <Fact label="Running" value={payload.server_version} />
         <Fact label="Latest release" value={payload.latest_server_release ?? "—"} />
         <Fact label="Latest agent" value={payload.latest_agent_version ?? "—"} />
-      </dl>
+      </KeyValueGrid>
       {payload.releases_url ? (
         <p className="text-sm">
           <a
@@ -223,25 +214,23 @@ function VersionDetails({
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-lg bg-muted/50 px-3 py-2.5">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 font-sans text-sm break-words">{value}</dd>
-    </div>
+    <KeyValueCard label={label} format="text">
+      {value}
+    </KeyValueCard>
   );
 }
 
 function StorageUsageCard({ storage }: { storage: Loaded<StorageUsage> }) {
   const usage = storage.data;
   return (
-    <Card className="gap-0 py-0">
-      <RefreshHeader
-        title="Storage usage"
-        help="Total size is PostgreSQL pg_database_size (the entire database on disk). Details lists each table."
-        action="Refresh usage"
-        loading={storage.loading}
-        onClick={storage.onReload}
-      />
-      <CardContent className="flex flex-col gap-5 px-5 pb-5">
+    <SettingsSection
+      title="Storage usage"
+      help="Total size is PostgreSQL pg_database_size (the entire database on disk). Details lists each table."
+      action={
+        <RefreshAction action="Refresh usage" loading={storage.loading} onClick={storage.onReload} />
+      }
+    >
+      <SettingsCardBody className="space-y-5">
         {storage.error && (
           <StaleNotice loading={storage.loading} onRetry={storage.onReload}>
             {usage
@@ -252,18 +241,18 @@ function StorageUsageCard({ storage }: { storage: Loaded<StorageUsage> }) {
 
         {usage ? (
           <>
-            <dl className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-3">
+            <KeyValueGrid className="lg:grid-cols-3 xl:grid-cols-3">
               <Fact label="Total database size" value={formatBytesAdaptive(usage.database_bytes)} />
               <Fact label="Public schema" value={formatBytesAdaptive(usage.public_tables_bytes)} />
               <Fact label="Other" value={formatBytesAdaptive(usage.other_bytes)} />
-            </dl>
+            </KeyValueGrid>
             {storage.updatedAt > 0 && (
               <p className="-mt-3 text-xs text-muted-foreground">
                 As of {clock(storage.updatedAt)}
               </p>
             )}
 
-            <details className="group rounded-lg bg-muted/50 px-3.5 py-3">
+            <details className="group rounded-xl border border-border/70 px-4 py-3">
               <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 Details by table ({usage.tables.length})
               </summary>
@@ -300,8 +289,8 @@ function StorageUsageCard({ storage }: { storage: Loaded<StorageUsage> }) {
             <Spinner /> Loading storage usage…
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </SettingsCardBody>
+    </SettingsSection>
   );
 }
 
@@ -327,55 +316,55 @@ function AutoUpdatePolicy({
   };
 
   return (
-    <section
-      aria-labelledby="global-auto-update-label"
-      className="flex flex-col gap-2 border-t border-foreground/[0.06] pt-5"
-    >
+    <section aria-labelledby="global-auto-update-label" className="flex flex-col">
       {autoUpdate.error && !autoUpdate.data ? (
-        <StaleNotice loading={autoUpdate.loading} onRetry={autoUpdate.onReload}>
-          {`Couldn't load the agent auto-update default. ${autoUpdate.error}`}
-        </StaleNotice>
+        <div className="px-5 py-4">
+          <StaleNotice loading={autoUpdate.loading} onRetry={autoUpdate.onReload}>
+            {`Couldn't load the agent auto-update default. ${autoUpdate.error}`}
+          </StaleNotice>
+        </div>
       ) : enabled === null ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2 px-5 py-4 text-sm text-muted-foreground">
           <Spinner /> Loading agent auto-update default…
         </div>
       ) : (
         <>
           {autoUpdate.error && (
-            <StaleNotice loading={autoUpdate.loading} onRetry={autoUpdate.onReload}>
-              Couldn&apos;t re-check the agent auto-update default, so it may be out of date.
-            </StaleNotice>
+            <div className="px-5 pt-4">
+              <StaleNotice loading={autoUpdate.loading} onRetry={autoUpdate.onReload}>
+                Couldn&apos;t re-check the agent auto-update default, so it may be out of date.
+              </StaleNotice>
+            </div>
           )}
-          <div className="flex flex-wrap items-center gap-3">
-            <Switch
-              id="global-auto-update"
-              checked={enabled}
-              disabled={!isAdmin || saving}
-              onCheckedChange={(checked) => void change(checked)}
-              aria-labelledby="global-auto-update-label"
-            />
-            <label
-              id="global-auto-update-label"
-              htmlFor="global-auto-update"
-              className="text-sm font-medium"
-            >
-              Agent auto-updates by default
-            </label>
-            <HelpTip>
-              When on, the server tells connected Windows agents they may check GitHub releases and
-              install updates (the policy is pushed over the WebSocket). A device can override this
-              on its own Settings tab.
-            </HelpTip>
-            {saving && <Spinner />}
-            <span className="text-sm text-muted-foreground">{enabled ? "On" : "Off"}</span>
-          </div>
+          <SettingsRow
+            layout="switch"
+            htmlFor="global-auto-update"
+            label={<span id="global-auto-update-label">Agent auto-updates by default</span>}
+            help="When on, the server tells connected Windows agents they may check GitHub releases and install updates (the policy is pushed over the WebSocket). A device can override this on its own Settings tab."
+            description={enabled ? "On" : "Off"}
+          >
+            <div className="flex items-center gap-3">
+              {saving && <Spinner />}
+              <Switch
+                id="global-auto-update"
+                checked={enabled}
+                disabled={!isAdmin || saving}
+                onCheckedChange={(checked) => void change(checked)}
+                aria-labelledby="global-auto-update-label"
+              />
+            </div>
+          </SettingsRow>
           {saveError && (
-            <Alert variant="destructive">
-              <AlertDescription>Not saved. {saveError}</AlertDescription>
-            </Alert>
+            <div className="px-5 pb-4">
+              <Alert variant="destructive">
+                <AlertDescription>Not saved. {saveError}</AlertDescription>
+              </Alert>
+            </div>
           )}
           {!isAdmin && (
-            <p className="text-sm text-muted-foreground">Only admins can change this default.</p>
+            <p className="px-5 pb-4 text-sm text-muted-foreground">
+              Only admins can change this default.
+            </p>
           )}
         </>
       )}

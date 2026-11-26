@@ -1,4 +1,4 @@
-import { CalendarClock, Clock, Users } from "lucide-react";
+import { CalendarClock, Globe, Clock, Users } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import type { Agent, AgentGroup, InternetBlockRule } from "@/api/types";
 import { internetRuleTitle } from "../hooks/useInternetRuleMutations";
@@ -34,6 +34,7 @@ export function InternetRuleList({
           <RuleRow
             key={r.id}
             enabled={r.enabled}
+            icon={Globe}
             switchLabel={`Enable rule ${title}`}
             switchDisabled={switchesDisabled}
             onToggle={() => onToggle(r)}

@@ -11,6 +11,11 @@ export function StatStrip({ children, className }: StatStripProps) {
   return <div className={cn("flex flex-wrap items-center gap-x-1 gap-y-1", className)}>{children}</div>;
 }
 
+/** Hairline between two stats, as in Arcane's page header. */
+export function StatStripDivider() {
+  return <span className="mx-1 hidden h-4 w-px bg-border/60 sm:block" aria-hidden="true" />;
+}
+
 type StatStripItemProps = {
   icon?: ComponentType<{ className?: string }>;
   value: ReactNode;
@@ -49,7 +54,7 @@ export function StatStripItem({
       onClick={onClick}
       className={cn(
         base,
-        "outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+        "outline-none hover:bg-muted/40 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
         active && "bg-primary/15 text-primary hover:bg-primary/15 hover:text-primary [&>span:nth-child(2)]:text-primary",
         className,
       )}

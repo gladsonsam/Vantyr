@@ -7,6 +7,7 @@ import { enrollmentKeys, enrollmentQueries } from "@/api/queries/enrollment";
 import type { PendingAgentClaim } from "@/features/enrollment/PendingApprovalsCard";
 import { AddAgentModal } from "@/features/enrollment/AddAgentModal";
 import { PageActions } from "@/app/shell/AppShell";
+import { RefreshButton } from "@/components/common/RefreshButton";
 import { FleetOverview } from "@/features/fleet/components/FleetOverview";
 import { PendingApprovalsCard } from "@/features/enrollment/PendingApprovalsCard";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
@@ -35,6 +36,7 @@ export function OverviewPage() {
   const agentless = deviceRows.filter((row) => row.origin === "household" && row.agentId === null);
   const loadingAgents = !initialized;
   const [addAgentOpen, setAddAgentOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const queryClient = useQueryClient();
   const isAdmin = currentUser?.role === "admin";
@@ -87,13 +89,21 @@ export function OverviewPage() {
 
   return (
     <>
-      {isAdmin && (
-        <PageActions>
+      <PageActions>
+        {isAdmin && (
           <Button onClick={() => setAddAgentOpen(true)}>
             <Plus /> Enroll agent
           </Button>
-        </PageActions>
-      )}
+        )}
+        <RefreshButton
+          label="Refresh devices"
+          loading={refreshing}
+          onClick={() => {
+            setRefreshing(true);
+            void refresh().finally(() => setRefreshing(false));
+          }}
+        />
+      </PageActions>
       {isAdmin && claimsQuery.isError && (
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">

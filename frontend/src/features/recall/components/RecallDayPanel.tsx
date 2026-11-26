@@ -340,7 +340,7 @@ function DayHighlights({ context, model }: PanelSectionProps) {
                   key={`${h.start_ts}-${h.label}`}
                   onClick={() => onSeek(h.start_ts)}
                   title={`Replay from ${timeIn(timezone, h.start_ts)}`}
-                  className="flex min-h-11 cursor-pointer flex-col gap-2 rounded-lg bg-muted/50 p-3 pl-3.5 text-left hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="flex min-h-11 cursor-pointer flex-col gap-2 rounded-lg border border-border/70 p-3 pl-3.5 text-left hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   style={{ borderLeft: `3px solid ${catColor(h.category)}` }}
                 >
                   <span className="flex items-center gap-2">
@@ -479,7 +479,7 @@ function DaySessions({ context, model }: PanelSectionProps) {
                 <select
                   value={filterValue}
                   onChange={(e) => setAppFilter(e.target.value)}
-                  className="h-9 max-w-full min-w-0 rounded-lg bg-muted/70 px-2.5 font-sans text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="h-9 max-w-full min-w-0 rounded-lg border border-border/70 bg-transparent px-2.5 font-sans text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <option value="all">All apps</option>
                   {appOptions.map((a) => (

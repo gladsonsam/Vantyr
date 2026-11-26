@@ -4,6 +4,7 @@ import type { Agent, AgentInfo, AgentLiveStatus, AgentMetricsResponse } from "@/
 import { agentQueries } from "@/api/queries/agents";
 import { ruleQueries } from "@/api/queries/rules";
 import { primaryIp } from "@/features/fleet/lib/agentNetwork";
+import { MetricRing } from "@/components/common/MetricRing";
 import { cn } from "@/lib/utils";
 
 interface AgentVitalsProps {
@@ -24,8 +25,9 @@ interface Vital {
   mono?: boolean;
   /** Shown only from `sm` up (keeps the phone rows short). */
   extra?: string;
-  /** 0–100: draws a thin usage bar under the value. */
+  /** 0–100: draws a ring gauge beside the value. */
   pct?: number;
+  ring?: "cpu" | "memory";
 }
 
 function latestCpuPct(res: AgentMetricsResponse): number | null {
@@ -74,6 +76,7 @@ function vitalList(
             extra: cores,
             tone: "text-foreground",
             pct: cpuPct ?? undefined,
+            ring: "cpu" as const,
           },
           {
             label: "Session",
@@ -82,7 +85,7 @@ function vitalList(
           },
         ]
       : []),
-    { label: "Memory", value: mem.text, tone: "text-foreground", pct: mem.pct },
+    { label: "Memory", value: mem.text, tone: "text-foreground", pct: mem.pct, ring: "memory" as const },
     {
       label: online ? "Uptime" : "Last seen",
       value: online ? uptimeText : lastSeenText,
@@ -147,43 +150,36 @@ export function AgentVitals({
       aria-label="Device summary"
       style={{ "--vital-count": vitals.length } as CSSProperties}
       className={cn(
-        "m-0 grid grid-cols-2 gap-x-5 gap-y-1.5 rounded-xl bg-card px-4 py-3 sm:gap-y-3 sm:py-3.5 sm:grid-cols-3 md:grid-cols-4 md:px-5 xl:grid-cols-[repeat(var(--vital-count),minmax(0,1fr))]",
+        "m-0 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-[repeat(var(--vital-count),minmax(0,1fr))]",
         className,
       )}
     >
       {vitals.map((vital) => (
         <div
           key={vital.label}
-          className="flex min-w-0 items-baseline justify-between gap-2 sm:block"
+          className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/10 px-4 py-3"
         >
-          <dt className="shrink-0 text-[11px] font-medium text-muted-foreground">{vital.label}</dt>
-          <dd
-            className={cn(
-              "m-0 min-w-0 truncate text-right text-[13px] font-semibold tabular-nums sm:mt-0.5 sm:text-left",
-              vital.mono && "font-sans",
-              vital.tone,
-            )}
-            title={vital.extra ? `${vital.value} · ${vital.extra}` : vital.value}
-          >
-            {vital.value}
-            {vital.extra && (
-              <span className="hidden font-normal text-muted-foreground sm:inline">
-                {" "}
-                · {vital.extra}
-              </span>
-            )}
-          </dd>
-          {vital.pct != null && (
-            <div
-              aria-hidden="true"
-              className="mt-1.5 hidden h-[3px] overflow-hidden rounded-full bg-foreground/10 sm:block"
+          <div className="min-w-0">
+            <dt className="shrink-0 text-xs text-muted-foreground">{vital.label}</dt>
+            <dd
+              className={cn(
+                "m-0 mt-0.5 min-w-0 truncate text-sm font-semibold tabular-nums",
+                vital.tone,
+              )}
+              title={vital.extra ? `${vital.value} · ${vital.extra}` : vital.value}
             >
-              <div
-                className="h-full rounded-full bg-primary/80"
-                style={{ width: `${vital.pct}%` }}
-              />
-            </div>
-          )}
+              {vital.value}
+              {vital.extra && (
+                <span className="hidden font-normal text-muted-foreground sm:inline">
+                  {" "}
+                  · {vital.extra}
+                </span>
+              )}
+            </dd>
+          </div>
+          {vital.pct != null && vital.ring ? (
+            <MetricRing percent={vital.pct} variant={vital.ring} size={30} stroke={4} />
+          ) : null}
         </div>
       ))}
     </dl>

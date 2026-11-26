@@ -27,8 +27,14 @@ export function GroupList({ groups, ruleCounts, onAction }: GroupListProps) {
       {groups.map((g) => (
         <li
           key={g.id}
-          className="flex flex-col gap-3 border-b border-border/60 p-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4"
+          className="flex flex-col gap-3 border-b border-border/40 p-4 transition-colors last:border-b-0 hover:bg-muted/40 sm:flex-row sm:items-center sm:gap-4"
         >
+          <div
+            className="hidden size-10 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-foreground/80 sm:flex"
+            aria-hidden="true"
+          >
+            <Users className="size-[18px]" />
+          </div>
           <div className="min-w-0 flex-1">
             <h3 className="truncate text-sm font-medium">{g.name}</h3>
             <Description text={g.description} />

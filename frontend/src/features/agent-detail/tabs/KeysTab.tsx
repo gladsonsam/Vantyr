@@ -228,7 +228,7 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
   }
 
   return (
-    <div className="overflow-hidden rounded-xl bg-card">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
       <MonitoringToolbar
         title="Typed text"
         searchLabel="Search keystrokes"

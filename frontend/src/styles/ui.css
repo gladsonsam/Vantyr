@@ -103,7 +103,7 @@
   --metric-memory: oklch(0.72 0.13 235);
   --metric-disk: oklch(0.82 0.16 85);
   --radius: 0.75rem;
-  --shell-glass: color-mix(in oklch, var(--background) 90%, white 10%);
+  --shell-glass: oklch(0.165 0 0);
   --sidebar: oklch(0.145 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.77 0.19 160);
@@ -119,38 +119,25 @@ html {
 }
 
 @utility hover-glow {
-  transition:
-    background-color 150ms ease-out,
-    box-shadow 150ms ease-out;
+  transition: background-color 150ms ease-out;
   &:hover {
-    background-color: color-mix(in oklab, var(--color-primary) 6%, transparent);
-    box-shadow:
-      inset 0 0 0 1px color-mix(in oklab, var(--color-primary) 14%, transparent),
-      0 0 14px -6px color-mix(in oklab, var(--color-primary) 45%, transparent);
+    background-color: var(--color-muted);
   }
 }
 
 @utility hover-glow-card {
   transition:
-    color 200ms ease-out,
-    background-color 200ms ease-out,
-    border-color 200ms ease-out,
-    box-shadow 200ms ease-out;
+    background-color 150ms ease-out,
+    border-color 150ms ease-out;
   &:hover {
-    border-color: color-mix(in oklab, var(--color-primary) 30%, var(--color-border));
-    box-shadow: 0 0 24px -10px color-mix(in oklab, var(--color-primary) 40%, transparent);
+    border-color: color-mix(in oklab, var(--color-foreground) 22%, var(--color-border));
   }
 }
 
 @utility hover-glow-card-subtle {
-  transition:
-    color 200ms ease-out,
-    background-color 200ms ease-out,
-    border-color 200ms ease-out,
-    box-shadow 200ms ease-out;
+  transition: border-color 150ms ease-out;
   &:hover {
-    border-color: color-mix(in oklab, var(--color-primary) 20%, var(--color-border));
-    box-shadow: 0 0 16px -10px color-mix(in oklab, var(--color-primary) 25%, transparent);
+    border-color: color-mix(in oklab, var(--color-foreground) 14%, var(--color-border));
   }
 }
 

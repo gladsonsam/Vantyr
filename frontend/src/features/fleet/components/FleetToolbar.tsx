@@ -3,6 +3,7 @@ import {
   ArrowDownUp,
   Bookmark,
   BookmarkPlus,
+  Eye,
   LayoutGrid,
   List,
   Search,
@@ -21,6 +22,7 @@ import {
 } from "@vantyr/ui/components/dialog";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
@@ -43,7 +45,7 @@ import {
 } from "@vantyr/ui/components/input-group";
 import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { Toggle } from "@vantyr/ui/components/toggle";
-import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
+import { SegmentToggle } from "@/components/common/SegmentToggle";
 import type {
   FleetPreferences,
   FleetStatusFilter,
@@ -83,6 +85,9 @@ interface Props {
   onSave: (name: string) => void;
   onRemove: (name: string) => void;
   onClear: () => void;
+  /** Optional list columns for the View menu (list layout only). */
+  columns?: { id: string; label: string; visible: boolean }[];
+  onToggleColumn?: (id: string) => void;
 }
 
 // "Online" is Active + Away, so it stays a saved-view filter without a tab of its own.
@@ -107,6 +112,8 @@ export function FleetToolbar({
   onSave,
   onRemove,
   onClear,
+  columns = [],
+  onToggleColumn,
 }: Props) {
   const [saveOpen, setSaveOpen] = useState(false);
   const [name, setName] = useState("");
@@ -130,7 +137,7 @@ export function FleetToolbar({
       <div className="flex items-end gap-4 border-b border-border/60">
         <div
           ref={tabsScroller}
-          className="-mb-px min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] max-sm:[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [&::-webkit-scrollbar]:hidden"
+          className="-mb-px min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           <Tabs
             value={current.status}
@@ -152,39 +159,9 @@ export function FleetToolbar({
             </TabsList>
           </Tabs>
         </div>
-        {/* The table never renders on phones (useFleetTable forces the grid there),
-            so the view switch is dead UI below md — hide it and give the tabs room. */}
-        <div className="hidden shrink-0 pb-1.5 md:block">
-          <ToggleGroup
-            size="sm"
-            spacing={0}
-            className="rounded-lg border border-border/70 bg-card/10 p-0.5"
-            aria-label="Fleet view mode"
-            value={[current.view]}
-            onValueChange={(value) => {
-              const next = value[0] as "grid" | "table" | undefined;
-              if (next) onView(next);
-            }}
-          >
-            <ToggleGroupItem
-              value="grid"
-              aria-label="Grid view"
-              className="rounded-md! aria-pressed:bg-primary/15 aria-pressed:text-primary"
-            >
-              <LayoutGrid />
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="table"
-              aria-label="List view"
-              className="rounded-md! aria-pressed:bg-primary/15 aria-pressed:text-primary"
-            >
-              <List />
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <InputGroup className="h-9 min-w-0 flex-1 basis-40 rounded-lg border-border/70 bg-card/10 sm:max-w-md">
+        <InputGroup className="h-9 min-w-0 flex-1 basis-40 rounded-lg border-border/70 bg-card/10 sm:max-w-64 sm:flex-none sm:basis-64">
           <InputGroupAddon>
             <Search />
           </InputGroupAddon>
@@ -341,6 +318,61 @@ export function FleetToolbar({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {columns.length > 0 && current.view === "table" && onToggleColumn && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="default"
+                    title="Choose columns"
+                    aria-label="View options"
+                  />
+                }
+              >
+                <Eye />
+                <span className="hidden sm:inline">View</span>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+                  {columns.map((column) => (
+                    <DropdownMenuCheckboxItem
+                      key={column.id}
+                      checked={column.visible}
+                      onCheckedChange={() => onToggleColumn(column.id)}
+                    >
+                      {column.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {/* The table never renders on phones (useFleetTable forces the grid there),
+              so the view switch is dead UI below md. */}
+          <SegmentToggle
+            label="Fleet view mode"
+            className="hidden h-9 items-center rounded-lg border border-border/70 bg-transparent p-0.5 md:flex"
+            value={current.view}
+            onChange={onView}
+            options={[
+              {
+                value: "grid",
+                ariaLabel: "Grid view",
+                title: "Grid view",
+                label: <LayoutGrid className="size-4" />,
+              },
+              {
+                value: "table",
+                ariaLabel: "List view",
+                title: "List view",
+                label: <List className="size-4" />,
+              },
+            ]}
+          />
         </div>
       </div>
 

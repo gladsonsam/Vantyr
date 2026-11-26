@@ -5,6 +5,7 @@ import {
   UnavailableSection,
 } from "@/features/network/components/AvailabilityGate";
 import { useDnsQuery } from "@/features/network/runtime/useRuntimeQueries";
+import { SettingsPageHeader } from "@/features/settings/components/SettingsLayout";
 import { AccessCard, CacheCard, FilteringCard, ListCard, LoggingCard } from "./DnsSettingsCards";
 
 /** Vantyr DNS settings. A control saves a proposal for gateways; it does not prove they are enforcing it. */
@@ -12,7 +13,7 @@ export function NetworkDnsPage() {
   const query = useDnsQuery();
   if (query.isPending) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-xl bg-card py-12 text-sm text-muted-foreground">
+      <div className="flex items-center justify-center gap-2 rounded-xl border border-border/70 bg-card/10 py-12 text-sm text-muted-foreground">
         <Spinner /> Loading…
       </div>
     );
@@ -27,8 +28,12 @@ export function NetworkDnsPage() {
   }
   const dns = query.data.data;
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <div className="space-y-4">
+    <div className="space-y-8">
+      <SettingsPageHeader
+        title="DNS"
+        description="Saved here as a proposal for gateways; each control says nothing about what is enforced yet."
+      />
+      <div className="space-y-8">
         <AvailabilityGate title="Filtering" value={dns.filtering}>
           {(value) => <FilteringCard filtering={value} />}
         </AvailabilityGate>
@@ -47,8 +52,7 @@ export function NetworkDnsPage() {
             />
           )}
         </AvailabilityGate>
-      </div>
-      <div className="space-y-4">
+
         <AvailabilityGate title="Access" value={dns.access}>
           {(value) => <AccessCard access={value} />}
         </AvailabilityGate>

@@ -1,47 +1,66 @@
-import { cn } from "@/lib/utils";
+import { ArrowUpCircle, Monitor, Wifi, WifiOff } from "lucide-react";
+import {
+  StatStrip,
+  StatStripDivider,
+  StatStripItem,
+} from "@/components/common/StatStrip";
+import type { FleetStatusFilter } from "@/features/fleet/lib/fleetPreferences";
 import type { StatusCounts } from "./FleetToolbar";
 
 interface Props {
   counts: StatusCounts;
   /** Devices whose agent is behind the latest release. */
   updates: number;
+  /** Current status filter; with `onStatus` the stats toggle it, as Arcane's header stats do. */
+  status?: FleetStatusFilter;
+  onStatus?: (status: FleetStatusFilter) => void;
 }
 
-function Stat({
-  label,
-  value,
-  dot,
-  tone,
-}: {
-  label: string;
-  value: number;
-  dot?: string;
-  tone?: string;
-}) {
+/** Arcane's header stat row: icon, number and label per stat, split by hairlines. */
+export function FleetStatStrip({ counts, updates, status, onStatus }: Props) {
+  const toggle = (value: FleetStatusFilter) =>
+    onStatus ? () => onStatus(status === value ? "all" : value) : undefined;
   return (
-    <div className="flex items-center gap-2 px-4 py-2.5">
-      {dot && <span className={cn("size-2 shrink-0 rounded-full", dot)} aria-hidden="true" />}
-      <span className={cn("text-base font-semibold tabular-nums", tone)}>{value}</span>
-      <span className="text-xs text-muted-foreground">{label}</span>
-    </div>
-  );
-}
-
-/** Compact inline fleet summary: one outlined strip instead of a row of KPI tiles. */
-export function FleetStatStrip({ counts, updates }: Props) {
-  const online = counts.online;
-  return (
-    <div
-      role="group"
-      aria-label="Fleet summary"
-      className="flex flex-wrap items-center divide-x divide-border/60 self-start rounded-xl border border-border/70 bg-card/10"
-    >
-      <Stat label="Devices" value={counts.all} />
-      <Stat label="Online" value={online} dot="bg-success" tone={online > 0 ? "text-success" : undefined} />
-      <Stat label="Offline" value={counts.offline} dot="bg-muted-foreground/50" />
-      {updates > 0 && (
-        <Stat label="Need update" value={updates} dot="bg-warning" tone="text-warning" />
-      )}
+    <div role="group" aria-label="Fleet summary">
+      <StatStrip className="gap-x-2">
+        <StatStripItem
+          icon={Monitor}
+          tone="text-info"
+          value={counts.all}
+          label="Devices"
+          onClick={toggle("all")}
+          active={status === "all"}
+        />
+        <StatStripDivider />
+        <StatStripItem
+          icon={Wifi}
+          tone="text-success"
+          value={counts.online}
+          label="Online"
+          onClick={toggle("online")}
+          active={status === "online"}
+        />
+        <StatStripDivider />
+        <StatStripItem
+          icon={WifiOff}
+          tone="text-muted-foreground"
+          value={counts.offline}
+          label="Offline"
+          onClick={toggle("offline")}
+          active={status === "offline"}
+        />
+        {updates > 0 && (
+          <>
+            <StatStripDivider />
+            <StatStripItem
+              icon={ArrowUpCircle}
+              tone="text-warning"
+              value={updates}
+              label="Need update"
+            />
+          </>
+        )}
+      </StatStrip>
     </div>
   );
 }

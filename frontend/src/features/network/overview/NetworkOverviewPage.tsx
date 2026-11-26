@@ -2,6 +2,7 @@ import { Spinner } from "@vantyr/ui/components/spinner";
 import { LoadFailedCard } from "@/components/common/LoadFailedCard";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
 import { useOverviewQuery } from "@/features/network/runtime/useRuntimeQueries";
+import { SettingsPageHeader } from "@/features/settings/components/SettingsLayout";
 import { CoverageLimits } from "./CoverageLimits";
 import { GatewayCard } from "./GatewayCard";
 import { RevisionSummary } from "./RevisionSummary";
@@ -12,7 +13,7 @@ export function NetworkOverviewPage() {
 
   if (query.isPending) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-xl bg-card py-12 text-sm text-muted-foreground">
+      <div className="flex items-center justify-center gap-2 rounded-xl border border-border/70 bg-card/10 py-12 text-sm text-muted-foreground">
         <Spinner /> Loading…
       </div>
     );
@@ -32,9 +33,13 @@ export function NetworkOverviewPage() {
 
   const { revisions, gateways } = overview.data;
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      <SettingsPageHeader
+        title="Overview"
+        description="Which gateways are reporting, what they have applied, and what they can claim."
+      />
       <RevisionSummary revisions={revisions} />
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="space-y-8">
         {gateways.map((gateway) => (
           <GatewayCard key={gateway.id} gateway={gateway} />
         ))}

@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { ListPagination } from "@/components/common/ListPagination";
 import { LoadFailedCard } from "@/components/common/LoadFailedCard";
 import { errorText } from "@/api";
-import { ErrorBanner, Notice, RuleSearch, RuleToolbar } from "./RuleTabParts";
+import { ErrorBanner, Notice, RuleSearch } from "./RuleTabParts";
 
 /** What the layout needs of `useRuleListView`: search, the current page and paging. */
 interface ListViewState {
@@ -120,40 +120,45 @@ function RuleTabMain({
       {banners}
       {saved && <Notice message={saved} onDismiss={onDismissSaved} />}
 
-      <RuleToolbar
-        summary={
-          list.query ? `${list.filteredCount} of ${total} ${noun.split(" ").pop()}` : countSummary
-        }
-        createLabel={createLabel}
-        onCreate={onCreate}
-      />
-      {list.showSearch && (
-        <RuleSearch
-          label={searchLabel}
-          placeholder={searchPlaceholder}
-          query={list.query}
-          onChange={list.setQuery}
-        />
-      )}
-
-      {list.displayed.length === 0 ? (
-        <EmptyState
-          title={`No ${noun.split(" ").pop()} match`}
-          description={`Nothing matches “${list.query.trim()}”.`}
-          icon={<Search />}
-          iconVariant="icon"
-          action={
-            <Button variant="outline" onClick={() => list.setQuery("")}>
-              Clear search
-            </Button>
-          }
-        />
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
-          {rows}
-          <ListPagination page={list.page} pages={list.pages} onPageChange={list.setPage} />
+      <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/70 px-4 py-3">
+          {list.showSearch && (
+            <RuleSearch
+              label={searchLabel}
+              placeholder={searchPlaceholder}
+              query={list.query}
+              onChange={list.setQuery}
+            />
+          )}
+          <p
+            role="status"
+            className="min-w-0 flex-1 text-sm text-muted-foreground tabular-nums"
+          >
+            {list.query ? `${list.filteredCount} of ${total} ${noun.split(" ").pop()}` : countSummary}
+          </p>
+          <Button onClick={onCreate}>
+            <Plus /> {createLabel}
+          </Button>
         </div>
-      )}
+        {list.displayed.length === 0 ? (
+          <EmptyState
+            title={`No ${noun.split(" ").pop()} match`}
+            description={`Nothing matches “${list.query.trim()}”.`}
+            icon={<Search />}
+            iconVariant="icon"
+            action={
+              <Button variant="outline" onClick={() => list.setQuery("")}>
+                Clear search
+              </Button>
+            }
+          />
+        ) : (
+          <>
+            {rows}
+            <ListPagination page={list.page} pages={list.pages} onPageChange={list.setPage} />
+          </>
+        )}
+      </div>
       {dialogs}
     </div>
   );
