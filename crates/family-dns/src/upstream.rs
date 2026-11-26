@@ -202,8 +202,9 @@ pub(crate) struct EncryptedZoneHandler {
 }
 
 impl EncryptedZoneHandler {
-    /// Test seam mirroring the plaintext path. Encrypted upstreams do not use
-    /// a hosts file in production; this exists only for maintained injection.
+    /// Maintained hosts-table injection seam mirroring the plaintext path.
+    /// Production uses a system hosts file only when explicitly enabled in
+    /// the shared resolver options; the default is disabled for both paths.
     #[doc(hidden)]
     pub fn with_hosts(
         specs: &[EncryptedUpstreamSpec],

@@ -2,6 +2,13 @@
 
 ## Current delivery status
 
+- DNS cache/runtime foundation: `d5b6397c` (source `589ba449`) independently
+  accepted with 137 DNS tests, formatting and strict clippy. Configurable
+  positive/negative TTL bounds, cache disable, coherent in-process clear,
+  default-off system hosts lookup and A/AAAA response shaping are implemented.
+  Cache capacity is eventual response-count eviction, not a hard instantaneous
+  or byte bound. Clear is not a barrier against in-flight repopulation. HTTP
+  settings delivery, serve-expired, DO/ECS and HTTPS/SVCB IPv6 hints remain open.
 - Shared policy core: independently accepted; 16 tests.
 - DNS immutable snapshots: independently accepted; no catalog lock across I/O.
 - Vantyr DNS executable and durable configuration/reload: independently accepted;
