@@ -739,6 +739,39 @@ export function demoNetworkApi(): Partial<ApiClient> {
     networkHouseholdCreate: async () => ({ household_id: id("hh") }),
     networkBootstrap: async () => ({ household_id: HOUSEHOLD }),
 
+    networkHouseholdUpdate: async (_household, body) => {
+      const b = asRecord(body);
+      const household = households[0];
+      const keys = Object.keys(b);
+      if (keys.length === 0) throw new ApiError("no fields to update", 400);
+      if (keys.some((k) => k !== "name" && k !== "timezone"))
+        throw new ApiError("unknown field", 400);
+      const changed: string[] = [];
+      if ("name" in b) {
+        const name = typeof b.name === "string" ? b.name.trim() : "";
+        // eslint-disable-next-line no-control-regex
+        if (!name || name.length > 120 || /[\u0000-\u001f\u007f]/.test(name))
+          throw new ApiError("name must be 1-120 characters without control characters", 400);
+        if (name !== household.name) {
+          household.name = name;
+          changed.push("name");
+        }
+      }
+      if ("timezone" in b) {
+        const zone = typeof b.timezone === "string" ? b.timezone.trim() : "";
+        try {
+          new Intl.DateTimeFormat("en", { timeZone: zone });
+        } catch {
+          throw new ApiError("timezone must be a valid IANA timezone", 400);
+        }
+        if (zone && zone !== household.timezone) {
+          household.timezone = zone;
+          changed.push("timezone");
+        }
+      }
+      return { household: { ...household }, changed_fields: changed };
+    },
+
     networkPersons: async () => ({ persons }),
     networkPersonCreate: async (_household, body) => {
       const b = asRecord(body);
@@ -849,6 +882,59 @@ export function demoNetworkApi(): Partial<ApiClient> {
         c.updated_at = now();
       }
       return { ok: true };
+    },
+
+    networkInventoryDelete: async (_household, kind, rowId) => {
+      const remove = <T extends { id: string }>(rows: T[]) => {
+        const index = rows.findIndex((r) => r.id === rowId);
+        if (index < 0) throw new ApiError(`${kind} not found in this household`, 404);
+        rows.splice(index, 1);
+        return { ok: true, kind, id: rowId };
+      };
+      const blocked = (reasons: string[]) => {
+        if (reasons.length > 0) throw new ApiError(reasons.join("; "), 409);
+      };
+      if (kind === "person") {
+        if (!persons.some((p) => p.id === rowId))
+          throw new ApiError("person not found in this household", 404);
+        const reasons: string[] = [];
+        if (assignments.some((a) => a.person_id === rowId)) reasons.push("person has assignments");
+        if (bindings.some((x) => x.person_id === rowId))
+          reasons.push("person has principal bindings, including revoked history");
+        blocked(reasons);
+        return remove(persons);
+      }
+      if (kind === "device") {
+        if (!devices.some((d) => d.id === rowId))
+          throw new ApiError("device not found in this household", 404);
+        const reasons: string[] = [];
+        if (assignments.some((a) => a.device_id === rowId)) reasons.push("device has assignments");
+        if (connections.some((c) => c.device_id === rowId)) reasons.push("device has connections");
+        if (deviceAuths.some((d) => d.device_id === rowId))
+          reasons.push("device has device enrollments, including ended history");
+        if (ownSessions.some((x) => x.device_id === rowId))
+          reasons.push("device has verified sessions");
+        blocked(reasons);
+        return remove(devices);
+      }
+      if (kind === "assignment") {
+        if (!assignments.some((a) => a.id === rowId))
+          throw new ApiError("assignment not found in this household", 404);
+        blocked(
+          connections.some((c) => c.assignment_id === rowId)
+            ? ["assignment has connections; remove them first"]
+            : [],
+        );
+        return remove(assignments);
+      }
+      const connection = connections.find((c) => c.id === rowId);
+      if (!connection) throw new ApiError("connection not found in this household", 404);
+      blocked(
+        connection.status === "active"
+          ? ["connection is active; record it inactive or revoked first"]
+          : [],
+      );
+      return remove(connections);
     },
 
     networkAgentEnrollments: async () => ({ enrollments }),
@@ -1168,6 +1254,34 @@ export function demoNetworkApi(): Partial<ApiClient> {
         updated_at: now(),
       });
       return { id: created };
+    },
+    networkGatewayUpdate: async (_household, gatewayId, body) => {
+      const b = asRecord(body);
+      const gateway = gateways.find((g) => g.id === gatewayId);
+      if (!gateway) throw new ApiError("gateway not found in this household", 404);
+      const keys = Object.keys(b);
+      if (keys.length === 0) throw new ApiError("no fields to update", 400);
+      if (keys.some((k) => k !== "label" && k !== "enabled"))
+        throw new ApiError("unknown field", 400);
+      if (b.enabled === true && gateway.revoked_at)
+        throw new ApiError("a revoked gateway cannot be re-enabled; register a new gateway", 409);
+      const changed: string[] = [];
+      if ("label" in b) {
+        const label = typeof b.label === "string" ? b.label.trim() : "";
+        // eslint-disable-next-line no-control-regex
+        if (!label || label.length > 120 || /[\u0000-\u001f\u007f]/.test(label))
+          throw new ApiError("label must be 1-120 characters without control characters", 400);
+        if (label !== gateway.label) {
+          gateway.label = label;
+          changed.push("label");
+        }
+      }
+      if (typeof b.enabled === "boolean" && b.enabled !== gateway.enabled) {
+        gateway.enabled = b.enabled;
+        changed.push("enabled");
+      }
+      if (changed.length > 0) gateway.updated_at = now();
+      return { gateway: { ...gateway }, changed_fields: changed };
     },
     networkGatewayRevoke: async (_household, gatewayId) => {
       const gateway = gateways.find((g) => g.id === gatewayId);

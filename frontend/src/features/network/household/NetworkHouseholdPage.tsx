@@ -30,6 +30,7 @@ import {
   EditAssignmentForm,
   EditConnectionForm,
   EditDeviceForm,
+  EditHouseholdForm,
   EditPersonForm,
 } from "./HouseholdForms";
 import { KIND_LABEL, ROLE_LABEL, STATUS_TONE, TYPE_LABEL } from "./labels";
@@ -63,7 +64,7 @@ function PeopleSection({
       title="People"
       icon={<Users />}
       action={action}
-      help="Admins can rename a person or change the default profile. People can’t be deleted."
+      help="Admins can rename a person, change the default profile or delete a person. A person who still has assignments, mappings or enrollment records can’t be deleted."
     >
       {persons.length === 0 ? (
         <Empty>No people yet.</Empty>
@@ -101,7 +102,7 @@ function DevicesSection({
       title="Devices"
       icon={<Laptop />}
       action={action}
-      help="Devices belong to the household. A person is linked through an assignment, and a device can have none. Admins can edit a device’s name, type and shared flag. Devices can’t be deleted."
+      help="Devices belong to the household. A person is linked through an assignment, and a device can have none. Admins can edit a device’s name, type and shared flag, or delete a device nothing references."
     >
       {devices.length === 0 ? (
         <Empty>No devices yet.</Empty>
@@ -149,7 +150,7 @@ function AssignmentsSection({
       title="Assignments"
       icon={<Link2 />}
       action={action}
-      help="Admins can change the role or set an assignment inactive. Assignments can’t be deleted, so inactive is how one ends."
+      help="Admins can change the role, set an assignment inactive, or delete one that has no connections."
     >
       {assignments.length === 0 ? (
         <Empty>Nobody is assigned to a device.</Empty>
@@ -266,11 +267,14 @@ export function NetworkHouseholdPage() {
           Household
           <HelpTip label="About the household">
             Connection status and last seen are reports, not verified. Admins can edit people,
-            devices, assignments and connections. Nothing can be deleted from here.
+            devices, assignments and connections, and delete inventory records nothing references.
+            Deleting never ends sessions or revokes credentials. The household itself can’t be
+            deleted.
           </HelpTip>
         </span>
       }
       description="The people and devices Vantyr Network applies to."
+      actions={isAdmin ? <EditHouseholdForm household={household} /> : null}
     />
   );
   if (failed) {
@@ -354,7 +358,7 @@ export function NetworkHouseholdPage() {
         title="Connections"
         icon={<Cable />}
         variant="plain"
-        help="How each device reaches Vantyr. Status and last seen are what was reported or entered, not verified. Admins can edit the status and linked agent, or revoke."
+        help="How each device reaches Vantyr. Status and last seen are what was reported or entered, not verified. Admins can edit the status and linked agent, revoke, or delete a connection that isn’t active."
         action={isAdmin ? <AddConnectionForm household={household.id} devices={deviceList} /> : null}
       >
         {withConnections.length === 0 ? (

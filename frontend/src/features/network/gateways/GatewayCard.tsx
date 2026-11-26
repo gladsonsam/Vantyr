@@ -6,7 +6,7 @@ import { TimeAgo } from "@/features/network/components/TimeAgo";
 import type { GatewayStatus } from "@/api/queries/network";
 import { GatewayCapabilityRows } from "./GatewayCapabilityRows";
 import { gatewayLiveness, reportedRevisionLabel, revisionLabel } from "./gatewayStatusLib";
-import { LivenessStatus } from "./gatewayStatus";
+import { EnabledStatus, LivenessStatus } from "./gatewayStatus";
 
 export function ReportedAppliedLabel() {
   return (
@@ -41,6 +41,7 @@ export function GatewayCard({ status }: { status: GatewayStatus }) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3">
+          <EnabledStatus enabled={gateway.enabled} />
           <LivenessStatus liveness={gatewayLiveness(gateway)} />
           <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
         </div>

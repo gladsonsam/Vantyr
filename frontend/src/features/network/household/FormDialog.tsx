@@ -13,6 +13,17 @@ import {
 } from "@vantyr/ui/components/dialog";
 import { Spinner } from "@vantyr/ui/components/spinner";
 
+/** Resolve `onSubmit` with this to keep the dialog open and show the message (e.g. “No changes”). */
+export interface FormNotice {
+  notice: string;
+}
+
+function noticeOf(result: unknown): string | null {
+  if (typeof result !== "object" || result === null || !("notice" in result)) return null;
+  const { notice } = result as FormNotice;
+  return typeof notice === "string" ? notice : null;
+}
+
 /** A short admin form in a dialog. `onSubmit` rejects to show its message; resolving closes it. */
 export function FormDialog({
   trigger,
@@ -24,6 +35,7 @@ export function FormDialog({
   disabledReason,
   onSubmit,
   onReset,
+  footerExtra,
   children,
 }: {
   trigger: string;
@@ -37,17 +49,21 @@ export function FormDialog({
   disabledReason?: string;
   onSubmit: () => Promise<unknown>;
   onReset: () => void;
+  /** Rendered under the fields and messages, above the footer (e.g. a delete section). */
+  footerExtra?: ReactNode;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const change = (next: boolean) => {
     if (busy) return;
     setOpen(next);
     if (!next) {
       setError(null);
+      setNotice(null);
       onReset();
     }
   };
@@ -57,8 +73,13 @@ export function FormDialog({
     if (!canSubmit || busy) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
-      await onSubmit();
+      const message = noticeOf(await onSubmit());
+      if (message) {
+        setNotice(message);
+        return;
+      }
       setOpen(false);
       onReset();
     } catch (e) {
@@ -89,6 +110,12 @@ export function FormDialog({
               {error}
             </p>
           ) : null}
+          {notice ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              {notice}
+            </p>
+          ) : null}
+          {footerExtra}
           <DialogFooter>
             <Button type="submit" disabled={!canSubmit || busy || Boolean(disabledReason)}>
               {busy ? <Spinner /> : null}

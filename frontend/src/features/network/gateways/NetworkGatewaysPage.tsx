@@ -30,7 +30,7 @@ export function NetworkGatewaysPage() {
             <HelpTip label="About gateways">
               Gateways are workers that report in. Desired is what you asked for; reported applied
               is what the worker claims. Neither is verified enforcement. Worker tokens are not
-              anyone’s proxy sign-in credential. Gateways can’t be edited or deleted, only revoked.
+              anyone’s proxy sign-in credential. Admins can rename a gateway, disable or re-enable it, or revoke it. A revoked gateway can’t be re-enabled.
             </HelpTip>
           </span>
         }

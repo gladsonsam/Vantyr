@@ -13,7 +13,10 @@ import type {
   NetworkDesiredPolicy,
   NetworkGateway,
   NetworkGatewayKind,
+  NetworkGatewayPatch,
   NetworkGatewayReport,
+  NetworkHouseholdPatch,
+  NetworkInventoryDeleteKind,
   NetworkPageParams,
   NetworkSetupGrantConsume,
   NetworkVerifiedSession,
@@ -478,6 +481,56 @@ export function useBootstrapNetworkMutation() {
     mutationFn: (name: string) => api.networkBootstrap({ name }),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: networkKeys.all }),
+  });
+}
+
+/** Edit name/timezone. Resolves with `changed_fields` (empty for a no-op). Recorded config only. */
+export function useUpdateHouseholdMutation(household: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: NetworkHouseholdPatch) =>
+      api.networkHouseholdUpdate(household, body),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: networkKeys.households() }),
+  });
+}
+
+/** Rename and enable/disable. A revoked gateway can never be re-enabled (409). */
+export function useUpdateGatewayMutation(household: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & NetworkGatewayPatch) =>
+      api.networkGatewayUpdate(household, id, body),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: networkKeys.gatewaysRoot(household),
+      }),
+  });
+}
+
+/**
+ * Conservative inventory delete. 409 (with the server's reasons) while the row is referenced.
+ * Refreshes inventory and BYOD lists, since bindings and enrollments can reference rows.
+ */
+export function useDeleteInventoryMutation(
+  household: string,
+  kind: NetworkInventoryDeleteKind,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.networkInventoryDelete(household, kind, id),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: networkKeys.inventory(household),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: networkKeys.bindings(household),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: networkKeys.enrollRoot(household),
+        }),
+      ]),
   });
 }
 

@@ -6,6 +6,7 @@ import {
   useCreatePersonMutation,
   useUpdateAssignmentMutation,
   useUpdateConnectionMutation,
+  useUpdateHouseholdMutation,
   useUpdateDeviceMutation,
   useUpdatePersonMutation,
 } from "@/api/queries/network";
@@ -21,6 +22,7 @@ import {
   type NetworkConnectionKind,
   type NetworkDevice,
   type NetworkDeviceType,
+  type NetworkHousehold,
   type NetworkPerson,
 } from "@/api/types";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
@@ -34,6 +36,7 @@ import {
   SelectValue,
 } from "@vantyr/ui/components/select";
 import { HelpTip } from "@/components/common/HelpTip";
+import { DeleteInventorySection } from "./DeleteInventorySection";
 import { FormDialog } from "./FormDialog";
 import { KIND_LABEL, ROLE_LABEL, STATUS_TONE, TYPE_LABEL } from "./labels";
 
@@ -92,6 +95,89 @@ function UnlinkOption({
       </div>
       {checked ? <p className="pl-6 text-destructive">{confirm}</p> : null}
     </div>
+  );
+}
+
+const COMMON_TIMEZONES = [
+  "UTC",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Sao_Paulo",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Africa/Lagos",
+  "Africa/Johannesburg",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+];
+
+/** Name and timezone. Only edited fields are sent; the server reports which ones changed. */
+export function EditHouseholdForm({ household }: { household: NetworkHousehold }) {
+  const update = useUpdateHouseholdMutation(household.id);
+  const [name, setName] = useState(household.name);
+  const [timezone, setTimezone] = useState(household.timezone);
+  const nameChanged = name.trim() !== household.name;
+  const zoneChanged = timezone.trim() !== household.timezone;
+  return (
+    <FormDialog
+      edit
+      trigger="Edit household"
+      title="Edit household"
+      submitLabel="Save"
+      canSubmit={name.trim().length > 0 && timezone.trim().length > 0 && (nameChanged || zoneChanged)}
+      onSubmit={async () => {
+        const result = await update.mutateAsync({
+          ...(nameChanged ? { name: name.trim() } : {}),
+          ...(zoneChanged ? { timezone: timezone.trim() } : {}),
+        });
+        const fields = result.changed_fields;
+        return {
+          notice: fields.length === 0 ? "No changes" : `Saved: ${fields.join(", ")}`,
+        };
+      }}
+      onReset={() => {
+        setName(household.name);
+        setTimezone(household.timezone);
+      }}
+    >
+      <Field label="Name" id="household-name">
+        <Input
+          id="household-name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={120}
+          autoFocus
+        />
+      </Field>
+      <Field
+        label="Timezone"
+        id="household-timezone"
+        help="Recorded configuration only. Changing it does not republish policy, change the policy’s own timezone, digest or desired assignment, or mean anything is being enforced in that zone."
+      >
+        <Input
+          id="household-timezone"
+          list="household-timezones"
+          value={timezone}
+          onChange={(event) => setTimezone(event.target.value)}
+          placeholder="Region/City, for example Europe/London"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <datalist id="household-timezones">
+          {COMMON_TIMEZONES.map((zone) => (
+            <option key={zone} value={zone} />
+          ))}
+        </datalist>
+        <p className="text-[0.8125rem] text-muted-foreground">IANA name, such as Africa/Lagos or UTC.</p>
+      </Field>
+    </FormDialog>
   );
 }
 
@@ -350,6 +436,14 @@ export function EditPersonForm({ household, person }: { household: string; perso
         setIsDefault(person.is_default_profile);
         setNote(person.note ?? "");
       }}
+      footerExtra={
+        <DeleteInventorySection
+          household={household}
+          kind="person"
+          id={person.id}
+          noun="person"
+        />
+      }
     >
       <Field label="Name" id={`person-name-${person.id}`}>
         <Input
@@ -407,6 +501,14 @@ export function EditDeviceForm({ household, device }: { household: string; devic
         setType(device.device_type);
         setShared(device.shared);
       }}
+      footerExtra={
+        <DeleteInventorySection
+          household={household}
+          kind="device"
+          id={device.id}
+          noun="device"
+        />
+      }
     >
       <Field label="Name" id={`device-name-${device.id}`}>
         <Input
@@ -469,7 +571,7 @@ export function EditAssignmentForm({
       edit
       trigger="Edit"
       title={title}
-      description="Assignments can’t be deleted. To end one, set it inactive."
+      description="To end an assignment but keep its record, set it inactive. Deleting is blocked while connections reference it."
       submitLabel="Save"
       canSubmit={changed}
       onSubmit={() =>
@@ -488,6 +590,14 @@ export function EditAssignmentForm({
         setNote(assignment.note ?? "");
         setUnlinkAgent(false);
       }}
+      footerExtra={
+        <DeleteInventorySection
+          household={household}
+          kind="assignment"
+          id={assignment.id}
+          noun="assignment"
+        />
+      }
     >
       <Field label="Role" id={`assign-role-${assignment.id}`}>
         <Select value={role} onValueChange={(v) => setRole(v as NetworkAssignmentRole)}>
@@ -561,7 +671,7 @@ export function EditConnectionForm({
       edit
       trigger="Edit"
       title={title}
-      description="Status is what you enter here, not a check. Connections can’t be deleted; revoke one instead."
+      description="Status is what you enter here, not a check. A connection can be deleted once it is inactive or revoked."
       submitLabel="Save"
       canSubmit={changed}
       onSubmit={() =>
@@ -592,6 +702,17 @@ export function EditConnectionForm({
         setClearObserved(false);
         setClearLastSeen(false);
       }}
+      footerExtra={
+        <DeleteInventorySection
+          household={household}
+          kind="connection"
+          id={connection.id}
+          noun="connection"
+          blockedHelp={
+            connection.status === "active" ? "Set it inactive or revoked first." : undefined
+          }
+        />
+      }
     >
       <Field
         label="Status"

@@ -33,7 +33,13 @@ import type {
   NetworkPolicyDiffResponse,
   NetworkPolicyViewResponse,
   NetworkDesiredPolicy,
+  NetworkDeleteResult,
   NetworkGateway,
+  NetworkGatewayPatch,
+  NetworkGatewayPatchResult,
+  NetworkHouseholdPatch,
+  NetworkHouseholdPatchResult,
+  NetworkInventoryDeleteKind,
   NetworkGatewayCredential,
   NetworkGatewayCredentialIssued,
   NetworkGatewayCredentialRequest,
@@ -52,6 +58,13 @@ import type {
 } from "@/api/types";
 
 const base = (household: string) => `/network/households/${household}`;
+
+const INVENTORY_PATH: Record<NetworkInventoryDeleteKind, string> = {
+  person: "persons",
+  device: "devices",
+  assignment: "assignments",
+  connection: "connections",
+};
 
 /**
  * Vantyr Network inventory: households, people, devices, assignments, connections, agent
@@ -72,6 +85,12 @@ export const networkEndpoints = {
     timezone?: string;
   }): Promise<{ household_id: string }> =>
     postJsonRes("/network/bootstrap", body),
+
+  networkHouseholdUpdate: (
+    household: string,
+    body: NetworkHouseholdPatch,
+  ): Promise<NetworkHouseholdPatchResult> =>
+    patchJson(base(household), body),
 
   networkPersons: (household: string): Promise<{ persons: NetworkPerson[] }> =>
     get(`${base(household)}/persons`),
@@ -175,6 +194,14 @@ export const networkEndpoints = {
   ): Promise<{ ok: boolean }> =>
     patchJson(`${base(household)}/connections/${id}`, body),
 
+  /** Conservative: 409 while anything references the row. Deletes the inventory record only. */
+  networkInventoryDelete: (
+    household: string,
+    kind: NetworkInventoryDeleteKind,
+    id: string,
+  ): Promise<NetworkDeleteResult> =>
+    delJson(`${base(household)}/${INVENTORY_PATH[kind]}/${id}`),
+
   networkAgentEnrollments: (
     household: string,
   ): Promise<{ enrollments: NetworkAgentEnrollment[] }> =>
@@ -228,6 +255,12 @@ export const networkEndpoints = {
     body: { kind: NetworkGatewayKind; label: string },
   ): Promise<{ id: string }> =>
     postJsonRes(`${base(household)}/gateways`, body),
+  networkGatewayUpdate: (
+    household: string,
+    gateway: string,
+    body: NetworkGatewayPatch,
+  ): Promise<NetworkGatewayPatchResult> =>
+    patchJson(`${base(household)}/gateways/${gateway}`, body),
   networkGatewayRevoke: (
     household: string,
     gateway: string,

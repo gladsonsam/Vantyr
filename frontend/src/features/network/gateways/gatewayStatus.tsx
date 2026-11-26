@@ -19,6 +19,23 @@ export function LivenessStatus({ liveness }: { liveness: GatewayLiveness }) {
   );
 }
 
+/**
+ * Whether the gateway is allowed to fetch policy and heartbeat. Separate from reporting: a disabled
+ * gateway is not the same thing as one that stopped reporting.
+ */
+export function EnabledStatus({ enabled }: { enabled: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 text-sm font-medium",
+        enabled ? "text-success" : "text-muted-foreground",
+      )}
+    >
+      <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
+      {enabled ? "Enabled" : "Disabled"}
+    </span>
+  );
+}
 
 /** The mark deliberately uses a neutral colour for "done": a report is not a verification. */
 export function DesiredStatusMark({ state }: { state: DesiredVsReported }) {

@@ -137,6 +137,37 @@ export const NETWORK_CONNECTION_STATUSES = [
 export type NetworkConnectionStatus =
   (typeof NETWORK_CONNECTION_STATUSES)[number];
 
+/** PATCH household: send only edited fields. */
+export interface NetworkHouseholdPatch {
+  name?: string;
+  timezone?: string;
+}
+
+export interface NetworkHouseholdPatchResult {
+  household: NetworkHousehold;
+  /** Empty when nothing changed (a no-op PATCH, not audited). */
+  changed_fields: string[];
+}
+
+/** PATCH gateway: send only edited fields. */
+export interface NetworkGatewayPatch {
+  label?: string;
+  enabled?: boolean;
+}
+
+export interface NetworkGatewayPatchResult {
+  gateway: NetworkGateway;
+  changed_fields: string[];
+}
+
+export type NetworkInventoryDeleteKind = "person" | "device" | "assignment" | "connection";
+
+export interface NetworkDeleteResult {
+  ok: boolean;
+  kind: string;
+  id: string;
+}
+
 /** A field that can be left alone (omitted), cleared (`null`) or set. */
 export type Patch<T> = T | null | undefined;
 

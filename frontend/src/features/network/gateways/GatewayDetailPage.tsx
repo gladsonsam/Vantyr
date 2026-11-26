@@ -11,11 +11,12 @@ import { PageLoading } from "@/features/network/components/PageLoading";
 import { QueryError } from "@/features/network/components/QueryError";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { SettingsPageHeader } from "@/features/settings/components/SettingsLayout";
+import { GatewayAvailabilitySection } from "./GatewayAvailabilitySection";
 import { GatewayCredentialsSection } from "./GatewayCredentialsSection";
 import { GatewayDesiredSection } from "./GatewayDesiredSection";
 import { GatewayReportsSection } from "./GatewayReportsSection";
 import { gatewayLiveness } from "./gatewayStatusLib";
-import { LivenessStatus } from "./gatewayStatus";
+import { EnabledStatus, LivenessStatus } from "./gatewayStatus";
 import { HoldAction } from "./HoldAction";
 import { IssuedTokenDialog, type IssuedToken } from "./IssuedTokenDialog";
 
@@ -86,6 +87,7 @@ export function GatewayDetailPage() {
         description={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span>{gateway.kind === "dns" ? "DNS gateway" : "Proxy gateway"}</span>
+            <EnabledStatus enabled={gateway.enabled} />
             <LivenessStatus liveness={gatewayLiveness(gateway)} />
             <span>
               Last report <TimeAgo iso={gateway.last_seen_at} />
@@ -111,6 +113,7 @@ export function GatewayDetailPage() {
           {error}
         </p>
       ) : null}
+      <GatewayAvailabilitySection household={household.id} gateway={gateway} isAdmin={isAdmin} />
       <GatewayDesiredSection
         household={household.id}
         gateway={gateway}
