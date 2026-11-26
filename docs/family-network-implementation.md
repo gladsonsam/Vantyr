@@ -358,9 +358,37 @@ external product's auth or config format is a requirement.
 5. Define concurrent-session handling for fast user switching on shared PCs.
 6. Agree retention defaults and audit-log linkage; the accepted operations
    runbook is not duplicated here.
-7. Integrate the runnable DNS executable with the isolated lab and test
-   configuration reload, runtime acknowledgments and restart recovery.
+7. The runnable DNS executable is integrated with the isolated lab and its
+   full-stack smoke has independent acceptance. Configuration reload, runtime
+   acknowledgments and durable restart recovery remain to be integrated.
 8. Integrate the accepted bounded runtime queue with DNS and control-plane
    event ingestion; no unbounded event buffers.
 
 No substantive UI or Supabase changes were made in this step.
+
+## Backend integration checkpoints
+
+- Accepted: household-scoped inventory and audit API, shared-device DNS
+  connections without a person, and explicit network grants. Independent
+  review exercised ten database-backed tests and legacy migration fixtures.
+- Accepted: process-restart policy persistence and bounded event queue,
+  including expiry of delayed events at every queue position; 22 tests pass.
+- Accepted: runnable filtering DNS and isolated full-stack lab. Lab smoke
+  exercises actual worker answers, restrictive unknown clients, aliases,
+  upstream outage, cache behavior, recovery and same-config restart. This
+  does not establish durable worker recovery or controller verification.
+- Review pending: scoped gateway credentials and authenticated heartbeat.
+  Worker-reported revisions remain unverified and unenforced; no real policy
+  distribution or canary is delivered by this increment. Report-history
+  retention and concurrent credential revocation are explicit review checks.
+- Review pending: authenticated HTTP/CONNECT worker with destination
+  filtering, deadlines and graceful shutdown. Static bootstrap credentials
+  remain separate from controller enrollment; TLS inspection is not available.
+- In progress: unique inspection CA generation, encrypted key custody,
+  memory-only signer unlock, public certificate export and validation tests.
+- Next integration: persist and reload one complete validated DNS configuration
+  and policy bundle atomically, preserving revision and policy age across a
+  restart. Do not couple independently written configuration and policy files.
+- BYOD enrollment and reversible client setup follow the responsibility
+  boundaries in [network-onboarding.md](network-onboarding.md). Router DHCP
+  stays outside Vantyr. Frontend implementation is managed independently.
