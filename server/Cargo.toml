@@ -97,3 +97,14 @@ chrono-tz = "0.10.4"
 # P-256 keygen for the VAPID fallback keypair (generated-and-logged when env keys are unset).
 p256 = "0.14.0"
 web-push-native = "0.5.0"
+
+[dev-dependencies]
+# Test-only: real-server / real-worker Stage B integration test. Every version
+# below is already pinned in the shared workspace Cargo.lock; no registry
+# version or checksum changes. Production server behaviour is untouched.
+family-dns     = { path = "../crates/family-dns" }
+hickory-server = "=0.26.4"
+rcgen          = { version = "=0.14.10", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
+rustls         = { version = "=0.23.46", default-features = false, features = ["std", "aws_lc_rs", "tls12"] }
+tokio-rustls   = { version = "=0.26.6", default-features = false, features = ["aws_lc_rs"] }
+vantyr-network-subscriptions = { path = "../crates/network-subscriptions" }

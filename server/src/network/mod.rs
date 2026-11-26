@@ -67,6 +67,8 @@ mod read_dto;
 mod service;
 
 #[cfg(test)]
+mod dns_management_e2e_tests;
+#[cfg(test)]
 mod dns_management_tests;
 #[cfg(test)]
 mod enroll_tests;

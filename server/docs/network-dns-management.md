@@ -199,11 +199,55 @@ applied versions, never-applied null reports, tri-state set/clear, and untrusted
 status field/timestamp/size rejection. No full-workspace suite was run (the DNS
 worker crate has unrelated in-flight work).
 
+## Real-server / real-worker validation note (Stage A + Stage B)
+
+`server/src/network/dns_management_e2e_tests.rs` adds one bounded `#[sqlx::test]`
+that runs the accepted server and worker together, on a fresh migrated database
+in a dedicated throwaway PostgreSQL only (`vantyr-netinv-test-8bdde55a`,
+`127.0.0.1:58743`); no household database, no live provider and no real
+credential is read or printed. Reproduce with:
+
+```sh
+SQLX_OFFLINE=true \
+DATABASE_URL=postgres://<throwaway-user>:<throwaway-pw>@127.0.0.1:58743/<db> \
+  cargo test -p vantyr-server --locked --offline \
+  network::dns_management_e2e_tests::real_server_and_worker_dns_management_flow \
+  -- --exact --nocapture
+```
+
+It serves the actual `network::routes()` + `network::worker_routes()` behind the
+real session/CSRF middleware and verified TLS with a unique per-run CA, bootstraps
+a household, issues an explicit `read_dns_management`/`report_dns_status`
+credential, and writes the options, credential and CA as owner-0600 files. The
+worker side is the real `ManagementOptions`/`ManagementClient`/`ManagementWorker`
+and the production subscription `Fetcher` and compiler. At least one phase is
+driven by the background coordinator loop (not only `sync_once`). The test
+checks real UDP **and** TCP answers (allowed then blocked), the server's status
+view (delivered/reported version, applied digest, generation, downloaded list
+digest, honest original `applied_at`) and the server-side refresh-ack row. A
+manual refresh carries the server-owned `expires_at`; a changed list fixture
+advances the DNS answer and receipt without changing policy revision or publish
+time. An offline restart from the single bundle preserves applied version,
+digest, bytes and original age; a post-restart manual refresh is checked both
+with the fetch impossible (no ack, no receipt) and after a real fetch (new DNS
+answer, ack only then).
+
+**Precise limitation.** Production's public-host fetcher resolver rejects
+loopback, so only the subscription fetcher's DNS resolver is injected with a
+loopback resolver. TLS still verifies against the private per-run CA; the
+worker's management client keeps its unchanged verified/no-proxy/no-redirect
+transport. There is no insecure verifier, no production SSRF bypass, no mocked
+wire DTO and no copied auth/serializer logic. The test proves observation and
+application of downloaded list bytes; it does **not** claim a canary,
+enforcement or a `verified` dashboard badge.
+
 ## Stage B gaps (not claimed here)
 
-- No DNS worker consumes `read_dns_management` or emits `report_dns_status`.
-- No re-prepare/recompile of list material from a changed management config;
-  the generation/basis rules remain those of the accepted DNS worker.
+- No production dashboard consumes `read_dns_management` or emits
+  `report_dns_status`; the end-to-end test above demonstrates the accepted
+  worker APIs only, not a shipped deploy/integration.
+- No production re-prepare/recompile wiring outside the accepted DNS worker;
+  the generation/basis rules remain those of that worker.
 - No dashboard "applied/protected" badge; `verified` stays false/absent until a
   real canary and coverage check exist.
 - No frontend handoff until server + worker are reviewed and an end-to-end flow
