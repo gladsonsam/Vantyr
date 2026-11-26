@@ -562,8 +562,9 @@ No substantive UI or Supabase changes were made in this step.
   and portable liveness findings with production-root-faithful tests.
   Parent diagnostic correction `bd062ef1` makes locator write/removal failures
   visible in runtime and management status without freshening applied time or
-  churning generations. All 27 management tests and strict scoped clippy pass;
-  focused independent acceptance of that correction remains pending.
+  churning generations. That correction is independently accepted with all 27
+  management tests, subscription/durable regressions and strict scoped clippy
+  passing. The diagnostic is admitted by the existing server status contract.
 - Real-server/worker test harness `e6db26b0` + `a1b7b3e5` + `561d8248` passed on
   worker basis `4fcac755`: one fresh-PostgreSQL test, zero failures, about 34.8 s.
   The run uses the actual scoped server routes over verified TLS, actual worker
@@ -575,7 +576,7 @@ No substantive UI or Supabase changes were made in this step.
   resolver and test CA are injected; no live provider or production SSRF bypass
   is exercised. The later locator diagnostic correction was separately tested,
   not part of that original run. Independent harness review is in progress.
-  Combined acceptance and dashboard handoff remain gated on those final reviews.
+  Dashboard handoff remains gated on independent acceptance of the harness.
   Existing cache/rate/retention controls, statistics and verified coverage remain
   separate open requirements; the service catalogue is operator-declared.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
