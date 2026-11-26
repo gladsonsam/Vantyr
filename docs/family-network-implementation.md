@@ -627,6 +627,12 @@ No substantive UI or Supabase changes were made in this step.
   reports 120 DNS tests passing and old-code failures for five new lifecycle
   tests. The real-server harness has been resumed on this exact committed fix;
   neither its final pass nor cache-lifecycle acceptance is claimed yet.
+  Review confirms all four cache/recovery defects are fixed, but found locator
+  write/removal failures were silently ignored. Parent correction `bd062ef1`
+  exposes bounded runtime diagnostics in management reports, preserving the live
+  bundle and original times; all 27 management tests and strict scoped clippy
+  pass, including deterministic rename/removal failure cases. Focused independent
+  acceptance of that correction and the real-server result remain pending.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
   accepted separately from encrypted inbound listeners. Fresh review passed all
   91 DNS tests, including eight real-TLS upstream tests, and strict clippy.
