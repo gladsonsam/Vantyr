@@ -300,9 +300,11 @@ fullstack_smoke() {
 # claimed; local durability is unauthenticated.
 # ---------------------------------------------------------------------------
 
-PUB_A="2026-11-26T10:00:00Z"
-PUB_A_PREFIX="2026-11-26T10:00:00"
-PUB_B="2026-11-26T11:00:00Z"
+# Keep the recovery fixture fresh on every run, with distinct timestamps so a
+# restarted worker cannot silently substitute the external publication time.
+PUB_A_PREFIX="$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%S)"
+PUB_A="${PUB_A_PREFIX}Z"
+PUB_B="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 corrupt_state_check() {
   local out rc=0 corrupt="${LAB_DIR}/work/durable/corrupt.json"
@@ -319,7 +321,7 @@ corrupt_state_check() {
   (( rc != 0 )) || die "corrupt state file was accepted at startup"
   [[ "${out}" != *"listening"* ]] || die "corrupt state still started a listener: ${out}"
   assert_has_line "corrupt state rejected before any listener (no answer served)" \
-    "Vantyr DNS:" "${out}"
+    "malformed snapshot" "${out}"
 }
 
 durable_bootstrap() {

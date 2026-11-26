@@ -424,6 +424,9 @@ No substantive UI or Supabase changes were made in this step.
   passing, including higher-revision reload, invalid reload preservation,
   restart with a changed external config and preserved stale-policy behavior.
   Independent rerun and cleanup review are pending.
+  The first independent rerun passed all three suites but requested a
+  parse-specific corrupt-state assertion and dynamically fresh publication
+  fixtures. Those localized test corrections require fresh acceptance.
 - Parent integration check: server and proxy compile together with the committed
   dependency graph using `cargo check --locked --offline`. No deployment follows
   from a successful build or a pushed feature-branch commit.
