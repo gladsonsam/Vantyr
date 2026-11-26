@@ -467,6 +467,15 @@ No substantive UI or Supabase changes were made in this step.
   dependency graph using `cargo check --locked --offline`. No deployment follows
   from a successful build or a pushed feature-branch commit.
 
+### Accepted management contract correction
+
+- Nullable inventory PATCH fields now distinguish omission (keep), JSON null
+  (clear) and a valid value (set). Commits `08f191ba` + `e18524fb` are independently
+  accepted: 67 network tests, including the real HTTP/database revoked-at clear
+  regression, plus strict scoped clippy and focused authorization probes pass.
+  The frontend has been sent the accepted contract. Clearing reported connection
+  metadata never reinstates a revoked worker credential or proves enforcement.
+
 ### Active implementation tracks
 
 - Controller-driven DNS: bounded authenticated HTTPS retrieval, compatibility
