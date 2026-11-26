@@ -451,6 +451,9 @@ No substantive UI or Supabase changes were made in this step.
 
 - Controller-driven DNS: bounded authenticated HTTPS retrieval, compatibility
   checks and application through the accepted durable bundle/reload path.
+  Implementation is committed with 47 DNS tests reported passing; independent
+  review is pending. It validates scope, schema, revision, publication time and
+  content digest, and rejects unsupported policy shapes before application.
   Application acknowledgments and independent coverage verification remain
   separate subsequent integration steps.
 - BYOD backend: scoped SSO principal bindings, single-use enrollment grants and
