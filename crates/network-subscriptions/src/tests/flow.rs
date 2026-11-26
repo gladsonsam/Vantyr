@@ -298,11 +298,13 @@ async fn bad_certificate_oversize_and_stall_preserve_last_good() {
     let clock = Arc::new(TestClock::new(
         chrono::DateTime::from_timestamp_millis(1_700_000_000_000).unwrap(),
     ));
-    let mut limits = Limits::default();
-    limits.max_candidate_bytes = 64;
-    limits.max_aggregate_bytes = 64;
-    limits.connect_timeout_secs = 1;
-    limits.request_timeout_secs = 1;
+    let limits = Limits {
+        max_candidate_bytes: 64,
+        max_aggregate_bytes: 64,
+        connect_timeout_secs: 1,
+        request_timeout_secs: 1,
+        ..Limits::default()
+    };
     let cfg = config(&base, limits.clone());
     let fetcher = fetcher(dir.path(), &base, &ca, &cfg, clock.clone());
     assert!(fetcher.refresh("public", true).await.is_ok());

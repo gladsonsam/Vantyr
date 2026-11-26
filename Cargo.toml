@@ -17,6 +17,8 @@ members  = [
   "crates/network-unifi",
   # Bounded filter-list/service snapshot compiler (no I/O; maintained parsers).
   "crates/network-filter",
+  # Bounded public HTTPS list subscriptions: conditional GET + last-known-good cache.
+  "crates/network-subscriptions",
 ]
 exclude  = ["agent"]   # built separately (cargo xwin for the Windows release); depends on ./protocol by path
 resolver = "2"

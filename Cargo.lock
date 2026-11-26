@@ -7103,6 +7103,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "vantyr-network-subscriptions"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "libc",
+ "rcgen",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-rustls",
+ "url",
+]
+
+[[package]]
 name = "vantyr-network-unifi"
 version = "0.1.0"
 dependencies = [

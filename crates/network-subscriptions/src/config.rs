@@ -30,17 +30,12 @@ pub const MAX_TEXT_LEN: usize = 256;
 /// How (or whether) a query string is accepted. The default is to reject all
 /// queries. An explicit allowlist may contain only public, non-secret keys;
 /// values are still bounded and checked for control characters.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryPolicy {
+    #[default]
     Reject,
     AllowPublic { keys: Vec<String> },
-}
-
-impl Default for QueryPolicy {
-    fn default() -> Self {
-        Self::Reject
-    }
 }
 
 /// Required operator-declared metadata. This crate never bundles a third-party

@@ -183,9 +183,11 @@ async fn private_dns_answer_never_opens_a_socket() {
     });
     let (_base, _ca) = crate::test_support::spawn_tls_server(router).await;
 
-    let mut limits = Limits::default();
-    limits.request_timeout_secs = 2;
-    limits.connect_timeout_secs = 1;
+    let limits = Limits {
+        request_timeout_secs: 2,
+        connect_timeout_secs: 1,
+        ..Limits::default()
+    };
     let lookup = Arc::new(StaticLookup(vec!["127.0.0.1:443".parse().unwrap()]));
     let resolver: Arc<dyn reqwest::dns::Resolve> = Arc::new(VettedResolver::new(lookup));
     let client = reqwest::Client::builder()

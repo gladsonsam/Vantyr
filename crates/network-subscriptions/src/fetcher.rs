@@ -46,6 +46,12 @@ pub enum FetchOutcome {
     Skipped,
 }
 
+struct BuildOptions {
+    hooks: WriteHooks,
+    clock: Option<SharedClock>,
+    rng: Option<SharedRng>,
+}
+
 pub struct Fetcher<V> {
     root: PathBuf,
     limits: Limits,
@@ -81,7 +87,19 @@ impl<V: CandidateValidator> Fetcher<V> {
             Duration::from_secs(limits.max_backoff_secs),
             Duration::from_secs(limits.max_retry_after_secs),
         );
-        Self::assemble(root, limits, sources, validator, transport, policy, WriteHooks::default(), None, None)
+        Self::assemble(
+            root,
+            limits,
+            sources,
+            validator,
+            transport,
+            policy,
+            BuildOptions {
+                hooks: WriteHooks::default(),
+                clock: None,
+                rng: None,
+            },
+        )
     }
 
     fn assemble(
@@ -91,9 +109,7 @@ impl<V: CandidateValidator> Fetcher<V> {
         validator: V,
         transport: Arc<dyn HttpTransport>,
         policy: BackoffPolicy,
-        hooks: WriteHooks,
-        clock: Option<SharedClock>,
-        rng: Option<SharedRng>,
+        options: BuildOptions,
     ) -> Result<Self, Error> {
         let root = root.into();
         let mut states = HashMap::new();
@@ -121,7 +137,7 @@ impl<V: CandidateValidator> Fetcher<V> {
         for id in states.keys() {
             locks.insert(id.clone(), Arc::new(tokio::sync::Mutex::new(())));
         }
-        let scheduler = match (clock, rng) {
+        let scheduler = match (options.clock, options.rng) {
             (Some(c), Some(r)) => RefreshScheduler::new(c, r, policy),
             _ => RefreshScheduler::default(),
         };
@@ -134,7 +150,7 @@ impl<V: CandidateValidator> Fetcher<V> {
             scheduler,
             states: Mutex::new(states),
             locks: Mutex::new(locks),
-            hooks,
+            hooks: options.hooks,
         })
     }
 
