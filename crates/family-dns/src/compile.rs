@@ -139,6 +139,7 @@ pub fn compile(base: &Config, policy: &Policy) -> Result<Config, CompileError> {
         bind: base.bind.clone(),
         deny: base.deny.clone(),
         upstreams: base.upstreams.clone(),
+        encrypted_upstreams: base.encrypted_upstreams.clone(),
         local_zones: base.local_zones.clone(),
         default_device_profile: base.default_device_profile.clone(),
         devices: base.devices.clone(),

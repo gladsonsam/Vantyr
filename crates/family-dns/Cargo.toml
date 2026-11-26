@@ -13,7 +13,8 @@ path = "src/bin/vantyr-dns.rs"
 family-policy          = { path = "../family-policy" }
 vantyr-network-runtime = { path = "../network-runtime" }
 # Accepted bounded filter compiler (Hickory + maintained adblock, default `abp`
-# feature). Family DNS consumes the immutable snapshot; it never fetches bytes.
+# feature). Family DNS compiles caller-supplied bytes (local files or scheduled
+# operator-configured subscriptions); this crate performs no fetching itself.
 vantyr-network-filter  = { path = "../network-filter" }
 # Accepted bounded HTTPS subscription fetcher. Family DNS reuses its fetcher
 # and revalidates cached bytes with the maintained filter compiler; this crate
@@ -29,7 +30,12 @@ serde            = { version = "=1.0.229", features = ["derive"] }
 serde_json       = "=1.0.154"
 tokio            = { version = "=1.54.1", features = ["macros", "rt", "rt-multi-thread", "net", "sync", "time", "signal"] }
 hickory-server   = { version = "=0.26.4", features = ["resolver"] }
-hickory-resolver = { version = "=0.26.4", default-features = false, features = ["tokio", "serde"] }
+# Maintained DoT/DoH upstream transports. `webpki-roots` is mandatory: without
+# a root source Hickory's client config is empty and every verification fails.
+hickory-resolver = { version = "=0.26.4", default-features = false, features = ["tokio", "serde", "tls-aws-lc-rs", "https-aws-lc-rs", "webpki-roots"] }
+rustls           = { version = "=0.23.46", default-features = false, features = ["std", "aws_lc_rs", "tls12"] }
+pem              = "=4.0.0"
+webpki-roots     = "=1.0.12"
 tracing          = "=0.1.44"
 tokio-util       = { version = "0.7", features = ["rt"] }
 
@@ -46,7 +52,10 @@ thiserror        = "=1.0.69"
 libc             = "=0.2.191"
 
 [dev-dependencies]
+# Test-only local DoT/DoH listeners. Cargo unifies these features with the
+# production hickory-server package while building integration tests; the
+# worker itself registers no encrypted listener.
+hickory-server   = { version = "=0.26.4", features = ["resolver", "tls-aws-lc-rs", "https-aws-lc-rs"] }
 axum             = "=0.8.9"
-rustls           = { version = "=0.23.46", default-features = false, features = ["std", "aws_lc_rs", "tls12"] }
 rcgen            = { version = "=0.14.10", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
 tokio-rustls     = { version = "=0.26.6", default-features = false, features = ["aws_lc_rs"] }

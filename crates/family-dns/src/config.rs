@@ -40,6 +40,9 @@ pub const MAX_REASON_LEN: usize = 256;
 /// Rule ids are server-assigned in the shared policy; this mirrors its cap.
 pub const MAX_ID_LEN: usize = 64;
 pub const MAX_TIMEZONE_LEN: usize = 64;
+/// Bounded PEM string carried inside the one durable bundle (not a path).
+pub const MAX_CA_PEM_BYTES: usize = 16 * 1024;
+pub const MAX_DOH_PATH_LEN: usize = 256;
 pub const MAX_TTL_SECS: u32 = 86_400;
 pub const MAX_STALE_SECS: u64 = 30 * 24 * 60 * 60;
 pub const DEFAULT_PORT: u16 = 15_353;
@@ -386,6 +389,63 @@ impl MatchSpec {
         match self {
             Self::Exact { value } | Self::Suffix { value } => Some(value),
             Self::Any => None,
+        }
+    }
+}
+
+/// One verified encrypted upstream. The bootstrap address is a literal IP so
+/// no second uncontrolled lookup can redirect the connection; `server_name`
+/// is the certificate verification identity (on-wire SNI only for DoH).
+/// `ca_pem` is optional bounded PEM material for an explicit local CA.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "scheme", rename_all = "snake_case", deny_unknown_fields)]
+pub enum EncryptedUpstreamSpec {
+    Dot {
+        bootstrap: String,
+        #[serde(default)]
+        port: Option<u16>,
+        server_name: String,
+        #[serde(default)]
+        ca_pem: Option<String>,
+    },
+    Doh {
+        bootstrap: String,
+        #[serde(default)]
+        port: Option<u16>,
+        server_name: String,
+        path: String,
+        #[serde(default)]
+        ca_pem: Option<String>,
+    },
+}
+
+impl EncryptedUpstreamSpec {
+    pub fn bootstrap(&self) -> &str {
+        match self {
+            Self::Dot { bootstrap, .. } | Self::Doh { bootstrap, .. } => bootstrap,
+        }
+    }
+    pub fn port(&self) -> u16 {
+        match self {
+            Self::Dot { port, .. } => port.unwrap_or(853),
+            Self::Doh { port, .. } => port.unwrap_or(443),
+        }
+    }
+    pub fn server_name(&self) -> &str {
+        match self {
+            Self::Dot { server_name, .. } | Self::Doh { server_name, .. } => server_name,
+        }
+    }
+    pub fn ca_pem(&self) -> Option<&str> {
+        match self {
+            Self::Dot { ca_pem, .. } | Self::Doh { ca_pem, .. } => ca_pem.as_deref(),
+        }
+    }
+    /// Scheme label used in diagnostics (never echoes the bootstrap value).
+    pub fn scheme(&self) -> &'static str {
+        match self {
+            Self::Dot { .. } => "dot",
+            Self::Doh { .. } => "doh",
         }
     }
 }
@@ -757,6 +817,10 @@ pub struct Config {
     pub deny: DenyConfig,
     #[serde(default)]
     pub upstreams: Vec<String>,
+    /// Verified encrypted upstreams, beside (never mixed with) the literal
+    /// UDP/TCP `upstreams`.
+    #[serde(default)]
+    pub encrypted_upstreams: Vec<EncryptedUpstreamSpec>,
     #[serde(default)]
     pub local_zones: BTreeMap<String, Vec<RecordSpec>>,
     /// Non-overridable deny-only safety rules. Empty for local-only configs.
@@ -840,8 +904,63 @@ impl Config {
             }
         }
 
-        if self.upstreams.len() > MAX_UPSTREAMS {
+        if self.upstreams.len() + self.encrypted_upstreams.len() > MAX_UPSTREAMS {
             bail!("at most {MAX_UPSTREAMS} upstreams are allowed");
+        }
+        if !self.upstreams.is_empty() && !self.encrypted_upstreams.is_empty() {
+            bail!("mixing plaintext and encrypted upstreams is not allowed");
+        }
+        for spec in &self.encrypted_upstreams {
+            let bootstrap = spec.bootstrap();
+            if bootstrap.contains("://")
+                || bootstrap.contains('@')
+                || bootstrap.contains('?')
+                || bootstrap.contains('#')
+            {
+                bail!("encrypted upstream bootstrap must be an IP literal, not a URL");
+            }
+            let ip = IpAddr::from_str(bootstrap).map_err(|_| {
+                anyhow::anyhow!("encrypted upstream bootstrap must be an IP literal")
+            })?;
+            let port = spec.port();
+            if port == 0 {
+                bail!("encrypted upstream port must not be zero");
+            }
+            if self.bind.port != 0
+                && forwards_to_self(
+                    &SocketAddr::new(normalize_ip(ip), port),
+                    &self.bind.configured_addr(),
+                )
+            {
+                bail!("encrypted upstream points back at the listener");
+            }
+            let name = spec.server_name();
+            if name.is_empty()
+                || name.len() > MAX_NAME_LEN
+                || name.chars().any(|c| c.is_control() || c.is_whitespace())
+                || name.contains("://")
+                || name.contains('@')
+            {
+                bail!("encrypted upstream server_name is invalid");
+            }
+            if let EncryptedUpstreamSpec::Doh { path, .. } = spec {
+                if path.is_empty()
+                    || path.len() > MAX_DOH_PATH_LEN
+                    || !path.starts_with('/')
+                    || path.chars().any(|c| c.is_control() || c.is_whitespace())
+                    || path.contains('?')
+                    || path.contains('#')
+                    || path.contains('@')
+                {
+                    bail!("encrypted upstream DoH path is invalid");
+                }
+            }
+            if let Some(pem) = spec.ca_pem() {
+                if pem.len() > MAX_CA_PEM_BYTES || pem.contains('\0') || pem.contains("PRIVATE KEY")
+                {
+                    bail!("encrypted upstream CA material is invalid or oversized");
+                }
+            }
         }
         let mut seen_upstreams = BTreeSet::new();
         for raw in &self.upstreams {

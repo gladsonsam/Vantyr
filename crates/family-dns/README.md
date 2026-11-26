@@ -191,6 +191,27 @@ config; the validated list **bytes** never live in that config:
   material under the updates mutex, so a local filter change cannot be
   reverted to the startup filter by a later pull.
 
+## Verified encrypted upstreams (DoT / DoH)
+
+A small `encrypted_upstreams` config array sits beside the existing literal
+UDP/TCP `upstreams`. Each entry declares `scheme` (`dot` or `doh`), an IP-literal
+`bootstrap`, optional `port` (default 853 / 443), the certificate `server_name`,
+an optional bounded `ca_pem`, and for DoH an explicit `path`. Mixing plaintext
+and encrypted upstreams is rejected; an encrypted route never adds a plaintext
+or system resolver, never uses opportunistic encryption, and has no fallback.
+The bootstrap is a literal address so the verification hostname is never
+resolved a second time; for DoT the name is used for verification (SNI is
+disabled upstream), for DoH it is also the TLS SNI with HTTP/2 ALPN.
+
+Trust is WebPKI roots plus the operator's explicit CA material, verified by
+maintained rustls/Hickory code. No certificate-verification bypass or
+plain/system fallback flag exists. All upstreams share one 8-entry cap; invalid
+URLs, hostnames, zero ports, self-loops (including mapped IPs), malformed CA
+material and oversized values are rejected before any listener binds. The
+settings live in the one durable bundle, are preserved by controller pulls and
+local reloads, and are recompiled unchanged after restart. Per-domain routing,
+fallback, DoQ/H3 and DNSCrypt are not part of this slice.
+
 ## Independent counters and scheduled subscriptions
 
 The one durable bundle carries three independent counter spaces:

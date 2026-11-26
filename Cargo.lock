@@ -1587,6 +1587,7 @@ dependencies = [
  "hickory-resolver",
  "hickory-server",
  "libc",
+ "pem",
  "rcgen",
  "reqwest",
  "rustls",
@@ -1604,6 +1605,7 @@ dependencies = [
  "vantyr-network-filter",
  "vantyr-network-runtime",
  "vantyr-network-subscriptions",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -2131,6 +2133,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "h2"
+version = "0.4.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b634322c4924093fe6a6e05ecbe5717cd3c6014934455f4ae8e5cf14ba3264a8"
+dependencies = [
+ "atomic-waker",
+ "bytes",
+ "fnv",
+ "futures-core",
+ "futures-sink",
+ "http",
+ "indexmap 2.14.2",
+ "slab",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2196,21 +2217,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea9b43710d47761c90da994eeec7e1bee50095f2b4bcdfd42acd67ca5f814e47"
 dependencies = [
  "async-trait",
+ "bytes",
  "cfg-if",
  "data-encoding",
+ "form_urlencoded",
  "futures-channel",
  "futures-io",
  "futures-util",
+ "h2",
  "hickory-proto",
+ "http",
  "idna",
  "ipnet",
  "jni",
  "rand 0.10.4",
+ "rustls",
  "thiserror 2.0.21",
  "tinyvec",
  "tokio",
+ "tokio-rustls",
  "tracing",
  "url",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -2253,12 +2281,15 @@ dependencies = [
  "parking_lot 0.12.5",
  "rand 0.10.4",
  "resolv-conf",
+ "rustls",
  "serde",
  "smallvec",
  "system-configuration",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-rustls",
  "tracing",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -2272,15 +2303,19 @@ dependencies = [
  "cfg-if",
  "data-encoding",
  "futures-util",
+ "h2",
  "hickory-net",
  "hickory-proto",
  "hickory-resolver",
+ "http",
  "ipnet",
  "prefix-trie",
+ "rustls",
  "serde",
  "thiserror 2.0.21",
  "time",
  "tokio",
+ "tokio-rustls",
  "tokio-util",
  "tracing",
 ]

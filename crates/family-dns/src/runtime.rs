@@ -28,6 +28,7 @@ use crate::config::{forwards_to_self, Config, DenyConfig, RecordSpec};
 use crate::filter::FilterMaterial;
 use crate::observe::ObservationLog;
 use crate::policy::PolicyEvaluator;
+use crate::upstream::EncryptedZoneHandler;
 
 const FORWARD_TIMEOUT_SECS: u64 = 2;
 const FORWARD_ATTEMPTS: usize = 1;
@@ -107,6 +108,18 @@ fn forwarder_handler(upstreams: &[SocketAddr]) -> Result<ForwardZoneHandler<Toki
         }
         servers.push(server);
     }
+    let options = resolver_options();
+    let config = ForwardConfig {
+        name_servers: servers,
+        options: Some(options),
+    };
+    ForwardZoneHandler::builder_tokio(config)
+        .with_origin(Name::root())
+        .build()
+        .map_err(anyhow::Error::msg)
+}
+
+fn resolver_options() -> ResolverOpts {
     let mut options = ResolverOpts::default();
     options.timeout = Duration::from_secs(FORWARD_TIMEOUT_SECS);
     options.attempts = FORWARD_ATTEMPTS;
@@ -118,14 +131,7 @@ fn forwarder_handler(upstreams: &[SocketAddr]) -> Result<ForwardZoneHandler<Toki
     // Keep CNAME records visible so the handler can check every alias target
     // before releasing an answer.
     options.preserve_intermediates = true;
-    let config = ForwardConfig {
-        name_servers: servers,
-        options: Some(options),
-    };
-    ForwardZoneHandler::builder_tokio(config)
-        .with_origin(Name::root())
-        .build()
-        .map_err(anyhow::Error::msg)
+    options
 }
 
 /// Build a complete catalog atomically. Construction always goes through a
@@ -140,6 +146,12 @@ pub(crate) fn build_catalog(config: &Config) -> Result<Catalog> {
     let upstreams = config.upstreams();
     if !upstreams.is_empty() {
         let handler = forwarder_handler(&upstreams)?;
+        catalog.upsert(Name::root().into(), vec![Arc::new(handler)]);
+    }
+    if !config.encrypted_upstreams.is_empty() {
+        // Config validation forbids mixing plaintext and encrypted upstreams,
+        // so this is an isolated verified route, never a silent fallback.
+        let handler = EncryptedZoneHandler::new(&config.encrypted_upstreams, resolver_options())?;
         catalog.upsert(Name::root().into(), vec![Arc::new(handler)]);
     }
     Ok(catalog)
@@ -224,6 +236,17 @@ pub(crate) fn reject_upstream_self_loop(config: &Config, bound: SocketAddr) -> R
     for upstream in config.upstreams() {
         if forwards_to_self(&upstream, &bound) {
             anyhow::bail!("upstream {upstream} points back at the bound listener {bound}");
+        }
+    }
+    for spec in &config.encrypted_upstreams {
+        let ip = std::net::IpAddr::from_str(spec.bootstrap())
+            .map_err(|_| anyhow::anyhow!("encrypted bootstrap is not an IP literal"))?;
+        let candidate = SocketAddr::new(crate::config::normalize_ip(ip), spec.port());
+        if forwards_to_self(&candidate, &bound) {
+            anyhow::bail!(
+                "{} encrypted upstream points back at the bound listener {bound}",
+                spec.scheme()
+            );
         }
     }
     Ok(())
