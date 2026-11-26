@@ -220,6 +220,21 @@ the local service catalog, compiles within the 8 MiB aggregate bound and uses
 the same material path as a local reload. No URL is fetched without that opt-in
 and no provider is bundled.
 
+A clean installation has no applied bundle and no cache: startup performs ONE
+bounded verified fetch/compile before binding, and fails closed if required
+material is still missing. A valid bundle restart never fetches or revalidates
+a cache before serving — a missing, corrupt or URL-mismatched cache is
+quarantined per source with a bounded diagnostic and a bounded retry, while
+the applied bytes and original publication age are served immediately.
+
+The canonical `Arc<DnsServer>` returned by `start_durable_with_subscriptions`
+must be kept for the runtime lifetime; `stop_shared()` cancels and awaits the
+integrator task before consuming the listener. Manual refresh requests touch
+only the named source; cooldowns and configured intervals remain in force.
+Material candidates carry the bundle generation observed at preparation time;
+a concurrent reload/controller commit invalidates that basis and the integrator
+rebuilds from current settings within a bounded retry count.
+
 Download state is not enforcement state: `DnsServer::subscription_status()`
 reports per-source download status/checked time/error alongside what DNS
 actually applied (generation, filter identity, applied time, last combined

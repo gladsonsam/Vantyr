@@ -598,7 +598,9 @@ async fn typed_material_apply_seam_uses_the_same_persist_publish_path() {
             .unwrap();
 
     let before = server.status();
-    let outcome = server.apply_filter_material(material.clone(), now).unwrap();
+    let outcome = server
+        .apply_filter_material(material.clone(), before.bundle_generation, now)
+        .unwrap();
     assert!(matches!(
         outcome,
         family_dns::MaterialOutcome::Applied {
@@ -622,7 +624,7 @@ async fn typed_material_apply_seam_uses_the_same_persist_publish_path() {
     bad.lists[0].id = "not-configured".to_owned();
     let committed_after_apply = st.disk();
     assert!(matches!(
-        server.apply_filter_material(bad, now),
+        server.apply_filter_material(bad, server.status().bundle_generation, now),
         Err(ReloadError::FilterFailed(_))
     ));
     assert_eq!(

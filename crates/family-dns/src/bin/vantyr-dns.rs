@@ -204,26 +204,40 @@ async fn run() -> Result<()> {
         None => None,
     };
 
-    let server = match (&args.state, &args.worker) {
-        (Some(state), Some(worker)) => {
-            DnsServer::start_durable_with_subscriptions(
-                DurableOptions {
+    // The subscription startup path returns the ONE canonical Arc: the
+    // integrator task must observe the same allocation for its whole life.
+    let server: Arc<DnsServer> = match (&args.state, &args.worker) {
+        (Some(state), Some(worker)) => match subscription_runtime {
+            Some(runtime) => {
+                DnsServer::start_durable_with_subscriptions(
+                    DurableOptions {
+                        state_path: state.clone(),
+                        worker_id: worker.clone(),
+                        config_path: args.config.clone(),
+                        now: Utc::now(),
+                        hooks: None,
+                    },
+                    Some(runtime),
+                )
+                .await?
+            }
+            None => Arc::new(
+                DnsServer::start_durable(DurableOptions {
                     state_path: state.clone(),
                     worker_id: worker.clone(),
                     config_path: args.config.clone(),
                     now: Utc::now(),
                     hooks: None,
-                },
-                subscription_runtime,
-            )
-            .await?
-        }
+                })
+                .await?,
+            ),
+        },
         (None, None) => {
             let path = args
                 .config
                 .as_ref()
                 .ok_or_else(|| anyhow!("a configuration file is required\n{USAGE}"))?;
-            DnsServer::start(Config::load(path)?).await?
+            Arc::new(DnsServer::start(Config::load(path)?).await?)
         }
         _ => bail!("--state and --worker must be supplied together\n{USAGE}"),
     };
@@ -233,7 +247,6 @@ async fn run() -> Result<()> {
         server.is_durable()
     );
 
-    let server = Arc::new(server);
     let mut poller = None;
     if let Some((options, client)) = &controller {
         // A first pull is part of the explicit opt-in. A controller outage or
@@ -295,10 +308,9 @@ async fn run() -> Result<()> {
         poller.stop().await;
     }
     eprintln!("Vantyr DNS: shutting down");
-    let server = Arc::try_unwrap(server)
-        .ok()
-        .expect("no poll task keeps the server after shutdown");
-    server.stop().await;
+    // Join the integrator before consuming the listener; an in-flight download
+    // may hold an upgraded Arc and must be cancelled and awaited first.
+    server.stop_shared().await;
     eprintln!("Vantyr DNS: stopped");
     Ok(())
 }

@@ -2,17 +2,21 @@
 //!
 //! This module owns no filter state of its own. Each configured source has an
 //! accepted `vantyr-network-subscriptions` fetcher with a maintained-parser
-//! callback for that source's format. A single cancellable integrator loop
-//! refreshes due sources, then hands the combined validated bytes to the DNS
-//! worker's one typed material path. A cached download is never reported as an
-//! applied filter: applied digest/generation/error are tracked separately.
+//! callback for that source's format. One cancellable integrator task refreshes
+//! only the sources that are due (or explicitly requested), then hands the
+//! combined validated bytes to the DNS worker's single material path. A
+//! downloaded cache entry is never reported as an applied filter.
 //!
-//! No URL is fetched unless the operator configured a subscription source and
-//! enabled this runtime. No host resolver, router, firewall or trust store is
-//! touched here.
+//! A corrupt or URL-mismatched cache is quarantined per source instead of
+//! aborting a restart: the applied bundle remains authoritative. First boot
+//! with no valid required material still fails closed. No URL is fetched
+//! unless the operator configured a subscription source and enabled this
+//! runtime; no host resolver, router, firewall or trust store is touched.
 
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
@@ -24,6 +28,7 @@ use vantyr_network_filter::{
     compile_with_limits, FilterSnapshot, Limits as FilterLimits, ListFormat, ListSource,
 };
 use vantyr_network_subscriptions::config::{Limits, SubscriptionConfig, SubscriptionSource};
+use vantyr_network_subscriptions::error::Error as SubscriptionErrorKind;
 use vantyr_network_subscriptions::fetcher::Fetcher;
 use vantyr_network_subscriptions::transport::ReqwestTransport;
 use vantyr_network_subscriptions::validate::{
@@ -31,8 +36,14 @@ use vantyr_network_subscriptions::validate::{
 };
 
 use crate::config::{ListFormatSpec, SubscriptionSettings, SubscriptionSourceSpec};
-use crate::filter::{material_identity, prepare as prepare_filter, FilterError};
-use crate::server::DnsServer;
+use crate::filter::{prepare as prepare_filter, FilterError};
+use crate::server::{DnsServer, ReloadError};
+
+/// Default integrator reaction tick. The fetcher still enforces each source's
+/// configured interval and abuse cooldown; this only bounds reaction time.
+pub const DEFAULT_TICK: Duration = Duration::from_secs(60);
+const MAX_RETRIES: u32 = 3;
+const MAX_DIAGNOSTIC_LEN: usize = 200;
 
 /// Validates one candidate against the maintained parser for its configured
 /// format before the fetcher is allowed to promote it to last-known-good.
@@ -70,8 +81,8 @@ impl CandidateValidator for FormatValidator {
     }
 }
 
-/// Why a subscription could not be set up. Safe to log: never a URL query or
-/// credential.
+/// Invalid operator settings (fail before any listener). Cache faults are NOT
+/// errors here: they are quarantined per source and reported in status.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SubscriptionError {
     Invalid(String),
@@ -90,7 +101,8 @@ impl std::error::Error for SubscriptionError {}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceStatus {
     pub id: String,
-    /// `download` is the subscription cache status, not an enforcement claim.
+    /// `download` is cache state, not an enforcement claim. A quarantined
+    /// source is reported as such and is never applied.
     pub download: String,
     pub checked_at: Option<DateTime<Utc>>,
     pub last_error: Option<String>,
@@ -108,18 +120,26 @@ pub struct AppliedStatus {
     pub last_error: Option<String>,
 }
 
-/// Cheap handle for manual refresh requests and status.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeDiagnostics {
+    pub integrator_ticks: u64,
+    pub task_running: bool,
+    pub manual_requests: u64,
+}
+
+/// Cheap handle for manual refresh requests and truthful diagnostics.
 #[derive(Clone)]
 pub struct SubscriptionHandle {
     ids: Arc<BTreeSet<String>>,
     pending: Arc<Mutex<BTreeSet<String>>>,
     wake: Arc<tokio::sync::Notify>,
     cancel: CancellationToken,
+    manual_requests: Arc<AtomicU64>,
 }
 
 impl SubscriptionHandle {
-    /// Request a bounded manual refresh of a configured source. Unknown ids
-    /// are ignored; the queue cannot grow past the configured source count.
+    /// Request a bounded manual refresh of one configured source. Unknown ids
+    /// are ignored; the queue can never grow past the configured source count.
     pub fn request_refresh(&self, id: &str) {
         if !self.ids.contains(id) {
             return;
@@ -127,12 +147,25 @@ impl SubscriptionHandle {
         let mut pending = self.pending.lock().unwrap();
         if pending.len() < self.ids.len() {
             pending.insert(id.to_owned());
+            self.manual_requests.fetch_add(1, Ordering::SeqCst);
         }
-        self.wake.notify_waiters();
+        // A stored permit survives a wake while the integrator is busy;
+        // notify_waiters would drop that request entirely.
+        self.wake.notify_one();
+    }
+
+    /// Take and clear the bounded set of explicitly requested ids.
+    pub fn take_pending(&self) -> Vec<String> {
+        let mut pending = self.pending.lock().unwrap();
+        std::mem::take(&mut *pending).into_iter().collect()
     }
 
     pub fn is_shutdown(&self) -> bool {
         self.cancel.is_cancelled()
+    }
+
+    pub fn manual_requests(&self) -> u64 {
+        self.manual_requests.load(Ordering::SeqCst)
     }
 }
 
@@ -141,17 +174,40 @@ struct FetcherEntry {
     fetcher: Arc<Fetcher<FormatValidator>>,
 }
 
-/// All configured fetchers plus the one integrator loop.
+#[derive(Clone, Debug)]
+struct FaultedSource {
+    id: String,
+    error: String,
+    attempts: u32,
+}
+
+fn bounded(detail: impl AsRef<str>) -> String {
+    detail
+        .as_ref()
+        .chars()
+        .take(MAX_DIAGNOSTIC_LEN)
+        .filter(|c| !c.is_control())
+        .collect()
+}
+
+/// All configured fetchers, quarantined sources and the one integrator task.
 pub struct SubscriptionRuntime {
-    entries: Vec<FetcherEntry>,
+    entries: Mutex<Vec<FetcherEntry>>,
+    faults: Mutex<Vec<FaultedSource>>,
+    specs: BTreeMap<String, SubscriptionSourceSpec>,
+    root: PathBuf,
+    trusted_ca_pem: Option<String>,
     applied: Mutex<AppliedStatus>,
     handle: SubscriptionHandle,
     task: Mutex<Option<JoinHandle<()>>>,
+    tick: Duration,
+    ticks: AtomicU64,
 }
 
 impl SubscriptionRuntime {
     /// Build fetchers from small settings. Cache files hold bytes, not config.
-    /// A corrupt cache is rejected here, before any listener exists.
+    /// A per-source cache fault (missing/corrupt/URL mismatch) is quarantined
+    /// with a bounded diagnostic so a valid applied bundle can still start.
     pub fn new(
         settings: &SubscriptionSettings,
         trusted_ca_pem: Option<&str>,
@@ -159,44 +215,74 @@ impl SubscriptionRuntime {
         settings
             .validate()
             .map_err(|error| SubscriptionError::Invalid(error.to_string()))?;
-        let root = Path::new(&settings.cache_path);
-        let mut entries = Vec::with_capacity(settings.sources.len());
+        let root = PathBuf::from(&settings.cache_path);
+        let specs: BTreeMap<String, SubscriptionSourceSpec> = settings
+            .sources
+            .iter()
+            .map(|source| (source.id.clone(), source.clone()))
+            .collect();
+        let mut entries = Vec::new();
+        let mut faults = Vec::new();
         for source in &settings.sources {
-            let config = single_source_config(source);
-            let limits = config.limits.clone();
-            let transport = ReqwestTransport::new(&limits, trusted_ca_pem, None)
-                .map_err(|error| SubscriptionError::Invalid(error.to_string()))?;
-            let fetcher = Fetcher::with_transport(
-                root.to_path_buf(),
-                &config,
-                FormatValidator {
-                    format: source.format,
-                },
-                Arc::new(transport),
-            )
-            .map_err(|error| SubscriptionError::Invalid(error.to_string()))?;
-            entries.push(FetcherEntry {
-                id: source.id.clone(),
-                fetcher: Arc::new(fetcher),
-            });
+            match Self::build_fetcher(source, &root, trusted_ca_pem) {
+                Ok(fetcher) => entries.push(FetcherEntry {
+                    id: source.id.clone(),
+                    fetcher: Arc::new(fetcher),
+                }),
+                Err(error) => faults.push(FaultedSource {
+                    id: source.id.clone(),
+                    error: bounded(error.to_string()),
+                    attempts: 1,
+                }),
+            }
         }
-        let ids: BTreeSet<String> = entries.iter().map(|entry| entry.id.clone()).collect();
+        let ids: BTreeSet<String> = specs.keys().cloned().collect();
         let cancel = CancellationToken::new();
         Ok(Self {
-            entries,
+            entries: Mutex::new(entries),
+            faults: Mutex::new(faults),
+            specs,
+            root,
+            trusted_ca_pem: trusted_ca_pem.map(str::to_owned),
             applied: Mutex::new(AppliedStatus::default()),
             handle: SubscriptionHandle {
                 ids: Arc::new(ids),
                 pending: Arc::new(Mutex::new(BTreeSet::new())),
                 wake: Arc::new(tokio::sync::Notify::new()),
                 cancel,
+                manual_requests: Arc::new(AtomicU64::new(0)),
             },
             task: Mutex::new(None),
+            tick: DEFAULT_TICK,
+            ticks: AtomicU64::new(0),
         })
     }
 
+    fn build_fetcher(
+        source: &SubscriptionSourceSpec,
+        root: &Path,
+        trusted_ca_pem: Option<&str>,
+    ) -> Result<Fetcher<FormatValidator>, SubscriptionErrorKind> {
+        let config = single_source_config(source);
+        let limits = config.limits.clone();
+        let transport = ReqwestTransport::new(&limits, trusted_ca_pem, None)?;
+        Fetcher::with_transport(
+            root.to_path_buf(),
+            &config,
+            FormatValidator::new(source.format),
+            Arc::new(transport),
+        )
+    }
+
+    /// Bounded reaction tick for an embedding that needs faster polling. This
+    /// never relaxes a configured source interval, the fetcher's cooldown, TLS
+    /// or the vetted transport; it only changes how often due work is checked.
+    pub fn with_tick(mut self, tick: Duration) -> Self {
+        self.tick = tick.max(Duration::from_millis(10));
+        self
+    }
+
     /// Initialize the applied-status view from a bundle loaded at startup.
-    /// Download status stays independent and is filled by the fetchers.
     pub fn initialize(&self, status: &crate::server::DnsStatus) {
         *self.applied.lock().unwrap() = AppliedStatus {
             generation: status.bundle_generation,
@@ -207,34 +293,48 @@ impl SubscriptionRuntime {
         };
     }
 
+    /// Record a bounded bootstrap diagnostic that must stay visible even
+    /// though the applied bundle itself is healthy.
+    pub fn record_error(&self, detail: impl AsRef<str>) {
+        self.applied.lock().unwrap().last_error = Some(bounded(detail));
+    }
+
     pub fn handle(&self) -> SubscriptionHandle {
         SubscriptionHandle {
             ids: self.handle.ids.clone(),
             pending: self.handle.pending.clone(),
             wake: self.handle.wake.clone(),
             cancel: self.handle.cancel.clone(),
+            manual_requests: self.handle.manual_requests.clone(),
         }
     }
 
-    /// Validated cache bytes for one enabled source. No network I/O here.
+    /// Validated cache bytes for one configured source. No network I/O here.
     pub fn last_good(&self, id: &str) -> Result<Option<Vec<u8>>, FilterError> {
         self.entries
+            .lock()
+            .unwrap()
             .iter()
             .find(|entry| entry.id == id)
-            .ok_or_else(|| FilterError::Invalid(format!("unknown subscription source {id}")))?
+            .ok_or_else(|| {
+                FilterError::Invalid(format!("subscription source {id} is quarantined"))
+            })?
             .fetcher
             .last_good_bytes(id)
             .map_err(|error| FilterError::Io(error.to_string()))
     }
 
-    /// Start the single cancellable integrator loop. `tick` is bounded by the
-    /// subscription minimum interval by the caller; production never relaxes
-    /// a configured interval.
-    pub fn start(self: &Arc<Self>, server: Weak<DnsServer>, tick: Duration) {
+    /// Start the one integrator task. A second call is a no-op. `server` is a
+    /// Weak reference only to avoid a strong cycle; the OWNER keeps the
+    /// canonical `Arc<DnsServer>` alive for the whole runtime lifetime.
+    pub fn start(self: &Arc<Self>, server: Weak<DnsServer>) {
+        if self.task.lock().unwrap().is_some() {
+            return;
+        }
         let cancel = self.handle.cancel.clone();
         let wake = self.handle.wake.clone();
-        let pending = self.handle.pending.clone();
         let runtime = Arc::clone(self);
+        let tick = self.tick;
         let task = tokio::spawn(async move {
             let mut timer = tokio::time::interval(tick);
             timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -242,18 +342,17 @@ impl SubscriptionRuntime {
                 tokio::select! {
                     _ = cancel.cancelled() => break,
                     _ = timer.tick() => {
+                        runtime.ticks.fetch_add(1, Ordering::SeqCst);
                         if let Some(server) = server.upgrade() {
-                            runtime.refresh_once(&server, false).await;
+                            let ids = runtime.configured_ids();
+                            runtime.refresh_selected(&server, &ids, false).await;
                         }
                     }
                     _ = wake.notified() => {
-                        let requested: Vec<String> = {
-                            let mut pending = pending.lock().unwrap();
-                            std::mem::take(&mut *pending).into_iter().collect()
-                        };
+                        let requested = runtime.handle.take_pending();
                         if !requested.is_empty() {
                             if let Some(server) = server.upgrade() {
-                                runtime.refresh_once(&server, true).await;
+                                runtime.refresh_selected(&server, &requested, true).await;
                             }
                         }
                     }
@@ -263,91 +362,215 @@ impl SubscriptionRuntime {
         *self.task.lock().unwrap() = Some(task);
     }
 
-    /// Shut down and join the bounded integrator task. No poller is leaked.
-    pub fn shutdown(&self) {
+    /// Cancel the in-flight download, then ACTUALLY await the integrator task.
+    /// Aborting the task bounds cancellation; awaiting reaps it so no poller
+    /// or listener survives shutdown.
+    pub async fn shutdown(&self) {
         self.handle.cancel.cancel();
         self.handle.wake.notify_waiters();
-        if let Some(task) = self.task.lock().unwrap().take() {
+        let task = self.task.lock().unwrap().take();
+        if let Some(task) = task {
             task.abort();
+            let _ = task.await;
         }
     }
 
-    /// Refresh every enabled source once, single-flight, then attempt the
-    /// combined compile/persist/publish. Per-source failures are recorded but
-    /// never swallowed into a success status. Public for manual refresh and
-    /// deterministic verification; the integrator loop uses the same path.
-    pub async fn refresh_once(&self, server: &DnsServer, force: bool) {
-        let errors = self.refresh_downloads(force).await;
-        {
-            let mut applied = self.applied.lock().unwrap();
-            applied.last_error = if errors.is_empty() {
-                None
-            } else {
-                Some(errors.join("; "))
-            };
-        }
-        self.apply_combined(server, Utc::now());
+    /// Non-async cancellation used only by `Drop`, which cannot await.
+    pub fn cancel_only(&self) {
+        self.handle.cancel.cancel();
+        self.handle.wake.notify_waiters();
     }
 
-    /// Download only, recording per-source errors without touching DNS. Useful
-    /// for seeding a cache before boot and for truthful status polling.
-    pub async fn refresh_downloads(&self, force: bool) -> Vec<String> {
+    fn configured_ids(&self) -> Vec<String> {
+        self.handle.ids.iter().cloned().collect()
+    }
+
+    /// Refresh ONLY the requested configured ids (cooldowns and due times are
+    /// still enforced by the fetcher), then combine the latest good bytes of
+    /// every source and apply. An unknown id is ignored.
+    pub async fn refresh_selected(&self, server: &DnsServer, ids: &[String], force: bool) {
         let mut errors = Vec::new();
-        for entry in &self.entries {
-            match entry.fetcher.refresh(&entry.id, force).await {
+        for id in ids {
+            if !self.handle.ids.contains(id) {
+                continue;
+            }
+            let fetcher = {
+                let entries = self.entries.lock().unwrap();
+                entries
+                    .iter()
+                    .find(|entry| entry.id == *id)
+                    .map(|entry| entry.fetcher.clone())
+            };
+            let fetcher = match fetcher {
+                Some(fetcher) => Some(fetcher),
+                None => {
+                    if !self.retry_faulted(id, &mut errors) {
+                        continue;
+                    }
+                    self.entries
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .find(|entry| entry.id == *id)
+                        .map(|entry| entry.fetcher.clone())
+                }
+            };
+            let Some(fetcher) = fetcher else {
+                continue;
+            };
+            match fetcher.refresh(id, force).await {
                 Ok(_) => {}
-                Err(error) => errors.push(format!("{}: {error}", entry.id)),
+                Err(error) => errors.push(format!("{id}: {error}")),
+            }
+        }
+        self.apply_combined(server, Utc::now(), errors);
+    }
+
+    fn retry_faulted(&self, id: &str, errors: &mut Vec<String>) -> bool {
+        let mut faults = self.faults.lock().unwrap();
+        let Some(fault) = faults.iter_mut().find(|fault| fault.id == id) else {
+            return false;
+        };
+        if fault.attempts >= MAX_RETRIES {
+            errors.push(format!("{id}: cache quarantined after bounded retries"));
+            return false;
+        }
+        fault.attempts += 1;
+        let Some(spec) = self.specs.get(id) else {
+            return false;
+        };
+        match Self::build_fetcher(spec, &self.root, self.trusted_ca_pem.as_deref()) {
+            Ok(fetcher) => {
+                faults.retain(|fault| fault.id != id);
+                self.entries.lock().unwrap().push(FetcherEntry {
+                    id: id.to_owned(),
+                    fetcher: Arc::new(fetcher),
+                });
+                true
+            }
+            Err(error) => {
+                fault.error = bounded(error.to_string());
+                false
+            }
+        }
+    }
+
+    /// One bounded forced fetch per configured source, used ONLY for a fresh
+    /// first boot with no applied bundle. No listener exists while this runs,
+    /// and any source still missing material fails the whole bootstrap closed.
+    pub async fn bootstrap_fetch(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+        for id in self.configured_ids() {
+            let fetcher = {
+                let entries = self.entries.lock().unwrap();
+                entries
+                    .iter()
+                    .find(|entry| entry.id == id)
+                    .map(|entry| entry.fetcher.clone())
+            };
+            let Some(fetcher) = fetcher else {
+                self.retry_faulted(&id, &mut errors);
+                continue;
+            };
+            if let Err(error) = fetcher.refresh(&id, true).await {
+                errors.push(format!("{id}: {error}"));
             }
         }
         errors
     }
 
-    /// Assemble the CURRENT settings (local files + all cached lists + service
-    /// catalog), compile, and apply atomically. A failed combined compile or
-    /// persist leaves the whole DNS last-known-good untouched.
-    fn apply_combined(&self, server: &DnsServer, now: DateTime<Utc>) {
-        let config = server.local_config();
-        let result = prepare_filter(&config.filter, config.policy_revision, &|id| {
-            self.last_good(id)
-        });
-        match result {
-            Ok(Some((material, _snapshot))) => {
-                let identity = material_identity(Some(&material));
-                match server.apply_filter_material(material, now) {
-                    Ok(outcome) => {
-                        use crate::server::MaterialOutcome;
-                        let (generation, filter_generation) = match outcome {
-                            MaterialOutcome::Applied {
-                                generation,
-                                filter_generation,
-                                ..
+    /// Refresh every configured source. Public for cache seeding and for a
+    /// full poll; the integrator uses `refresh_selected` for manual requests.
+    pub async fn refresh_once(&self, server: &DnsServer, force: bool) {
+        let ids = self.configured_ids();
+        self.refresh_selected(server, &ids, force).await;
+    }
+
+    /// Download-only seeding helper; no DNS state is touched.
+    pub async fn refresh_downloads(&self, force: bool) -> Vec<String> {
+        let mut errors = Vec::new();
+        let entries: Vec<(String, Arc<Fetcher<FormatValidator>>)> = self
+            .entries
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|entry| (entry.id.clone(), entry.fetcher.clone()))
+            .collect();
+        for (id, fetcher) in entries {
+            if let Err(error) = fetcher.refresh(&id, force).await {
+                errors.push(format!("{id}: {error}"));
+            }
+        }
+        errors
+    }
+
+    /// Combine CURRENT settings with all last-good bytes and apply through the
+    /// one material path. A bounded retry handles a concurrent local/controller
+    /// commit that changed the bundle generation while material was prepared.
+    fn apply_combined(&self, server: &DnsServer, now: DateTime<Utc>, errors: Vec<String>) {
+        for _ in 0..MAX_RETRIES {
+            let basis = server.status().bundle_generation;
+            let config = server.local_config();
+            let result = prepare_filter(&config.filter, config.policy_revision, &|id| {
+                self.last_good(id)
+            });
+            match result {
+                Ok(Some((material, _snapshot))) => {
+                    match server.apply_filter_material(material, basis, now) {
+                        Ok(outcome) => {
+                            use crate::server::MaterialOutcome;
+                            let (generation, filter_generation) = match outcome {
+                                MaterialOutcome::Applied {
+                                    generation,
+                                    filter_generation,
+                                    ..
+                                }
+                                | MaterialOutcome::Unchanged {
+                                    generation,
+                                    filter_generation,
+                                    ..
+                                } => (generation, filter_generation),
+                            };
+                            let mut applied = self.applied.lock().unwrap();
+                            applied.generation = generation;
+                            applied.filter_generation = filter_generation;
+                            applied.filter_identity = material_identity_from_server(server);
+                            applied.applied_at = Some(now);
+                            // `last_error` is sticky until restart: a skipped
+                            // or successful later poll must not erase a real
+                            // download failure from the status view.
+                            if !errors.is_empty() {
+                                applied.last_error = Some(bounded(errors.join("; ")));
                             }
-                            | MaterialOutcome::Unchanged {
-                                generation,
-                                filter_generation,
-                                ..
-                            } => (generation, filter_generation),
-                        };
-                        let mut applied = self.applied.lock().unwrap();
-                        applied.generation = generation;
-                        applied.filter_generation = filter_generation;
-                        applied.filter_identity = identity;
-                        applied.applied_at = Some(now);
-                        // Download errors set by `integrate` stay visible even
-                        // when the applied material did not change.
+                            return;
+                        }
+                        Err(ReloadError::StaleBasis { .. }) => continue,
+                        Err(error) => {
+                            self.applied.lock().unwrap().last_error =
+                                Some(bounded(error.to_string()));
+                            return;
+                        }
                     }
-                    Err(error) => self.applied.lock().unwrap().last_error = Some(error.to_string()),
+                }
+                Ok(None) => return,
+                Err(error) => {
+                    self.applied.lock().unwrap().last_error = Some(bounded(error.to_string()));
+                    return;
                 }
             }
-            Ok(None) => {}
-            Err(error) => self.applied.lock().unwrap().last_error = Some(error.to_string()),
         }
+        self.applied.lock().unwrap().last_error = Some(
+            "combined material basis changed too often; retrying on the next bounded tick"
+                .to_owned(),
+        );
     }
 
     /// Truthful per-source download state and what DNS actually applied.
     pub fn status(&self) -> (Vec<SourceStatus>, AppliedStatus) {
-        let sources = self
+        let mut sources: Vec<SourceStatus> = self
             .entries
+            .lock()
+            .unwrap()
             .iter()
             .map(|entry| {
                 let report = entry.fetcher.status(&entry.id).ok();
@@ -367,31 +590,66 @@ impl SubscriptionRuntime {
                 }
             })
             .collect();
+        sources.extend(
+            self.faults
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|fault| SourceStatus {
+                    id: fault.id.clone(),
+                    download: "quarantined".to_owned(),
+                    checked_at: None,
+                    last_error: Some(fault.error.clone()),
+                    bytes: 0,
+                    rule_count: None,
+                    content_version: None,
+                }),
+        );
+        sources.sort_by(|left, right| left.id.cmp(&right.id));
         (sources, self.applied.lock().unwrap().clone())
+    }
+
+    pub fn diagnostics(&self) -> RuntimeDiagnostics {
+        RuntimeDiagnostics {
+            integrator_ticks: self.ticks.load(Ordering::SeqCst),
+            task_running: self.task.lock().unwrap().is_some(),
+            manual_requests: self.handle.manual_requests(),
+        }
     }
 
     /// Embedding seam: build a runtime from already configured fetchers (for
     /// example a loopback TLS transport in an isolated integration test).
-    /// Production callers use [`Self::new`], which applies the accepted vetted
-    /// transport policy.
     pub fn with_fetchers(entries: Vec<(String, Arc<Fetcher<FormatValidator>>)>) -> Self {
         let ids: BTreeSet<String> = entries.iter().map(|(id, _)| id.clone()).collect();
         let cancel = CancellationToken::new();
         Self {
-            entries: entries
-                .into_iter()
-                .map(|(id, fetcher)| FetcherEntry { id, fetcher })
-                .collect(),
+            entries: Mutex::new(
+                entries
+                    .into_iter()
+                    .map(|(id, fetcher)| FetcherEntry { id, fetcher })
+                    .collect(),
+            ),
+            faults: Mutex::new(Vec::new()),
+            specs: BTreeMap::new(),
+            root: PathBuf::new(),
+            trusted_ca_pem: None,
             applied: Mutex::new(AppliedStatus::default()),
             handle: SubscriptionHandle {
                 ids: Arc::new(ids),
                 pending: Arc::new(Mutex::new(BTreeSet::new())),
                 wake: Arc::new(tokio::sync::Notify::new()),
                 cancel,
+                manual_requests: Arc::new(AtomicU64::new(0)),
             },
             task: Mutex::new(None),
+            tick: DEFAULT_TICK,
+            ticks: AtomicU64::new(0),
         }
     }
+}
+
+fn material_identity_from_server(server: &DnsServer) -> String {
+    server.status().filter_identity
 }
 
 fn single_source_config(source: &SubscriptionSourceSpec) -> SubscriptionConfig {

@@ -6,21 +6,24 @@
 
 mod support;
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use axum::extract::State;
+use axum::extract::{Path as AxumPath, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{serve::Listener, Router};
+use base64::Engine;
 use chrono::{DateTime, Utc};
 use family_dns::{
     DnsServer, DurableOptions, FormatValidator, ListFormatSpec, ReloadError, SubscriptionRuntime,
-    WriteHooks,
+    SubscriptionSettings, WriteHooks,
 };
 use hickory_server::proto::op::{Message, ResponseCode};
 use hickory_server::proto::rr::RecordType;
@@ -28,6 +31,8 @@ use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, KeyUsage
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::ServerConfig;
+use serde_json::json;
+use sha2::{Digest, Sha256};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 use tokio_rustls::TlsAcceptor;
@@ -111,6 +116,7 @@ struct MockState {
     etag: Mutex<Option<String>>,
     retry_after: Mutex<Option<String>>,
     requests: AtomicU64,
+    per_id: Mutex<BTreeMap<String, u64>>,
 }
 
 impl Default for MockState {
@@ -121,8 +127,18 @@ impl Default for MockState {
             etag: Mutex::new(None),
             retry_after: Mutex::new(None),
             requests: AtomicU64::new(0),
+            per_id: Mutex::new(BTreeMap::new()),
         }
     }
+}
+
+async fn list_handler_id(
+    State(state): State<Arc<MockState>>,
+    AxumPath(id): AxumPath<String>,
+    headers: HeaderMap,
+) -> Response {
+    *state.per_id.lock().unwrap().entry(id).or_insert(0) += 1;
+    list_handler(State(state), headers).await
 }
 
 async fn list_handler(State(state): State<Arc<MockState>>, headers: HeaderMap) -> Response {
@@ -191,6 +207,7 @@ async fn spawn_list_server() -> (String, String, Arc<MockState>, ServerGuard) {
     let state = Arc::new(MockState::default());
     let router = Router::new()
         .route("/list", get(list_handler))
+        .route("/list/{id}", get(list_handler_id))
         .with_state(state.clone());
     let handle = tokio::spawn(async move {
         let _ = axum::serve(tls, router).await;
@@ -294,12 +311,12 @@ impl Fixture {
         )
     }
 
-    fn config_multi(&self, revision: u64, ids: &[&str], url: &str) -> String {
+    fn config_multi(&self, revision: u64, ids: &[&str], base: &str) -> String {
         let sources: String = ids
             .iter()
             .map(|id| {
                 format!(
-                    r#"{{"id":"{id}","url":"{url}","format":"hosts","enabled":true,
+                    r#"{{"id":"{id}","url":"{base}/list/{id}","format":"hosts","enabled":true,
                         "metadata":{{"title":"Operator list","publisher":"Operator","license":"asserted"}}}}"#
                 )
             })
@@ -380,7 +397,7 @@ fn runtime_for_many(
         let config = SubscriptionConfig {
             sources: vec![SubscriptionSource {
                 id: (*id).to_owned(),
-                url: format!("{base}/list"),
+                url: format!("{base}/list/{id}"),
                 enabled: true,
                 interval_secs: None,
                 max_stale_secs: None,
@@ -405,6 +422,68 @@ fn runtime_for_many(
     Arc::new(SubscriptionRuntime::with_fetchers(entries))
 }
 
+fn runtime_for_tick(
+    st: &Fixture,
+    base: &str,
+    ca_pem: &str,
+    ids: &[&str],
+    tick: Duration,
+) -> Arc<SubscriptionRuntime> {
+    // Same production runtime type with only a bounded reaction tick; the
+    // fetcher's interval/cooldown/TLS policy is untouched.
+    // Rebuild the same runtime type with only a bounded reaction tick.
+    // runtime (with_fetchers is the documented embedding seam).
+    let limits = Limits::default();
+    let url = vantyr_network_subscriptions::url::ValidatedUrl::parse(
+        &format!("{base}/list"),
+        &QueryPolicy::Reject,
+        limits.max_header_bytes,
+    )
+    .unwrap();
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), url.port().unwrap_or(443));
+    let cert = reqwest::Certificate::from_pem(ca_pem.as_bytes()).unwrap();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .dns_resolver(Arc::new(LoopbackResolver(addr)) as Arc<dyn Resolve>)
+        .tls_certs_merge([cert])
+        .build()
+        .unwrap();
+    let transport: Arc<dyn HttpTransport> = Arc::new(ReqwestTransport::from_client(
+        client,
+        limits.max_header_bytes,
+        limits.request_timeout(),
+    ));
+    let mut entries = Vec::new();
+    for id in ids {
+        let config = SubscriptionConfig {
+            sources: vec![SubscriptionSource {
+                id: (*id).to_owned(),
+                url: format!("{base}/list/{id}"),
+                enabled: true,
+                interval_secs: None,
+                max_stale_secs: None,
+                metadata: SourceMetadata {
+                    title: "Operator list".to_owned(),
+                    publisher: "Operator".to_owned(),
+                    license: "asserted".to_owned(),
+                },
+            }],
+            limits: limits.clone(),
+            query_policy: QueryPolicy::Reject,
+        };
+        let fetcher = Fetcher::with_transport(
+            st.cache.clone(),
+            &config,
+            FormatValidator::new(ListFormatSpec::Hosts),
+            Arc::clone(&transport),
+        )
+        .unwrap();
+        entries.push(((*id).to_owned(), Arc::new(fetcher)));
+    }
+    Arc::new(SubscriptionRuntime::with_fetchers(entries).with_tick(tick))
+}
+
 async fn answer(server: &DnsServer, tcp: bool, name: &str) -> Message {
     if tcp {
         tcp_query(mapped(), server.bind_addr(), name, RecordType::A).await
@@ -426,10 +505,57 @@ fn on_disk(st: &Fixture) -> Vec<u8> {
     fs::read(&st.state).unwrap()
 }
 
+fn write_valid_cache(st: &Fixture, id: &str, url: &str, bytes: &[u8]) {
+    fs::create_dir_all(&st.cache).unwrap();
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    let digest: String = Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let snapshot = json!({
+        "schema": 1,
+        "source_id": id,
+        "url": url,
+        "revision": 1,
+        "validator_version": 1,
+        "bytes_b64": encoded,
+        "sha256": digest,
+        "rule_count": 1,
+        "checked_at": "2026-11-26T10:00:00Z",
+        "fetched_at": "2026-11-26T10:00:00Z",
+        "content_updated_at": null,
+        "etag": null,
+        "last_modified": null
+    });
+    fs::write(
+        st.cache.join(format!("{id}.json")),
+        serde_json::to_vec(&snapshot).unwrap(),
+    )
+    .unwrap();
+}
+
+fn production_settings(st: &Fixture, url: &str) -> SubscriptionSettings {
+    serde_json::from_value(json!({
+        "cache_path": st.cache,
+        "sources": [{
+            "id": "public-list",
+            "url": url,
+            "format": "hosts",
+            "enabled": true,
+            "metadata": {
+                "title": "Operator list",
+                "publisher": "Operator",
+                "license": "asserted"
+            }
+        }]
+    }))
+    .unwrap()
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn first_boot_without_cache_fails_closed_then_200_changes_dns() {
+async fn clean_first_boot_fetches_required_list_before_bind_or_fails_closed() {
     let (base, ca, mock, _guard) = spawn_list_server().await;
     *mock.body.lock().unwrap() = b"blocked.sub.test\n".to_vec();
     *mock.etag.lock().unwrap() = Some("v1".to_owned());
@@ -441,15 +567,9 @@ async fn first_boot_without_cache_fails_closed_then_200_changes_dns() {
     .unwrap();
     let runtime = runtime_for(&st, &base, &ca, "public-list");
 
-    // No cache and no download yet: no listener, no empty-filter fallback.
-    assert!(
-        DnsServer::start_durable_with_subscriptions(st.options(None), Some(runtime.clone()))
-            .await
-            .is_err()
-    );
-    assert!(!st.state.exists());
-
-    assert!(runtime.refresh_downloads(true).await.is_empty());
+    // No cache and no manual seeding: the real startup path performs ONE
+    // bounded verified fetch before any listener exists.
+    assert!(!st.cache.exists() || fs::read_dir(&st.cache).unwrap().next().is_none());
     let server =
         DnsServer::start_durable_with_subscriptions(st.options(None), Some(runtime.clone()))
             .await
@@ -461,9 +581,30 @@ async fn first_boot_without_cache_fails_closed_then_200_changes_dns() {
     let (sources, applied) = runtime.status();
     assert_eq!(sources[0].download, "fresh");
     assert_eq!(applied.filter_generation, 1);
-    assert!(applied.filter_identity.len() == 64);
+    assert_eq!(applied.filter_identity.len(), 64);
     assert_eq!(server.status().policy_revision, 2);
-    server.stop().await;
+    server.stop_shared().await;
+
+    // A healthy listener never masks an unhealthy bootstrap: with no applied
+    // bundle and a failing source, no listener and no empty-list filter.
+    let failing = fixture("first-boot-fail");
+    *mock.status.lock().unwrap() = 500;
+    fs::write(
+        &failing.config,
+        failing.config(2, &format!("{base}/list"), "public-list"),
+    )
+    .unwrap();
+    let failing_runtime = runtime_for(&failing, &base, &ca, "public-list");
+    assert!(DnsServer::start_durable_with_subscriptions(
+        failing.options(None),
+        Some(failing_runtime)
+    )
+    .await
+    .is_err());
+    assert!(
+        !failing.state.exists(),
+        "no bundle without required material"
+    );
 }
 
 #[tokio::test]
@@ -506,7 +647,7 @@ async fn changed_200_applies_and_304_leaves_generation_untouched() {
     assert_eq!(server.status(), second);
     assert_open(&answer(&server, false, "ok.sub.test.").await);
     assert_blocked(&answer(&server, false, "other.sub.test.").await);
-    server.stop().await;
+    server.stop_shared().await;
 }
 
 #[tokio::test]
@@ -535,7 +676,11 @@ async fn bad_downloads_and_outages_keep_the_working_filter_and_report_errors() {
     assert_blocked(&answer(&server, false, "blocked.sub.test.").await);
     assert_eq!(on_disk(&st), committed);
     assert_eq!(server.status(), applied);
-    assert!(runtime.status().1.last_error.is_some());
+    assert!(
+        runtime.status().1.last_error.is_some(),
+        "download error must be visible: {:?}",
+        runtime.status()
+    );
     assert_eq!(
         runtime.status().0[0]
             .content_version
@@ -567,7 +712,7 @@ async fn bad_downloads_and_outages_keep_the_working_filter_and_report_errors() {
     assert_eq!(mock.requests.load(Ordering::SeqCst), before + 1);
     assert!(runtime.status().1.last_error.is_some());
     assert_eq!(server.status(), applied);
-    server.stop().await;
+    server.stop_shared().await;
 }
 
 #[tokio::test]
@@ -625,7 +770,7 @@ async fn list_refreshes_never_consume_controller_policy_revisions() {
     ));
     assert_blocked(&answer(&server, false, "other.sub.test.").await);
     assert_eq!(server.status().policy_revision, 6);
-    server.stop().await;
+    server.stop_shared().await;
 }
 
 #[tokio::test]
@@ -664,7 +809,7 @@ async fn offline_restart_and_persist_failure_keep_the_applied_bytes_and_age() {
     runtime.refresh_once(&server, true).await;
     assert_blocked(&answer(&server, false, "other.sub.test.").await);
     let applied_after_retry = server.status();
-    server.stop().await;
+    server.stop_shared().await;
 
     // Cache and configured URL both change while the worker is down. The
     // bundle remains authoritative, including the original publication age.
@@ -692,7 +837,7 @@ async fn offline_restart_and_persist_failure_keep_the_applied_bytes_and_age() {
         restarted.status().policy_published_at,
         applied_after_retry.policy_published_at
     );
-    restarted.stop().await;
+    restarted.stop_shared().await;
 }
 
 #[tokio::test]
@@ -729,7 +874,7 @@ async fn unknown_source_id_and_same_content_never_create_a_phantom_generation() 
     ));
     assert_eq!(on_disk(&st), committed);
     assert_blocked(&answer(&server, false, "blocked.sub.test.").await);
-    server.stop().await;
+    server.stop_shared().await;
 }
 
 #[tokio::test]
@@ -773,11 +918,7 @@ async fn concurrent_same_source_refreshes_are_serialized_and_idempotent() {
         mock.requests.load(Ordering::SeqCst) >= 4,
         "one request per call"
     );
-    Arc::try_unwrap(server)
-        .ok()
-        .expect("no tasks hold the server")
-        .stop()
-        .await;
+    server.stop_shared().await;
 }
 
 #[tokio::test]
@@ -785,11 +926,7 @@ async fn combined_aggregate_over_bound_keeps_the_working_filter() {
     let (base, ca, mock, _guard) = spawn_list_server().await;
     *mock.body.lock().unwrap() = b"blocked.sub.test\n".to_vec();
     let st = fixture("combined-aggregate");
-    fs::write(
-        &st.config,
-        st.config_multi(2, &["a-list", "b-list"], &format!("{base}/list")),
-    )
-    .unwrap();
+    fs::write(&st.config, st.config_multi(2, &["a-list", "b-list"], &base)).unwrap();
     let runtime = runtime_for_many(&st, &base, &ca, &["a-list", "b-list"]);
     runtime.refresh_downloads(true).await;
     let server =
@@ -812,7 +949,7 @@ async fn combined_aggregate_over_bound_keeps_the_working_filter() {
     assert_eq!(server.status(), applied);
     assert!(runtime.status().1.last_error.is_some());
     assert_blocked(&answer(&server, false, "blocked.sub.test.").await);
-    server.stop().await;
+    server.stop_shared().await;
 }
 
 #[tokio::test]
@@ -844,5 +981,136 @@ async fn baseline_deny_and_stale_age_remain_authoritative() {
         .unwrap();
     assert!(!entry.allow);
     assert!(!entry.filter_blocked, "baseline denial is not a list block");
-    server.stop().await;
+    server.stop_shared().await;
+}
+
+#[tokio::test]
+async fn canonical_arc_integrator_loop_changes_dns_without_manual_refresh() {
+    let (base, ca, mock, _guard) = spawn_list_server().await;
+    *mock.body.lock().unwrap() = b"blocked.sub.test\n".to_vec();
+    let st = fixture("real-loop");
+    fs::write(
+        &st.config,
+        st.config(2, &format!("{base}/list"), "public-list"),
+    )
+    .unwrap();
+    let runtime = runtime_for_tick(&st, &base, &ca, &["public-list"], Duration::from_millis(40));
+    let server =
+        DnsServer::start_durable_with_subscriptions(st.options(None), Some(runtime.clone()))
+            .await
+            .unwrap();
+    assert_blocked(&answer(&server, false, "blocked.sub.test.").await);
+
+    // The integrator task owns a Weak to this exact Arc. Its periodic tick is
+    // observable without calling any refresh method from the test.
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    assert!(runtime.diagnostics().integrator_ticks > 0);
+    assert!(runtime.diagnostics().task_running);
+    let before = server.status().bundle_generation;
+
+    // A manual request is queued, then the SAME loop forces only that source
+    // and publishes a new answer. No direct refresh call is used here.
+    *mock.body.lock().unwrap() = b"other.sub.test\n".to_vec();
+    server.request_subscription_refresh("public-list").unwrap();
+    let mut changed = false;
+    for _ in 0..100 {
+        let message = answer(&server, false, "other.sub.test.").await;
+        if message.response_code == ResponseCode::NXDomain {
+            changed = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(changed, "integrator never applied the refreshed list");
+    assert_eq!(runtime.diagnostics().manual_requests, 1);
+    assert_eq!(server.status().bundle_generation, before + 1);
+
+    server.stop_shared().await;
+    assert!(!runtime.diagnostics().task_running, "task was not joined");
+}
+
+#[tokio::test]
+async fn manual_refresh_requests_only_the_named_source() {
+    let (base, ca, mock, _guard) = spawn_list_server().await;
+    *mock.body.lock().unwrap() = b"blocked.sub.test\n".to_vec();
+    let st = fixture("manual-one-source");
+    fs::write(&st.config, st.config_multi(2, &["a-list", "b-list"], &base)).unwrap();
+    let runtime = runtime_for_tick(
+        &st,
+        &base,
+        &ca,
+        &["a-list", "b-list"],
+        Duration::from_millis(40),
+    );
+    let server =
+        DnsServer::start_durable_with_subscriptions(st.options(None), Some(runtime.clone()))
+            .await
+            .unwrap();
+    assert_blocked(&answer(&server, false, "blocked.sub.test.").await);
+    let initial = mock.per_id.lock().unwrap().clone();
+    assert_eq!(initial.get("a-list"), Some(&1));
+    assert_eq!(initial.get("b-list"), Some(&1));
+
+    server.request_subscription_refresh("a-list").unwrap();
+    for _ in 0..100 {
+        if runtime.diagnostics().manual_requests == 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    let after = mock.per_id.lock().unwrap().clone();
+    assert!(
+        after.get("a-list").copied().unwrap_or(0) > initial["a-list"],
+        "requested source was not fetched: initial={initial:?} after={after:?} diag={:?}",
+        runtime.diagnostics()
+    );
+    assert_eq!(
+        after.get("b-list"),
+        initial.get("b-list"),
+        "untouched source must not be fetched or have its due time bypassed"
+    );
+    server.stop_shared().await;
+}
+
+#[tokio::test]
+async fn production_constructor_quarantines_bad_cache_and_keeps_applied_bundle() {
+    let url = "https://lists.invalid/list";
+    let st = fixture("production-quarantine");
+    write_valid_cache(&st, "public-list", url, b"blocked.sub.test\n");
+    fs::write(&st.config, st.config(2, url, "public-list")).unwrap();
+
+    let settings = production_settings(&st, url);
+    let runtime = Arc::new(SubscriptionRuntime::new(&settings, None).unwrap());
+    let server =
+        DnsServer::start_durable_with_subscriptions(st.options(None), Some(runtime.clone()))
+            .await
+            .unwrap();
+    assert_blocked(&answer(&server, false, "blocked.sub.test.").await);
+    let original_age = server.status().policy_published_at;
+    let committed = on_disk(&st);
+    server.stop_shared().await;
+
+    // Corrupt the cache and change the configured URL. A valid applied bundle
+    // must still start immediately; the bad download is quarantined and never
+    // adopted as filtering material.
+    fs::write(st.cache.join("public-list.json"), b"{not json").unwrap();
+    fs::write(
+        &st.config,
+        st.config(2, "https://lists.invalid/changed", "public-list"),
+    )
+    .unwrap();
+    let restarted_settings = production_settings(&st, "https://lists.invalid/changed");
+    let restarted_runtime = Arc::new(SubscriptionRuntime::new(&restarted_settings, None).unwrap());
+    let restarted = DnsServer::start_durable_with_subscriptions(
+        st.options(None),
+        Some(restarted_runtime.clone()),
+    )
+    .await
+    .unwrap();
+    assert_blocked(&answer(&restarted, true, "blocked.sub.test.").await);
+    assert_eq!(restarted.status().policy_published_at, original_age);
+    assert_eq!(on_disk(&st), committed);
+    assert_eq!(restarted_runtime.status().0[0].download, "quarantined");
+    restarted.stop_shared().await;
 }

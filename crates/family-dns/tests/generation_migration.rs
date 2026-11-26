@@ -10,7 +10,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use chrono::{DateTime, Utc};
-use family_dns::{DnsServer, DurableOptions, ReloadError};
+use family_dns::{
+    prepare_filter_material, Config, DnsServer, DurableOptions, ReloadError, SyncCapability,
+};
 use hickory_server::proto::op::ResponseCode;
 use hickory_server::proto::rr::RecordType;
 use serde_json::{json, Value};
@@ -245,6 +247,68 @@ async fn generation_overflow_is_explicit_and_never_wraps() {
     ));
     assert_eq!(st.disk(), committed);
     assert_eq!(server.status().bundle_generation, u64::MAX);
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn stale_basis_cannot_restore_superseded_local_material() {
+    let st = fixture("stale-basis", true);
+    bootstrap(&st).await;
+    let server = DnsServer::start_durable(st.options()).await.unwrap();
+    let hosts = st.dir.join("hosts.txt");
+    let config = Config::parse(&fs::read(&st.config).unwrap()).unwrap();
+    let basis = server.status().bundle_generation;
+    let (material_a, _) = prepare_filter_material(&config.filter, 3, &family_dns::no_remote)
+        .unwrap()
+        .unwrap();
+
+    // SIGHUP-style local change: same source id and format, different bytes.
+    fs::write(&hosts, "other.migrate.example\n").unwrap();
+    let candidate = String::from_utf8(fs::read(&st.config).unwrap())
+        .unwrap()
+        .replace("\"policy_revision\": 3", "\"policy_revision\": 4");
+    server.reload(candidate.as_bytes(), Utc::now()).unwrap();
+    assert_eq!(server.status().bundle_generation, basis + 1);
+    let message = udp_query(
+        "127.0.0.2".parse().unwrap(),
+        server.bind_addr(),
+        "blocked.migrate.example.",
+        RecordType::A,
+    )
+    .await;
+    assert_code(&message, ResponseCode::NoError);
+
+    // Material prepared against the OLD generation cannot be published, and
+    // the newer local material/policy stays intact on disk and in memory.
+    let committed = st.disk();
+    assert!(matches!(
+        server.apply_filter_material(material_a.clone(), basis, Utc::now()),
+        Err(ReloadError::StaleBasis { .. })
+    ));
+    assert_eq!(st.disk(), committed);
+    let still_open = udp_query(
+        "127.0.0.2".parse().unwrap(),
+        server.bind_addr(),
+        "blocked.migrate.example.",
+        RecordType::A,
+    )
+    .await;
+    assert_code(&still_open, ResponseCode::NoError);
+
+    // A controller update is another independent commit: it also invalidates
+    // the old basis and keeps current local fields/material.
+    let mut policy_config = server.local_config();
+    policy_config.policy_revision = 5;
+    let policy = policy_config.policy_at(STAMP.parse().unwrap());
+    assert!(matches!(
+        server.apply_controller_policy(&policy, Utc::now()).unwrap(),
+        SyncCapability::AppliedLocally { revision: 5 }
+    ));
+    assert!(matches!(
+        server.apply_filter_material(material_a, basis, Utc::now()),
+        Err(ReloadError::StaleBasis { .. })
+    ));
+    assert_eq!(server.status().policy_revision, 5);
     server.stop().await;
 }
 

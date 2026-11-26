@@ -47,10 +47,6 @@ use crate::subscription::{AppliedStatus, SourceStatus, SubscriptionRuntime};
 
 const TCP_TIMEOUT_SECS: u64 = 5;
 const TCP_MAX_BYTES: usize = 32 * 1024;
-/// Upper bound on integrator reaction time; never shorter than a configured
-/// subscription interval, which the fetcher still enforces.
-const SUBSCRIPTION_TICK_SECS: u64 = 60;
-
 /// Opt-in durable mode. `now` is supplied by the caller so tests and the CLI
 /// use the same code path; the binary passes `Utc::now()`.
 #[derive(Clone, Debug)]
@@ -77,6 +73,12 @@ pub enum ReloadError {
     /// A list source could not be read, or the filter candidate was rejected.
     /// No snapshot is swapped and no file is written on this path.
     FilterFailed(String),
+    /// The bundle generation changed while a material candidate was being
+    /// prepared; the candidate must be rebuilt from the current settings.
+    StaleBasis {
+        found: u64,
+        expected: u64,
+    },
     BuildFailed(String),
     PersistFailed(String),
 }
@@ -93,6 +95,10 @@ impl fmt::Display for ReloadError {
                 "revision {found} is not newer than the applied revision {highwater}"
             ),
             Self::FilterFailed(detail) => write!(f, "filter candidate failed: {detail}"),
+            Self::StaleBasis { found, expected } => write!(
+                f,
+                "material was prepared for bundle generation {expected} but generation {found} is current"
+            ),
             Self::BuildFailed(detail) => write!(f, "candidate build failed: {detail}"),
             Self::PersistFailed(detail) => write!(f, "candidate persistence failed: {detail}"),
         }
@@ -143,7 +149,7 @@ pub struct DnsStatus {
 pub struct DnsServer {
     shutdown: CancellationToken,
     bind_addr: SocketAddr,
-    task: Option<JoinHandle<()>>,
+    task: Mutex<Option<JoinHandle<()>>>,
     observations: ObservationLog,
     current: SnapshotHandle,
     store: Option<BundleStore>,
@@ -182,16 +188,37 @@ impl DnsServer {
     /// authoritative: an existing state file is loaded and validated before a
     /// listener exists, and the config file is never used as a newer policy.
     pub async fn start_durable(options: DurableOptions) -> Result<Self> {
-        Self::start_durable_with_subscriptions(options, None).await
+        Self::start_durable_inner(options, None)
+            .await
+            .map(|(server, _)| server)
     }
 
     /// Durable start with an operator-opted-in subscription runtime. No URL is
-    /// fetched until the runtime's integrator loop starts after binding.
+    /// fetched after binding except by the single integrator task. Returns the
+    /// ONE canonical `Arc` that owns the listener for the runtime lifetime.
+    /// Do not unwrap and re-wrap it: the task's Weak would never upgrade.
     pub async fn start_durable_with_subscriptions(
         options: DurableOptions,
         subscriptions: Option<Arc<SubscriptionRuntime>>,
-    ) -> Result<Self> {
+    ) -> Result<Arc<Self>> {
+        let (server, bootstrap_errors) = Self::start_durable_inner(options, subscriptions).await?;
+        let shared = Arc::new(server);
+        if let Some(runtime) = &shared.subscriptions {
+            runtime.initialize(&shared.status());
+            if !bootstrap_errors.is_empty() {
+                runtime.record_error(bootstrap_errors.join("; "));
+            }
+            runtime.start(Arc::downgrade(&shared));
+        }
+        Ok(shared)
+    }
+
+    async fn start_durable_inner(
+        options: DurableOptions,
+        subscriptions: Option<Arc<SubscriptionRuntime>>,
+    ) -> Result<(Self, Vec<String>)> {
         let validator = BundleValidator;
+        let mut bootstrap_errors: Vec<String> = Vec::new();
         let store = match BundleStore::open_from_snapshot_with_limit(
             &options.state_path,
             &options.worker_id,
@@ -223,6 +250,14 @@ impl DnsServer {
                     MAX_FILTER_BUNDLE_BYTES,
                 )?;
                 let published_at = config.policy_published_at.unwrap_or(options.now);
+                // A clean installation has no applied bundle and no cache. Do
+                // ONE bounded verified fetch before any listener exists; a
+                // valid restart never takes this branch and never waits on a
+                // download. Missing material below still fails closed.
+                bootstrap_errors = match &subscriptions {
+                    Some(runtime) => runtime.bootstrap_fetch().await,
+                    None => Vec::new(),
+                };
                 let remote_subscriptions = subscriptions.clone();
                 let remote = |id: &str| match &remote_subscriptions {
                     Some(runtime) => runtime.last_good(id),
@@ -271,19 +306,7 @@ impl DnsServer {
         let mut server =
             Self::serve(bundle.config, snapshot, observations, Some(store), None).await?;
         server.subscriptions = subscriptions;
-        let runtime = server.subscriptions.clone();
-        if let Some(runtime) = &runtime {
-            runtime.initialize(&server.status());
-        }
-        if let Some(runtime) = runtime {
-            let shared = Arc::new(server);
-            let weak = Arc::downgrade(&shared);
-            runtime.start(weak, Duration::from_secs(SUBSCRIPTION_TICK_SECS));
-            return Ok(Arc::try_unwrap(shared)
-                .ok()
-                .expect("the integrator holds only a weak reference"));
-        }
-        Ok(server)
+        Ok((server, bootstrap_errors))
     }
 
     async fn serve(
@@ -324,7 +347,7 @@ impl DnsServer {
         Ok(Self {
             shutdown,
             bind_addr: bound,
-            task: Some(task),
+            task: Mutex::new(Some(task)),
             observations,
             current,
             store,
@@ -571,13 +594,24 @@ impl DnsServer {
     /// compile -> persist -> publish path as a local reload. This is the sole
     /// seam used by the subscription integrator: no second filter state or
     /// store, no swallowed errors, and NO policy revision is advanced.
+    /// `expected_generation` is the whole-bundle generation observed when the
+    /// candidate material was prepared. Any local reload, controller update
+    /// or earlier material commit changes it, so a stale candidate is rejected
+    /// under this lock instead of reverting a newer local source/policy.
     pub fn apply_filter_material(
         &self,
         material: FilterMaterial,
+        expected_generation: u64,
         now: DateTime<Utc>,
     ) -> Result<MaterialOutcome, ReloadError> {
         let _update = self.update.lock().unwrap_or_else(|p| p.into_inner());
         let active = self.active_snapshot();
+        if active.state.generation != expected_generation {
+            return Err(ReloadError::StaleBasis {
+                found: active.state.generation,
+                expected: expected_generation,
+            });
+        }
         let identity = material_identity(Some(&material));
         let policy_revision = active.policy.revision;
         if identity == active.state.filter_identity {
@@ -687,14 +721,28 @@ impl DnsServer {
         self.observations.clear();
     }
 
-    pub async fn stop(mut self) {
+    async fn stop_inner(&self) {
+        // Actually await the integrator task before consuming the server: it
+        // may hold an upgraded Arc while a download is in flight.
         if let Some(runtime) = &self.subscriptions {
-            runtime.shutdown();
+            runtime.shutdown().await;
         }
         self.shutdown.cancel();
-        if let Some(task) = self.task.take() {
+        let task = self.task.lock().unwrap().take();
+        if let Some(task) = task {
             let _ = task.await;
         }
+    }
+
+    /// Stop an owned server (tests and library callers).
+    pub async fn stop(self) {
+        self.stop_inner().await;
+    }
+
+    /// Stop a server shared with a subscription runtime. Safe while other
+    /// handles exist; no `Arc::try_unwrap` is needed or permitted here.
+    pub async fn stop_shared(&self) {
+        self.stop_inner().await;
     }
 }
 
@@ -716,7 +764,7 @@ fn uuid_from_household(raw: &str) -> Result<family_policy::HouseholdId> {
 impl Drop for DnsServer {
     fn drop(&mut self) {
         if let Some(runtime) = &self.subscriptions {
-            runtime.shutdown();
+            runtime.cancel_only();
         }
         self.shutdown.cancel();
     }
