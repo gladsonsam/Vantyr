@@ -1,0 +1,20 @@
+[package]
+name = "vantyr-network-filter"
+version = "0.1.0"
+edition = "2021"
+description = "Bounded, immutable DNS filter-list and service-catalog snapshot builder"
+publish = false
+
+[dependencies]
+# Maintained upstream parsers/matchers only. This crate never implements DNS
+# wire format, cryptography, or a full adblock syntax engine of its own.
+hickory-server   = { version = "=0.26.4", default-features = false, features = ["blocklist"] }
+adblock          = { version = "=0.13.6", default-features = false, features = ["debug-info"], optional = true }
+futures-executor = "=0.3.34"
+sha2             = "=0.10.9"
+
+[features]
+default = ["abp"]
+# MPL-2.0 licensed upstream. Downstream crates that do not need ABP domain
+# rules can disable it and keep only the Hickory hosts/bare/wildcard path.
+abp = ["dep:adblock"]
