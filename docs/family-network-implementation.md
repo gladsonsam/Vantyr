@@ -558,3 +558,9 @@ No substantive UI or Supabase changes were made in this step.
 - Verified encrypted upstreams (DoT/DoH) are in progress separately from encrypted
   inbound listeners. Literal bootstrap addresses, normal certificate verification,
   bounded explicit CA material and no implicit plaintext fallback are required.
+  Implementation `d59e99e1` is committed and awaiting independent security
+  acceptance. The implementer reports 150 affected tests passing, including
+  eight real-TLS upstream tests. Parent lock inspection confirms only `h2
+  0.4.21` is newly added, with no existing version/checksum changes. Review also
+  checks whether per-upstream CA configuration preserves the intended trust
+  scope when multiple encrypted endpoints are configured.
