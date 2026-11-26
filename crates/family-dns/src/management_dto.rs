@@ -189,6 +189,8 @@ pub struct PendingRefreshView {
     pub source_id: String,
     pub refresh_seq: u64,
     pub config_version: u64,
+    /// Server-owned expiry; an expired or future-version token is ignored.
+    pub expires_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -248,6 +250,53 @@ pub fn is_digest(raw: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{json, Value};
+
+    const READ: &str = include_str!("../../../tests/network-contracts/dns-management-v1/read.json");
+    const REPORT: &str =
+        include_str!("../../../tests/network-contracts/dns-management-v1/report.json");
+
+    #[test]
+    fn shared_read_fixture_parses_verifies_digest_and_roundtrips() {
+        let expected: Value = serde_json::from_str(READ).unwrap();
+        let response: WorkerReadResponse = serde_json::from_value(expected.clone()).unwrap();
+        assert_eq!(response.config_version, 1);
+        assert_eq!(
+            response.pending_refreshes[0].expires_at,
+            DateTime::parse_from_rfc3339("2026-11-26T12:10:00Z")
+                .unwrap()
+                .with_timezone(&Utc)
+        );
+        let config = response.config.as_ref().unwrap();
+        assert_eq!(
+            digest(&canonical_bytes(config).unwrap()),
+            response.body_sha256.as_deref().unwrap()
+        );
+        assert_eq!(serde_json::to_value(&response).unwrap(), expected);
+    }
+
+    #[test]
+    fn shared_report_fixture_parses_and_roundtrips() {
+        let expected: Value = serde_json::from_str(REPORT).unwrap();
+        let report: WorkerStatusBody = serde_json::from_value(expected.clone()).unwrap();
+        assert_eq!(report.refresh_ack.len(), 1);
+        assert_eq!(report.applied.as_ref().unwrap().generation, 5);
+        assert_eq!(serde_json::to_value(&report).unwrap(), expected);
+    }
+
+    #[test]
+    fn strict_schema_rejects_missing_expiry_and_unknown_fields() {
+        let mut value: Value = serde_json::from_str(READ).unwrap();
+        value["pending_refreshes"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("expires_at");
+        assert!(serde_json::from_value::<WorkerReadResponse>(value).is_err());
+
+        let mut value: Value = serde_json::from_str(REPORT).unwrap();
+        value["future_field"] = json!(1);
+        assert!(serde_json::from_value::<WorkerStatusBody>(value).is_err());
+    }
 
     /// Same bytes and expected SHA as the Stage A canonical fixture.
     #[test]

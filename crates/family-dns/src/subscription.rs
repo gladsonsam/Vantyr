@@ -183,6 +183,29 @@ struct FetcherEntry {
     fetcher: Arc<Fetcher<FormatValidator>>,
 }
 
+struct StagedInner {
+    entries: Vec<(String, Arc<Fetcher<FormatValidator>>)>,
+    cache: PathBuf,
+    activated: std::sync::atomic::AtomicBool,
+}
+
+impl Drop for StagedInner {
+    fn drop(&mut self) {
+        if !self.activated.load(Ordering::SeqCst) {
+            let _ = std::fs::remove_dir_all(&self.cache);
+        }
+    }
+}
+
+/// Prospective managed fetchers with a SEPARATE cache root. Downloading a
+/// candidate never touches active fetchers, managed ids or applied bytes.
+#[derive(Clone)]
+pub struct StagedManaged {
+    inner: Arc<StagedInner>,
+}
+
+static STAGE_SEQ: AtomicU64 = AtomicU64::new(0);
+
 #[derive(Clone, Debug)]
 struct FaultedSource {
     id: String,
@@ -346,6 +369,94 @@ impl SubscriptionRuntime {
     ) -> Self {
         self.factory = Arc::new(factory);
         self
+    }
+
+    /// Build candidate fetchers in an isolated cache. No active state changes.
+    pub fn stage_managed(
+        &self,
+        specs: &[SubscriptionSourceSpec],
+    ) -> Result<StagedManaged, FilterError> {
+        let serial = STAGE_SEQ.fetch_add(1, Ordering::SeqCst);
+        let cache = self.root.join(format!("staging-{serial}"));
+        std::fs::create_dir_all(&cache).map_err(|error| FilterError::Io(error.to_string()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&cache, std::fs::Permissions::from_mode(0o700));
+        }
+        let mut entries = Vec::new();
+        for spec in specs {
+            let fetcher = (self.factory)(spec, &cache, self.trusted_ca_pem.as_deref())
+                .map_err(|error| FilterError::Io(error.to_string()))?;
+            entries.push((spec.id.clone(), Arc::new(fetcher)));
+        }
+        Ok(StagedManaged {
+            inner: Arc::new(StagedInner {
+                entries,
+                cache,
+                activated: std::sync::atomic::AtomicBool::new(false),
+            }),
+        })
+    }
+
+    /// Download staged candidates only; active fetchers stay untouched.
+    pub async fn staged_refresh(
+        staged: &StagedManaged,
+        ids: &[String],
+        force: bool,
+    ) -> Vec<String> {
+        let mut errors = Vec::new();
+        for (id, fetcher) in &staged.inner.entries {
+            if !ids.contains(id) {
+                continue;
+            }
+            if let Err(error) = fetcher.refresh(id, force).await {
+                errors.push(format!("{id}: {error}"));
+            }
+        }
+        errors
+    }
+
+    /// Validated bytes from the staged cache for one candidate source.
+    pub fn staged_last_good(
+        staged: &StagedManaged,
+        id: &str,
+    ) -> Result<Option<Vec<u8>>, FilterError> {
+        staged
+            .inner
+            .entries
+            .iter()
+            .find(|(candidate_id, _)| candidate_id == id)
+            .ok_or_else(|| FilterError::Invalid(format!("staged source {id} is absent")))?
+            .1
+            .last_good_bytes(id)
+            .map_err(|error| FilterError::Io(error.to_string()))
+    }
+
+    /// Infallible activation after a successful durable publish. The staged
+    /// fetchers already hold validated candidates; transferring them (and
+    /// taking ownership of their cache) cannot fail.
+    pub fn activate_staged(&self, staged: StagedManaged, specs: &[SubscriptionSourceSpec]) {
+        let mut managed = self.managed_ids.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap();
+        let mut faults = self.faults.lock().unwrap();
+        entries.retain(|entry| !managed.contains(&entry.id));
+        faults.retain(|fault| !managed.contains(&fault.id));
+        managed.clear();
+        let mut specs_map = self.specs.lock().unwrap();
+        for (id, fetcher) in &staged.inner.entries {
+            entries.push(FetcherEntry {
+                id: id.clone(),
+                fetcher: fetcher.clone(),
+            });
+            managed.insert(id.clone());
+        }
+        for spec in specs {
+            specs_map.insert(spec.id.clone(), spec.clone());
+        }
+        let all: BTreeSet<String> = entries.iter().map(|entry| entry.id.clone()).collect();
+        *self.handle.ids.lock().unwrap() = all;
+        staged.inner.activated.store(true, Ordering::SeqCst);
     }
 
     /// Bounded reaction tick for an embedding that needs faster polling. This
@@ -611,11 +722,24 @@ impl SubscriptionRuntime {
     /// commit that changed the bundle generation while material was prepared.
     fn apply_combined(&self, server: &DnsServer, now: DateTime<Utc>, errors: Vec<String>) {
         for _ in 0..MAX_RETRIES {
+            // Capture the whole-bundle generation BEFORE reading any settings
+            // or preparing material, and re-read both on every retry.
             let basis = server.status().bundle_generation;
             let config = server.local_config();
-            let result = prepare_filter(&config.filter, config.policy_revision, &|id| {
-                self.last_good(id)
-            });
+            let effective = match server.management_state() {
+                Some(management) => {
+                    match crate::management_worker::merge_config(&config, &management.config) {
+                        Ok(effective) => effective,
+                        Err(error) => {
+                            self.applied.lock().unwrap().last_error = Some(error.to_string());
+                            return;
+                        }
+                    }
+                }
+                None => config.filter.clone(),
+            };
+            let result =
+                prepare_filter(&effective, config.policy_revision, &|id| self.last_good(id));
             match result {
                 Ok(Some((material, _snapshot))) => {
                     match server.apply_filter_material(material, basis, now) {

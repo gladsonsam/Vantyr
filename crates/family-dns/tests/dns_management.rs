@@ -4,7 +4,7 @@
 
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -252,12 +252,19 @@ async fn start_control() -> (String, String, Control, Guard) {
 // ─── List server with loopback resolver ────────────────────────────────────
 
 #[derive(Default)]
-struct ListState(Mutex<Vec<u8>>);
+struct ListState {
+    body: Mutex<Vec<u8>>,
+    delay: Mutex<Duration>,
+}
 
 async fn list_handler(State(state): State<Arc<ListState>>) -> Response {
+    let delay = *state.delay.lock().unwrap();
+    if !delay.is_zero() {
+        tokio::time::sleep(delay).await;
+    }
     axum::http::Response::builder()
         .status(200)
-        .body(axum::body::Body::from(state.0.lock().unwrap().clone()))
+        .body(axum::body::Body::from(state.body.lock().unwrap().clone()))
         .unwrap()
         .into_response()
 }
@@ -273,7 +280,10 @@ impl Resolve for LoopbackResolver {
 async fn start_list_server() -> (String, String, Arc<ListState>, Guard) {
     let cert = cert();
     let ca = cert.ca_pem.clone();
-    let state = Arc::new(ListState::default());
+    let state = Arc::new(ListState {
+        body: Mutex::new(Vec::new()),
+        delay: Mutex::new(Duration::ZERO),
+    });
     let router = Router::new()
         .route("/list", get(list_handler))
         .with_state(state.clone());
@@ -325,7 +335,11 @@ fn dns_config(port: u16, revision: u64) -> Vec<u8> {
         "local_zones": { "block.test.": [
             { "type": "a", "name": "managed.block.test.", "ttl": 60, "addr": "192.0.2.20" },
             { "type": "a", "name": "other.block.test.", "ttl": 60, "addr": "192.0.2.21" },
-            { "type": "a", "name": "svc.block.test.", "ttl": 60, "addr": "192.0.2.22" }
+            { "type": "a", "name": "svc.block.test.", "ttl": 60, "addr": "192.0.2.22" },
+            { "type": "a", "name": "old.block.test.", "ttl": 60, "addr": "192.0.2.23" },
+            { "type": "a", "name": "new.block.test.", "ttl": 60, "addr": "192.0.2.24" },
+            { "type": "a", "name": "changed.block.test.", "ttl": 60, "addr": "192.0.2.25" },
+            { "type": "a", "name": "local.block.test.", "ttl": 60, "addr": "192.0.2.26" }
         ]},
         "profiles": {
             "adult": [{ "effect": "allow", "match": { "type": "suffix", "value": "test" }, "reason": "adult" }],
@@ -338,6 +352,17 @@ fn dns_config(port: u16, revision: u64) -> Vec<u8> {
         }]
     }))
     .unwrap()
+}
+
+fn config_with_local(port: u16, revision: u64, path: &Path) -> Vec<u8> {
+    let mut value: Value = serde_json::from_slice(&dns_config(port, revision)).unwrap();
+    value["filter"] = json!({
+        "sources": [{
+            "id": "local-list", "format": "hosts", "path": path,
+            "enabled": true
+        }]
+    });
+    serde_json::to_vec(&value).unwrap()
 }
 
 fn desired(url: &str, enabled: bool) -> ManagementConfig {
@@ -387,6 +412,7 @@ fn set_desired(control: &Control, version: u64, config: &ManagementConfig) {
 struct Harness {
     server: Arc<DnsServer>,
     worker: Arc<ManagementWorker>,
+    runtime: Arc<SubscriptionRuntime>,
 }
 
 impl Harness {
@@ -406,16 +432,28 @@ async fn harness(
     mgmt_base: &str,
     ca_pem: &str,
 ) -> Harness {
-    harness_with_poll(st, list_base, list_ca, mgmt_base, ca_pem, 3600).await
+    harness_with_timing(st, list_base, list_ca, mgmt_base, ca_pem, 3600, 60_000).await
 }
 
 async fn harness_with_poll(
+    st: &Fixture,
+    list_base: &str,
+    list_ca: &str,
+    mgmt_base: &str,
+    ca_pem: &str,
+    poll_secs: u64,
+) -> Harness {
+    harness_with_timing(st, list_base, list_ca, mgmt_base, ca_pem, poll_secs, 60_000).await
+}
+
+async fn harness_with_timing(
     st: &Fixture,
     _list_base: &str,
     list_ca: &str,
     mgmt_base: &str,
     ca_pem: &str,
     poll_secs: u64,
+    tick_ms: u64,
 ) -> Harness {
     fs::write(&st.config, dns_config(0, 2)).unwrap();
     let options_json = json!({
@@ -455,6 +493,7 @@ async fn harness_with_poll(
     let runtime = Arc::new(
         SubscriptionRuntime::new(&settings, None)
             .unwrap()
+            .with_tick(Duration::from_millis(tick_ms))
             .with_fetcher_factory({
                 let list_ca = list_ca.to_owned();
                 let cache = st.cache.clone();
@@ -528,6 +567,7 @@ async fn harness_with_poll(
     Harness {
         server: Arc::clone(&server),
         worker,
+        runtime,
     }
 }
 
@@ -550,7 +590,7 @@ async fn management_read_fetch_apply_status_and_dns_answer() {
     let st = fixture("apply");
     let (mgmt, ca, control, _mgmt_guard) = start_control().await;
     let (list, list_ca, lists, _list_guard) = start_list_server().await;
-    *lists.0.lock().unwrap() = b"managed.block.test\n".to_vec();
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
     let config = desired(&format!("{list}/list"), true);
     set_desired(&control, 1, &config);
     let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
@@ -587,7 +627,7 @@ async fn unchanged_download_and_removal_keep_policy_age_and_advance_generation()
     let st = fixture("lifecycle");
     let (mgmt, ca, control, _mgmt_guard) = start_control().await;
     let (list, list_ca, lists, _list_guard) = start_list_server().await;
-    *lists.0.lock().unwrap() = b"managed.block.test\n".to_vec();
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
     let config = desired(&format!("{list}/list"), true);
     set_desired(&control, 1, &config);
     let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
@@ -622,7 +662,7 @@ async fn auth_digest_schema_and_transport_failures_preserve_runtime_and_disk() {
     let st = fixture("failures");
     let (mgmt, ca, control, _mgmt_guard) = start_control().await;
     let (list, list_ca, lists, _list_guard) = start_list_server().await;
-    *lists.0.lock().unwrap() = b"managed.block.test\n".to_vec();
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
     let config = desired(&format!("{list}/list"), true);
     set_desired(&control, 1, &config);
     let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
@@ -659,7 +699,7 @@ async fn restart_offline_keeps_applied_material_version_digest_and_age() {
     let st = fixture("restart");
     let (mgmt, ca, control, _mgmt_guard) = start_control().await;
     let (list, list_ca, lists, _list_guard) = start_list_server().await;
-    *lists.0.lock().unwrap() = b"managed.block.test\n".to_vec();
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
     let config = desired(&format!("{list}/list"), true);
     set_desired(&control, 1, &config);
     let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
@@ -672,7 +712,10 @@ async fn restart_offline_keeps_applied_material_version_digest_and_age() {
     drop(_mgmt_guard);
     drop(_list_guard);
     for entry in fs::read_dir(&st.cache).unwrap() {
-        fs::remove_file(entry.unwrap().path()).unwrap();
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            fs::remove_file(path).unwrap();
+        }
     }
     fs::write(&st.config, dns_config(0, 99)).unwrap();
     let restarted = DnsServer::start_durable(DurableOptions {
@@ -695,13 +738,13 @@ async fn scoped_manual_token_is_replay_safe_and_bounded() {
     let st = fixture("manual-token");
     let (mgmt, ca, control, _mgmt_guard) = start_control().await;
     let (list, list_ca, lists, _list_guard) = start_list_server().await;
-    *lists.0.lock().unwrap() = b"managed.block.test\n".to_vec();
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
     let config = desired(&format!("{list}/list"), true);
     set_desired(&control, 1, &config);
     let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
     h.sync().await;
 
-    let token = json!({"source_id":"remote-list","refresh_seq":7,"config_version":1});
+    let token = json!({"source_id":"remote-list","refresh_seq":7,"config_version":1,"expires_at":"2027-01-01T00:00:00Z"});
     control.0.lock().unwrap().pending = vec![token.clone()];
     let before = h.server.status().bundle_generation;
     h.sync().await;
@@ -719,8 +762,8 @@ async fn scoped_manual_token_is_replay_safe_and_bounded() {
     h.sync().await;
     assert_eq!(h.server.status().bundle_generation, after);
     control.0.lock().unwrap().pending = vec![
-        json!({"source_id":"unknown","refresh_seq":9,"config_version":1}),
-        json!({"source_id":"remote-list","refresh_seq":9,"config_version":99}),
+        json!({"source_id":"unknown","refresh_seq":9,"config_version":1,"expires_at":"2027-01-01T00:00:00Z"}),
+        json!({"source_id":"remote-list","refresh_seq":9,"config_version":99,"expires_at":"2027-01-01T00:00:00Z"}),
     ];
     h.sync().await;
     assert_eq!(h.server.status().bundle_generation, after);
@@ -732,7 +775,7 @@ async fn local_remote_collision_and_oversized_aggregate_keep_old_answer() {
     let st = fixture("collision");
     let (mgmt, ca, control, _mgmt_guard) = start_control().await;
     let (list, list_ca, lists, _list_guard) = start_list_server().await;
-    *lists.0.lock().unwrap() = b"managed.block.test\n".to_vec();
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
     let config = desired(&format!("{list}/list"), true);
     set_desired(&control, 1, &config);
     let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
@@ -778,7 +821,7 @@ async fn controller_pull_and_local_reload_preserve_management_at_current_basis()
     let st = fixture("basis");
     let (mgmt, ca, control, _mgmt_guard) = start_control().await;
     let (list, list_ca, lists, _list_guard) = start_list_server().await;
-    *lists.0.lock().unwrap() = b"managed.block.test\n".to_vec();
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
     let config = desired(&format!("{list}/list"), true);
     set_desired(&control, 1, &config);
     let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
@@ -833,7 +876,7 @@ async fn background_coordinator_loop_applies_and_reports_without_direct_sync() {
     let st = fixture("background-loop");
     let (mgmt, ca, control, _mgmt_guard) = start_control().await;
     let (list, list_ca, lists, _list_guard) = start_list_server().await;
-    *lists.0.lock().unwrap() = b"managed.block.test\n".to_vec();
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
     let config = desired(&format!("{list}/list"), true);
     set_desired(&control, 1, &config);
     let h = harness_with_poll(&st, &list, &list_ca, &mgmt, &ca, 5).await;
@@ -865,7 +908,7 @@ async fn stale_manual_token_from_a_previous_config_is_not_acknowledged() {
     let st = fixture("token-version");
     let (mgmt, ca, control, _mgmt_guard) = start_control().await;
     let (list, list_ca, lists, _list_guard) = start_list_server().await;
-    *lists.0.lock().unwrap() = b"managed.block.test\n".to_vec();
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
     let v1 = desired(&format!("{list}/list"), true);
     set_desired(&control, 1, &v1);
     let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
@@ -877,7 +920,7 @@ async fn stale_manual_token_from_a_previous_config_is_not_acknowledged() {
     v2.sources[0].interval_secs = Some(600);
     set_desired(&control, 2, &v2);
     control.0.lock().unwrap().pending = vec![json!({
-        "source_id":"remote-list","refresh_seq":11,"config_version":1
+        "source_id":"remote-list","refresh_seq":11,"config_version":1,"expires_at":"2027-01-01T00:00:00Z"
     })];
     h.sync().await;
     let state = h.server.management_state().unwrap();
@@ -886,7 +929,7 @@ async fn stale_manual_token_from_a_previous_config_is_not_acknowledged() {
     let generation = h.server.status().bundle_generation;
 
     control.0.lock().unwrap().pending = vec![json!({
-        "source_id":"remote-list","refresh_seq":12,"config_version":2
+        "source_id":"remote-list","refresh_seq":12,"config_version":2,"expires_at":"2027-01-01T00:00:00Z"
     })];
     h.sync().await;
     let state = h.server.management_state().unwrap();
@@ -901,7 +944,7 @@ async fn reports_preserve_original_applied_and_fetched_timestamps() {
     let st = fixture("original-times");
     let (mgmt, ca, control, _mgmt_guard) = start_control().await;
     let (list, list_ca, lists, _list_guard) = start_list_server().await;
-    *lists.0.lock().unwrap() = b"managed.block.test\n".to_vec();
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
     set_desired(&control, 1, &desired(&format!("{list}/list"), true));
     let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
     h.sync().await;
@@ -913,5 +956,234 @@ async fn reports_preserve_original_applied_and_fetched_timestamps() {
     let second = reports(&control).pop().unwrap();
     assert_eq!(second.applied.unwrap().applied_at.unwrap(), applied_at);
     assert_eq!(second.sources[0].fetched_at.unwrap(), fetched_at);
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn integrator_ticks_preserve_management_and_both_local_and_remote_filters() {
+    let st = fixture("tick-authority");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    set_desired(&control, 1, &desired(&format!("{list}/list"), true));
+    let h = harness_with_timing(&st, &list, &list_ca, &mgmt, &ca, 3600, 100).await;
+
+    // A local file source is added after bootstrap; both filters must coexist.
+    let local = st.dir.join("local.txt");
+    fs::write(&local, "local.block.test\n").unwrap();
+    fs::write(&st.config, config_with_local(0, 3, &local)).unwrap();
+    h.server
+        .reload(&fs::read(&st.config).unwrap(), Utc::now())
+        .unwrap();
+    h.sync().await;
+    let state = h.server.management_state().unwrap();
+    let applied_at = state.applied_at;
+    assert!(blocked(&h.server, "local.block.test.", false).await);
+    assert!(blocked(&h.server, "managed.block.test.", false).await);
+
+    // Change the remote list and deliver a manual force token. The NEXT
+    // automatic tick (no direct apply call) must update only the remote part.
+    *lists.body.lock().unwrap() = b"changed.block.test\n".to_vec();
+    control.0.lock().unwrap().pending = vec![json!({
+        "source_id":"remote-list","refresh_seq":2,"config_version":1,
+        "expires_at":"2027-01-01T00:00:00Z"
+    })];
+    h.sync().await;
+    let mut changed = false;
+    for _ in 0..60 {
+        if blocked(&h.server, "changed.block.test.", false).await {
+            changed = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(changed, "integrator did not apply changed remote bytes");
+    assert!(blocked(&h.server, "local.block.test.", true).await);
+    assert!(!blocked(&h.server, "managed.block.test.", false).await);
+    let after = h.server.management_state().unwrap();
+    assert_eq!(after.config_version, state.config_version);
+    assert_eq!(after.digest, state.digest);
+    assert_eq!(
+        after.applied_at, applied_at,
+        "receipt commit freshened applied_at"
+    );
+    assert_eq!(after.filter_identity, state.filter_identity);
+    assert_eq!(after.digest, state.digest);
+    assert_eq!(
+        h.server.status().policy_published_at,
+        STAMP.parse::<DateTime<Utc>>().unwrap()
+    );
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn failed_new_desired_keeps_active_fetchers_and_lkg_refresh() {
+    let st = fixture("staged-fetchers");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    set_desired(&control, 1, &desired(&format!("{list}/list"), true));
+    let h = harness_with_timing(&st, &list, &list_ca, &mgmt, &ca, 3600, 100).await;
+    h.sync().await;
+    let ids: Vec<String> = h
+        .runtime
+        .status()
+        .0
+        .into_iter()
+        .map(|source| source.id)
+        .collect();
+    assert_eq!(ids, vec!["remote-list".to_owned()]);
+
+    let mut v2 = desired("https://localhost:1/dead", true);
+    v2.sources[0].id = "remote-list-2".to_owned();
+    set_desired(&control, 2, &v2);
+    let before = h.server.status();
+    h.sync().await;
+    assert_eq!(h.server.status(), before);
+    let ids: Vec<String> = h
+        .runtime
+        .status()
+        .0
+        .into_iter()
+        .map(|source| source.id)
+        .collect();
+    assert_eq!(
+        ids,
+        vec!["remote-list".to_owned()],
+        "failed v2 replaced active fetchers"
+    );
+    assert_eq!(h.server.management_state().unwrap().config_version, 1);
+
+    // The still-applied v1 source keeps refreshing once a current-version
+    // delivery arrives again (the server only issues current tokens).
+    set_desired(&control, 1, &desired(&format!("{list}/list"), true));
+    *lists.body.lock().unwrap() = b"changed.block.test\n".to_vec();
+    control.0.lock().unwrap().pending = vec![json!({
+        "source_id":"remote-list","refresh_seq":4,"config_version":1,
+        "expires_at":"2027-01-01T00:00:00Z"
+    })];
+    h.sync().await;
+    let mut changed = false;
+    for _ in 0..60 {
+        if blocked(&h.server, "changed.block.test.", false).await {
+            changed = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(changed, "active v1 source no longer refreshes");
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn refresh_ack_reports_never_exceed_server_limit() {
+    let st = fixture("ack-bound");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    let mut config = ManagementConfig {
+        sources: Vec::new(),
+        catalog: None,
+        selected_services: Vec::new(),
+    };
+    for index in 0..32 {
+        let mut source = desired(&format!("{list}/list"), true).sources.remove(0);
+        source.id = format!("list-{index:02}");
+        config.sources.push(source);
+    }
+    set_desired(&control, 1, &config);
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    h.sync().await;
+    let mut tokens = Vec::new();
+    for index in 0..40 {
+        tokens.push(json!({
+            "source_id": format!("list-{:02}", index % 32),
+            "refresh_seq": index + 1,
+            "config_version": 1,
+            "expires_at": "2027-01-01T00:00:00Z"
+        }));
+    }
+    control.0.lock().unwrap().pending = tokens;
+    h.sync().await;
+    let state = h.server.management_state().unwrap();
+    assert!(state.receipts.len() <= 32);
+    let report = reports(&control).pop().unwrap();
+    assert!(
+        report.refresh_ack.len() <= 32,
+        "server rejects >32 ack entries"
+    );
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn lower_and_same_version_conflicts_never_mutate_applied_management() {
+    let st = fixture("version-gate");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    let config = desired(&format!("{list}/list"), true);
+    set_desired(&control, 1, &config);
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    h.sync().await;
+    let state = h.server.management_state().unwrap();
+    let generation = h.server.status().bundle_generation;
+
+    // Same version with different bytes: conflict at admission.
+    let mut changed = config.clone();
+    changed.sources[0].interval_secs = Some(600);
+    set_desired(&control, 1, &changed);
+    h.sync().await;
+    assert_eq!(h.server.management_state().unwrap(), state);
+    assert_eq!(h.server.status().bundle_generation, generation);
+
+    // Lower version: conflict, no mutation.
+    control.0.lock().unwrap().version = 0;
+    h.sync().await;
+    assert_eq!(h.server.management_state().unwrap(), state);
+    assert_eq!(h.server.status().bundle_generation, generation);
+    assert!(blocked(&h.server, "managed.block.test.", false).await);
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn delayed_fetch_cannot_restore_stale_local_bytes_after_concurrent_reload() {
+    let st = fixture("delayed-basis");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    let old = st.dir.join("old.txt");
+    let new = st.dir.join("new.txt");
+    fs::write(&old, "old.block.test\n").unwrap();
+    fs::write(&new, "new.block.test\n").unwrap();
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    set_desired(&control, 1, &desired(&format!("{list}/list"), true));
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    fs::write(&st.config, config_with_local(0, 3, &old)).unwrap();
+    h.server
+        .reload(&fs::read(&st.config).unwrap(), Utc::now())
+        .unwrap();
+    h.sync().await;
+    assert!(blocked(&h.server, "old.block.test.", false).await);
+
+    // Delay the download; during it a local reload repoints the SAME source id
+    // to new bytes under a new policy revision.
+    *lists.delay.lock().unwrap() = Duration::from_millis(800);
+    *lists.body.lock().unwrap() = b"other.block.test\n".to_vec();
+    fs::write(&st.config, config_with_local(0, 4, &new)).unwrap();
+    let worker = h.worker.clone();
+    let server = h.server.clone();
+    let task = tokio::spawn(async move {
+        worker.sync_once(&server).await;
+    });
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    h.server
+        .reload(&fs::read(&st.config).unwrap(), Utc::now())
+        .unwrap();
+    task.await.unwrap();
+    *lists.delay.lock().unwrap() = Duration::ZERO;
+
+    assert_eq!(h.server.status().policy_revision, 4);
+    assert!(!blocked(&h.server, "old.block.test.", false).await);
+    assert!(blocked(&h.server, "new.block.test.", false).await);
+    assert_eq!(h.server.management_state().unwrap().config_version, 1);
     h.stop().await;
 }

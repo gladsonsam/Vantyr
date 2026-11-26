@@ -79,6 +79,7 @@ pub enum ReloadError {
         found: u64,
         expected: u64,
     },
+    Conflict(String),
     BuildFailed(String),
     PersistFailed(String),
 }
@@ -95,6 +96,7 @@ impl fmt::Display for ReloadError {
                 "revision {found} is not newer than the applied revision {highwater}"
             ),
             Self::FilterFailed(detail) => write!(f, "filter candidate failed: {detail}"),
+            Self::Conflict(detail) => write!(f, "management conflict: {detail}"),
             Self::StaleBasis { found, expected } => write!(
                 f,
                 "material was prepared for bundle generation {expected} but generation {found} is current"
@@ -676,16 +678,26 @@ impl DnsServer {
             .ok_or_else(|| {
                 ReloadError::InvalidConfig("filter generation overflow; refusing to wrap".into())
             })?;
-        let filter = compile_from_material(Some(&material), &active.config.filter)
+        // ONE authority: material is compiled against the CURRENT local +
+        // applied-managed settings and the bundle always carries the CURRENT
+        // management state. No material path may erase management.
+        let effective_filter = match &active.management {
+            Some(management) => {
+                crate::management_worker::merge_config(&active.config, &management.config)
+                    .map_err(|error| ReloadError::FilterFailed(error.to_string()))?
+            }
+            None => active.config.filter.clone(),
+        };
+        let filter = compile_from_material(Some(&material), &effective_filter)
             .map_err(|error| ReloadError::FilterFailed(error.to_string()))?
             .unwrap_or_else(empty_filter);
         // The policy and its original publication age are carried untouched.
-        let bundle = Bundle::build_with_filter(
-            &active.config,
-            active.policy.published_at,
+        let bundle = Bundle::unchecked(
+            active.config.clone(),
+            active.policy.clone(),
             Some(material.clone()),
-        )
-        .map_err(|error| ReloadError::InvalidConfig(error.to_string()))?;
+            active.management.clone(),
+        );
         let bundle = bundle
             .with_generation(generation, filter_generation)
             .map_err(|error| ReloadError::BuildFailed(error.to_string()))?;
@@ -715,6 +727,24 @@ impl DnsServer {
                 found: active.state.generation,
                 expected: expected_generation,
             });
+        }
+        // Management versions are their own monotonic space. Equal version +
+        // equal digest is allowed for receipt-only commits; a lower version or
+        // a same-version content change is rejected under the update lock.
+        if let Some(current) = &active.management {
+            if management.config_version < current.config_version {
+                return Err(Conflict(format!(
+                    "management version {} is older than applied {}",
+                    management.config_version, current.config_version
+                )));
+            }
+            if management.config_version == current.config_version
+                && management.digest != current.digest
+            {
+                return Err(Conflict(
+                    "same management version has a different digest".to_owned(),
+                ));
+            }
         }
         let generation = active.state.generation.checked_add(1).ok_or_else(|| {
             InvalidConfig("bundle generation overflow; refusing to wrap".to_owned())

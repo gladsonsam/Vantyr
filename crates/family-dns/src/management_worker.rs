@@ -128,12 +128,17 @@ impl ManagementWorker {
         };
 
         let applied = server.management_state();
-        let unchanged = applied.as_ref().is_some_and(|state| {
-            state.config_version == response.config_version && state.digest == desired_digest
-        });
-
-        if !unchanged {
-            match self
+        match admit_version(applied.as_ref(), response.config_version, &desired_digest) {
+            Ok(Admission::Idempotent) => {
+                // Still report observations, but never rewrite applied state.
+            }
+            Err(error) => {
+                self.record_error(server, &error.to_string()).await;
+                // An inadmissible envelope must not mutate fetchers/cache or
+                // send a status report with an unacknowledged version.
+                return;
+            }
+            Ok(Admission::Apply) => match self
                 .apply_desired(server, response.config_version, &desired_digest, desired)
                 .await
             {
@@ -141,7 +146,7 @@ impl ManagementWorker {
                 Err(error) => {
                     self.record_error(server, &error.to_string()).await;
                 }
-            }
+            },
         }
 
         self.handle_manual_tokens(server, desired, &response.pending_refreshes)
@@ -158,56 +163,79 @@ impl ManagementWorker {
         digest_value: &str,
         desired: &ManagementConfig,
     ) -> Result<(), ManagementError> {
-        let local = server.local_config();
-        let combined = merge_config(&local, desired)?;
-        combined
-            .validate("managed")
-            .map_err(|error| ManagementError::Integrity(error.to_string()))?;
-        if let Some(runtime) = &self.subscriptions {
+        for attempt in 0..MAX_RETRIES {
+            // Capture the generation BEFORE reading settings or awaiting any
+            // network I/O. Every retry re-reads local + applied management and
+            // re-prepares material; no stale byte snapshot can win.
+            let basis = server.status().bundle_generation;
+            let local = server.local_config();
+            admit_version(server.management_state().as_ref(), version, digest_value)?;
+            let combined = merge_config(&local, desired)?;
+            combined
+                .validate("managed")
+                .map_err(|error| ManagementError::Integrity(error.to_string()))?;
+
             let managed = desired
                 .sources
                 .iter()
                 .map(to_source_spec)
                 .collect::<Vec<_>>();
-            runtime
-                .install_managed(&managed)
-                .map_err(|error| ManagementError::Integrity(error.to_string()))?;
-            let ids: Vec<String> = managed
+            let staged = match &self.subscriptions {
+                Some(runtime) => Some(
+                    runtime
+                        .stage_managed(&managed)
+                        .map_err(|error| ManagementError::Integrity(error.to_string()))?,
+                ),
+                None => None,
+            };
+            let enabled: Vec<String> = managed
                 .iter()
                 .filter(|spec| spec.enabled)
                 .map(|spec| spec.id.clone())
                 .collect();
-            let errors = runtime.refresh_only(&ids, true).await;
-            if !errors.is_empty() {
-                return Err(ManagementError::Integrity(redact(&errors.join("; "))));
+            if let Some(staged) = &staged {
+                // Routine poll/retry honours due time and cooldowns; only an
+                // explicitly delivered manual token uses force=true.
+                let errors = SubscriptionRuntime::staged_refresh(staged, &enabled, false).await;
+                if !errors.is_empty() {
+                    return Err(ManagementError::Integrity(redact(&errors.join("; "))));
+                }
             }
-        }
-        for attempt in 0..MAX_RETRIES {
-            let basis = server.status().bundle_generation;
-            let (material, filter) =
-                match prepare_filter(&combined, local.policy_revision, &self.remote())
-                    .map_err(|error| ManagementError::Integrity(error.to_string()))?
-                {
-                    Some(pair) => pair,
-                    // Explicit managed removal/disable can legitimately leave
-                    // an empty filter; that is a committed weaker list state,
-                    // never a fabricated rule or a policy change.
-                    None => (
-                        crate::filter::FilterMaterial::default(),
-                        crate::filter::empty_filter(),
-                    ),
-                };
+            let remote: RemoteFn = match &staged {
+                Some(staged) => {
+                    let staged = staged.clone();
+                    Box::new(move |id| SubscriptionRuntime::staged_last_good(&staged, id))
+                }
+                None => Box::new(no_remote),
+            };
+            let (material, filter) = match prepare_filter(&combined, local.policy_revision, &remote)
+                .map_err(|error| ManagementError::Integrity(error.to_string()))?
+            {
+                Some(pair) => pair,
+                None => (
+                    crate::filter::FilterMaterial::default(),
+                    crate::filter::empty_filter(),
+                ),
+            };
             let state = ManagementState {
                 config_version: version,
                 digest: digest_value.to_owned(),
                 config: desired.clone(),
                 filter_identity: material_identity(Some(&material)),
                 receipts: Vec::new(),
+                receipt_expiry: Default::default(),
                 applied_at: Some(Utc::now()),
                 last_error: None,
             };
             match server.commit_management(Some(material), Some(filter), state, basis, Utc::now()) {
-                Ok(_) => return Ok(()),
+                Ok(_) => {
+                    // Activation is infallible and happens ONLY after the
+                    // candidate is durable, under the same generation epoch.
+                    if let (Some(runtime), Some(staged)) = (&self.subscriptions, staged) {
+                        runtime.activate_staged(staged, &managed);
+                    }
+                    return Ok(());
+                }
                 Err(ReloadError::StaleBasis { .. }) if attempt + 1 < MAX_RETRIES => continue,
                 Err(error) => return Err(ManagementError::Conflict(redact(&error.to_string()))),
             }
@@ -215,14 +243,6 @@ impl ManagementWorker {
         Err(ManagementError::Conflict(
             "management basis changed repeatedly".into(),
         ))
-    }
-
-    fn remote(&self) -> RemoteFn {
-        let subscriptions = self.subscriptions.clone();
-        Box::new(move |id| match &subscriptions {
-            Some(runtime) => runtime.last_good(id),
-            None => no_remote(id),
-        })
     }
 
     async fn handle_manual_tokens(
@@ -244,11 +264,13 @@ impl ManagementWorker {
             .map(|source| source.id.as_str())
             .collect();
         let mut receipts = state.receipts.clone();
+        let mut next_expiry = state.receipt_expiry.clone();
         let mut changed = false;
         let mut errors = Vec::new();
         for token in tokens {
             if token.config_version != state.config_version
                 || !configured.contains(token.source_id.as_str())
+                || token.expires_at <= Utc::now()
             {
                 continue;
             }
@@ -266,14 +288,34 @@ impl ManagementWorker {
                 errors.push(redact(&failures.join("; ")));
                 continue;
             }
+            // A newer sequence supersedes older receipts for the same source
+            // and config version; stale acknowledgements are never resent.
+            receipts.retain(|receipt| {
+                !(receipt.source_id == token.source_id
+                    && receipt.config_version == token.config_version
+                    && receipt.refresh_seq < token.refresh_seq)
+            });
             receipts.push(RefreshAckDto {
                 source_id: token.source_id.clone(),
                 refresh_seq: token.refresh_seq,
                 config_version: token.config_version,
             });
             if receipts.len() > MAX_RECEIPTS {
-                receipts.remove(0);
+                let dropped = receipts.remove(0);
+                next_expiry.remove(&crate::management::receipt_key(
+                    &dropped.source_id,
+                    dropped.refresh_seq,
+                    dropped.config_version,
+                ));
             }
+            next_expiry.insert(
+                crate::management::receipt_key(
+                    &token.source_id,
+                    token.refresh_seq,
+                    token.config_version,
+                ),
+                token.expires_at,
+            );
             changed = true;
         }
         if !changed {
@@ -281,6 +323,7 @@ impl ManagementWorker {
         }
         let mut next = state;
         next.receipts = receipts;
+        next.receipt_expiry = next_expiry;
         next.last_error = if errors.is_empty() {
             None
         } else {
@@ -358,11 +401,63 @@ impl ManagementWorker {
             sources,
             refresh_ack: state
                 .as_ref()
-                .map(|state| state.receipts.clone())
+                .map(|state| {
+                    let now = Utc::now();
+                    state
+                        .receipts
+                        .iter()
+                        .filter(|ack| ack.config_version == state.config_version)
+                        .filter(|ack| {
+                            state
+                                .receipt_expiry
+                                .get(&crate::management::receipt_key(
+                                    &ack.source_id,
+                                    ack.refresh_seq,
+                                    ack.config_version,
+                                ))
+                                .is_some_and(|expiry| *expiry > now)
+                        })
+                        .take(crate::management::MAX_RECEIPTS)
+                        .cloned()
+                        .collect()
+                })
                 .unwrap_or_default(),
         };
         self.client.report(&body).await
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Admission {
+    Apply,
+    Idempotent,
+}
+
+/// Strict management-version admission, checked at read time and again under
+/// the update lock by `commit_management`.
+fn admit_version(
+    applied: Option<&crate::management::ManagementState>,
+    version: u64,
+    digest_value: &str,
+) -> Result<Admission, ManagementError> {
+    let Some(applied) = applied else {
+        return Ok(Admission::Apply);
+    };
+    if version < applied.config_version {
+        return Err(ManagementError::Conflict(format!(
+            "management version {version} is older than applied {}",
+            applied.config_version
+        )));
+    }
+    if version == applied.config_version {
+        if applied.digest != digest_value {
+            return Err(ManagementError::Conflict(
+                "same management version has a different digest".to_owned(),
+            ));
+        }
+        return Ok(Admission::Idempotent);
+    }
+    Ok(Admission::Apply)
 }
 
 /// Redact untrusted detail before it can be reported or persisted.

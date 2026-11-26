@@ -36,16 +36,25 @@ pub struct ManagementState {
     pub config: crate::management_dto::ManagementConfig,
     /// Identity of the material actually compiled from this config.
     pub filter_identity: String,
-    /// Bounded per-gateway refresh receipts, newest last.
+    /// Bounded per-gateway refresh receipts for the CURRENT config version.
     #[serde(default)]
     pub receipts: Vec<RefreshAckDto>,
+    /// Server-owned expiry per `source:seq:version` token. Not sent on the
+    /// wire; used to avoid reporting expired or stale acknowledgements.
+    #[serde(default)]
+    pub receipt_expiry: std::collections::BTreeMap<String, DateTime<Utc>>,
     #[serde(default)]
     pub applied_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub last_error: Option<String>,
 }
 
-pub const MAX_RECEIPTS: usize = 64;
+/// Server `MAX_SOURCES` also bounds refresh_ack in WorkerStatusBody.
+pub const MAX_RECEIPTS: usize = 32;
+
+pub fn receipt_key(id: &str, seq: u64, version: u64) -> String {
+    format!("{id}:{seq}:{version}")
+}
 
 /// Structural checks used by bundle consistency on load and apply.
 pub fn validate_state(state: &ManagementState) -> Result<(), ManagementError> {
