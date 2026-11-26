@@ -178,6 +178,7 @@ pub async fn insert_credential(
     household_id: Uuid,
     gateway_id: Uuid,
     kind: &str,
+    commands: &[String],
     secret_hash: &str,
     expires_at: DateTime<Utc>,
     issued_by: Uuid,
@@ -188,7 +189,7 @@ pub async fn insert_credential(
         INSERT INTO network_gateway_credentials
             (id, household_id, gateway_id, kind, audience, allowed_commands,
              secret_hash, expires_at, issued_by, rotated_from)
-        VALUES ($1, $2, $3, $4, $5, ARRAY['heartbeat']::text[], $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ",
     )
     .bind(id)
@@ -196,6 +197,7 @@ pub async fn insert_credential(
     .bind(gateway_id)
     .bind(kind)
     .bind(super::gateway_auth::AUDIENCE)
+    .bind(commands)
     .bind(secret_hash)
     .bind(expires_at)
     .bind(issued_by)

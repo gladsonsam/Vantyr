@@ -19,8 +19,15 @@ use uuid::Uuid;
 /// The only audience a gateway worker credential is valid for. A dashboard
 /// session, agent socket or remote client never carries this audience.
 pub const AUDIENCE: &str = "vantyr-gateway-worker";
-/// The only command a gateway credential permits in this slice.
+/// A bounded heartbeat report: an unverified observation, never an ack.
 pub const COMMAND_HEARTBEAT: &str = "heartbeat";
+/// Explicit, opt-in scope to retrieve the assigned policy. This command is
+/// NEVER added to a credential implicitly; issuance must request it.
+pub const COMMAND_READ_POLICY: &str = "read_policy";
+/// The complete command allowlist, mirrored by the migration 0077 CHECK.
+pub const GATEWAY_COMMAND_ALLOWLIST: &[&str] = &[COMMAND_HEARTBEAT, COMMAND_READ_POLICY];
+/// Matches the credential `cardinality(allowed_commands) BETWEEN 1 AND 8` CHECK.
+pub const MAX_COMMANDS: usize = 8;
 
 pub const GATEWAY_KINDS: &[&str] = &["dns", "proxy"];
 /// Capabilities a worker may report and the server may persist. Unknown strings
@@ -122,6 +129,30 @@ pub fn normalize_capabilities(raw: Option<&[String]>) -> Result<Vec<String>, ()>
     Ok(out)
 }
 
+/// Normalize the OPTIONAL command scope requested at credential issuance.
+/// `None` keeps the historical heartbeat-only default, so existing heartbeat
+/// credentials never gain `read_policy` silently. Every requested command must
+/// be on the explicit allowlist; unknown strings are rejected, never stored.
+pub fn normalize_commands(raw: Option<&[String]>) -> Result<Vec<String>, ()> {
+    let Some(items) = raw else {
+        return Ok(vec![COMMAND_HEARTBEAT.to_string()]);
+    };
+    if items.is_empty() || items.len() > MAX_COMMANDS {
+        return Err(());
+    }
+    let mut out: Vec<String> = Vec::with_capacity(items.len());
+    for item in items {
+        let t = item.trim();
+        if !GATEWAY_COMMAND_ALLOWLIST.contains(&t) {
+            return Err(());
+        }
+        if !out.iter().any(|v| v == t) {
+            out.push(t.to_string());
+        }
+    }
+    Ok(out)
+}
+
 /// A reported time is accepted only inside `[now - max_age, now + skew]`.
 pub fn observed_at_in_window(observed: DateTime<Utc>, now: DateTime<Utc>) -> bool {
     observed <= now + MAX_FUTURE_SKEW && observed >= now - MAX_HEARTBEAT_AGE
@@ -187,6 +218,38 @@ mod tests {
             .map(|i| format!("dns{i}"))
             .collect();
         assert!(normalize_capabilities(Some(&many)).is_err());
+    }
+
+    #[test]
+    fn command_scope_is_opt_in_and_allowlisted() {
+        // Default stays heartbeat-only: no implicit upgrade.
+        assert_eq!(
+            normalize_commands(None).unwrap(),
+            vec![COMMAND_HEARTBEAT.to_string()]
+        );
+        assert_eq!(
+            normalize_commands(Some(&["read_policy".into(), "heartbeat".into()])).unwrap(),
+            vec![
+                COMMAND_READ_POLICY.to_string(),
+                COMMAND_HEARTBEAT.to_string()
+            ]
+        );
+        assert!(normalize_commands(Some(&[])).is_err());
+        assert!(normalize_commands(Some(&["agent_token".into()])).is_err());
+        assert_eq!(
+            normalize_commands(Some(&[
+                COMMAND_HEARTBEAT.to_string(),
+                COMMAND_HEARTBEAT.to_string()
+            ]))
+            .unwrap()
+            .len(),
+            1,
+            "duplicates collapse"
+        );
+        let too_many: Vec<String> = (0..MAX_COMMANDS + 1)
+            .map(|i| format!("read_policy{i}"))
+            .collect();
+        assert!(normalize_commands(Some(&too_many)).is_err());
     }
 
     #[test]

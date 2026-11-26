@@ -140,17 +140,20 @@ pub async fn credential_issue(
     authz::require_network_admin(&s.db, user.user_id, hid).await?;
     let expires_at = gateway_dto::credential_expiry(body.expires_in_hours, Utc::now())
         .map_err(|()| ApiError::bad_request("expires_in_hours must be between 1 and 720"))?;
+    let commands = gateway_auth::normalize_commands(body.commands.as_deref())
+        .map_err(|()| ApiError::bad_request("commands must be heartbeat and/or read_policy"))?;
     let (id, secret) =
-        gateway_service::issue_credential(&s.db, hid, gid, user.user_id, expires_at).await?;
+        gateway_service::issue_credential(&s.db, hid, gid, user.user_id, expires_at, &commands)
+            .await?;
     // The plaintext is returned exactly once. Audit detail carries only the
-    // identifier, never the secret or its digest.
+    // identifier and allowlist, never the secret or its digest.
     api::audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
         hid,
         "network_gateway_credential_issue",
-        json!({ "gateway_id": gid, "credential_id": id }),
+        json!({ "gateway_id": gid, "credential_id": id, "commands": commands }),
     )
     .await;
     Ok(Json(json!({
@@ -171,15 +174,18 @@ pub async fn credential_rotate(
     authz::require_network_admin(&s.db, user.user_id, hid).await?;
     let expires_at = gateway_dto::credential_expiry(body.expires_in_hours, Utc::now())
         .map_err(|()| ApiError::bad_request("expires_in_hours must be between 1 and 720"))?;
+    let commands = gateway_auth::normalize_commands(body.commands.as_deref())
+        .map_err(|()| ApiError::bad_request("commands must be heartbeat and/or read_policy"))?;
     let (id, secret) =
-        gateway_service::rotate_credential(&s.db, hid, gid, cid, user.user_id, expires_at).await?;
+        gateway_service::rotate_credential(&s.db, hid, gid, cid, user.user_id, expires_at, &commands)
+            .await?;
     api::audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
         hid,
         "network_gateway_credential_rotate",
-        json!({ "gateway_id": gid, "credential_id": id, "rotated_from": cid }),
+        json!({ "gateway_id": gid, "credential_id": id, "rotated_from": cid, "commands": commands }),
     )
     .await;
     Ok(Json(json!({
@@ -235,7 +241,13 @@ pub async fn reports_list(
 
 // ─── Worker: heartbeat only ──────────────────────────────────────────────────
 
-async fn audit_worker(state: &AppState, hid: Uuid, ip: Option<&str>, action: &str, detail: Value) {
+pub(super) async fn audit_worker(
+    state: &AppState,
+    hid: Uuid,
+    ip: Option<&str>,
+    action: &str,
+    detail: Value,
+) {
     if let Err(e) = db::insert_network_audit(
         &state.db,
         hid,
@@ -306,6 +318,7 @@ pub fn worker_routes() -> axum::Router<Arc<AppState>> {
     );
     axum::Router::new()
         .route("/worker/network/gateway/heartbeat", post(worker_heartbeat))
+        .merge(super::policy_api::worker_route())
         .layer(axum::extract::DefaultBodyLimit::max(4096))
         .layer(GovernorLayer::new(config))
 }

@@ -259,6 +259,7 @@ async fn concurrent_heartbeat_and_rotate_serialize_without_deadlock(pool: PgPool
             cid,
             issued_by,
             Utc::now() + chrono::Duration::hours(1),
+            &[super::gateway_auth::COMMAND_HEARTBEAT.to_string()],
         )
         .await
         .map(|(id, secret)| Some(super::gateway_auth::format_bearer(id, &secret)))
@@ -362,6 +363,7 @@ async fn issuing_during_revocation_never_leaves_an_active_credential(pool: PgPoo
                     gid,
                     actor,
                     Utc::now() + chrono::Duration::hours(1),
+                    &[super::gateway_auth::COMMAND_HEARTBEAT.to_string()],
                 )
                 .await
                 .map(|(_, secret)| secret)

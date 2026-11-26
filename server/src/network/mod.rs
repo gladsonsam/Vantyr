@@ -17,11 +17,14 @@
 //! In scope now: household-owned DNS/Proxy gateways with one-time scoped worker
 //! credentials and a bearer-authenticated heartbeat that records unverified
 //! observations only. Reports are retention-bounded (age + count) and never
-//! carry enforcement or canary state.
+//! carry enforcement or canary state. Durable, versioned policy rows and an
+//! explicit desired assignment are SAVED PROPOSALS; a scoped `read_policy`
+//! bearer credential may retrieve its own gateway's assigned policy. Retrieval
+//! is not application: there is no applied/enforced flag and no ack endpoint.
 //!
-//! Out of scope (later slices): actual policy distribution, canary/ack
-//! verification, session verification APIs, events ingestion, and router lease
-//! hints (read-only, never an identity claim).
+//! Out of scope (later slices): real worker apply/ack/canary integration,
+//! receipt/verification, session verification APIs, events ingestion, and
+//! router lease hints (read-only, never an identity claim).
 
 use std::sync::Arc;
 
@@ -40,12 +43,18 @@ mod gateway_db;
 mod gateway_dto;
 mod gateway_retention;
 mod gateway_service;
+mod policy_api;
+mod policy_db;
+mod policy_dto;
+mod policy_service;
 mod service;
 
 #[cfg(test)]
 mod gateway_retention_tests;
 #[cfg(test)]
 mod gateway_tests;
+#[cfg(test)]
+mod policy_tests;
 #[cfg(test)]
 mod tests;
 
@@ -136,4 +145,28 @@ pub fn routes() -> Router<Arc<AppState>> {
             "/network/households/{hid}/gateways/{gid}/reports",
             get(gateway_api::reports_list),
         )
+        .merge(policy_routes())
+}
+
+/// Policy admin routes share a small request-body cap: the stored canonical
+/// policy is bounded to 64 KiB, so a larger request is refused before any
+/// deserialization or database work. Desired assignment bodies are smaller
+/// still and use the same cap.
+fn policy_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        // Durable, versioned policy: publish/list/rollback (saved proposals only).
+        .route(
+            "/network/households/{hid}/policies",
+            get(policy_api::policies_list).post(policy_api::policies_publish),
+        )
+        .route(
+            "/network/households/{hid}/policies/rollback",
+            post(policy_api::policies_rollback),
+        )
+        // Explicit desired assignment: saved/proposed, never applied/enforced.
+        .route(
+            "/network/households/{hid}/gateways/{gid}/desired-policy",
+            get(policy_api::desired_get).put(policy_api::desired_set),
+        )
+        .layer(axum::extract::DefaultBodyLimit::max(128 * 1024))
 }

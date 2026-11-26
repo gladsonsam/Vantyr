@@ -28,6 +28,22 @@ fn scope_not_found() -> ApiError {
     ApiError::not_found("active gateway not found in this household")
 }
 
+/// Defense in depth: even internal callers cannot insert an empty or
+/// unallowlisted command set into the credential CHECK constraint.
+fn validate_commands(commands: &[String]) -> ApiResult<()> {
+    if commands.is_empty()
+        || commands.len() > gateway_auth::MAX_COMMANDS
+        || commands
+            .iter()
+            .any(|c| !gateway_auth::GATEWAY_COMMAND_ALLOWLIST.contains(&c.as_str()))
+    {
+        return Err(ApiError::bad_request(
+            "commands must be heartbeat and/or read_policy",
+        ));
+    }
+    Ok(())
+}
+
 /// Metadata only: no secret, digest or claimed ids beyond the worker's own scope.
 pub struct HeartbeatOutcome {
     pub household_id: Uuid,
@@ -58,7 +74,9 @@ pub async fn issue_credential(
     gateway_id: Uuid,
     issued_by: Uuid,
     expires_at: DateTime<Utc>,
+    commands: &[String],
 ) -> ApiResult<(Uuid, String)> {
+    validate_commands(commands)?;
     let mut tx = pool.begin().await?;
     if !gateway_db::lock_household_and_gateway(&mut tx, household_id, gateway_id).await? {
         return Err(scope_not_found());
@@ -77,6 +95,7 @@ pub async fn issue_credential(
         household_id,
         gateway_id,
         &kind,
+        commands,
         &hash,
         expires_at,
         issued_by,
@@ -96,7 +115,9 @@ pub async fn rotate_credential(
     credential_id: Uuid,
     issued_by: Uuid,
     expires_at: DateTime<Utc>,
+    commands: &[String],
 ) -> ApiResult<(Uuid, String)> {
+    validate_commands(commands)?;
     let mut tx = pool.begin().await?;
     if !gateway_db::lock_household_and_gateway(&mut tx, household_id, gateway_id).await? {
         return Err(scope_not_found());
@@ -119,6 +140,7 @@ pub async fn rotate_credential(
         household_id,
         gateway_id,
         &kind,
+        commands,
         &hash,
         expires_at,
         issued_by,

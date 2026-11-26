@@ -78,6 +78,10 @@ pub struct IssueCredentialBody {
     /// Bounded 1..=720 hours (30 days); defaults to 24.
     #[serde(default)]
     pub expires_in_hours: Option<i64>,
+    /// OPTIONAL explicit command scope. Omitted means heartbeat-only, so an
+    /// existing heartbeat credential never gains `read_policy` implicitly.
+    #[serde(default)]
+    pub commands: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
