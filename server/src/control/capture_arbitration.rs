@@ -259,8 +259,8 @@ impl AppState {
         result
     }
     /// Retune a live viewer without ending its HTTP session or control lease.
-    /// Capture settings remain frozen under a lease; delivery cadence updates immediately.
-    pub(crate) fn tune_mjpeg_session(
+    /// Capable agents retune in place; legacy agents keep capture settings frozen under a lease.
+    pub(crate) async fn tune_mjpeg_session(
         &self,
         agent: Uuid,
         session: Uuid,
@@ -268,6 +268,13 @@ impl AppState {
         quality: u8,
         interval: u32,
     ) -> Result<(), CommandDenied> {
+        let live_tuning =
+            crate::agents::capabilities::capability_status(&self.db, agent, "screen_live_tuning")
+                .await
+                .ok()
+                .flatten()
+                .as_deref()
+                == Some("supported");
         let control = self.control.lock();
         let mut sessions = self.media.mjpeg_sessions.lock();
         let mapped = sessions
@@ -277,7 +284,7 @@ impl AppState {
         mapped.prefs.jpeg_quality = quality.clamp(20, 85);
         mapped.prefs.interval_ms = interval.clamp(33, 1000);
         drop(sessions);
-        self.sync_capture_locked(&control, agent, None)
+        self.sync_capture_tuning_locked(&control, agent, None, live_tuning)
     }
     pub(crate) fn end_mjpeg_session(&self, agent: Uuid, session: Uuid, user: Option<Uuid>) -> bool {
         let mut control = self.control.lock();
@@ -348,6 +355,15 @@ impl AppState {
         agent: Uuid,
         requested: Option<Option<u32>>,
     ) -> Result<(), CommandDenied> {
+        self.sync_capture_tuning_locked(control, agent, requested, false)
+    }
+    fn sync_capture_tuning_locked(
+        &self,
+        control: &ControlRuntime,
+        agent: Uuid,
+        requested: Option<Option<u32>>,
+        live_tuning: bool,
+    ) -> Result<(), CommandDenied> {
         let conn = self
             .agents
             .connections
@@ -377,12 +393,16 @@ impl AppState {
                 .map(|a| a.prefs.monitor)
                 .unwrap_or(sessions[0].prefs.monitor)
         });
-        let prefs = if let Some(frozen) = control
+        let mut prefs = if let Some(frozen) = control
             .capture
             .get(&agent)
             .filter(|c| c.active.conn_id == conn)
         {
-            frozen.active.prefs
+            // Preserve the running rates after a negotiated update. Geometry and
+            // codec remain pinned by the lease even during viewer churn.
+            old.filter(|a| a.generation == frozen.active.generation)
+                .map(|a| a.prefs)
+                .unwrap_or(frozen.active.prefs)
         } else {
             MjpegViewerPrefs {
                 h264: sessions[0].prefs.h264,
@@ -391,6 +411,10 @@ impl AppState {
                 interval_ms: sessions.iter().map(|s| s.prefs.interval_ms).min().unwrap(),
             }
         };
+        if live_tuning {
+            prefs.jpeg_quality = sessions.iter().map(|s| s.prefs.jpeg_quality).max().unwrap();
+            prefs.interval_ms = sessions.iter().map(|s| s.prefs.interval_ms).min().unwrap();
+        }
         let wire_monitor = old
             .filter(|a| a.conn_id == conn && a.prefs.monitor == prefs.monitor)
             .map(|a| a.wire_monitor)
@@ -407,6 +431,26 @@ impl AppState {
                 && a.wire_monitor == wire_monitor
                 && !a.generation.is_nil()
         }) {
+            return Ok(());
+        }
+        if let Some(mut active) = old.filter(|a| {
+            live_tuning
+                && a.conn_id == conn
+                && a.prefs.monitor == prefs.monitor
+                && a.prefs.h264 == prefs.h264
+                && a.wire_monitor == wire_monitor
+        }) {
+            let mut request =
+                StartCapture::new(wire_monitor, prefs.jpeg_quality, prefs.interval_ms);
+            request.live_tuning = true;
+            self.enqueue_capture(
+                agent,
+                conn,
+                &ServerCommand::StartCapture(request),
+                Some(active.generation),
+            )?;
+            active.prefs = prefs;
+            self.media.mjpeg_active_capture.lock().insert(agent, active);
             return Ok(());
         }
         let observed = self

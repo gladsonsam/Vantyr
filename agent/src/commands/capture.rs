@@ -21,6 +21,10 @@ pub(super) fn start_capture(
     let Some(command_generation) = generation else {
         return;
     };
+    if cmd.live_tuning {
+        crate::capture::screen::tune(&cmd, command_generation, capture_stop.as_ref());
+        return;
+    }
     let settings = crate::capture::screen::CaptureSettings::from_request(&cmd);
     let jpeg_quality = settings.jpeg_quality;
     let interval_ms = settings.interval_ms;

@@ -162,7 +162,6 @@ fn run_wayshot_loop(
     // In-process capture, so we can afford a much lower floor than grim (~25 fps).
     let interval_ms = settings.interval_ms.max(40);
     // Re-resolve the focused output about once per second.
-    let refresh_frames = (1000 / interval_ms).max(1);
 
     let mut current: Option<OutputInfo> =
         pick_output(conn.get_all_outputs(), focused_output().as_deref()).cloned();
@@ -181,6 +180,9 @@ fn run_wayshot_loop(
             return false;
         }
 
+        let (jpeg_quality, interval_ms) = super::tuning(stop, &settings);
+        let interval_ms = interval_ms.max(40);
+        let refresh_frames = (1000 / interval_ms).max(1);
         // Follow the focused monitor without spawning hyprctl every frame.
         if frame % refresh_frames == 0 {
             if let Some(o) =
@@ -296,7 +298,6 @@ fn run_grim_loop(
 ) {
     let jpeg_quality = settings.jpeg_quality.clamp(1, 100);
     let interval_ms = settings.interval_ms.max(200);
-    let refresh_frames = (1000 / interval_ms).max(1);
 
     let mut output = focused_output();
     info!(
@@ -314,6 +315,9 @@ fn run_grim_loop(
             break;
         }
 
+        let (jpeg_quality, interval_ms) = super::tuning(stop, &settings);
+        let interval_ms = interval_ms.max(200);
+        let refresh_frames = (1000 / interval_ms).max(1);
         if frame % refresh_frames == 0 {
             let next = focused_output();
             if output != next {

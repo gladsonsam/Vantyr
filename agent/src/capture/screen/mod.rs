@@ -35,7 +35,77 @@ use self::linux as imp;
 #[cfg(windows)]
 use self::windows as imp;
 
-pub use imp::{list_monitors, start_capture};
+pub use imp::list_monitors;
+
+// One capture authority per process. The stop flag scopes tuning to its worker;
+// an old loop can never consume settings intended for a replacement capture.
+struct LiveTuning {
+    owner: std::sync::Weak<AtomicBool>,
+    generation: crate::permissions::Generation,
+    quality: u8,
+    interval: u64,
+}
+impl LiveTuning {
+    fn update(
+        &mut self,
+        generation: crate::permissions::Generation,
+        stop: Option<&Arc<AtomicBool>>,
+        settings: &CaptureSettings,
+        valid: bool,
+    ) {
+        if valid
+            && self.generation == generation
+            && stop.is_some_and(|s| {
+                !s.load(Ordering::Relaxed) && self.owner.ptr_eq(&Arc::downgrade(s))
+            })
+        {
+            self.quality = settings.jpeg_quality;
+            self.interval = settings.interval_ms;
+        }
+    }
+    fn read(&self, stop: &Arc<AtomicBool>, valid: bool) -> Option<(u8, u64)> {
+        (valid && !stop.load(Ordering::Relaxed) && self.owner.ptr_eq(&Arc::downgrade(stop)))
+            .then_some((self.quality, self.interval))
+    }
+}
+static LIVE: std::sync::Mutex<Option<LiveTuning>> = std::sync::Mutex::new(None);
+
+pub fn tune(
+    req: &StartCapture,
+    generation: crate::permissions::Generation,
+    stop: Option<&Arc<AtomicBool>>,
+) {
+    if let Some(live) = LIVE.lock().unwrap().as_mut() {
+        live.update(
+            generation,
+            stop,
+            &CaptureSettings::from_request(req),
+            generation.valid(),
+        );
+    }
+}
+fn tuning(stop: &Arc<AtomicBool>, settings: &CaptureSettings) -> (u8, u64) {
+    LIVE.lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|live| live.read(stop, live.generation.valid()))
+        .unwrap_or((settings.jpeg_quality, settings.interval_ms))
+}
+
+pub fn start_capture(
+    tx: mpsc::Sender<Vec<u8>>,
+    stop: Arc<AtomicBool>,
+    settings: CaptureSettings,
+    generation: crate::permissions::Generation,
+) -> anyhow::Result<()> {
+    *LIVE.lock().unwrap() = Some(LiveTuning {
+        owner: Arc::downgrade(&stop),
+        generation,
+        quality: settings.jpeg_quality,
+        interval: settings.interval_ms,
+    });
+    imp::start_capture(tx, stop, settings, generation)
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -271,6 +341,7 @@ fn capture_pass(
     let mut desktop_watch = imp::DesktopWatch::new(watch_desktop);
 
     loop {
+        let (jpeg_quality, interval_ms) = tuning(stop, settings);
         // Check stop flag first so we exit promptly.
         if stop.load(Ordering::Relaxed) || !generation.valid() || !geometry.current() {
             info!("Screen capture stopped on demand.");
@@ -312,6 +383,7 @@ fn capture_pass(
                             }
                         };
                     }
+                    video_encoder.as_mut().unwrap().set_quality(jpeg_quality);
                     let timestamp_us =
                         video_epoch.elapsed().as_micros().min(u64::MAX as u128) as u64;
                     match video_encoder
@@ -388,5 +460,63 @@ fn capture_pass(
         }
 
         std::thread::sleep(Duration::from_millis(interval_ms));
+    }
+}
+
+#[cfg(test)]
+mod live_tuning_tests {
+    use super::*;
+    #[test]
+    fn owner_generation_and_revocation_guard_updates_and_reads() {
+        let generation = crate::permissions::Generation {
+            module: crate::permissions::Module::LiveScreen,
+            revision: 7,
+        };
+        let owner = Arc::new(AtomicBool::new(false));
+        let replacement = Arc::new(AtomicBool::new(false));
+        let mut live = LiveTuning {
+            owner: Arc::downgrade(&owner),
+            generation,
+            quality: 40,
+            interval: 200,
+        };
+        let settings = CaptureSettings {
+            jpeg_quality: 70,
+            interval_ms: 50,
+            ..Default::default()
+        };
+        for (epoch, stop, valid) in [
+            (generation, Some(&replacement), true),
+            (
+                crate::permissions::Generation {
+                    revision: 8,
+                    ..generation
+                },
+                Some(&owner),
+                true,
+            ),
+            (generation, Some(&owner), false),
+            (generation, None, true),
+        ] {
+            live.update(epoch, stop, &settings, valid);
+            assert_eq!(live.read(&owner, true), Some((40, 200)));
+        }
+        live.update(generation, Some(&owner), &settings, true);
+        assert_eq!(live.read(&owner, true), Some((70, 50)));
+        assert_eq!(live.read(&replacement, true), None);
+        assert_eq!(live.read(&owner, false), None);
+        owner.store(true, Ordering::Relaxed);
+        live.update(generation, Some(&owner), &CaptureSettings::default(), true);
+        assert_eq!((live.quality, live.interval), (70, 50));
+        assert_eq!(live.read(&owner, true), None);
+        let mut replacement_live = LiveTuning {
+            owner: Arc::downgrade(&replacement),
+            generation,
+            quality: 30,
+            interval: 100,
+        };
+        replacement_live.update(generation, Some(&owner), &settings, true);
+        assert_eq!(replacement_live.read(&owner, true), None);
+        assert_eq!(replacement_live.read(&replacement, true), Some((30, 100)));
     }
 }

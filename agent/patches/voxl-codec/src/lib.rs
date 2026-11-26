@@ -10,6 +10,7 @@ pub struct DesktopEncoder {
     bgrx: Vec<u8>,
     width: u32,
     height: u32,
+    quality: u8,
 }
 impl DesktopEncoder {
     pub fn new(width: u32, height: u32, fps: u32, quality: u8) -> Result<Self, String> {
@@ -34,7 +35,18 @@ impl DesktopEncoder {
             bgrx: vec![0; w as usize * h as usize * 4],
             width,
             height,
+            quality,
         })
+    }
+    /// Rate-control reconfiguration keeps the encoder and SPS geometry intact.
+    /// Packets already repeat SPS/PPS and force IDR for latest-frame delivery.
+    pub fn set_quality(&mut self, quality: u8) {
+        if self.quality == quality {
+            return;
+        }
+        self.quality = quality;
+        self.encoder
+            .set_rate(38.0 - quality.clamp(1, 100) as f32 * 0.24, 12000);
     }
     pub fn dimensions(&self) -> (u32, u32) {
         (self.width, self.height)

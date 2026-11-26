@@ -61,6 +61,7 @@ pub struct AgentCapabilityInfo {
     pub session_type: Option<String>,
     pub desktop: Option<String>,
     pub screen_capture: Option<String>,
+    pub screen_live_tuning: Option<String>,
     pub screen_h264: Option<String>,
     pub audio_capture: Option<String>,
     pub remote_input: Option<String>,

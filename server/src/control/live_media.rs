@@ -270,13 +270,16 @@ pub async fn agent_mjpeg_tuning(
     Extension(user): Extension<AuthUser>,
     Json(body): Json<TuningBody>,
 ) -> Response {
-    match s.tune_mjpeg_session(
-        id,
-        body.session,
-        user.user_id,
-        body.jpeg_q,
-        body.interval_ms,
-    ) {
+    match s
+        .tune_mjpeg_session(
+            id,
+            body.session,
+            user.user_id,
+            body.jpeg_q,
+            body.interval_ms,
+        )
+        .await
+    {
         Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
         Err(error) => error.response(),
     }
