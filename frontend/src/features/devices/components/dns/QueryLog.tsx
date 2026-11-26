@@ -3,7 +3,7 @@ import { Search } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardContent } from "@vantyr/ui/components/card";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@vantyr/ui/components/input-group";
-import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
+import RubberSegment from "@/components/react-bits/RubberSegment";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
 import { useEventsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import type { Effect } from "@/features/network/runtime/types";
@@ -35,19 +35,24 @@ export function QueryLog({ deviceId }: { deviceId: string }) {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h3 className="font-medium">Query log</h3>
           <div className="flex flex-wrap items-center gap-3">
-            <ToggleGroup
-              value={[result]}
-              onValueChange={(next) => {
-                if (next[0]) {
-                  setResult(next[0] as ResultFilter);
-                  setLimit(PAGE);
-                }
+            <RubberSegment
+              aria-label="Show"
+              items={[
+                { value: "all", label: "All" },
+                { value: "allow", label: "Allowed" },
+                { value: "deny", label: "Blocked" },
+              ]}
+              value={result}
+              onChange={(next) => {
+                setResult(next as ResultFilter);
+                setLimit(PAGE);
               }}
-            >
-              <ToggleGroupItem value="all">All</ToggleGroupItem>
-              <ToggleGroupItem value="allow">Allowed</ToggleGroupItem>
-              <ToggleGroupItem value="deny">Blocked</ToggleGroupItem>
-            </ToggleGroup>
+              size="sm"
+              trackColor="var(--muted)"
+              thumbColor="var(--primary)"
+              textColor="var(--muted-foreground)"
+              activeTextColor="var(--primary-foreground)"
+            />
             <InputGroup className="w-56">
               <InputGroupAddon>
                 <Search />

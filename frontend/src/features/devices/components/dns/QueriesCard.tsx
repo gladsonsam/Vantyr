@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Card, CardContent } from "@vantyr/ui/components/card";
-import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
-import CountUp from "@/components/react-bits/CountUp";
+import Counter from "@/components/react-bits/Counter";
+import RubberSegment from "@/components/react-bits/RubberSegment";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
 import { useDnsStatsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import type { StatsRange } from "@/features/network/runtime/types";
@@ -19,7 +19,7 @@ function Figure({ label, value, suffix }: { label: string; value: number; suffix
     <div>
       <div className="text-sm text-muted-foreground">{label}</div>
       <div className="mt-1 text-3xl font-semibold tabular-nums tracking-tight">
-        <CountUp key={value} to={value} duration={0.7} trigger="load" separator="," />
+        <Counter value={value} fontSize={30} fontWeight={600} textColor="currentColor" />
         {suffix}
       </div>
     </div>
@@ -58,18 +58,17 @@ export function QueriesCard({ deviceId }: { deviceId: string }) {
                   </div>
                 </div>
               </div>
-              <ToggleGroup
-                value={[range]}
-                onValueChange={(next) => {
-                  if (next[0]) setRange(next[0] as StatsRange);
-                }}
-              >
-                {RANGES.map((r) => (
-                  <ToggleGroupItem key={r.key} value={r.key} aria-label={r.label}>
-                    {r.key}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
+              <RubberSegment
+                aria-label="Time range"
+                items={RANGES.map((r) => ({ value: r.key, label: r.key }))}
+                value={range}
+                onChange={(next) => setRange(next as StatsRange)}
+                size="sm"
+                trackColor="var(--muted)"
+                thumbColor="var(--primary)"
+                textColor="var(--muted-foreground)"
+                activeTextColor="var(--primary-foreground)"
+              />
             </div>
             <QueryChart series={stats.series} />
           </CardContent>
