@@ -2,6 +2,7 @@ import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from "rea
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Spinner } from "@vantyr/ui/components/spinner";
+import { SidebarTrigger } from "@vantyr/ui/components/sidebar";
 import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { usePageHeader } from "@/app/shell/usePageHeader";
 import { DevicePeople } from "./components/DevicePeople";
@@ -25,6 +26,7 @@ export function DeviceLayout() {
   usePageHeader({
     title: row?.label ?? "Device",
     description: row ? DEVICE_TYPE_LABEL[row.type] : undefined,
+    hideTopBar: true,
   });
 
   if (!row) {
@@ -50,54 +52,65 @@ export function DeviceLayout() {
 
   return (
     <DeviceContext.Provider value={row}>
-      <div className="space-y-6">
-        <header className="border-b" aria-label="Device header">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+      <div className="space-y-6 px-5 pt-6 pb-24 md:px-10 md:py-10">
+        <header aria-label="Device header">
+          <div className="flex items-center gap-3">
+            <SidebarTrigger className="md:hidden" />
             <Button
               variant="ghost"
-              size="sm"
+              size="icon"
+              aria-label="Devices"
+              title="Back to devices"
               nativeButton={false}
               render={<Link to="/" />}
             >
-              <ArrowLeft className="size-4" aria-hidden="true" /> Devices
+              <ArrowLeft className="size-4" aria-hidden="true" />
             </Button>
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <div
-                className={
-                  online
-                    ? "flex size-11 shrink-0 items-center justify-center rounded-xl border border-border/70 text-success"
-                    : "flex size-11 shrink-0 items-center justify-center rounded-xl border border-border/70 text-muted-foreground"
-                }
-                aria-hidden="true"
-              >
-                <TypeIcon size={20} />
-              </div>
-              <span
-                className={
-                  online
-                    ? "inline-flex items-center gap-2 text-sm font-medium text-success"
-                    : "inline-flex items-center gap-2 text-sm font-medium text-muted-foreground"
-                }
-              >
-                <span className="size-2 rounded-full bg-current" aria-hidden="true" />
-                {online ? "Connected" : "Not connected"}
-              </span>
+            <div
+              className={
+                online
+                  ? "flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/70 text-success"
+                  : "flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/70 text-muted-foreground"
+              }
+              aria-hidden="true"
+            >
+              <TypeIcon size={20} />
             </div>
-            <div className="ml-auto">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                <h1 className="truncate font-heading text-xl font-semibold tracking-tight md:text-2xl">
+                  {row.label}
+                </h1>
+                <span
+                  className={
+                    online
+                      ? "inline-flex items-center gap-2 text-sm font-medium text-success"
+                      : "inline-flex items-center gap-2 text-sm font-medium text-muted-foreground"
+                  }
+                >
+                  <span className="size-2 rounded-full bg-current" aria-hidden="true" />
+                  {online ? "Connected" : "Not connected"}
+                </span>
+              </div>
+              <p className="text-sm text-muted-foreground">{DEVICE_TYPE_LABEL[row.type]}</p>
+            </div>
+            <div className="ml-auto shrink-0">
               <DevicePeople device={row} />
             </div>
           </div>
-          <div className="mt-4 -mb-px">
-            <Tabs value={active} onValueChange={(value) => navigate(String(value))}>
-              <TabsList variant="line" aria-label="Device sections">
-                <TabsTrigger value={base}>Overview</TabsTrigger>
-                {present.map((kind) => (
-                  <TabsTrigger key={kind} value={`${base}/${kind}`}>
-                    {CONNECTION_LABEL[kind]}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+          <div className="mt-5 border-b">
+            <div className="-mb-px">
+              <Tabs value={active} onValueChange={(value) => navigate(String(value))}>
+                <TabsList variant="line" aria-label="Device sections">
+                  <TabsTrigger value={base}>Overview</TabsTrigger>
+                  {present.map((kind) => (
+                    <TabsTrigger key={kind} value={`${base}/${kind}`}>
+                      {CONNECTION_LABEL[kind]}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            </div>
           </div>
         </header>
         <Outlet />
