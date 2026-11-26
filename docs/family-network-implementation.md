@@ -23,8 +23,10 @@
 - UniFi: read-only discovery and a pure setup planner are independently accepted;
   25 tests. Live-controller validation and server integration remain unfinished.
 - Management UI: accepted inventory, BYOD, policy and audit routes are wired in a
-  separate thread. DNS list/service management wiring is underway; mobile apps
-  remain deferred.
+  separate thread. DNS list/service management is wired at frontend commit
+  `68e63bd5`; source review confirms pinned edit versions, delivery-before-report
+  display and the accepted HTTP contract. Browser dialog and real-server UI
+  validation remain pending; mobile apps remain deferred.
 - DHCP serving is excluded. The router continues assigning addresses.
 
 The integration checkpoints at the end of this document record current acceptance
