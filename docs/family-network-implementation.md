@@ -590,6 +590,15 @@ No substantive UI or Supabase changes were made in this step.
   checks management versions. A separate real-server/worker test harness is being
   built to exercise status admission against the migrated PostgreSQL-backed
   router; shared wire fixtures alone do not establish that end-to-end result.
+  Fresh review accepts the six original fixes and confirms real server DTO/status
+  validator parity. Integration handoff remains blocked on two residual gaps:
+  rebuilding managed fetchers after restart (including real subsequent download,
+  not an acknowledgment without work), and reporting only the bounded desired
+  management source scope. These are required lifecycle behavior even though the
+  reviewer classified them as unchanged limitations. A separate fix and real
+  server/worker restart-refresh test are in progress. Test-harness dependency
+  inspection confirms only server dev-dependency edges change, with no new
+  registry package, version or checksum drift.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
   accepted separately from encrypted inbound listeners. Fresh review passed all
   91 DNS tests, including eight real-TLS upstream tests, and strict clippy.
