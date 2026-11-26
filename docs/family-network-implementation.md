@@ -555,6 +555,12 @@ No substantive UI or Supabase changes were made in this step.
   and end-to-end acceptance are required before dashboard controls are presented
   as functional. Existing cache/rate/retention and coverage placeholders remain
   pending; accepting list configuration does not implement those capabilities.
+  Server control-plane commit `a8b5b994` is under independent review; its
+  implementer reports 17 targeted tests and strict scoped clippy passing.
+  Desired configuration, scoped worker read/report commands, bounded delivery
+  evidence and per-gateway refresh acknowledgments are implemented. The worker
+  consumer is being built against that committed wire contract. No dashboard
+  handoff or end-to-end acceptance is claimed yet.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
   accepted separately from encrypted inbound listeners. Fresh review passed all
   91 DNS tests, including eight real-TLS upstream tests, and strict clippy.
