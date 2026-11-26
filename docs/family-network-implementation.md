@@ -481,9 +481,12 @@ No substantive UI or Supabase changes were made in this step.
 - Filtering lists: library commit `2e59e1e0` independently accepted with 11
   real-backend tests and adversarial syntax, service and precedence probes.
   Immutable maintained-parser adapters provide bounded list input and explicit
-  supported-rule semantics, plus bounded named service/domain groups. Live DNS
-  snapshot integration is now in progress; library acceptance does not imply
-  that fetched lists already affect worker answers.
+  supported-rule semantics, plus bounded named service/domain groups. Local-file
+  worker integration `c21da216` is independently accepted with 99 DNS/filter/runtime
+  tests. Validated bytes and derivation metadata persist in the one bundle;
+  real UDP/TCP list/service/alias checks and restart with changed or missing
+  source files pass. Scheduled downloads remain separate: bundle/material
+  generations must first be separated from controller policy revisions.
   Service blocking is DNS-domain coverage, not proof of application identity or
   every feature hosted on a shared CDN.
 - Public list subscriptions: library commits `f52d069e`, `f2b5805c` and
