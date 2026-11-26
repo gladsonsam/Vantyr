@@ -1,22 +1,36 @@
-// @vitest-environment jsdom
+import { click } from "@tests/support/formDom";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
-import { click } from "@tests/support/formDom";
-import { RulesPage } from "@/features/rules/RulesPage";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-vi.mock("@/api", () => ({
-  api: { agentGroupsList: vi.fn(async () => ({ groups: [] })), agentsOverview: vi.fn(async () => ({ agents: [] })) },
+await vi.mock("@/api", () => ({
+  api: {
+    agentGroupsList: vi.fn(async () => ({ groups: [] })),
+    agentsOverview: vi.fn(async () => ({ agents: [] })),
+  },
   errorText: String,
 }));
 // Each destination has its own tests; here only the page's navigation is under test.
-vi.mock("@/features/rules/AlertRulesTab", () => ({ AlertRulesTab: () => <p>alert rules content</p> }));
-vi.mock("@/features/rules/AppBlockingTab", () => ({ AppBlockingTab: () => <p>app blocking content</p> }));
-vi.mock("@/features/rules/InternetAccessTab", () => ({ InternetAccessTab: () => <p>internet content</p> }));
-vi.mock("@/features/rules/ScheduledScriptsTab", () => ({ ScheduledScriptsTab: () => <p>scripts content</p> }));
-vi.mock("@/features/rules/EventsGlobalTab", () => ({ EventsGlobalTab: () => <p>events content</p> }));
+await vi.mock("@/features/rules/AlertRulesTab", () => ({
+  AlertRulesTab: () => <p>alert rules content</p>,
+}));
+await vi.mock("@/features/rules/AppBlockingTab", () => ({
+  AppBlockingTab: () => <p>app blocking content</p>,
+}));
+await vi.mock("@/features/rules/InternetAccessTab", () => ({
+  InternetAccessTab: () => <p>internet content</p>,
+}));
+await vi.mock("@/features/rules/ScheduledScriptsTab", () => ({
+  ScheduledScriptsTab: () => <p>scripts content</p>,
+}));
+await vi.mock("@/features/rules/EventsGlobalTab", () => ({
+  EventsGlobalTab: () => <p>events content</p>,
+}));
+
+const { RulesPage } = await import("@/features/rules/RulesPage");
 
 let host: HTMLDivElement;
 let root: Root;
@@ -36,7 +50,17 @@ function Where() {
   return <output data-testid="where">{useLocation().search}</output>;
 }
 async function render(url: string) {
-  await act(async () => root.render(withQueryClient(<MemoryRouter initialEntries={[url]}><RulesPage /><Where /></MemoryRouter>, createTestQueryClient())));
+  await act(async () =>
+    root.render(
+      withQueryClient(
+        <MemoryRouter initialEntries={[url]}>
+          <RulesPage />
+          <Where />
+        </MemoryRouter>,
+        createTestQueryClient(),
+      ),
+    ),
+  );
 }
 const tabs = () => [...host.querySelectorAll<HTMLElement>('[role="tab"]')];
 const selected = () => tabs().find((t) => t.getAttribute("aria-selected") === "true")?.textContent;
@@ -44,7 +68,13 @@ const selected = () => tabs().find((t) => t.getAttribute("aria-selected") === "t
 describe("RulesPage navigation", () => {
   it("opens on Alerts and offers all five destinations with a one-line caption for the open one", async () => {
     await render("/rules");
-    expect(tabs().map((t) => t.textContent)).toEqual(["Alerts", "App blocking", "Internet", "Scripts", "Events"]);
+    expect(tabs().map((t) => t.textContent)).toEqual([
+      "Alerts",
+      "App blocking",
+      "Internet",
+      "Scripts",
+      "Events",
+    ]);
     expect(selected()).toBe("Alerts");
     expect(host.textContent).toContain("alert rules content");
     expect(host.textContent).toContain("Get an alert when an agent visits a site");
@@ -69,7 +99,9 @@ describe("RulesPage navigation", () => {
   it("switching destination updates the address and the caption, and keeps other parameters", async () => {
     await render("/rules?x=1");
     await click(tabs().find((t) => t.textContent === "Internet")!);
-    expect(host.querySelector('[data-testid="where"]')?.textContent).toBe("?x=1&tab=internet-access");
+    expect(host.querySelector('[data-testid="where"]')?.textContent).toBe(
+      "?x=1&tab=internet-access",
+    );
     expect(selected()).toBe("Internet");
     expect(host.textContent).toContain("Cut internet access for agents or groups");
   });

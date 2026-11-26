@@ -1,6 +1,12 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "@vantyr/ui/components/button";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@vantyr/ui/components/empty";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@vantyr/ui/components/empty";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -37,7 +43,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   componentDidCatch(error: Error, info: ErrorInfo) {
     // Surface to the console (and any future error-reporting sink). This is an
     // observability product, so a swallowed render crash is worse than noisy logs.
-    console.error(`[ErrorBoundary${this.props.label ? ` · ${this.props.label}` : ""}]`, error, info.componentStack);
+    console.error(
+      `[ErrorBoundary${this.props.label ? ` · ${this.props.label}` : ""}]`,
+      error,
+      info.componentStack,
+    );
   }
 
   private reset = () => this.setState({ error: null });
@@ -57,7 +67,8 @@ function DefaultFallback({ error, onReset }: { error: Error; onReset: () => void
       <EmptyHeader>
         <EmptyTitle>Something went wrong</EmptyTitle>
         <EmptyDescription>
-          This part of the dashboard hit an unexpected error. Your session is still active — you can retry or reload.
+          This part of the dashboard hit an unexpected error. Your session is still active — you can
+          retry or reload.
         </EmptyDescription>
       </EmptyHeader>
       <p className="max-w-[560px] font-mono text-xs text-muted-foreground/70 [overflow-wrap:anywhere]">

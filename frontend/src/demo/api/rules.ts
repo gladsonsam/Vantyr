@@ -18,7 +18,10 @@ export function demoRulesApi(state: DemoState): Partial<ApiClient> {
   const { configuredInternet, internetConfiguration } = state;
   return {
     agentInternetBlockedGet: async (id) => configuredInternet(String(id)),
-    agentInternetBlockedPut: async (id, body) => { internetConfiguration.set(String(id), Boolean(asRecord(body).blocked)); return configuredInternet(String(id)); },
+    agentInternetBlockedPut: async (id, body) => {
+      internetConfiguration.set(String(id), Boolean(asRecord(body).blocked));
+      return configuredInternet(String(id));
+    },
     internetBlockRulesList: async () => ({ rules: demoInternetBlockRules }),
     internetBlockRulesCreate: async () => ({ id: 99 }),
     internetBlockRulesUpdate: async () => ({ ok: true }),
@@ -38,13 +41,34 @@ export function demoRulesApi(state: DemoState): Partial<ApiClient> {
     scheduledScriptsTrigger: async () => ({ ok: true, agent_count: demoAgents.length }),
     scheduledScriptEventsAll: async () => ({ rows: demoScheduledEvents() }),
     scheduledScriptEventsForScript: async () => ({ rows: demoScheduledEvents() }),
-    agentKnownExes: async () => ({ exes: ["chrome.exe", "msedge.exe", "steam.exe", "Code.exe", "powershell.exe"] }),
-    appBlockProtectedExes: async () => ({ protected: ["vantyr-agent.exe", "vantyr-ui.exe", "explorer.exe"] }),
+    agentKnownExes: async () => ({
+      exes: ["chrome.exe", "msedge.exe", "steam.exe", "Code.exe", "powershell.exe"],
+    }),
+    appBlockProtectedExes: async () => ({
+      protected: ["vantyr-agent.exe", "vantyr-ui.exe", "explorer.exe"],
+    }),
     appBlockEventsForAgent: async () => ({ rows: demoAppBlockEvents() }),
     appBlockEventsForRule: async () => ({ rows: demoAppBlockEvents() }),
     appBlockEventsAll: async () => ({ rows: demoAppBlockEvents() }),
     agentEffectiveRules: async (id) => ({
-      alert_rules: demoAlertRules.map((r) => ({ id: r.id, name: r.name, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, take_screenshot: Boolean(r.take_screenshot), metric: null, comparator: null, threshold: null, duration_secs: null, scope_kind: r.scopes.some((s) => s.kind === "all") ? "all" : r.scopes.some((s) => s.kind === "group") ? "group" : "agent" })),
+      alert_rules: demoAlertRules.map((r) => ({
+        id: r.id,
+        name: r.name,
+        pattern: r.pattern,
+        match_mode: r.match_mode,
+        case_insensitive: r.case_insensitive,
+        cooldown_secs: r.cooldown_secs,
+        take_screenshot: Boolean(r.take_screenshot),
+        metric: null,
+        comparator: null,
+        threshold: null,
+        duration_secs: null,
+        scope_kind: r.scopes.some((s) => s.kind === "all")
+          ? "all"
+          : r.scopes.some((s) => s.kind === "group")
+            ? "group"
+            : "agent",
+      })),
       app_block_rules: demoAppBlockRules,
       internet_blocked: String(id) === "sitting-room",
       internet_block_source: String(id) === "sitting-room" ? "agent" : null,
@@ -52,7 +76,6 @@ export function demoRulesApi(state: DemoState): Partial<ApiClient> {
     alertRuleEvents: async () => ({ rows: alertEvents() }),
     agentAlertRuleEvents: async () => ({ rows: alertEvents() }),
     alertRuleEventsAll: async () => ({ rows: alertEvents() }),
-
   };
 }
 

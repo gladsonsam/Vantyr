@@ -1,12 +1,21 @@
-// @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { buttonByText, byLabel, click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, describe, expect, it } from "bun:test";
+import {
+  buttonByText,
+  byLabel,
+  click,
+  mountForm,
+  typeInto,
+  unmountForms,
+} from "@tests/support/formDom";
 import { EnrollmentTokenForm } from "@/features/enrollment/EnrollmentTokenForm";
 
 afterEach(unmountForms);
 
 const optionsButton = () => {
-  const button = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.startsWith("Options"));
+  const button = Array.from(document.querySelectorAll("button")).find((b) =>
+    b.textContent?.startsWith("Options"),
+  );
   if (!button) throw new Error("no Options button");
   return button;
 };
@@ -30,7 +39,11 @@ describe("EnrollmentTokenForm", () => {
     await typeInto(byLabel("Expires in (hours)"), "72");
     await typeInto(byLabel("Note (optional)"), "  lab pc ");
     await click(buttonByText("Generate code"));
-    expect(onGenerate).toHaveBeenCalledWith({ uses: 100_000, expires_in_hours: 72, note: "lab pc" });
+    expect(onGenerate).toHaveBeenCalledWith({
+      uses: 100_000,
+      expires_in_hours: 72,
+      note: "lab pc",
+    });
   });
 
   it("keeps the dialog options collapsed until asked, but still generates with defaults", async () => {
@@ -56,7 +69,13 @@ describe("EnrollmentTokenForm", () => {
   });
 
   it("shows extra actions next to the button", async () => {
-    await mountForm(<EnrollmentTokenForm layout="card" onGenerate={vi.fn(async () => {})} extra={<button type="button">Copy code</button>} />);
+    await mountForm(
+      <EnrollmentTokenForm
+        layout="card"
+        onGenerate={vi.fn(async () => {})}
+        extra={<button type="button">Copy code</button>}
+      />,
+    );
     expect(buttonByText("Copy code")).toBeTruthy();
   });
 });

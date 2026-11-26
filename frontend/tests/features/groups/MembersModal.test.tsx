@@ -1,5 +1,5 @@
-// @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, describe, expect, it } from "bun:test";
 import { act } from "react";
 import { buttonByText, click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
 import { MembersModal } from "@/features/groups/MembersModal";
@@ -8,8 +8,19 @@ import type { Agent } from "@/api/types";
 afterEach(unmountForms);
 
 const agent = (id: string, name: string) => ({ id, name }) as Agent;
-const group = { id: "g1", name: "Lab", description: "Teaching PCs", created_at: "2026-10-01T00:00:00Z", member_count: 2 };
-const devices = [agent("a1", "Alpha"), agent("a2", "Bravo"), agent("a3", "Charlie"), agent("a4", "Delta")];
+const group = {
+  id: "g1",
+  name: "Lab",
+  description: "Teaching PCs",
+  created_at: "2026-10-01T00:00:00Z",
+  member_count: 2,
+};
+const devices = [
+  agent("a1", "Alpha"),
+  agent("a2", "Bravo"),
+  agent("a3", "Charlie"),
+  agent("a4", "Delta"),
+];
 
 function renderModal(overrides: Partial<Parameters<typeof MembersModal>[0]> = {}) {
   const props = {
@@ -25,9 +36,16 @@ function renderModal(overrides: Partial<Parameters<typeof MembersModal>[0]> = {}
   return { props, mounted: mountForm(<MembersModal {...props} />) };
 }
 
-const tab = (label: RegExp) => [...document.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => label.test(t.textContent ?? ""))!;
-const names = (list: string) => [...document.querySelectorAll(`ul[aria-label="${list}"] li`)].map((li) => li.querySelector("p")?.textContent);
-const checkbox = (label: string) => document.querySelector<HTMLElement>(`[role="checkbox"][aria-label="${label}"]`)!;
+const tab = (label: RegExp) =>
+  [...document.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) =>
+    label.test(t.textContent ?? ""),
+  )!;
+const names = (list: string) =>
+  [...document.querySelectorAll(`ul[aria-label="${list}"] li`)].map(
+    (li) => li.querySelector("p")?.textContent,
+  );
+const checkbox = (label: string) =>
+  document.querySelector<HTMLElement>(`[role="checkbox"][aria-label="${label}"]`)!;
 const status = () => document.querySelector('[role="status"]');
 
 describe("MembersModal", () => {
@@ -88,14 +106,19 @@ describe("MembersModal", () => {
   it("removes a member, reports it and moves focus to the outcome", async () => {
     const { props, mounted } = renderModal();
     await mounted;
-    await click(document.querySelector<HTMLElement>('button[aria-label="Remove Alpha from group"]')!);
+    await click(
+      document.querySelector<HTMLElement>('button[aria-label="Remove Alpha from group"]')!,
+    );
     expect(props.onRemoveMember).toHaveBeenCalledWith("a1");
     expect(status()?.textContent).toBe("Removed Alpha from Lab.");
     expect(document.activeElement).toBe(status());
   });
 
   it("keeps the selection and shows the failure in the dialog when adding fails, then recovers", async () => {
-    const onAddMembers = vi.fn().mockRejectedValueOnce(new Error("Server unavailable")).mockResolvedValue(undefined);
+    const onAddMembers = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Server unavailable"))
+      .mockResolvedValue(undefined);
     await renderModal({ onAddMembers }).mounted;
     await click(tab(/Add devices/));
     await click(checkbox("Add Charlie"));
@@ -111,14 +134,17 @@ describe("MembersModal", () => {
   it("shows a failed removal and leaves the member in place", async () => {
     const onRemoveMember = vi.fn().mockRejectedValue(new Error("Forbidden"));
     await renderModal({ onRemoveMember }).mounted;
-    await click(document.querySelector<HTMLElement>('button[aria-label="Remove Bravo from group"]')!);
+    await click(
+      document.querySelector<HTMLElement>('button[aria-label="Remove Bravo from group"]')!,
+    );
     expect(document.querySelector('[role="alert"]')?.textContent).toBe("Forbidden");
     expect(names("Devices in this group")).toEqual(["Alpha", "Bravo"]);
   });
 
   it("offers retry for a failed member load", async () => {
     const onRetry = vi.fn();
-    await renderModal({ memberIds: null, loadError: "Couldn’t load members: offline", onRetry }).mounted;
+    await renderModal({ memberIds: null, loadError: "Couldn’t load members: offline", onRetry })
+      .mounted;
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("offline");
     expect(document.querySelector('[role="tablist"]')).toBeNull();
     expect(document.querySelector('ul[aria-label="Devices you can add"]')).toBeNull();
@@ -150,7 +176,9 @@ describe("MembersModal", () => {
     const text = document.body.textContent ?? "";
     expect(text).toContain("11111111…");
     expect(text).toContain("Unknown device");
-    expect(document.querySelector('button[aria-label="Remove gone-id-0001 from group"]')).not.toBeNull();
+    expect(
+      document.querySelector('button[aria-label="Remove gone-id-0001 from group"]'),
+    ).not.toBeNull();
   });
 
   it("renders nothing while closed", async () => {

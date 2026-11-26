@@ -2,7 +2,13 @@ import { RecallImage } from "./RecallImage";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { ActivityPoint, ScreenFrame } from "@/api/types";
 import { api } from "@/api";
-import { addCalendarDays, dayIn, dayRange, shortDateIn, timeWithSecondsIn } from "@/features/recall/lib/recallFormat";
+import {
+  addCalendarDays,
+  dayIn,
+  dayRange,
+  shortDateIn,
+  timeWithSecondsIn,
+} from "@/features/recall/lib/recallFormat";
 
 /**
  * A gap longer than this is drawn as an explicit hole in the coverage bar rather
@@ -56,9 +62,12 @@ export function RecallScrubber({
   disabled,
 }: RecallScrubberProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
-  const [hover, setHover] = useState<{ ms: number; x: number; frame: ScreenFrame | null; trackWidth: number } | null>(
-    null,
-  );
+  const [hover, setHover] = useState<{
+    ms: number;
+    x: number;
+    frame: ScreenFrame | null;
+    trackWidth: number;
+  } | null>(null);
   const dragging = useRef(false);
 
   const span = Math.max(1, toMs - fromMs);
@@ -108,7 +117,7 @@ export function RecallScrubber({
     // Step from local midnight after `fromMs`. Walking in fixed 24h hops would
     // drift across a DST boundary, so each step is re-derived from the date string.
     let day = addCalendarDays(dayIn(timezone, fromMs), 1);
-    for (let t = dayRange(day, timezone).fromMs; t < toMs && ticks.length < 64; ) {
+    for (let t = dayRange(day, timezone).fromMs; t < toMs && ticks.length < 64;) {
       ticks.push(t);
       day = addCalendarDays(day, 1);
       t = dayRange(day, timezone).fromMs;
@@ -185,9 +194,20 @@ export function RecallScrubber({
         aria-disabled={disabled}
         onKeyDown={(e) => {
           if (disabled) return;
-          const next = e.key === "Home" ? fromMs : e.key === "End" ? toMs :
-            e.key === "ArrowLeft" ? playheadMs - 60_000 : e.key === "ArrowRight" ? playheadMs + 60_000 : null;
-          if (next != null) { e.preventDefault(); onSeek(Math.min(toMs, Math.max(fromMs, next))); }
+          const next =
+            e.key === "Home"
+              ? fromMs
+              : e.key === "End"
+                ? toMs
+                : e.key === "ArrowLeft"
+                  ? playheadMs - 60_000
+                  : e.key === "ArrowRight"
+                    ? playheadMs + 60_000
+                    : null;
+          if (next != null) {
+            e.preventDefault();
+            onSeek(Math.min(toMs, Math.max(fromMs, next)));
+          }
         }}
         aria-valuemin={fromMs}
         aria-valuemax={toMs}
@@ -327,12 +347,16 @@ export function RecallScrubber({
             {hover.frame ? (
               <RecallImage
                 src={api.historyBlobUrl(agentId, hover.frame.id, PREVIEW_W)}
-                  style={{ display: "block", width: "100%", borderRadius: 5 }}
+                style={{ display: "block", width: "100%", borderRadius: 5 }}
               />
             ) : null}
             <div className="pt-[3px] text-center font-mono text-[10.5px] text-muted-foreground">
               Playhead {timeWithSecondsIn(timezone, hover.ms)}
-              {hover.frame && <div>Captured {timeWithSecondsIn(timezone, Date.parse(hover.frame.captured_at))}</div>}
+              {hover.frame && (
+                <div>
+                  Captured {timeWithSecondsIn(timezone, Date.parse(hover.frame.captured_at))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -349,7 +373,9 @@ export function RecallScrubber({
       </div>
       <p className="pt-0.5 text-[11px] text-muted-foreground">
         Green marks captures; blank stretches have none (4+ minutes apart).
-        {runs.length > 1 ? ` ${runs.length - 1} ${runs.length === 2 ? "gap" : "gaps"} in this range.` : ""}
+        {runs.length > 1
+          ? ` ${runs.length - 1} ${runs.length === 2 ? "gap" : "gaps"} in this range.`
+          : ""}
       </p>
     </div>
   );

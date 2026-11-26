@@ -35,7 +35,7 @@ async function fetchPushStatus(): Promise<PushStatus> {
 
 async function registerPushSubscription(publicKey: string): Promise<void> {
   const existing = await getExistingSubscription();
-  const sub = existing ?? await subscribeToPush(publicKey);
+  const sub = existing ?? (await subscribeToPush(publicKey));
   const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
   if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
     throw new Error("Browser returned an incomplete push subscription.");
@@ -58,13 +58,19 @@ async function removePushSubscription(): Promise<void> {
   if (!sub) return;
   await api.pushUnsubscribe(sub.endpoint);
   if (!(await sub.unsubscribe())) {
-    throw new Error("The server stopped notifications, but this browser could not remove its subscription. Try again.");
+    throw new Error(
+      "The server stopped notifications, but this browser could not remove its subscription. Try again.",
+    );
   }
 }
 
 function usePushToggle(supported: boolean) {
   const queryClient = useQueryClient();
-  const status = useQuery({ queryKey: pushStatusKey, queryFn: fetchPushStatus, enabled: supported });
+  const status = useQuery({
+    queryKey: pushStatusKey,
+    queryFn: fetchPushStatus,
+    enabled: supported,
+  });
   const [notice, setNotice] = useState<string | null>(null);
 
   // Whatever happened, the browser is the source of truth: read it again rather than assume.
@@ -81,8 +87,14 @@ function usePushToggle(supported: boolean) {
       return permission;
     },
     onSuccess: (permission) => {
-      if (permission === "denied") setNotice("Notifications are blocked for this site. Allow them in your browser's site settings, then turn this on again.");
-      else if (permission === "default") setNotice("Permission wasn't given, so nothing was turned on. Turn this on again and choose Allow.");
+      if (permission === "denied")
+        setNotice(
+          "Notifications are blocked for this site. Allow them in your browser's site settings, then turn this on again.",
+        );
+      else if (permission === "default")
+        setNotice(
+          "Permission wasn't given, so nothing was turned on. Turn this on again and choose Allow.",
+        );
     },
     onSettled: reread,
   });
@@ -114,7 +126,12 @@ function StatusLoadFailed({ toggle }: { toggle: PushToggle }) {
       <AlertTitle>Couldn&apos;t check notification status</AlertTitle>
       <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
         <span>{errorText(status.error)}</span>
-        <Button variant="outline" size="sm" disabled={status.isFetching} onClick={() => void status.refetch()}>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={status.isFetching}
+          onClick={() => void status.refetch()}
+        >
           Try again
         </Button>
       </AlertDescription>
@@ -124,14 +141,25 @@ function StatusLoadFailed({ toggle }: { toggle: PushToggle }) {
 
 function PushSwitch({ toggle, data }: { toggle: PushToggle; data: PushStatus }) {
   const { status, enable, disable, busy, notice } = toggle;
-  const state = enable.isPending ? "Turning on…" : disable.isPending ? "Turning off…" : data.subscribed ? "On" : "Off";
+  const state = enable.isPending
+    ? "Turning on…"
+    : disable.isPending
+      ? "Turning off…"
+      : data.subscribed
+        ? "On"
+        : "Off";
   return (
     <>
       {status.isError && (
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             <span>Couldn&apos;t re-check this browser, so the state below may be out of date.</span>
-            <Button variant="outline" size="sm" disabled={status.isFetching} onClick={() => void status.refetch()}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={status.isFetching}
+              onClick={() => void status.refetch()}
+            >
               Try again
             </Button>
           </AlertDescription>
@@ -146,14 +174,23 @@ function PushSwitch({ toggle, data }: { toggle: PushToggle; data: PushStatus }) 
         />
         <span className="text-sm font-medium">Alert notifications on this browser</span>
         {busy && <Spinner />}
-        <span className={`text-sm font-medium ${data.subscribed ? "text-success" : "text-muted-foreground"}`}>{state}</span>
+        <span
+          className={`text-sm font-medium ${data.subscribed ? "text-success" : "text-muted-foreground"}`}
+        >
+          {state}
+        </span>
       </div>
       {data.permission === "denied" && (
         <p className="text-sm text-muted-foreground">
-          Notifications are blocked for this site. Allow them in your browser&apos;s site settings to turn this on.
+          Notifications are blocked for this site. Allow them in your browser&apos;s site settings
+          to turn this on.
         </p>
       )}
-      {notice && data.permission !== "denied" && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
+      {notice && data.permission !== "denied" && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {notice}
+        </p>
+      )}
     </>
   );
 }
@@ -164,7 +201,9 @@ function PushBody({ supported, toggle }: { supported: boolean; toggle: PushToggl
     return (
       <Alert>
         <AlertTitle>Not supported on this browser</AlertTitle>
-        <AlertDescription>This browser can&apos;t receive push notifications here (it needs HTTPS).</AlertDescription>
+        <AlertDescription>
+          This browser can&apos;t receive push notifications here (it needs HTTPS).
+        </AlertDescription>
       </Alert>
     );
   }
@@ -182,8 +221,10 @@ function PushBody({ supported, toggle }: { supported: boolean; toggle: PushToggl
       <Alert>
         <AlertTitle>Browser push isn&apos;t set up on the server</AlertTitle>
         <AlertDescription>
-          Set <code className="font-mono text-xs">VAPID_PUBLIC_KEY</code> and <code className="font-mono text-xs">VAPID_PRIVATE_KEY</code> in
-          the server environment (see <code className="font-mono text-xs">.env.example</code>) and restart to enable browser push.
+          Set <code className="font-mono text-xs">VAPID_PUBLIC_KEY</code> and{" "}
+          <code className="font-mono text-xs">VAPID_PRIVATE_KEY</code> in the server environment
+          (see <code className="font-mono text-xs">.env.example</code>) and restart to enable
+          browser push.
         </AlertDescription>
       </Alert>
     );
@@ -208,8 +249,8 @@ export function BrowserPushToggle() {
         <CardTitle className="flex items-center gap-1.5">
           Browser notifications
           <HelpTip>
-            Get OS notifications for alert-rule matches on this device, even when the dashboard tab is closed. This is per-browser:
-            turn it on in each browser you want notified.
+            Get OS notifications for alert-rule matches on this device, even when the dashboard tab
+            is closed. This is per-browser: turn it on in each browser you want notified.
           </HelpTip>
         </CardTitle>
         {canInstall ? (
@@ -228,7 +269,11 @@ export function BrowserPushToggle() {
         <PushBody supported={supported} toggle={toggle} />
         {actionError && (
           <Alert variant="destructive">
-            <AlertTitle>{toggle.enable.error ? "Couldn't turn on notifications" : "Couldn't turn off notifications"}</AlertTitle>
+            <AlertTitle>
+              {toggle.enable.error
+                ? "Couldn't turn on notifications"
+                : "Couldn't turn off notifications"}
+            </AlertTitle>
             <AlertDescription>{errorText(actionError)}</AlertDescription>
           </Alert>
         )}

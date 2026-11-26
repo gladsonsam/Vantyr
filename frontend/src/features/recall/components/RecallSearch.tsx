@@ -72,11 +72,7 @@ interface RecallSearchProps {
 
 /** Each device/display/server gets an independent draft and request lifecycle. */
 export function RecallSearch(props: RecallSearchProps) {
-  const server = useSyncExternalStore(
-    subscribeServerScope,
-    fleetServerScope,
-    emptyServerScope,
-  );
+  const server = useSyncExternalStore(subscribeServerScope, fleetServerScope, emptyServerScope);
   const key = JSON.stringify([props.agentId, props.monitor, server]);
   // Each session receives one seed. A display change keeps the latest draft but
   // targets the new display; a server change never replays another server's seed.
@@ -159,12 +155,7 @@ function useRecallSearchModel({
     setTo,
     resetDraft,
   } = useRecallSearchDraft({ initialSearch, initialSearchError, monitor });
-  const requestScope = JSON.stringify([
-    agentId,
-    monitor,
-    preferencesKey,
-    server,
-  ]);
+  const requestScope = JSON.stringify([agentId, monitor, preferencesKey, server]);
   const latestScope = useRef(requestScope);
   const abort = useRef<AbortController | null>(null);
   const publishSearchLocation = useEffectEvent((search: SavedSearch | null) =>
@@ -176,9 +167,7 @@ function useRecallSearchModel({
   useLayoutEffect(() => {
     latestScope.current = requestScope;
   });
-  const [results, setResults] = useState<ScreenFrameSearchResult[] | null>(
-    null,
-  );
+  const [results, setResults] = useState<ScreenFrameSearchResult[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -189,8 +178,7 @@ function useRecallSearchModel({
     items: SavedSearch[];
   }>({ key: preferencesKey, items: [] });
   const saved = savedState.key === preferencesKey ? savedState.items : [];
-  const setSaved = (items: SavedSearch[]) =>
-    setSavedState({ key: preferencesKey, items });
+  const setSaved = (items: SavedSearch[]) => setSavedState({ key: preferencesKey, items });
   // Saved searches live in this browser for this server/user/device scope; a
   // new scope reloads them during render.
   const [prevSavedScope, setPrevSavedScope] = useState(preferencesKey);
@@ -252,8 +240,7 @@ function useRecallSearchModel({
     // Null is a temporary verification scope: mask results/saves, retain draft.
     // A different confirmed identity clears it without replaying an old URL seed.
     if (preferencesKey) {
-      if (lastVerified.current && lastVerified.current !== preferencesKey)
-        resetDraft(false);
+      if (lastVerified.current && lastVerified.current !== preferencesKey) resetDraft(false);
       lastVerified.current = preferencesKey;
     }
     return cancelPendingRequest;
@@ -272,11 +259,8 @@ function useRecallSearchModel({
   // The state resets derive during render; the effect below only cancels the
   // in-flight work.
   const selectedRangeKey =
-    scope === "selected"
-      ? `${range?.fromMs ?? "start"}:${range?.toMs ?? "end"}`
-      : null;
-  const [prevSelectedRangeKey, setPrevSelectedRangeKey] =
-    useState(selectedRangeKey);
+    scope === "selected" ? `${range?.fromMs ?? "start"}:${range?.toMs ?? "end"}` : null;
+  const [prevSelectedRangeKey, setPrevSelectedRangeKey] = useState(selectedRangeKey);
   if (prevSelectedRangeKey !== selectedRangeKey) {
     setPrevSelectedRangeKey(selectedRangeKey);
     if (selectedRangeKey !== null) {
@@ -296,10 +280,7 @@ function useRecallSearchModel({
       busy.current = false;
     }
   }, [range?.fromMs, range?.toMs, scope]);
-  const fetchPage = (
-    snapshot: { query: string; opts: HistorySearchOpts },
-    next?: string,
-  ) => {
+  const fetchPage = (snapshot: { query: string; opts: HistorySearchOpts }, next?: string) => {
     if (busy.current || preferencesKey === null) return;
     busy.current = true;
     const request = generation.current,
@@ -314,12 +295,7 @@ function useRecallSearchModel({
     setSearching(true);
     setError(null);
     api
-      .historySearch(
-        agentId,
-        snapshot.query,
-        { ...snapshot.opts, cursor: next },
-        controller.signal,
-      )
+      .historySearch(agentId, snapshot.query, { ...snapshot.opts, cursor: next }, controller.signal)
       .then((res) => {
         if (!valid()) return;
         const expected = parseRecallFilters({
@@ -331,8 +307,7 @@ function useRecallSearchModel({
         });
         if (
           res.filters &&
-          JSON.stringify(parseRecallFilters(res.filters)) !==
-            JSON.stringify(expected)
+          JSON.stringify(parseRecallFilters(res.filters)) !== JSON.stringify(expected)
         )
           throw new Error(
             "The server returned different context filters. Clear filters and search again.",
@@ -347,17 +322,13 @@ function useRecallSearchModel({
             "Search is incomplete but has no continuation cursor. Search again to retry.",
           );
         if (continuation && seenCursors.current.has(continuation))
-          throw new Error(
-            "Search pagination did not advance. Search again to retry.",
-          );
+          throw new Error("Search pagination did not advance. Search again to retry.");
         if (continuation) seenCursors.current.add(continuation);
         setResults((previous) =>
           valid()
             ? [
                 ...new Map(
-                  [...(next ? (previous ?? []) : []), ...res.results].map(
-                    (hit) => [hit.id, hit],
-                  ),
+                  [...(next ? (previous ?? []) : []), ...res.results].map((hit) => [hit.id, hit]),
                 ).values(),
               ]
             : previous,
@@ -384,9 +355,7 @@ function useRecallSearchModel({
   }
   const active = normalized ? contextFiltersActive(normalized) : false;
   const effectiveSort = query.trim() ? sort : "newest";
-  const filterOpts = (
-    value: RecallContextFilters,
-  ): Partial<RecallContextFilters> =>
+  const filterOpts = (value: RecallContextFilters): Partial<RecallContextFilters> =>
     contextFiltersActive(value) ? { ...value } : {};
   const clearFilters = () => {
     invalidate();
@@ -410,8 +379,7 @@ function useRecallSearchModel({
       limit: 100,
       ...filterOpts(selected),
     };
-    if (validSaved?.scope === "range")
-      opts = { ...opts, from: validSaved.from, to: validSaved.to };
+    if (validSaved?.scope === "range") opts = { ...opts, from: validSaved.from, to: validSaved.to };
     else if (!validSaved && scope !== "retained") {
       const start =
         scope === "selected"
@@ -445,9 +413,7 @@ function useRecallSearchModel({
       setSort(validSaved.sort);
       setScope(validSaved.scope === "range" ? "dates" : "retained");
       setRestoredBounds(
-        validSaved.scope === "range"
-          ? { from: validSaved.from!, to: validSaved.to! }
-          : null,
+        validSaved.scope === "range" ? { from: validSaved.from!, to: validSaved.to! } : null,
       );
       setFrom("");
       setTo("");
@@ -533,10 +499,10 @@ function useRecallSearchModel({
         context: opts.context,
       }),
     };
-    const next = [
-      item,
-      ...saved.filter((s) => JSON.stringify(s) !== JSON.stringify(item)),
-    ].slice(0, 100);
+    const next = [item, ...saved.filter((s) => JSON.stringify(s) !== JSON.stringify(item))].slice(
+      0,
+      100,
+    );
     if (writeItems(`${preferencesKey}:searches`, next)) setSaved(next);
     else setError("Browser storage is unavailable; search was not saved.");
   };
@@ -623,13 +589,9 @@ function SearchHit({
         <span className="font-mono text-[11.5px] text-muted-foreground">
           {shortDateIn(timezone, new Date(r.captured_at).getTime())} ·{" "}
           {timeIn(timezone, r.captured_at)}
-          {showDisplay && Number.isInteger(r.monitor)
-            ? ` · Display ${r.monitor + 1}`
-            : ""}
+          {showDisplay && Number.isInteger(r.monitor) ? ` · Display ${r.monitor + 1}` : ""}
         </span>
-        <span className="text-[13px] [overflow-wrap:anywhere]">
-          {renderSnippet(r.snippet)}
-        </span>
+        <span className="text-[13px] [overflow-wrap:anywhere]">{renderSnippet(r.snippet)}</span>
         <RecallCaptureContext context={r.context} compact />
       </span>
     </button>
@@ -693,19 +655,12 @@ function SearchQueryControls({ model }: SearchPanelProps) {
         <Button
           onClick={() => runSearch()}
           disabled={
-            preferencesKey === null ||
-            Boolean(filterError) ||
-            (query.trim() === "" && !active)
+            preferencesKey === null || Boolean(filterError) || (query.trim() === "" && !active)
           }
         >
           Search
         </Button>
-        {(query ||
-          active ||
-          results !== null ||
-          searching ||
-          error ||
-          linkedError) && (
+        {(query || active || results !== null || searching || error || linkedError) && (
           <Button
             variant="ghost"
             onClick={() => {
@@ -777,9 +732,7 @@ function ActiveFilterChips({ model }: { model: SearchModel }) {
         </Button>
       ))}
       {!query.trim() && (
-        <span role="status">
-          No search text, so the newest matching captures are shown.
-        </span>
+        <span role="status">No search text, so the newest matching captures are shown.</span>
       )}
     </div>
   );
@@ -808,9 +761,7 @@ function SearchOptions({ model, props }: SearchPanelProps) {
       <details className="recall-context-filters mt-1">
         <summary className="flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground">
           <ChevronRight className="recall-options-chevron size-4 shrink-0" aria-hidden="true" />
-          <span className="min-w-0 [overflow-wrap:anywhere]">
-            {optionsSummary(model)}
-          </span>
+          <span className="min-w-0 [overflow-wrap:anywhere]">{optionsSummary(model)}</span>
         </summary>
         <div className="grid gap-4 pb-1 pt-2">
           <SearchScopeFields model={model} props={props} />
@@ -959,11 +910,10 @@ function SearchContextFields({ model }: { model: SearchModel }) {
       <p className="flex items-center gap-1 text-sm font-medium">
         Narrow by what was in the foreground
         <HelpTip>
-          Uses the app in the foreground around each capture, which may differ
-          from what is visible on this display. App names match as recorded,
-          including .exe. Titles match literally, ignoring case. Sites match
-          the exact host, without subdomains, and only for recordings that
-          include one.
+          Uses the app in the foreground around each capture, which may differ from what is visible
+          on this display. App names match as recorded, including .exe. Titles match literally,
+          ignoring case. Sites match the exact host, without subdomains, and only for recordings
+          that include one.
         </HelpTip>
       </p>
       <div className="recall-retrieval-fields !mb-0">
@@ -1065,22 +1015,25 @@ function SearchContextFields({ model }: { model: SearchModel }) {
 function savedDetail(item: SavedSearch, timezone: string | null): string {
   const parts: string[] = [];
   if (item.filters?.app)
-    parts.push(`app ${item.filters.app}${item.filters.app_mode === "prefix" ? " (starts with)" : ""}`);
+    parts.push(
+      `app ${item.filters.app}${item.filters.app_mode === "prefix" ? " (starts with)" : ""}`,
+    );
   if (item.filters?.title) parts.push(`title ${item.filters.title}`);
   if (item.filters?.url_host) parts.push(`host ${item.filters.url_host}`);
   if (item.filters?.context && item.filters.context !== "all")
     parts.push(`${item.filters.context} context`);
-  parts.push(item.scope === "range" && item.from && item.to
-    ? `${shortDateIn(timezone, Date.parse(item.from))} ${timeIn(timezone, item.from)} – ${shortDateIn(timezone, Date.parse(item.to))} ${timeIn(timezone, item.to)}`
-    : "all retained history");
+  parts.push(
+    item.scope === "range" && item.from && item.to
+      ? `${shortDateIn(timezone, Date.parse(item.from))} ${timeIn(timezone, item.from)} – ${shortDateIn(timezone, Date.parse(item.to))} ${timeIn(timezone, item.to)}`
+      : "all retained history",
+  );
   parts.push(item.sort === "newest" ? "newest first" : "best match first");
   parts.push(item.monitor == null ? "all displays" : `display ${item.monitor + 1}`);
   return parts.join(" · ");
 }
 
 function SavedSearches({ model }: SearchPanelProps) {
-  const { saved, setQuery, runSearch, preferencesKey, setSaved, setError, timezone } =
-    model;
+  const { saved, setQuery, runSearch, preferencesKey, setSaved, setError, timezone } = model;
   if (saved.length === 0) return null;
   return (
     <div aria-label="Saved searches" className="flex flex-col gap-2">
@@ -1107,11 +1060,7 @@ function SavedSearches({ model }: SearchPanelProps) {
             aria-label={`Remove saved search: ${item.query || "Context only"}`}
             onClick={() => {
               const next = saved.filter((_, j) => i !== j);
-              if (
-                preferencesKey &&
-                writeItems(`${preferencesKey}:searches`, next)
-              )
-                setSaved(next);
+              if (preferencesKey && writeItems(`${preferencesKey}:searches`, next)) setSaved(next);
               else setError("Could not remove saved search.");
             }}
           >
@@ -1124,16 +1073,7 @@ function SavedSearches({ model }: SearchPanelProps) {
 }
 
 function SearchResultsStatus({ model }: SearchPanelProps) {
-  const {
-    results,
-    frozen,
-    cursor,
-    complete,
-    runSearch,
-    searching,
-    filterError,
-    error,
-  } = model;
+  const { results, frozen, cursor, complete, runSearch, searching, filterError, error } = model;
   return (
     <>
       {results !== null && (
@@ -1205,8 +1145,8 @@ function SearchResults({ model, props }: SearchPanelProps) {
         <div className="mt-2 max-h-[min(24rem,55dvh)] divide-y divide-foreground/[0.06] overflow-y-auto rounded-xl bg-muted/50">
           {results.length === 0 ? (
             <div className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
-              No retained screens matched this text and context in this scope.
-              Older recordings may have expired.
+              No retained screens matched this text and context in this scope. Older recordings may
+              have expired.
               <Button variant="outline" size="sm" onClick={clearFilters}>
                 Clear filters
               </Button>
@@ -1220,20 +1160,13 @@ function SearchResults({ model, props }: SearchPanelProps) {
               </Button>
             </div>
           ) : (
-            (groupSimilar
-              ? groupSearchHits(results)
-              : results.map((hit) => [hit])
-            ).map((group) =>
+            (groupSimilar ? groupSearchHits(results) : results.map((hit) => [hit])).map((group) =>
               group.length === 1 ? (
                 renderResult(group[0])
               ) : (
-                <details
-                  key={`group:${agentId}:${group[0].id}`}
-                  className="recall-search-group"
-                >
+                <details key={`group:${agentId}:${group[0].id}`} className="recall-search-group">
                   <summary title="Expand to choose a capture">
-                    {group.length} similar captures · Display{" "}
-                    {group[0].monitor + 1} ·{" "}
+                    {group.length} similar captures · Display {group[0].monitor + 1} ·{" "}
                     {shortDateIn(timezone, Date.parse(group[0].captured_at))}{" "}
                     {timeIn(timezone, group[0].captured_at)}
                   </summary>
@@ -1264,16 +1197,11 @@ function useRecallSearchDraft({
   initialSearch,
   initialSearchError,
   monitor,
-}: Pick<
-  RecallSearchProps,
-  "initialSearch" | "initialSearchError" | "monitor"
->) {
+}: Pick<RecallSearchProps, "initialSearch" | "initialSearchError" | "monitor">) {
   const seedRef = useRef({ initialSearch, initialSearchError });
   const seed = initialSearch ? parseSavedSearch(initialSearch) : null;
   const monitorRef = useRef(monitor);
-  const [searchMonitor, setSearchMonitor] = useState<number | null>(
-    seed ? seed.monitor : monitor,
-  );
+  const [searchMonitor, setSearchMonitor] = useState<number | null>(seed ? seed.monitor : monitor);
   const [query, setQuery] = useState(seed?.query ?? "");
   const [filters, setFilters] = useState<RecallContextFilters>(
     seed?.filters ?? { ...EMPTY_CONTEXT_FILTERS },
@@ -1281,9 +1209,7 @@ function useRecallSearchDraft({
   const [restoredBounds, setRestoredBounds] = useState<{
     from: string;
     to: string;
-  } | null>(
-    seed?.scope === "range" ? { from: seed.from!, to: seed.to! } : null,
-  );
+  } | null>(seed?.scope === "range" ? { from: seed.from!, to: seed.to! } : null);
   const [linkedError, setLinkedError] = useState(initialSearchError ?? null);
   const [scope, setScope] = useState<"retained" | "selected" | "dates">(
     seed?.scope === "range" ? "dates" : "retained",
@@ -1298,18 +1224,14 @@ function useRecallSearchDraft({
   const resetDraft = useCallback((restore: boolean) => {
     const initial = seedRef.current;
     const restored =
-      restore && initial.initialSearch
-        ? parseSavedSearch(initial.initialSearch)
-        : null;
+      restore && initial.initialSearch ? parseSavedSearch(initial.initialSearch) : null;
     setSearchMonitor(restored ? restored.monitor : monitorRef.current);
     setQuery(restored?.query ?? "");
     setFilters(restored?.filters ?? { ...EMPTY_CONTEXT_FILTERS });
     setSort(restored?.sort ?? "ranked");
     setScope(restored?.scope === "range" ? "dates" : "retained");
     setRestoredBounds(
-      restored?.scope === "range"
-        ? { from: restored.from!, to: restored.to! }
-        : null,
+      restored?.scope === "range" ? { from: restored.from!, to: restored.to! } : null,
     );
     setFrom("");
     setTo("");

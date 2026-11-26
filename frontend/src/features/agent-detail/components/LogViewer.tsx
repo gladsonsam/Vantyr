@@ -9,7 +9,14 @@ const FOLLOW_SLACK_PX = 25;
  * long lines scroll sideways inside it (or wrap) instead of widening the page. While `following`
  * it stays on the newest line; scrolling up hands control back to the reader.
  */
-export function LogViewer({ text, placeholder, wrap, following, onFollowingChange, label }: {
+export function LogViewer({
+  text,
+  placeholder,
+  wrap,
+  following,
+  onFollowingChange,
+  label,
+}: {
   text: string;
   /** Shown while there is no text: loading, empty, nothing matched. */
   placeholder: string;

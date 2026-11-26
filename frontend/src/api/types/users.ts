@@ -26,7 +26,10 @@ export function dashboardRoleLabel(role: DashboardRole): string {
 export type DashboardSessionUser = SessionUser;
 
 /** Subset passed into the shell / top navigation. */
-export type DashboardNavUser = Pick<DashboardSessionUser, "username" | "display_name" | "role" | "display_icon">;
+export type DashboardNavUser = Pick<
+  DashboardSessionUser,
+  "username" | "display_name" | "role" | "display_icon"
+>;
 
 /** A dashboard account as listed for admins; initials show when `display_icon` is unset. */
 export type DashboardUser = DashboardUserRow;

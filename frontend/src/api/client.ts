@@ -83,7 +83,11 @@ export async function requestJson<T>(
 }
 
 /** Validate both standard successes and explicitly permitted API status payloads. */
-async function readJsonResponse<T>(res: Response, path: string, opts?: { includePathInHttpError?: boolean; allowStatuses?: number[] }): Promise<T> {
+async function readJsonResponse<T>(
+  res: Response,
+  path: string,
+  opts?: { includePathInHttpError?: boolean; allowStatuses?: number[] },
+): Promise<T> {
   const ct = res.headers.get("Content-Type") ?? "";
 
   // Prefer structured errors when possible.
@@ -108,7 +112,9 @@ async function readJsonResponse<T>(res: Response, path: string, opts?: { include
 
   if (!ct.includes("application/json")) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Expected JSON from ${path}; got ${ct || "unknown type"}: ${text.slice(0, 200)}`);
+    throw new Error(
+      `Expected JSON from ${path}; got ${ct || "unknown type"}: ${text.slice(0, 200)}`,
+    );
   }
   return res.json() as Promise<T>;
 }

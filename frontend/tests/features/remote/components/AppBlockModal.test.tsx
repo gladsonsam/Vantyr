@@ -1,19 +1,27 @@
-// @vitest-environment jsdom
-import { act } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  buttonByText,
+  byLabel,
+  click,
+  mountForm,
+  typeInto,
+  unmountForms,
+} from "@tests/support/formDom";
 import { withQueryClient } from "@tests/support/queryClient";
-import { buttonByText, byLabel, click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
-import { AppBlockModal } from "@/features/remote/components/AppBlockModal";
+import { testMock as vi } from "@tests/support/mock";
+import { act } from "react";
+import { afterEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({
+const api = (() => ({
   agentKnownExes: vi.fn(async () => ({ exes: [] })),
   appBlockProtectedExes: vi.fn(async () => ({ protected: ["explorer.exe"] })),
   appBlockRulesCreate: vi.fn<(body: unknown) => Promise<{ id: number }>>(async () => ({ id: 1 })),
   // AppIcon asks for icons.
   agentAppIcon: vi.fn(async () => null),
-}));
-vi.mock("@/api", () => ({ api }));
-vi.mock("@/components/common/AppIcon", () => ({ AppIcon: () => null }));
+}))();
+await vi.mock("@/api", () => ({ api }));
+await vi.mock("@/components/common/AppIcon", () => ({ AppIcon: () => null }));
+
+const { AppBlockModal } = await import("@/features/remote/components/AppBlockModal");
 
 afterEach(() => {
   unmountForms();
@@ -23,9 +31,21 @@ afterEach(() => {
 async function open() {
   const onCreated = vi.fn();
   const onDismiss = vi.fn();
-  await mountForm(withQueryClient(<AppBlockModal visible agentId="a1" agentName="PC" onDismiss={onDismiss} onCreated={onCreated} />));
+  await mountForm(
+    withQueryClient(
+      <AppBlockModal
+        visible
+        agentId="a1"
+        agentName="PC"
+        onDismiss={onDismiss}
+        onCreated={onCreated}
+      />,
+    ),
+  );
   // let the protected-exes query settle
-  await act(async () => { await Promise.resolve(); });
+  await act(async () => {
+    await Promise.resolve();
+  });
   return { onCreated, onDismiss };
 }
 
@@ -51,7 +71,11 @@ describe("AppBlockModal", () => {
     await typeInto(byLabel("EXE name"), "tiktok.exe");
     await click(buttonByText("Add rule"));
     expect(api.appBlockRulesCreate).toHaveBeenCalledWith({
-      name: "tiktok.exe", exe_pattern: "tiktok.exe", match_mode: "contains", scopes: [{ kind: "agent", agent_id: "a1" }], schedules: undefined,
+      name: "tiktok.exe",
+      exe_pattern: "tiktok.exe",
+      match_mode: "contains",
+      scopes: [{ kind: "agent", agent_id: "a1" }],
+      schedules: undefined,
     });
     expect(onCreated).toHaveBeenCalledTimes(1);
     expect(onDismiss).toHaveBeenCalledTimes(1);

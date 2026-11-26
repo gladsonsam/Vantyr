@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { DEFAULT_TOKEN_VALUES, enrollmentTokenSchema, parseTokenUses, tokenValuesToBody } from "@/features/enrollment/lib/enrollmentTokenForm";
+import { describe, expect, it } from "bun:test";
+import {
+  DEFAULT_TOKEN_VALUES,
+  enrollmentTokenSchema,
+  parseTokenUses,
+  tokenValuesToBody,
+} from "@/features/enrollment/lib/enrollmentTokenForm";
 
 describe("parseTokenUses", () => {
   it("clamps to 1..100000 and treats junk as 1", () => {
@@ -17,10 +22,16 @@ describe("tokenValuesToBody", () => {
   });
 
   it("adds a clamped expiry and a trimmed note when given", () => {
-    expect(tokenValuesToBody({ uses: 3, expire_hours: " 72 ", note: " lab pc " })).toEqual({ uses: 3, expires_in_hours: 72, note: "lab pc" });
+    expect(tokenValuesToBody({ uses: 3, expire_hours: " 72 ", note: " lab pc " })).toEqual({
+      uses: 3,
+      expires_in_hours: 72,
+      note: "lab pc",
+    });
     expect(tokenValuesToBody({ uses: 1, expire_hours: "0", note: "" }).expires_in_hours).toBe(1);
     expect(tokenValuesToBody({ uses: 1, expire_hours: "abc", note: "" }).expires_in_hours).toBe(1);
-    expect(tokenValuesToBody({ uses: 1, expire_hours: "99999", note: "" }).expires_in_hours).toBe(8760);
+    expect(tokenValuesToBody({ uses: 1, expire_hours: "99999", note: "" }).expires_in_hours).toBe(
+      8760,
+    );
   });
 
   it("ignores a whitespace-only note", () => {

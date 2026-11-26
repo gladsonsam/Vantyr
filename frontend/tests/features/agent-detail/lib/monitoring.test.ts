@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { categoryOf, isLongText, listCountLabel, sharedValue, splitUrl, titleRestatesApp } from "@/features/agent-detail/lib/monitoring";
+import { describe, expect, it } from "bun:test";
+import {
+  categoryOf,
+  isLongText,
+  listCountLabel,
+  sharedValue,
+  splitUrl,
+  titleRestatesApp,
+} from "@/features/agent-detail/lib/monitoring";
 
 describe("splitUrl", () => {
   it("separates the domain from the page and keeps a usable href", () => {
@@ -11,7 +18,11 @@ describe("splitUrl", () => {
   });
 
   it("treats a bare domain as having no path and assumes https", () => {
-    expect(splitUrl("example.org")).toEqual({ host: "example.org", rest: "", href: "https://example.org" });
+    expect(splitUrl("example.org")).toEqual({
+      host: "example.org",
+      rest: "",
+      href: "https://example.org",
+    });
     expect(splitUrl("https://example.org/")).toMatchObject({ host: "example.org", rest: "" });
   });
 
@@ -40,11 +51,15 @@ describe("listCountLabel", () => {
   });
 
   it("never claims a total once the page limit is reached", () => {
-    expect(listCountLabel({ shown: 500, loaded: 500, limit: 500, noun })).toBe("500 most recent visits");
+    expect(listCountLabel({ shown: 500, loaded: 500, limit: 500, noun })).toBe(
+      "500 most recent visits",
+    );
   });
 
   it("says how many of the loaded rows a search keeps", () => {
-    expect(listCountLabel({ shown: 3, loaded: 500, limit: 500, noun })).toBe("3 of 500 most recent visits");
+    expect(listCountLabel({ shown: 3, loaded: 500, limit: 500, noun })).toBe(
+      "3 of 500 most recent visits",
+    );
     expect(listCountLabel({ shown: 0, loaded: 40, limit: 500, noun })).toBe("0 of 40 visits");
   });
 });

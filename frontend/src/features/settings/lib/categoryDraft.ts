@@ -34,8 +34,17 @@ export interface CategoryDraft {
 }
 
 export interface ServerCategoryLists {
-  categories: { categories?: { key: string; label?: string | null; description?: string | null; enabled: boolean }[] };
-  groups: { rows?: { id: number; key: string; label_en: string; hidden: boolean; ut1_keys?: string[] }[] };
+  categories: {
+    categories?: {
+      key: string;
+      label?: string | null;
+      description?: string | null;
+      enabled: boolean;
+    }[];
+  };
+  groups: {
+    rows?: { id: number; key: string; label_en: string; hidden: boolean; ut1_keys?: string[] }[];
+  };
 }
 
 export const EMPTY_DRAFT: CategoryDraft = { ut1Cats: [], groups: [] };
@@ -53,7 +62,10 @@ export function humanize(key: string): string {
 }
 
 /** The draft a freshly loaded pair of server lists starts from. */
-export function toDraft({ categories: catRes, groups: grpRes }: ServerCategoryLists): CategoryDraft {
+export function toDraft({
+  categories: catRes,
+  groups: grpRes,
+}: ServerCategoryLists): CategoryDraft {
   const keyToGroup = new Map<string, number>();
   for (const g of grpRes.rows ?? []) {
     for (const k of g.ut1_keys ?? []) {
@@ -80,17 +92,34 @@ export function toDraft({ categories: catRes, groups: grpRes }: ServerCategoryLi
   };
 }
 
-export function patchCategory(draft: CategoryDraft, key: string, patch: Partial<Ut1Cat>): CategoryDraft {
-  return { ...draft, ut1Cats: draft.ut1Cats.map((c) => (c.key === key ? { ...c, ...patch, dirty: true } : c)) };
+export function patchCategory(
+  draft: CategoryDraft,
+  key: string,
+  patch: Partial<Ut1Cat>,
+): CategoryDraft {
+  return {
+    ...draft,
+    ut1Cats: draft.ut1Cats.map((c) => (c.key === key ? { ...c, ...patch, dirty: true } : c)),
+  };
 }
 
-export function patchGroup(draft: CategoryDraft, index: number, patch: Partial<CustomGroup>): CategoryDraft {
-  return { ...draft, groups: draft.groups.map((g, i) => (i === index ? { ...g, ...patch, dirty: true } : g)) };
+export function patchGroup(
+  draft: CategoryDraft,
+  index: number,
+  patch: Partial<CustomGroup>,
+): CategoryDraft {
+  return {
+    ...draft,
+    groups: draft.groups.map((g, i) => (i === index ? { ...g, ...patch, dirty: true } : g)),
+  };
 }
 
 /** "Fun & Games" -> "fun_games". */
 export function slugifyGroupKey(label: string): string {
-  return label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
 }
 
 /** Why a group name can't be added (it would collide with a group's key), or null when it is fine. */
@@ -109,7 +138,10 @@ export function addGroup(draft: CategoryDraft, labelInput: string, keyInput = ""
   const label = labelInput.trim();
   const key = keyInput.trim() || slugifyGroupKey(label);
   if (!label || !key) return draft;
-  return { ...draft, groups: [...draft.groups, { id: null, key, label, hidden: false, isNew: true, deleted: false }] };
+  return {
+    ...draft,
+    groups: [...draft.groups, { id: null, key, label, hidden: false, isNew: true, deleted: false }],
+  };
 }
 
 /**
@@ -122,9 +154,12 @@ export function removeGroup(draft: CategoryDraft, index: number): CategoryDraft 
   if (group.isNew) return { ...draft, groups: draft.groups.filter((_, i) => i !== index) };
   return {
     groups: draft.groups.map((g, i) => (i === index ? { ...g, deleted: true } : g)),
-    ut1Cats: group.id === null
-      ? draft.ut1Cats
-      : draft.ut1Cats.map((c) => (c.groupId === group.id ? { ...c, groupId: null, dirty: true } : c)),
+    ut1Cats:
+      group.id === null
+        ? draft.ut1Cats
+        : draft.ut1Cats.map((c) =>
+            c.groupId === group.id ? { ...c, groupId: null, dirty: true } : c,
+          ),
   };
 }
 
@@ -151,12 +186,18 @@ export function groupLabelById(groups: CustomGroup[], id: number | null): string
  * Applies a group choice from the select. Groups that don't exist on the server yet have no id to
  * assign, so choosing one leaves the category as it was.
  */
-export function assignCategoryGroup(draft: CategoryDraft, catKey: string, selectValue: string | null): CategoryDraft {
-  if (selectValue === null || selectValue === NO_GROUP) return patchCategory(draft, catKey, { groupId: null });
+export function assignCategoryGroup(
+  draft: CategoryDraft,
+  catKey: string,
+  selectValue: string | null,
+): CategoryDraft {
+  if (selectValue === null || selectValue === NO_GROUP)
+    return patchCategory(draft, catKey, { groupId: null });
   if (selectValue.startsWith("new:")) {
     const key = selectValue.slice("new:".length);
     const g = draft.groups.find((x) => x.isNew && x.key === key && !x.deleted);
-    if (g?.id !== null && g?.id !== undefined) return patchCategory(draft, catKey, { groupId: g.id });
+    if (g?.id !== null && g?.id !== undefined)
+      return patchCategory(draft, catKey, { groupId: g.id });
     return draft;
   }
   const numVal = Number(selectValue);
@@ -177,7 +218,11 @@ export function filterCategories(draft: CategoryDraft, text: string): Ut1Cat[] {
   );
 }
 
-export function pendingChanges(draft: CategoryDraft): { dirtyCount: number; groupChanges: number; hasChanges: boolean } {
+export function pendingChanges(draft: CategoryDraft): {
+  dirtyCount: number;
+  groupChanges: number;
+  hasChanges: boolean;
+} {
   const dirtyCount = draft.ut1Cats.filter((c) => c.dirty).length;
   const groupChanges = draft.groups.filter((g) => g.isNew || g.deleted || g.dirty).length;
   return { dirtyCount, groupChanges, hasChanges: dirtyCount > 0 || groupChanges > 0 };
@@ -206,7 +251,8 @@ export function buildSavePlan(draft: CategoryDraft): SavePlan {
   const groupOps: GroupOp[] = [];
   for (const g of live) {
     if (g.isNew) groupOps.push({ type: "create", key: g.key, label_en: g.label, hidden: g.hidden });
-    else if (g.id !== null) groupOps.push({ type: "update", id: g.id, key: g.key, label_en: g.label, hidden: g.hidden });
+    else if (g.id !== null)
+      groupOps.push({ type: "update", id: g.id, key: g.key, label_en: g.label, hidden: g.hidden });
   }
 
   const deleteIds: number[] = [];
@@ -215,7 +261,7 @@ export function buildSavePlan(draft: CategoryDraft): SavePlan {
   }
 
   const membersByKey = new Map<string, string[]>();
-  const groupsById = new Map(live.filter(g => g.id !== null).map(g => [g.id, g]));
+  const groupsById = new Map(live.filter((g) => g.id !== null).map((g) => [g.id, g]));
   for (const c of ut1Cats) {
     if (c.groupId === null) continue;
     const g = groupsById.get(c.groupId);
@@ -224,7 +270,12 @@ export function buildSavePlan(draft: CategoryDraft): SavePlan {
   }
 
   return {
-    categories: ut1Cats.map((c) => ({ key: c.key, enabled: c.enabled, label: c.label, description: c.description })),
+    categories: ut1Cats.map((c) => ({
+      key: c.key,
+      enabled: c.enabled,
+      label: c.label,
+      description: c.description,
+    })),
     groupOps,
     deleteIds,
     members: live.map((g) => ({ groupKey: g.key, ut1Keys: membersByKey.get(g.key) ?? [] })),

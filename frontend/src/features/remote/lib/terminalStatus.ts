@@ -21,9 +21,17 @@ export function terminalStatus(phase: TerminalPhase): TerminalStatus {
     case "live":
       return { text: "Connected", tone: "ok", action: { label: "End session", kind: "stop" } };
     case "ended":
-      return { text: "Session ended", tone: "muted", action: { label: "New session", kind: "start" } };
+      return {
+        text: "Session ended",
+        tone: "muted",
+        action: { label: "New session", kind: "start" },
+      };
     case "dropped":
-      return { text: "Connection lost", tone: "warn", action: { label: "Reconnect", kind: "start" } };
+      return {
+        text: "Connection lost",
+        tone: "warn",
+        action: { label: "Reconnect", kind: "start" },
+      };
     case "refused":
       return {
         text: "Refused. The agent may need updating, or terminal access must be allowed on the device.",

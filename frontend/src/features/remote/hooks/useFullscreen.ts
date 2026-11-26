@@ -1,12 +1,18 @@
 import { useEffect, useState, type RefObject } from "react";
-import { exitViewportFullscreen, requestViewportFullscreen } from "@/features/remote/lib/fullscreen";
+import {
+  exitViewportFullscreen,
+  requestViewportFullscreen,
+} from "@/features/remote/lib/fullscreen";
 
 /**
  * Maximizing the live screen: native fullscreen where the browser allows it for a <div>,
  * otherwise (touch / iOS) a CSS fixed overlay ("pseudo fullscreen") that locks page scroll and
  * exits on Escape. Leaves either mode when the live view turns off.
  */
-export function useFullscreen(containerRef: RefObject<HTMLDivElement | null>, streamEnabled: boolean) {
+export function useFullscreen(
+  containerRef: RefObject<HTMLDivElement | null>,
+  streamEnabled: boolean,
+) {
   const [fullscreen, setFullscreen] = useState(false);
   /** CSS-overlay "maximize" for touch/iOS where the Fullscreen API can't target a <div>. */
   const [pseudoFs, setPseudoFs] = useState(false);
@@ -57,7 +63,10 @@ export function useFullscreen(containerRef: RefObject<HTMLDivElement | null>, st
       document.fullscreenEnabled !== false &&
       !coarsePointer;
 
-    if (pseudoFs) { setPseudoFs(false); return; }
+    if (pseudoFs) {
+      setPseudoFs(false);
+      return;
+    }
     beforeToggle();
     if (canNativeFs) {
       if (!document.fullscreenElement) {

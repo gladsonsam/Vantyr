@@ -11,7 +11,7 @@ name: agent-test-build
 on:
   workflow_dispatch:
   push:
-    branches: ['test-build/**']
+    branches: ["test-build/**"]
 
 permissions:
   contents: read

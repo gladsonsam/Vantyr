@@ -25,22 +25,37 @@ export function useAuditView(agentId: string | undefined, scope: AuditScope) {
   const listRef = useRef<HTMLDivElement>(null);
 
   const auditQuery = useQuery({
-    ...auditQueries.log({ limit: AUDIT_LIMIT, agent_id: agentId, status: status !== "all" ? status : undefined }),
+    ...auditQueries.log({
+      limit: AUDIT_LIMIT,
+      agent_id: agentId,
+      status: status !== "all" ? status : undefined,
+    }),
     select: toAuditRows,
     // Keep the current rows up while a new status filter loads (never another agent's rows).
     placeholderData: (previous, previousQuery) =>
-      (previousQuery?.queryKey[2] as AuditLogParams | undefined)?.agent_id === agentId ? previous : undefined,
+      (previousQuery?.queryKey[2] as AuditLogParams | undefined)?.agent_id === agentId
+        ? previous
+        : undefined,
   });
   const rows = auditQuery.data ?? NO_ROWS;
   const forDevice = Boolean(agentId);
 
-  const scoped = useMemo(() => scopeRows(rows, scope, forDevice, showViews), [rows, scope, forDevice, showViews]);
+  const scoped = useMemo(
+    () => scopeRows(rows, scope, forDevice, showViews),
+    [rows, scope, forDevice, showViews],
+  );
   const hiddenViews = useMemo(
     () => (showViews ? 0 : scopeRows(rows, scope, forDevice, true).length - scoped.length),
     [rows, scope, forDevice, showViews, scoped],
   );
   const matching = useMemo(
-    () => orderRows(scoped.filter((row) => matchesAuditRow(row, query, agents?.[row.agent_id ?? ""]?.name ?? "")), newestFirst),
+    () =>
+      orderRows(
+        scoped.filter((row) =>
+          matchesAuditRow(row, query, agents?.[row.agent_id ?? ""]?.name ?? ""),
+        ),
+        newestFirst,
+      ),
     [scoped, query, agents, newestFirst],
   );
 
@@ -72,6 +87,15 @@ export function useAuditView(agentId: string | undefined, scope: AuditScope) {
     listRef,
     nameOf: (id: string | null) => (id ? (agents?.[id]?.name ?? null) : null),
     uniformActor: matching.length > 1 && actors.size === 1 ? [...actors][0] : null,
-    filters: { status, setStatus, showViews, setShowViews, query, setQuery, newestFirst, toggleOrder: () => setNewestFirst((value) => !value) },
+    filters: {
+      status,
+      setStatus,
+      showViews,
+      setShowViews,
+      query,
+      setQuery,
+      newestFirst,
+      toggleOrder: () => setNewestFirst((value) => !value),
+    },
   };
 }

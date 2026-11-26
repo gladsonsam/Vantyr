@@ -11,9 +11,16 @@ import { profileSchema } from "./userSchemas";
  * were not edited and leaves the ones being typed in, so a background refresh never throws away typing.
  * Saving reports its own outcome.
  */
-export function useProfileForm(me: DashboardSessionUser, onSave: (values: ProfileValues) => Promise<void>) {
+export function useProfileForm(
+  me: DashboardSessionUser,
+  onSave: (values: ProfileValues) => Promise<void>,
+) {
   const seed = profileValuesFor(me);
-  const form = useForm<ProfileValues>({ resolver: zodResolver(profileSchema), mode: "onChange", defaultValues: seed });
+  const form = useForm<ProfileValues>({
+    resolver: zodResolver(profileSchema),
+    mode: "onChange",
+    defaultValues: seed,
+  });
   const seedKey = JSON.stringify(seed);
   const seeded = useRef({ key: seedKey, values: seed });
   const latest = useRef({ key: seedKey, values: seed });
@@ -46,7 +53,11 @@ export function useProfileForm(me: DashboardSessionUser, onSave: (values: Profil
   const [saved, setSaved] = useState(false);
 
   const values = useWatch({ control: form.control });
-  const current: ProfileValues = { display_name: values.display_name ?? "", username: values.username ?? "", display_icon: values.display_icon ?? "" };
+  const current: ProfileValues = {
+    display_name: values.display_name ?? "",
+    username: values.username ?? "",
+    display_icon: values.display_icon ?? "",
+  };
 
   const submit = form.handleSubmit(async (data) => {
     setSaving(true);

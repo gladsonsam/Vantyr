@@ -37,7 +37,9 @@ export function useUserManagement() {
   const [passwordTarget, setPasswordTarget] = useState<null | Target>(null);
   const [identityTarget, setIdentityTarget] = useState<null | Target>(null);
   const [deleteTarget, setDeleteTarget] = useState<null | DashboardUser>(null);
-  const [roleTarget, setRoleTarget] = useState<null | { user: DashboardUser; role: DashboardRole }>(null);
+  const [roleTarget, setRoleTarget] = useState<null | { user: DashboardUser; role: DashboardRole }>(
+    null,
+  );
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
 
@@ -46,9 +48,15 @@ export function useUserManagement() {
   const rememberOpener = (el: HTMLElement | null) => {
     opener.current = el;
   };
-  const finalFocus = () => (opener.current?.isConnected ? opener.current : document.querySelector<HTMLElement>("[data-create-user]"));
+  const finalFocus = () =>
+    opener.current?.isConnected
+      ? opener.current
+      : document.querySelector<HTMLElement>("[data-create-user]");
 
-  const identitiesQuery = useQuery({ ...userQueries.identities(identityTarget?.id ?? ""), enabled: identityTarget !== null });
+  const identitiesQuery = useQuery({
+    ...userQueries.identities(identityTarget?.id ?? ""),
+    enabled: identityTarget !== null,
+  });
 
   const setRoleMutation = useSetUserRoleMutation();
   const deleteMutation = useDeleteUserMutation({ onDeleted: () => setDeleteTarget(null) });
@@ -154,7 +162,9 @@ export function useUserManagement() {
     identityTarget,
     setIdentityTarget,
     identities: identitiesQuery.data?.identities ?? null,
-    identitiesError: identitiesQuery.isError ? messageOr(identitiesQuery.error, "Failed to load") : null,
+    identitiesError: identitiesQuery.isError
+      ? messageOr(identitiesQuery.error, "Failed to load")
+      : null,
     identitiesFetching: identitiesQuery.isFetching,
     reloadIdentities: () => void identitiesQuery.refetch(),
     deleteTarget,

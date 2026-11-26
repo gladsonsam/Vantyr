@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { keyboardLockApi, keyboardLockFailure, keyboardLockSuperseded, remoteShortcutHint, type KeyboardLockStatus } from "@/features/remote/lib/keyboardLock";
+import {
+  keyboardLockApi,
+  keyboardLockFailure,
+  keyboardLockSuperseded,
+  remoteShortcutHint,
+  type KeyboardLockStatus,
+} from "@/features/remote/lib/keyboardLock";
 
 type Outcome = "locked" | "denied" | "failed";
 
@@ -9,7 +15,10 @@ type Outcome = "locked" | "denied" | "failed";
  * exit, control released, lease lost, device offline, unmount) unlocks. A lock() that resolves
  * after its request was withdrawn unlocks again instead of leaving the browser locked.
  */
-export function useKeyboardLock(wanted: boolean): { status: KeyboardLockStatus; retry: () => void } {
+export function useKeyboardLock(wanted: boolean): {
+  status: KeyboardLockStatus;
+  retry: () => void;
+} {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [attemptRound, setAttemptRound] = useState(0);
   const [wasWanted, setWasWanted] = useState(wanted);
@@ -44,14 +53,18 @@ export function useKeyboardLock(wanted: boolean): { status: KeyboardLockStatus; 
     };
   }, [wanted, attemptRound]);
 
-  /** Try again after a failure that is not a refusal; needs a fresh user gesture (a click on the screen). */
+  /** Try again after a failure or refusal; needs a fresh user gesture (a click on the screen). */
   const retry = useCallback(() => {
-    if (outcome !== "failed") return;
+    if (outcome !== "failed" && outcome !== "denied") return;
     setOutcome(null);
-    setAttemptRound(round => round + 1);
+    setAttemptRound((round) => round + 1);
   }, [outcome]);
 
-  const status: KeyboardLockStatus = !wanted ? "idle" : unsupported ? "unsupported" : outcome ?? "locking";
+  const status: KeyboardLockStatus = !wanted
+    ? "idle"
+    : unsupported
+      ? "unsupported"
+      : (outcome ?? "locking");
   return { status, retry };
 }
 
@@ -60,11 +73,32 @@ export function useKeyboardLock(wanted: boolean): { status: KeyboardLockStatus; 
  * native fullscreen and a held control lease coincide, so viewers and read-only roles never get it.
  * Returns the toolbar hint, the Fullscreen button's tooltip, and the retry for a click on the screen.
  */
-export function useRemoteKeyboardCapture({ controlling, canControl, nativeFullscreen, pseudoFs }: {
-  controlling: boolean; canControl: boolean; nativeFullscreen: boolean; pseudoFs: boolean;
+export function useRemoteKeyboardCapture({
+  controlling,
+  canControl,
+  nativeFullscreen,
+  pseudoFs,
+}: {
+  controlling: boolean;
+  canControl: boolean;
+  nativeFullscreen: boolean;
+  pseudoFs: boolean;
 }) {
   const { status, retry } = useKeyboardLock(nativeFullscreen && controlling);
-  const hint = remoteShortcutHint({ controlling, canControl, nativeFullscreen, maximized: nativeFullscreen || pseudoFs, lock: status });
-  const canOfferCapture = controlling && !nativeFullscreen && !pseudoFs && keyboardLockApi() !== null;
-  return { hint, retry, fullscreenTitle: canOfferCapture ? "Fullscreen. Also sends browser shortcuts like Ctrl+W to this desktop." : undefined };
+  const hint = remoteShortcutHint({
+    controlling,
+    canControl,
+    nativeFullscreen,
+    maximized: nativeFullscreen || pseudoFs,
+    lock: status,
+  });
+  const canOfferCapture =
+    controlling && !nativeFullscreen && !pseudoFs && keyboardLockApi() !== null;
+  return {
+    hint,
+    retry,
+    fullscreenTitle: canOfferCapture
+      ? "Fullscreen. Also sends browser shortcuts like Ctrl+W to this desktop."
+      : undefined,
+  };
 }

@@ -1,14 +1,5 @@
-import {
-  createFileActionHandlers,
-  type FileClipboard,
-} from "./fileActionHandlers";
-import {
-  useRef,
-  useState,
-  type ChangeEvent,
-  type DragEvent,
-  type ComponentProps,
-} from "react";
+import { createFileActionHandlers, type FileClipboard } from "./fileActionHandlers";
+import { useRef, useState, type ChangeEvent, type DragEvent, type ComponentProps } from "react";
 import { Info } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import type { DashboardRole } from "@/api/types";
@@ -35,11 +26,7 @@ export function FilesTab(props: FilesTabProps) {
   return <FilesBrowser key={props.agentId} {...props} />;
 }
 
-function FilesBrowser({
-  agentId,
-  sendWsMessage,
-  dashboardRole = null,
-}: FilesTabProps) {
+function FilesBrowser({ agentId, sendWsMessage, dashboardRole = null }: FilesTabProps) {
   const blockedByRole = dashboardRole === "viewer";
   const fs = useAgentFs({
     agentId,
@@ -84,20 +71,11 @@ function FilesBrowser({
   };
 
   const openFolder = (item: FileItem) => {
-    navigateTo(
-      currentPath === DRIVES_PATH
-        ? item.name
-        : joinPath(currentPath, item.name),
-    );
+    navigateTo(currentPath === DRIVES_PATH ? item.name : joinPath(currentPath, item.name));
   };
 
-  const {
-    selectedPaths,
-    selectedItem,
-    selectedPath,
-    oneSelected,
-    oneFileSelected,
-  } = selectedFileState(currentPath, selected);
+  const { selectedPaths, selectedItem, selectedPath, oneSelected, oneFileSelected } =
+    selectedFileState(currentPath, selected);
   const transferring = downloading !== null || uploading !== null;
 
   const copyText = async (text: string) => {
@@ -125,10 +103,7 @@ function FilesBrowser({
   const deleteSelection = async (recursive: boolean) => {
     // Delete each selected path sequentially so we can reuse the existing waiter.
     for (const p of selectedPaths) {
-      const r = await runFsOp(
-        { type: "DeletePath", path: p, recursive },
-        "Delete",
-      );
+      const r = await runFsOp({ type: "DeletePath", path: p, recursive }, "Delete");
       if (!r.ok) break;
     }
     setSelected([]);
@@ -154,7 +129,9 @@ function FilesBrowser({
   });
 
   const onAction = (action: FileAction) => {
-    if (action === "delete") deleteReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (action === "delete")
+      deleteReturnFocus.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dispatchAction(action);
   };
 
@@ -274,9 +251,7 @@ function FilesBrowser({
         onOpenChange={setDeleteOpen}
         returnFocus={deleteReturnFocus}
         subject={
-          selected.length === 1
-            ? `"${selectedItem?.name ?? ""}"`
-            : `${selected.length} items`
+          selected.length === 1 ? `"${selectedItem?.name ?? ""}"` : `${selected.length} items`
         }
         names={selected.map((item) => item.name)}
         folderCount={selected.filter((item) => item.is_dir).length}
@@ -322,10 +297,9 @@ type NamePromptContext = {
   canUpload: boolean;
   busyOp: string | null;
 };
-type NamePromptSpec = Omit<
-  ComponentProps<typeof NamePromptDialog>,
-  "open" | "onOpenChange"
-> & { kind: FilePromptKind };
+type NamePromptSpec = Omit<ComponentProps<typeof NamePromptDialog>, "open" | "onOpenChange"> & {
+  kind: FilePromptKind;
+};
 function createNamePromptSpecs({
   fs,
   currentPath,
@@ -344,10 +318,7 @@ function createNamePromptSpecs({
       submitLabel: "Create",
       disabled: !canUpload || busy,
       onSubmit: (name) =>
-        void fs.runFsOp(
-          { type: "Mkdir", path: currentPath, name },
-          "Create folder",
-        ),
+        void fs.runFsOp({ type: "Mkdir", path: currentPath, name }, "Create folder"),
     },
     {
       kind: "newFile",
@@ -389,11 +360,7 @@ function createNamePromptSpecs({
       submitLabel: "Move",
       disabled: !selectedPath || busy,
       onSubmit: (dst) => {
-        if (selectedPath)
-          void fs.runFsOp(
-            { type: "RenamePath", src: selectedPath, dst },
-            "Move",
-          );
+        if (selectedPath) void fs.runFsOp({ type: "RenamePath", src: selectedPath, dst }, "Move");
       },
     },
   ];
@@ -420,9 +387,7 @@ function selectedFileState(currentPath: string, selected: FileItem[]) {
       : [];
   const selectedItem = selected[0] ?? null;
   const selectedPath = selectedPaths[0] ?? null;
-  const oneSelected = Boolean(
-    selectedItem && selected.length === 1 && selectedPath,
-  );
+  const oneSelected = Boolean(selectedItem && selected.length === 1 && selectedPath);
   const oneFileSelected = oneSelected && !selectedItem?.is_dir;
 
   return {

@@ -16,7 +16,7 @@ export function demoFrame(t: number): {
   capture_duration_ms: number | null;
 } {
   const id = Math.round(t / 1000);
-  const contextKind=Math.abs(Math.round(t/DEMO_FRAME_STEP_MS))%5;
+  const contextKind = Math.abs(Math.round(t / DEMO_FRAME_STEP_MS)) % 5;
   return {
     id,
     captured_at: new Date(t).toISOString(),
@@ -25,13 +25,42 @@ export function demoFrame(t: number): {
     h: 900,
     phash: String((id * 2654435761) % 1_000_000_000),
     has_ocr: id % 3 === 0,
-    capture_duration_ms:contextKind===0 ? null : 24,
+    capture_duration_ms: contextKind === 0 ? null : 24,
     // Synthetic observations only; demo does not capture OS/window/browser context.
-    context:contextKind===0 ? null : {
-      version:1,scope:"session_foreground",bracket_ms:48,monitor_relation:"unknown",
-      window:contextKind===1 ? {status:"uncertain",reason:"changed",source:"none",app:null,title:null} : contextKind===2 ? {status:"not_collected",reason:"module_disabled",source:"none",app:null,title:null} : {status:"observed",reason:null,source:"win32",app:contextKind===3 ? "Editor.EXE" : "Browser.EXE",title:contextKind===3 ? "Documentation" : "Project dashboard"},
-      browser:{status:"unknown",reason:"unsupported",source:"none",url:null,url_host:null},
-    },
+    context:
+      contextKind === 0
+        ? null
+        : {
+            version: 1,
+            scope: "session_foreground",
+            bracket_ms: 48,
+            monitor_relation: "unknown",
+            window:
+              contextKind === 1
+                ? { status: "uncertain", reason: "changed", source: "none", app: null, title: null }
+                : contextKind === 2
+                  ? {
+                      status: "not_collected",
+                      reason: "module_disabled",
+                      source: "none",
+                      app: null,
+                      title: null,
+                    }
+                  : {
+                      status: "observed",
+                      reason: null,
+                      source: "win32",
+                      app: contextKind === 3 ? "Editor.EXE" : "Browser.EXE",
+                      title: contextKind === 3 ? "Documentation" : "Project dashboard",
+                    },
+            browser: {
+              status: "unknown",
+              reason: "unsupported",
+              source: "none",
+              url: null,
+              url_host: null,
+            },
+          },
   };
 }
 

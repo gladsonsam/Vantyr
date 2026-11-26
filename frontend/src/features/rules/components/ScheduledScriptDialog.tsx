@@ -1,7 +1,14 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@vantyr/ui/components/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@vantyr/ui/components/dialog";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { InputField, SelectField, TextareaField } from "@/components/common/form/fields";
 import { FormField } from "@/components/common/form/FormField";
@@ -26,7 +33,8 @@ const SHELL_OPTIONS = [
   { label: "CMD", value: "cmd" },
 ];
 
-export type ScheduledScriptDialogTarget = null | { mode: "create" } | { mode: "edit"; script: ScheduledScript };
+export type ScheduledScriptDialogTarget =
+  null | { mode: "create" } | { mode: "edit"; script: ScheduledScript };
 
 interface ScheduledScriptDialogProps {
   target: ScheduledScriptDialogTarget;
@@ -42,11 +50,23 @@ interface ScheduledScriptDialogProps {
 /** Create/edit dialog for one scheduled script. It cannot be dismissed while the save is in flight. */
 export function ScheduledScriptDialog({ target, onClose, ...rest }: ScheduledScriptDialogProps) {
   return (
-    <Dialog open={target !== null} onOpenChange={(open) => { if (!open && !rest.saving) onClose(); }}>
+    <Dialog
+      open={target !== null}
+      onOpenChange={(open) => {
+        if (!open && !rest.saving) onClose();
+      }}
+    >
       <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="break-words">{target?.mode === "edit" ? `Edit script · ${target.script.name}` : "New scheduled script"}</DialogTitle>
-          <DialogDescription>Runs on each online device in scope. A device that is offline at the time skips that run.</DialogDescription>
+          <DialogTitle className="break-words">
+            {target?.mode === "edit"
+              ? `Edit script · ${target.script.name}`
+              : "New scheduled script"}
+          </DialogTitle>
+          <DialogDescription>
+            Runs on each online device in scope. A device that is offline at the time skips that
+            run.
+          </DialogDescription>
         </DialogHeader>
         {target && <ScheduledScriptFormBody target={target} onClose={onClose} {...rest} />}
       </DialogContent>
@@ -54,10 +74,21 @@ export function ScheduledScriptDialog({ target, onClose, ...rest }: ScheduledScr
   );
 }
 
-function ScheduledScriptFormBody({ target, groups, agents, saving, error, onSave, onClose }: Omit<ScheduledScriptDialogProps, "target"> & { target: NonNullable<ScheduledScriptDialogTarget> }) {
+function ScheduledScriptFormBody({
+  target,
+  groups,
+  agents,
+  saving,
+  error,
+  onSave,
+  onClose,
+}: Omit<ScheduledScriptDialogProps, "target"> & {
+  target: NonNullable<ScheduledScriptDialogTarget>;
+}) {
   const form = useForm<ScheduledScriptForm>({
     resolver: zodResolver(scheduledScriptSchema),
-    defaultValues: target.mode === "edit" ? scheduledScriptToForm(target.script) : defaultScheduledScriptForm(),
+    defaultValues:
+      target.mode === "edit" ? scheduledScriptToForm(target.script) : defaultScheduledScriptForm(),
   });
   const { control } = form;
   const timezone = useSchedulerTimezone();
@@ -70,8 +101,21 @@ function ScheduledScriptFormBody({ target, groups, agents, saving, error, onSave
     <form onSubmit={submit} noValidate className="contents">
       <fieldset disabled={saving} className="m-0 grid min-w-0 gap-5 border-0 p-0">
         <div className="grid gap-4 sm:grid-cols-[1fr_minmax(0,12rem)]">
-          <InputField control={control} name="name" id="script-name" label="Script name" className="h-9" placeholder="e.g. Health check" />
-          <SelectField control={control} name="shell" label="Shell" ariaLabel="Shell type" options={SHELL_OPTIONS} />
+          <InputField
+            control={control}
+            name="name"
+            id="script-name"
+            label="Script name"
+            className="h-9"
+            placeholder="e.g. Health check"
+          />
+          <SelectField
+            control={control}
+            name="shell"
+            label="Shell"
+            ariaLabel="Shell type"
+            options={SHELL_OPTIONS}
+          />
         </div>
         <TextareaField
           control={control}
@@ -91,12 +135,31 @@ function ScheduledScriptFormBody({ target, groups, agents, saving, error, onSave
           type="number"
         />
 
-        <FormField control={control} name="scopes" label="Runs on" description="Which devices run this script. Add more rows to cover several groups or agents.">
-          {({ field }) => <ScopeRowsEditor rows={field.value} onChange={field.onChange} groups={groups} agents={agents} divided={false} />}
+        <FormField
+          control={control}
+          name="scopes"
+          label="Runs on"
+          description="Which devices run this script. Add more rows to cover several groups or agents."
+        >
+          {({ field }) => (
+            <ScopeRowsEditor
+              rows={field.value}
+              onChange={field.onChange}
+              groups={groups}
+              agents={agents}
+              divided={false}
+            />
+          )}
         </FormField>
 
         <FormField control={control} name="schedules" label="Schedule">
-          {({ field }) => <ScriptScheduleEditor rows={field.value} onChange={field.onChange} timezone={timezone} />}
+          {({ field }) => (
+            <ScriptScheduleEditor
+              rows={field.value}
+              onChange={field.onChange}
+              timezone={timezone}
+            />
+          )}
         </FormField>
       </fieldset>
       <DialogError prefix="Couldn’t save the script" message={error} />

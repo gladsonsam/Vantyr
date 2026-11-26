@@ -1,20 +1,13 @@
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import {
-  RecallDayCoverageNote,
-  RecallDayPicker,
-  RecallDayStepper,
-} from "@/features/recall/components/RecallDayPicker";
-import {
-  createTestQueryClient,
-  withQueryClient,
-} from "@tests/support/queryClient";
+import { afterEach, beforeEach, expect, it } from "bun:test";
+
 import type { ReactNode as WrapNode } from "react";
 let queryClient = createTestQueryClient();
 const wrap = (node: WrapNode) => withQueryClient(node, queryClient);
-import { timeIn } from "@/features/recall/lib/recallFormat";
-import { RecallDayPanel } from "@/features/recall/components/RecallDayPanel";
+
 import type { HistoryDay } from "@/api/types";
 import type { ComponentProps } from "react";
 /** The day panel no longer embeds the picker; the toolbar does. Render both for coverage facts. */
@@ -33,8 +26,13 @@ function PanelWithCoverage(props: ComponentProps<typeof RecallDayPanel>) {
     </>
   );
 }
-const { historyDays } = vi.hoisted(() => ({ historyDays: vi.fn() }));
-vi.mock("@/api", () => ({ api: { historyDays } }));
+const { historyDays } = (() => ({ historyDays: vi.fn() }))();
+await vi.mock("@/api", () => ({ api: { historyDays } }));
+const { RecallDayCoverageNote, RecallDayPicker, RecallDayStepper } =
+  await import("@/features/recall/components/RecallDayPicker");
+
+const { timeIn } = await import("@/features/recall/lib/recallFormat");
+const { RecallDayPanel } = await import("@/features/recall/components/RecallDayPanel");
 const recording = (day: string, count = 10): HistoryDay => ({
   day,
   frame_count: count,
@@ -59,26 +57,13 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
 });
-const render = (
-  onChange = vi.fn(),
-  agentId = "a",
-  day = "2026-12-31",
-  timezone = "Asia/Tokyo",
-) =>
+const render = (onChange = vi.fn(), agentId = "a", day = "2026-12-31", timezone = "Asia/Tokyo") =>
   act(async () =>
     root.render(
-      wrap(
-        <RecallDayPicker
-          agentId={agentId}
-          day={day}
-          onChange={onChange}
-          timezone={timezone}
-        />,
-      ),
+      wrap(<RecallDayPicker agentId={agentId} day={day} onChange={onChange} timezone={timezone} />),
     ),
   );
-const button = (label: string) =>
-  host.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
+const button = (label: string) => host.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
 const choose = (value: string) =>
   act(() => {
     const select = host.querySelector("select")!;
@@ -88,20 +73,12 @@ const choose = (value: string) =>
 
 it("selects covered days and steps across sparse calendar/year boundaries in the device zone", async () => {
   historyDays.mockResolvedValue({
-    days: [
-      recording("2027-01-01", 30),
-      recording("2026-12-29", 0),
-      recording("2026-12-30", 20),
-    ],
+    days: [recording("2027-01-01", 30), recording("2026-12-29", 0), recording("2026-12-30", 20)],
   });
   const changed = vi.fn();
   await render(changed);
-  expect(host.querySelector('input[type="date"]')!.getAttribute("max")).toBe(
-    "2027-01-01",
-  );
-  expect(host.querySelector("select")!.textContent).toContain(
-    "2027-01-01 · 30 frames",
-  );
+  expect(host.querySelector('input[type="date"]')!.getAttribute("max")).toBe("2027-01-01");
+  expect(host.querySelector("select")!.textContent).toContain("2027-01-01 · 30 frames");
   expect(host.querySelector("select")!.textContent).not.toContain("2026-12-29");
   choose("2026-12-30");
   expect(changed).toHaveBeenLastCalledWith("2026-12-30");
@@ -115,10 +92,10 @@ it("selects covered days and steps across sparse calendar/year boundaries in the
   expect(button("Previous recorded day").disabled).toBe(true);
   const date = host.querySelector<HTMLInputElement>('input[type="date"]')!;
   act(() => {
-    Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value",
-    )!.set!.call(date, "2026-12-28");
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      date,
+      "2026-12-28",
+    );
     date.dispatchEvent(new Event("input", { bubbles: true }));
   });
   expect(changed).toHaveBeenLastCalledWith("2026-12-28");
@@ -131,20 +108,12 @@ it("keeps a dense informational overview and labelled 44px selection controls at
   const select = host.querySelector("select")!,
     date = host.querySelector<HTMLInputElement>('input[type="date"]')!;
   for (const control of [select, date, ...host.querySelectorAll("button")])
-    expect(
-      Number.parseFloat(getComputedStyle(control).minHeight),
-    ).toBeGreaterThanOrEqual(44);
-  expect(
-    host.querySelector(`label[for="${select.id}"]`)!.textContent,
-  ).toContain("Recorded day");
-  expect(host.querySelector(`label[for="${date.id}"]`)!.textContent).toContain(
-    "Calendar date",
-  );
+    expect(Number.parseFloat(getComputedStyle(control).minHeight)).toBeGreaterThanOrEqual(44);
+  expect(host.querySelector(`label[for="${select.id}"]`)!.textContent).toContain("Recorded day");
+  expect(host.querySelector(`label[for="${date.id}"]`)!.textContent).toContain("Calendar date");
   expect(host.querySelectorAll('[role="img"] button')).toHaveLength(0);
   expect(host.querySelectorAll('[role="img"] span')).toHaveLength(84);
-  expect(host.querySelector<HTMLElement>('[role="img"]')!.style.width).toBe(
-    "154px",
-  );
+  expect(host.querySelector<HTMLElement>('[role="img"]')!.style.width).toBe("154px");
   expect(select.style.width).toBe("100%");
   expect(Number.parseFloat(date.style.minWidth)).toBe(0);
 });
@@ -189,38 +158,26 @@ it("distinguishes loading, failed/retry and empty coverage, ignoring delayed dev
   expect(host.textContent).not.toContain("No recordings found");
   expect(host.querySelector("select")!.disabled).toBe(true);
   await render(vi.fn(), "b");
-  expect(host.querySelector('[role="alert"]')!.textContent).toContain(
-    "Could not load",
-  );
+  expect(host.querySelector('[role="alert"]')!.textContent).toContain("Could not load");
   expect(host.textContent).not.toContain("No recordings found");
   await act(async () => resolveOld({ days: [recording("2026-12-31", 999)] }));
   expect(host.textContent).not.toContain("999 frames");
   expect(host.querySelector('[role="alert"]')).not.toBeNull();
   await act(async () =>
-    [...host.querySelectorAll("button")]
-      .find((b) => b.textContent === "Retry coverage")!
-      .click(),
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "Retry coverage")!.click(),
   );
   expect(host.textContent).toContain("Loading recorded-day coverage");
   expect(host.querySelector("select")!.disabled).toBe(true);
   expect(host.querySelector('[role="alert"]')).toBeNull();
   await act(async () => resolveRetry({ days: [recording("2026-12-30")] }));
-  expect(historyDays.mock.calls.map((call) => call[0])).toEqual([
-    "a",
-    "b",
-    "b",
-  ]);
-  expect(host.querySelector("select")!.textContent).toContain(
-    "2026-12-30 · 10 frames",
-  );
+  expect(historyDays.mock.calls.map((call) => call[0])).toEqual(["a", "b", "b"]);
+  expect(host.querySelector("select")!.textContent).toContain("2026-12-30 · 10 frames");
   expect(host.querySelector('[role="alert"]')).toBeNull();
   historyDays.mockResolvedValueOnce({ days: [] });
   await render(vi.fn(), "empty");
   expect(host.textContent).toContain("No recordings in this period");
   expect(host.querySelector("select")!.disabled).toBe(true);
-  expect(
-    host.querySelector<HTMLInputElement>('input[type="date"]')!.disabled,
-  ).toBe(false);
+  expect(host.querySelector<HTMLInputElement>('input[type="date"]')!.disabled).toBe(false);
 });
 
 it("ignores a delayed retry after switching devices, including switching back to the same ID", async () => {
@@ -237,20 +194,13 @@ it("ignores a delayed retry after switching devices, including switching back to
     .mockResolvedValueOnce({ days: [recording("2026-12-31", 33)] });
   await render();
   await act(async () =>
-    [...host.querySelectorAll("button")]
-      .find((b) => b.textContent === "Retry coverage")!
-      .click(),
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "Retry coverage")!.click(),
   );
   await render(vi.fn(), "b");
   expect(host.querySelector("select")!.textContent).toContain("22 frames");
   await render(vi.fn(), "a");
   await act(async () => resolveRetry({ days: [recording("2026-12-30", 999)] }));
-  expect(historyDays.mock.calls.map((call) => call[0])).toEqual([
-    "a",
-    "a",
-    "b",
-    "a",
-  ]);
+  expect(historyDays.mock.calls.map((call) => call[0])).toEqual(["a", "a", "b", "a"]);
   expect(host.querySelector("select")!.textContent).toContain("33 frames");
   expect(host.textContent).not.toContain("999 frames");
   expect(host.querySelector('[role="alert"]')).toBeNull();
@@ -302,15 +252,18 @@ it("warns in one line when the chosen day has no captures or only partial covera
   const show = (day: string) =>
     act(async () =>
       root.render(
-        wrap(
-          <RecallDayCoverageNote agentId="a" day={day} timezone="UTC" onChange={vi.fn()} />,
-        ),
+        wrap(<RecallDayCoverageNote agentId="a" day={day} timezone="UTC" onChange={vi.fn()} />),
       ),
     );
   await show("2026-12-31");
   expect(host.textContent).toContain("only part of this day");
   await show("2026-12-31");
-  historyDays.mockResolvedValue({ from: "2026-12-01T00:00:00Z", to: "2027-01-01T00:00:00Z", timezone: "UTC", days: [recording("2026-12-31", 5)] });
+  historyDays.mockResolvedValue({
+    from: "2026-12-01T00:00:00Z",
+    to: "2027-01-01T00:00:00Z",
+    timezone: "UTC",
+    days: [recording("2026-12-31", 5)],
+  });
   await act(async () => queryClient.invalidateQueries());
   await show("2026-12-30");
   expect(host.textContent).toContain("No captures were recorded on this day");
@@ -345,13 +298,9 @@ it("reuses coverage across day changes and opens observed captures with device-z
       ),
     );
   await show("2026-12-31");
-  const facts = host.querySelector(
-    '[aria-label="Selected day retained recordings"]',
-  )!;
+  const facts = host.querySelector('[aria-label="Selected day retained recordings"]')!;
   expect(facts.textContent).toContain("2 retained frames on 2026-12-31");
-  expect(facts.textContent).toContain(
-    `First observed capture: ${timeIn("Asia/Tokyo", first)}`,
-  );
+  expect(facts.textContent).toContain(`First observed capture: ${timeIn("Asia/Tokyo", first)}`);
   expect(facts.textContent).toContain("not continuous recording");
   act(() =>
     [...facts.querySelectorAll("button")]
@@ -366,9 +315,7 @@ it("reuses coverage across day changes and opens observed captures with device-z
   );
   expect(onSeek).toHaveBeenLastCalledWith(last);
   await show("2026-12-30");
-  expect(facts.textContent).toContain(
-    "First observed capture time unavailable",
-  );
+  expect(facts.textContent).toContain("First observed capture time unavailable");
   expect(facts.querySelector("button")).toBeNull();
   await show("2026-12-29");
   expect(facts.textContent).toContain("No retained recordings reported");
@@ -495,9 +442,7 @@ it("keeps day-summary errors distinct from an empty derived day", async () => {
       ),
     ),
   );
-  expect(host.textContent).toContain(
-    "Could not load the day summary and activity",
-  );
+  expect(host.textContent).toContain("Could not load the day summary and activity");
   expect(host.textContent).toContain("10 retained frames");
   expect(host.textContent).not.toContain("No derived summary");
 });
@@ -559,14 +504,10 @@ it("offers every valid source segment, including brief activity, through a label
     ),
   );
   const chooser = [...host.querySelectorAll("select")].find((s) =>
-    host
-      .querySelector(`label[for="${s.id}"]`)
-      ?.textContent?.includes("Open segment source time"),
+    host.querySelector(`label[for="${s.id}"]`)?.textContent?.includes("Open segment source time"),
   )!;
   expect(chooser).toBeDefined();
-  expect(
-    Number.parseFloat(getComputedStyle(chooser).minHeight),
-  ).toBeGreaterThanOrEqual(44);
+  expect(Number.parseFloat(getComputedStyle(chooser).minHeight)).toBeGreaterThanOrEqual(44);
   expect(chooser.style.width).toBe("100%");
   expect(Number.parseFloat(chooser.style.minWidth)).toBe(0);
   expect([...chooser.options].map((o) => o.value)).toEqual(["", "1", "2"]);
@@ -586,42 +527,20 @@ it("offers every valid source segment, including brief activity, through a label
   expect(strip.querySelector("button")).toBeNull();
   const blocks = strip.querySelectorAll<HTMLElement>("span");
   expect(blocks).toHaveLength(2);
-  expect(
-    Number(blocks[0].style.flexGrow) / Number(blocks[1].style.flexGrow),
-  ).toBe(12);
+  expect(Number(blocks[0].style.flexGrow) / Number(blocks[1].style.flexGrow)).toBe(12);
   expect(historyDays).toHaveBeenCalledTimes(1);
 });
 
 it.each([
-  [
-    "Asia/Tokyo",
-    "2026-12-31",
-    "2027-01-01",
-    "2026-12-30T15:00:00Z",
-    "2026-12-31T15:00:00Z",
-  ],
-  [
-    "America/New_York",
-    "2026-03-08",
-    "2026-03-09",
-    "2026-03-08T05:00:00Z",
-    "2026-03-09T04:00:00Z",
-  ],
-  [
-    "America/New_York",
-    "2026-11-01",
-    "2026-11-02",
-    "2026-11-01T04:00:00Z",
-    "2026-11-02T05:00:00Z",
-  ],
+  ["Asia/Tokyo", "2026-12-31", "2027-01-01", "2026-12-30T15:00:00Z", "2026-12-31T15:00:00Z"],
+  ["America/New_York", "2026-03-08", "2026-03-09", "2026-03-08T05:00:00Z", "2026-03-09T04:00:00Z"],
+  ["America/New_York", "2026-11-01", "2026-11-02", "2026-11-01T04:00:00Z", "2026-11-02T05:00:00Z"],
 ])(
   "uses exclusive midnight coverage bounds in %s, including DST days",
   async (timezone, inside, after, from, to) => {
     historyDays.mockResolvedValue({ timezone, from, to, days: [] });
     await render(vi.fn(), "a", inside, timezone);
-    const facts = host.querySelector(
-      '[aria-label="Selected day retained recordings"]',
-    )!;
+    const facts = host.querySelector('[aria-label="Selected day retained recordings"]')!;
     expect(facts.textContent).toContain("No retained recordings reported");
     expect(facts.textContent).not.toContain("only part");
     await render(vi.fn(), "a", after, timezone);
@@ -644,19 +563,11 @@ it.each([
       days: [{ ...recording(day, 2), first_ts: from, last_ts: from }],
     });
     await render(vi.fn(), "a", day, "UTC");
-    const facts = host.querySelector(
-      '[aria-label="Selected day retained recordings"]',
-    )!;
+    const facts = host.querySelector('[aria-label="Selected day retained recordings"]')!;
     expect(facts.textContent).toContain("2 retained frames");
-    expect(facts.textContent).toContain(
-      "observed within the returned coverage period",
-    );
-    expect(facts.textContent).toContain(
-      "only part of this device calendar day",
-    );
+    expect(facts.textContent).toContain("observed within the returned coverage period");
+    expect(facts.textContent).toContain("only part of this device calendar day");
     expect(facts.textContent).toContain("rest of the day is unverified");
-    expect(facts.textContent).not.toContain(
-      "outside the returned coverage period",
-    );
+    expect(facts.textContent).not.toContain("outside the returned coverage period");
   },
 );

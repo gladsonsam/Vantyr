@@ -21,11 +21,25 @@ interface AuditListProps {
 
 function dayOf(row: AuditRow): { key: string; label: string } {
   const date = parseTimestamp(row.ts);
-  return date ? { key: date.toDateString(), label: fmtDayLabel(date) } : { key: "unknown", label: "Unknown date" };
+  return date
+    ? { key: date.toDateString(), label: fmtDayLabel(date) }
+    : { key: "unknown", label: "Unknown date" };
 }
 
 /** The current page of records under one heading per day, with paging. */
-export function AuditList({ rows, title, newestFirst, nameOf, showActor, showDevice, page, pages, onPage, stale, listRef }: AuditListProps) {
+export function AuditList({
+  rows,
+  title,
+  newestFirst,
+  nameOf,
+  showActor,
+  showDevice,
+  page,
+  pages,
+  onPage,
+  stale,
+  listRef,
+}: AuditListProps) {
   const days: { key: string; label: string; rows: AuditRow[] }[] = [];
   for (const row of rows) {
     const day = dayOf(row);
@@ -34,10 +48,17 @@ export function AuditList({ rows, title, newestFirst, nameOf, showActor, showDev
     else days.push({ ...day, rows: [row] });
   }
   return (
-    <div ref={listRef} tabIndex={-1} aria-busy={stale} className={`scroll-mt-20 overflow-hidden outline-none rounded-xl bg-card ${stale ? "opacity-60" : ""}`}>
+    <div
+      ref={listRef}
+      tabIndex={-1}
+      aria-busy={stale}
+      className={`scroll-mt-20 overflow-hidden outline-none rounded-xl bg-card ${stale ? "opacity-60" : ""}`}
+    >
       {days.map((day) => (
         <Fragment key={day.key}>
-          <h3 className="bg-muted/40 px-4 py-1.5 text-xs font-medium text-muted-foreground">{day.label}</h3>
+          <h3 className="bg-muted/40 px-4 py-1.5 text-xs font-medium text-muted-foreground">
+            {day.label}
+          </h3>
           <ul aria-label={`${title}, ${day.label}, ${newestFirst ? "newest" : "oldest"} first`}>
             {day.rows.map((row) => (
               <AuditRowItem

@@ -11,15 +11,36 @@ import { InternetAccessTab } from "./InternetAccessTab";
 import { ScheduledScriptsTab } from "./ScheduledScriptsTab";
 import { EventsGlobalTab } from "./EventsGlobalTab";
 
-type RulesTabId = "alert-rules" | "app-blocking" | "internet-access" | "scheduled-scripts" | "events";
+type RulesTabId =
+  "alert-rules" | "app-blocking" | "internet-access" | "scheduled-scripts" | "events";
 
 // The ids are the `?tab=` values saved links use; only the labels and captions are free to change.
 const RULE_TABS: { id: RulesTabId; label: string; caption: string }[] = [
-  { id: "alert-rules", label: "Alerts", caption: "Get an alert when an agent visits a site, types a phrase, runs hot or goes offline." },
-  { id: "app-blocking", label: "App blocking", caption: "Close chosen apps whenever they start on the agents you pick." },
-  { id: "internet-access", label: "Internet", caption: "Cut internet access for agents or groups, always or on a weekly schedule." },
-  { id: "scheduled-scripts", label: "Scripts", caption: "Run a script on agents every hour, day or week." },
-  { id: "events", label: "Events", caption: "What the rules did: alerts, closed apps, script runs and agent connections." },
+  {
+    id: "alert-rules",
+    label: "Alerts",
+    caption: "Get an alert when an agent visits a site, types a phrase, runs hot or goes offline.",
+  },
+  {
+    id: "app-blocking",
+    label: "App blocking",
+    caption: "Close chosen apps whenever they start on the agents you pick.",
+  },
+  {
+    id: "internet-access",
+    label: "Internet",
+    caption: "Cut internet access for agents or groups, always or on a weekly schedule.",
+  },
+  {
+    id: "scheduled-scripts",
+    label: "Scripts",
+    caption: "Run a script on agents every hour, day or week.",
+  },
+  {
+    id: "events",
+    label: "Events",
+    caption: "What the rules did: alerts, closed apps, script runs and agent connections.",
+  },
 ];
 
 const NO_GROUPS: AgentGroup[] = [];
@@ -58,7 +79,9 @@ export function RulesPage() {
     const strip = stripRef.current;
     if (!strip) return;
     const update = () => setMoreRight(strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 4);
-    strip.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.scrollIntoView?.({ inline: "nearest", block: "nearest" });
+    strip
+      .querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+      ?.scrollIntoView?.({ inline: "nearest", block: "nearest" });
     update();
     strip.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", update);
@@ -70,7 +93,11 @@ export function RulesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Tabs value={activeTab} onValueChange={(value) => setTab(value as RulesTabId)} className="gap-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setTab(value as RulesTabId)}
+        className="gap-4"
+      >
         <div className="flex flex-col gap-2">
           <div className="flex items-end gap-4 border-b border-foreground/[0.06]">
             <div
@@ -90,7 +117,9 @@ export function RulesPage() {
               </TabsList>
             </div>
           </div>
-          <p className="text-sm text-muted-foreground">{RULE_TABS.find((t) => t.id === activeTab)?.caption}</p>
+          <p className="text-sm text-muted-foreground">
+            {RULE_TABS.find((t) => t.id === activeTab)?.caption}
+          </p>
         </div>
         <TabsContent value="alert-rules">
           <AlertRulesTab groups={groups} agents={agents} />

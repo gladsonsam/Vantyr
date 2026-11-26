@@ -67,8 +67,11 @@ export function GroupsPage() {
   };
 
   // The newest copy of the open group, so a rename shows without reopening.
-  const openMembersGroup = membersGroup ? (groups.find((g) => g.id === membersGroup.id) ?? membersGroup) : null;
-  const deleteRuleCount = deleteGroup && data.ruleCounts ? (data.ruleCounts.get(deleteGroup.id) ?? 0) : null;
+  const openMembersGroup = membersGroup
+    ? (groups.find((g) => g.id === membersGroup.id) ?? membersGroup)
+    : null;
+  const deleteRuleCount =
+    deleteGroup && data.ruleCounts ? (data.ruleCounts.get(deleteGroup.id) ?? 0) : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -80,10 +83,16 @@ export function GroupsPage() {
       </PageActions>
 
       {data.staleError && (
-        <PageNotice message={`Couldn’t refresh groups: ${data.staleError}. The list may be out of date.`} onRetry={data.retryGroups} />
+        <PageNotice
+          message={`Couldn’t refresh groups: ${data.staleError}. The list may be out of date.`}
+          onRetry={data.retryGroups}
+        />
       )}
       {data.agentsError && (
-        <PageNotice message={`Couldn’t load devices: ${data.agentsError}. Members may show as unknown.`} onRetry={data.retryAgents} />
+        <PageNotice
+          message={`Couldn’t load devices: ${data.agentsError}. Members may show as unknown.`}
+          onRetry={data.retryAgents}
+        />
       )}
 
       <GroupsContent

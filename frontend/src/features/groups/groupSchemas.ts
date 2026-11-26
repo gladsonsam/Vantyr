@@ -28,11 +28,19 @@ export const groupRuleSchema = z
   .superRefine((rule, ctx) => {
     for (const row of rule.scopes) {
       if (row.kind === "group" && !row.group_id.trim()) {
-        ctx.addIssue({ code: "custom", path: ["scopes"], message: "Each group scope must select a group" });
+        ctx.addIssue({
+          code: "custom",
+          path: ["scopes"],
+          message: "Each group scope must select a group",
+        });
         return;
       }
       if (row.kind === "agent" && !row.agent_id.trim()) {
-        ctx.addIssue({ code: "custom", path: ["scopes"], message: "Each agent scope must select an agent" });
+        ctx.addIssue({
+          code: "custom",
+          path: ["scopes"],
+          message: "Each agent scope must select an agent",
+        });
         return;
       }
     }

@@ -15,7 +15,11 @@ export interface ViewportInput {
 }
 
 /** Focusable layer over the frame that receives pointer, wheel and keyboard input. */
-function InputOverlay({ input: { show, overlayRef, handlers, label, showCursor, cursorRef } }: { input: ViewportInput }) {
+function InputOverlay({
+  input: { show, overlayRef, handlers, label, showCursor, cursorRef },
+}: {
+  input: ViewportInput;
+}) {
   if (!show) return null;
   return (
     <div
@@ -25,7 +29,9 @@ function InputOverlay({ input: { show, overlayRef, handlers, label, showCursor, 
       tabIndex={0}
       role="application"
       aria-label={label}
-    >{showCursor && <span ref={cursorRef} className="remote-trackpad-cursor" aria-hidden="true" />}</div>
+    >
+      {showCursor && <span ref={cursorRef} className="remote-trackpad-cursor" aria-hidden="true" />}
+    </div>
   );
 }
 
@@ -71,7 +77,9 @@ export function ScreenViewport({
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onFocusLeave();
   };
 
-  const placeholderContent = <ScreenPlaceholder visible={!frameVisible && !frames.selfLive} placeholder={placeholder} />;
+  const placeholderContent = (
+    <ScreenPlaceholder visible={!frameVisible && !frames.selfLive} placeholder={placeholder} />
+  );
 
   if (layout === "card") {
     return (
@@ -81,7 +89,10 @@ export function ScreenViewport({
         className={`screen-remote-panel vantyr-screen-viewer${fullscreen ? " vantyr-screen-viewer-fullscreen screen-remote-maximized" : ""}${pseudoFs ? " screen-remote-maximized" : ""}`}
         style={cardPanelStyle(pseudoFs)}
       >
-        <div className="vantyr-screen-frame screen-remote-stage" style={cardStageStyle(fullscreen || pseudoFs, aspectRatio)}>
+        <div
+          className="vantyr-screen-frame screen-remote-stage"
+          style={cardStageStyle(fullscreen || pseudoFs, aspectRatio)}
+        >
           {frames.render({ layout: "card", streamEnabled, visible: frameVisible, transform })}
           {placeholderContent}
           <InputOverlay input={input} />
@@ -100,13 +111,26 @@ export function ScreenViewport({
       className={`screen-remote-panel flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-card${isMaximized ? " screen-remote-maximized" : ""}${isMaximized ? " bg-black!" : ""}`}
       style={embeddedPanelStyle(isMaximized, pseudoFs)}
     >
-      <div className="screen-remote-stage" style={embeddedStageStyle(isMaximized, streamEnabled || selfLive, aspectRatio)}>
-        <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }} />
+      <div
+        className="screen-remote-stage"
+        style={embeddedStageStyle(isMaximized, streamEnabled || selfLive, aspectRatio)}
+      >
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundImage:
+              "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px)",
+            backgroundSize: "22px 22px",
+          }}
+        />
         {frames.render({ layout: "embedded", streamEnabled, visible: frameVisible, transform })}
 
         {/* A quiet live dot; the placeholder below already explains connecting and offline. */}
         {online && (frameVisible || selfLive) && (
-          <span title="Live desktop" className="remote-live-badge">Live</span>
+          <span title="Live desktop" className="remote-live-badge">
+            Live
+          </span>
         )}
 
         {placeholderContent}
@@ -119,24 +143,72 @@ export function ScreenViewport({
   );
 }
 
-function ScreenPlaceholder({ visible, placeholder }: { visible: boolean; placeholder: { title: string; detail?: string; window?: string } }) {
+function ScreenPlaceholder({
+  visible,
+  placeholder,
+}: {
+  visible: boolean;
+  placeholder: { title: string; detail?: string; window?: string };
+}) {
   if (!visible) return null;
-  return <div className="remote-screen-placeholder" role="status">
-    <Monitor size={28} aria-hidden="true" />
-    <strong>{placeholder.title}</strong>
-    {placeholder.detail && <span>{placeholder.detail}</span>}
-    {placeholder.window && <span>{placeholder.window}</span>}
-  </div>;
+  return (
+    <div className="remote-screen-placeholder" role="status">
+      <Monitor size={28} aria-hidden="true" />
+      <strong>{placeholder.title}</strong>
+      {placeholder.detail && <span>{placeholder.detail}</span>}
+      {placeholder.window && <span>{placeholder.window}</span>}
+    </div>
+  );
 }
 function cardPanelStyle(pseudoFs: boolean): CSSProperties {
-  return { position: "relative", ...(pseudoFs ? { position: "fixed", inset: 0, zIndex: 3000, display: "flex", flexDirection: "column", width: "100vw" } as const : {}) };
+  return {
+    position: "relative",
+    ...(pseudoFs
+      ? ({
+          position: "fixed",
+          inset: 0,
+          zIndex: 3000,
+          display: "flex",
+          flexDirection: "column",
+          width: "100vw",
+        } as const)
+      : {}),
+  };
 }
 function cardStageStyle(maximized: boolean, aspectRatio: string | null): CSSProperties | undefined {
-  return maximized ? undefined : { aspectRatio: aspectRatio ?? "16 / 9", maxHeight: "70vh", minHeight: 160 };
+  return maximized
+    ? undefined
+    : { aspectRatio: aspectRatio ?? "16 / 9", maxHeight: "70vh", minHeight: 160 };
 }
 function embeddedPanelStyle(maximized: boolean, pseudoFs: boolean): CSSProperties {
-  return { flex: "1 1 0", ...(maximized ? { borderRadius: 0 } : {}), ...(pseudoFs ? { position: "fixed", inset: 0, zIndex: 3000, width: "100vw", height: "100vh" } as const : {}) };
+  return {
+    flex: "1 1 0",
+    ...(maximized ? { borderRadius: 0 } : {}),
+    ...(pseudoFs
+      ? ({ position: "fixed", inset: 0, zIndex: 3000, width: "100vw", height: "100vh" } as const)
+      : {}),
+  };
 }
-function embeddedStageStyle(maximized: boolean, active: boolean, aspectRatio: string | null): CSSProperties {
-  return { position: "relative", width: "100%", ...(maximized ? { flex: 1, minHeight: 0 } : active ? { aspectRatio: aspectRatio ?? "16 / 9", maxHeight: "max(160px, min(calc(100dvh - 312px), 820px))" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" };
+function embeddedStageStyle(
+  maximized: boolean,
+  active: boolean,
+  aspectRatio: string | null,
+): CSSProperties {
+  return {
+    position: "relative",
+    width: "100%",
+    ...(maximized
+      ? { flex: 1, minHeight: 0 }
+      : active
+        ? {
+            aspectRatio: aspectRatio ?? "16 / 9",
+            maxHeight: "max(160px, min(calc(100dvh - 312px), 820px))",
+          }
+        : { height: 160 }),
+    background: "#0a0b0d",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  };
 }

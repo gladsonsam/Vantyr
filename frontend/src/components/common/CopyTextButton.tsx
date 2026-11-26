@@ -6,7 +6,12 @@ import { cn, copyToClipboard } from "@/lib/utils";
 type CopyState = "idle" | "copied" | "failed";
 
 /** A "Copy" button for a block of text (log lines, script output). The outcome replaces its label for a moment and is announced. */
-export function CopyTextButton({ text, label = "Copy", disabled = false, className }: {
+export function CopyTextButton({
+  text,
+  label = "Copy",
+  disabled = false,
+  className,
+}: {
   text: string;
   /** Visible name, and what the accessible name says ("Copy output"). */
   label?: string;
@@ -15,7 +20,12 @@ export function CopyTextButton({ text, label = "Copy", disabled = false, classNa
 }) {
   const [state, setState] = useState<CopyState>("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
 
   const copy = async () => {
     const ok = await copyToClipboard(text);
@@ -37,7 +47,11 @@ export function CopyTextButton({ text, label = "Copy", disabled = false, classNa
         {state === "copied" ? "Copied" : state === "failed" ? "Couldn’t copy" : label}
       </Button>
       <span role="status" className="sr-only">
-        {state === "copied" ? "Copied to clipboard" : state === "failed" ? "Couldn’t copy to the clipboard" : ""}
+        {state === "copied"
+          ? "Copied to clipboard"
+          : state === "failed"
+            ? "Couldn’t copy to the clipboard"
+            : ""}
       </span>
     </>
   );

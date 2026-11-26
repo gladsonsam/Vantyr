@@ -19,9 +19,13 @@ const HISTORY_PAGE = { limit: HISTORY_LIMIT };
 
 export function toHistoryRows(data: { rows: AlertRuleTriggeredEvent[] }): AlertRuleHistoryRow[] {
   return (data.rows ?? []).map((row) => ({
-    id: Number(row.id), agent_id: String(row.agent_id ?? ""), agent_name: String(row.agent_name ?? ""),
-    snippet: String(row.snippet ?? ""), has_screenshot: Boolean(row.has_screenshot),
-    screenshot_requested: Boolean(row.screenshot_requested), created_at: String(row.created_at ?? ""),
+    id: Number(row.id),
+    agent_id: String(row.agent_id ?? ""),
+    agent_name: String(row.agent_name ?? ""),
+    snippet: String(row.snippet ?? ""),
+    has_screenshot: Boolean(row.has_screenshot),
+    screenshot_requested: Boolean(row.screenshot_requested),
+    created_at: String(row.created_at ?? ""),
   }));
 }
 

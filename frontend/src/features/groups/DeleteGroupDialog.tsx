@@ -26,14 +26,26 @@ interface DeleteGroupDialogProps {
 }
 
 /** Group removal changes inherited policy, so the consequences are stated before the confirm button. */
-export function DeleteGroupDialog({ group, ruleCount, pending, error, onClose, onConfirm }: DeleteGroupDialogProps) {
+export function DeleteGroupDialog({
+  group,
+  ruleCount,
+  pending,
+  error,
+  onClose,
+  onConfirm,
+}: DeleteGroupDialogProps) {
   // Keep the last group's text while the dialog animates closed.
   const [last, setLast] = useState(group);
   if (group && group !== last) setLast(group);
   const shown = group ?? last;
   const members = shown?.member_count ?? 0;
   return (
-    <AlertDialog open={group !== null} onOpenChange={(open) => { if (!open && !pending) onClose(); }}>
+    <AlertDialog
+      open={group !== null}
+      onOpenChange={(open) => {
+        if (!open && !pending) onClose();
+      }}
+    >
       <AlertDialogContent className="sm:max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle>Delete “{shown?.name}”?</AlertDialogTitle>

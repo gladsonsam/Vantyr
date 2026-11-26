@@ -1,10 +1,9 @@
-// @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { withQueryClient } from "@tests/support/queryClient";
 import { buttonByText, click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
-import { CategoryManagerModal } from "@/features/settings/CategoryManagerModal";
+import { withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({
+const api = (() => ({
   urlCategorizationCategoriesGet: vi.fn(),
   urlCustomCategoriesList: vi.fn(),
   urlCategorizationCategoriesPut: vi.fn(),
@@ -12,18 +11,37 @@ const api = vi.hoisted(() => ({
   urlCustomCategoriesUpdate: vi.fn(),
   urlCustomCategoriesDelete: vi.fn(),
   urlCustomCategoriesPutMembers: vi.fn(),
-}));
-vi.mock("@/api", () => ({ api }));
+}))();
+await vi.mock("@/api", () => ({ api }));
 
-const categories = { categories: [
-  { key: "games", label: "Games", enabled: true, description: "Play" },
-  { key: "news", label: "News", enabled: true, description: "" },
-] };
-const groups = { rows: [{ id: 7, key: "fun", label_en: "Fun", description_en: "", display_order: 0, hidden: false, updated_at: "", member_count: 1, ut1_keys: ["games"] }] };
+const { CategoryManagerModal } = await import("@/features/settings/CategoryManagerModal");
+
+const categories = {
+  categories: [
+    { key: "games", label: "Games", enabled: true, description: "Play" },
+    { key: "news", label: "News", enabled: true, description: "" },
+  ],
+};
+const groups = {
+  rows: [
+    {
+      id: 7,
+      key: "fun",
+      label_en: "Fun",
+      description_en: "",
+      display_order: 0,
+      hidden: false,
+      updated_at: "",
+      member_count: 1,
+      ut1_keys: ["games"],
+    },
+  ],
+};
 
 const text = () => document.body.textContent ?? "";
 const buttons = () => [...document.querySelectorAll("button")].map((b) => b.textContent?.trim());
-const input = (label: string) => document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+const input = (label: string) =>
+  document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -35,7 +53,8 @@ beforeEach(() => {
 });
 afterEach(unmountForms);
 
-const open = (onDismiss = vi.fn()) => mountForm(withQueryClient(<CategoryManagerModal visible onDismiss={onDismiss} />));
+const open = (onDismiss = vi.fn()) =>
+  mountForm(withQueryClient(<CategoryManagerModal visible onDismiss={onDismiss} />));
 
 describe("CategoryManagerModal", () => {
   it("shows no editor when the lists could not load, so an empty draft cannot be saved over them", async () => {
@@ -53,7 +72,11 @@ describe("CategoryManagerModal", () => {
     await open();
     expect(text()).toContain("A hidden category disappears from analytics and URL history.");
     expect(document.querySelector<HTMLInputElement>("#cat-games-label")!.value).toBe("Games");
-    expect(document.querySelector('[role="switch"][aria-label="Show games in analytics and URL history"]')).not.toBeNull();
+    expect(
+      document.querySelector(
+        '[role="switch"][aria-label="Show games in analytics and URL history"]',
+      ),
+    ).not.toBeNull();
     expect(text()).toContain("1 category");
   });
 
@@ -64,7 +87,10 @@ describe("CategoryManagerModal", () => {
     expect(buttonByText("Save changes").disabled).toBe(false);
     expect(text()).toContain("1 unsaved change");
     await click(buttonByText("Save changes"));
-    expect(api.urlCustomCategoriesUpdate).toHaveBeenCalledWith(7, { label_en: "Fun and games", hidden: false });
+    expect(api.urlCustomCategoriesUpdate).toHaveBeenCalledWith(7, {
+      label_en: "Fun and games",
+      hidden: false,
+    });
   });
 
   it("blocks saving a group with a blank name and says why", async () => {

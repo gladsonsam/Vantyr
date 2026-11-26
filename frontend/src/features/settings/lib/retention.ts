@@ -14,7 +14,11 @@ export const RETENTION_KINDS: readonly { key: RetentionKey; label: string }[] = 
 ];
 
 /** Typed text that means the server's value (null / missing = keep forever, shown as 0). */
-export function toRetentionFields(policy: { keylog_days?: number | null; window_days?: number | null; url_days?: number | null }): RetentionFields {
+export function toRetentionFields(policy: {
+  keylog_days?: number | null;
+  window_days?: number | null;
+  url_days?: number | null;
+}): RetentionFields {
   return {
     keylog_days: daysToField(policy.keylog_days, "global"),
     window_days: daysToField(policy.window_days, "global"),
@@ -34,7 +38,9 @@ export function parseRetentionText(text: string): ParsedRetention {
   return { days: parsed.value, error: parsed.error };
 }
 
-export function parseRetentionFields(fields: RetentionFields): Record<RetentionKey, ParsedRetention> {
+export function parseRetentionFields(
+  fields: RetentionFields,
+): Record<RetentionKey, ParsedRetention> {
   return {
     keylog_days: parseRetentionText(fields.keylog_days),
     window_days: parseRetentionText(fields.window_days),
@@ -44,7 +50,11 @@ export function parseRetentionFields(fields: RetentionFields): Record<RetentionK
 
 /** The request body: 0 and blank are sent as null, meaning no automatic deletion. */
 export function retentionBody(parsed: Record<RetentionKey, ParsedRetention>): RetentionPolicy {
-  return { keylog_days: parsed.keylog_days.days, window_days: parsed.window_days.days, url_days: parsed.url_days.days };
+  return {
+    keylog_days: parsed.keylog_days.days,
+    window_days: parsed.window_days.days,
+    url_days: parsed.url_days.days,
+  };
 }
 
 export function fmtDays(days: number | null | undefined): string {
@@ -53,9 +63,15 @@ export function fmtDays(days: number | null | undefined): string {
 }
 
 /** One line saying what the typed value will do, next to what is saved while they differ. */
-export function describeRetention(parsed: ParsedRetention, savedDays: number | null | undefined): string {
+export function describeRetention(
+  parsed: ParsedRetention,
+  savedDays: number | null | undefined,
+): string {
   if (parsed.error) return "";
-  const what = parsed.days === null ? "Keeps this data forever." : `Deletes data older than ${fmtDays(parsed.days)}.`;
+  const what =
+    parsed.days === null
+      ? "Keeps this data forever."
+      : `Deletes data older than ${fmtDays(parsed.days)}.`;
   const saved = savedDays ?? null;
   return saved === parsed.days ? what : `${what} Saved: ${fmtDays(saved)}.`;
 }

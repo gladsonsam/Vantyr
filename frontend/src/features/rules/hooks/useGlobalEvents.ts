@@ -18,10 +18,26 @@ const AUTO_REFRESH_MS = 30_000;
 /** The four event feeds, merged newest first and filtered to one kind; a feed that failed is named, not silently left out. */
 export function useGlobalEvents(filter: EventFilter, autoRefresh: boolean) {
   const refetchInterval = autoRefresh ? AUTO_REFRESH_MS : false;
-  const alertQuery = useQuery({ ...ruleQueries.alertEventsAll(FEED_PAGE), select: toAlertEvents, refetchInterval });
-  const blockQuery = useQuery({ ...ruleQueries.appBlockEventsAll(FEED_PAGE), select: toBlockEvents, refetchInterval });
-  const scriptQuery = useQuery({ ...ruleQueries.scheduledScriptEventsAll(FEED_PAGE), select: toScriptEvents, refetchInterval });
-  const sessionQuery = useQuery({ ...auditQueries.agentSessions(FEED_PAGE), select: toSessionEvents, refetchInterval });
+  const alertQuery = useQuery({
+    ...ruleQueries.alertEventsAll(FEED_PAGE),
+    select: toAlertEvents,
+    refetchInterval,
+  });
+  const blockQuery = useQuery({
+    ...ruleQueries.appBlockEventsAll(FEED_PAGE),
+    select: toBlockEvents,
+    refetchInterval,
+  });
+  const scriptQuery = useQuery({
+    ...ruleQueries.scheduledScriptEventsAll(FEED_PAGE),
+    select: toScriptEvents,
+    refetchInterval,
+  });
+  const sessionQuery = useQuery({
+    ...auditQueries.agentSessions(FEED_PAGE),
+    select: toSessionEvents,
+    refetchInterval,
+  });
   const alertEvents = feedRows(alertQuery);
   const blockEvents = feedRows(blockQuery);
   const scriptEvents = feedRows(scriptQuery);
@@ -52,7 +68,8 @@ export function useGlobalEvents(filter: EventFilter, autoRefresh: boolean) {
       events: [...src].sort((a, b) => b.time.localeCompare(a.time)),
       counts: kinds,
       // Each feed returns only its newest rows; say so when one is full.
-      capped: Math.max(kinds.alerts, kinds.appblock, kinds.scripts, kinds.connections) >= FEED_LIMIT,
+      capped:
+        Math.max(kinds.alerts, kinds.appblock, kinds.scripts, kinds.connections) >= FEED_LIMIT,
     };
   }, [filter, alertEvents, blockEvents, scriptEvents, sessionEvents]);
 
@@ -70,8 +87,16 @@ export function useGlobalEvents(filter: EventFilter, autoRefresh: boolean) {
     failedFeeds: failed.map((f) => f.name),
     failedFilters: new Set<EventFilter>(failed.map((f) => f.filter)),
     allFailed: failed.length === 4,
-    loading: alertQuery.isFetching || blockQuery.isFetching || scriptQuery.isFetching || sessionQuery.isFetching,
-    firstLoad: alertQuery.isPending || blockQuery.isPending || scriptQuery.isPending || sessionQuery.isPending,
+    loading:
+      alertQuery.isFetching ||
+      blockQuery.isFetching ||
+      scriptQuery.isFetching ||
+      sessionQuery.isFetching,
+    firstLoad:
+      alertQuery.isPending ||
+      blockQuery.isPending ||
+      scriptQuery.isPending ||
+      sessionQuery.isPending,
     refresh,
   };
 }

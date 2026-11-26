@@ -1,8 +1,19 @@
 import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@vantyr/ui/components/select";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@vantyr/ui/components/input-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@vantyr/ui/components/select";
 import { RefreshButton } from "@/components/common/RefreshButton";
 
 const STATUS_OPTIONS = [
@@ -28,7 +39,19 @@ interface AuditToolbarProps {
 
 /** What is listed, then the ways to narrow it: search, outcome, page views and order; refresh sits beside the count. */
 export function AuditToolbar(props: AuditToolbarProps) {
-  const { summary, query, onQuery, status, onStatus, showViews, onShowViews, newestFirst, onToggleOrder, refreshing, onRefresh } = props;
+  const {
+    summary,
+    query,
+    onQuery,
+    status,
+    onStatus,
+    showViews,
+    onShowViews,
+    newestFirst,
+    onToggleOrder,
+    refreshing,
+    onRefresh,
+  } = props;
   const OrderIcon = newestFirst ? ArrowDown : ArrowUp;
   return (
     <div className="flex flex-col gap-3">
@@ -41,7 +64,9 @@ export function AuditToolbar(props: AuditToolbarProps) {
             variant="ghost"
             size="sm"
             className="text-muted-foreground pointer-coarse:h-9"
-            aria-label={newestFirst ? "Newest first. Show oldest first" : "Oldest first. Show newest first"}
+            aria-label={
+              newestFirst ? "Newest first. Show oldest first" : "Oldest first. Show newest first"
+            }
             onClick={onToggleOrder}
           >
             <OrderIcon /> {newestFirst ? "Newest" : "Oldest"}
@@ -62,14 +87,21 @@ export function AuditToolbar(props: AuditToolbarProps) {
           />
           {query && (
             <InputGroupAddon align="inline-end">
-              <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => onQuery("")}>
+              <InputGroupButton
+                size="icon-xs"
+                aria-label="Clear search"
+                onClick={() => onQuery("")}
+              >
                 <X />
               </InputGroupButton>
             </InputGroupAddon>
           )}
         </InputGroup>
         <Select value={status} onValueChange={(next) => onStatus(next ?? "all")}>
-          <SelectTrigger aria-label="Filter by outcome" className="w-40 max-sm:h-9 pointer-coarse:h-9">
+          <SelectTrigger
+            aria-label="Filter by outcome"
+            className="w-40 max-sm:h-9 pointer-coarse:h-9"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -81,7 +113,11 @@ export function AuditToolbar(props: AuditToolbarProps) {
           </SelectContent>
         </Select>
         <label className="flex min-h-8 cursor-pointer items-center gap-2 text-sm text-muted-foreground pointer-coarse:min-h-9">
-          <Checkbox checked={showViews} onCheckedChange={(checked) => onShowViews(checked === true)} aria-label="Show page views" />
+          <Checkbox
+            checked={showViews}
+            onCheckedChange={(checked) => onShowViews(checked === true)}
+            aria-label="Show page views"
+          />
           Page views
         </label>
       </div>

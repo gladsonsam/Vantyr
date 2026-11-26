@@ -1,4 +1,14 @@
-import { Activity, Lock, MonitorPlay, MoreHorizontal, Power, RotateCcw, SquareArrowOutUpRight, Trash2, Zap } from "lucide-react";
+import {
+  Activity,
+  Lock,
+  MonitorPlay,
+  MoreHorizontal,
+  Power,
+  RotateCcw,
+  SquareArrowOutUpRight,
+  Trash2,
+  Zap,
+} from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import {
   DropdownMenu,
@@ -23,17 +33,33 @@ export interface AgentActionHandlers {
   removalBusy?: boolean;
 }
 
-export function AgentActionsMenu({ row, handlers }: { row: FleetRow; handlers: AgentActionHandlers }) {
+export function AgentActionsMenu({
+  row,
+  handlers,
+}: {
+  row: FleetRow;
+  handlers: AgentActionHandlers;
+}) {
   const { onOpen, onLive, onActivity, onPower, onRemove, canOperate, removalBusy } = handlers;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="ghost" size="icon-sm" aria-label={`More actions for ${row.displayName}`} />}
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`More actions for ${row.displayName}`}
+          />
+        }
         onClick={(event) => event.stopPropagation()}
       >
         <MoreHorizontal />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52" onClick={(event) => event.stopPropagation()}>
+      <DropdownMenuContent
+        align="end"
+        className="w-52"
+        onClick={(event) => event.stopPropagation()}
+      >
         <DropdownMenuGroup>
           <DropdownMenuLabel className="truncate">{row.displayName}</DropdownMenuLabel>
           <DropdownMenuItem onClick={() => onOpen(row)}>
@@ -57,7 +83,11 @@ export function AgentActionsMenu({ row, handlers }: { row: FleetRow; handlers: A
               <DropdownMenuItem disabled={!canOperate} onClick={() => onPower(row, "restart")}>
                 <RotateCcw /> Restart…
               </DropdownMenuItem>
-              <DropdownMenuItem disabled={!canOperate} variant="destructive" onClick={() => onPower(row, "shutdown")}>
+              <DropdownMenuItem
+                disabled={!canOperate}
+                variant="destructive"
+                onClick={() => onPower(row, "shutdown")}
+              >
                 <Power /> Shut down…
               </DropdownMenuItem>
             </>
@@ -70,7 +100,11 @@ export function AgentActionsMenu({ row, handlers }: { row: FleetRow; handlers: A
         {onRemove && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" disabled={removalBusy} onClick={() => onRemove(row)}>
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={removalBusy}
+              onClick={() => onRemove(row)}
+            >
               <Trash2 /> Remove device…
             </DropdownMenuItem>
           </>

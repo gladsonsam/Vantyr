@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import {
   describeRetention,
   parseRetentionFields,
@@ -28,7 +28,11 @@ describe("parseRetentionText", () => {
 
 describe("retention mapping", () => {
   it("shows unlimited (null or missing) retention as 0", () => {
-    expect(toRetentionFields({ keylog_days: null, url_days: 14 })).toEqual({ keylog_days: "0", window_days: "0", url_days: "14" });
+    expect(toRetentionFields({ keylog_days: null, url_days: 14 })).toEqual({
+      keylog_days: "0",
+      window_days: "0",
+      url_days: "14",
+    });
   });
 
   it("sends 0 and blank as null", () => {
@@ -39,9 +43,15 @@ describe("retention mapping", () => {
 
 describe("describeRetention", () => {
   it("says what will be deleted and what is saved while they differ", () => {
-    expect(describeRetention(parseRetentionText("14"), 14)).toBe("Deletes data older than 14 days.");
-    expect(describeRetention(parseRetentionText("1"), null)).toBe("Deletes data older than 1 day. Saved: forever.");
-    expect(describeRetention(parseRetentionText("0"), 30)).toBe("Keeps this data forever. Saved: 30 days.");
+    expect(describeRetention(parseRetentionText("14"), 14)).toBe(
+      "Deletes data older than 14 days.",
+    );
+    expect(describeRetention(parseRetentionText("1"), null)).toBe(
+      "Deletes data older than 1 day. Saved: forever.",
+    );
+    expect(describeRetention(parseRetentionText("0"), 30)).toBe(
+      "Keeps this data forever. Saved: 30 days.",
+    );
     expect(describeRetention(parseRetentionText(""), null)).toBe("Keeps this data forever.");
     expect(describeRetention(parseRetentionText("abc"), 30)).toBe("");
   });

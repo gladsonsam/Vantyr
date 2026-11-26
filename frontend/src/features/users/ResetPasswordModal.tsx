@@ -29,25 +29,46 @@ interface ResetPasswordModalProps {
   onConfirm: (password: string) => Promise<void>;
 }
 
-export function ResetPasswordModal({ visible, onDismiss, finalFocus, name, isSelf, onConfirm }: ResetPasswordModalProps) {
+export function ResetPasswordModal({
+  visible,
+  onDismiss,
+  finalFocus,
+  name,
+  isSelf,
+  onConfirm,
+}: ResetPasswordModalProps) {
   // The dialog can't be dismissed while the request is in flight.
   const [busy, setBusy] = useState(false);
   return (
     <Dialog open={visible} onOpenChange={(open) => !open && !busy && onDismiss()}>
-      <DialogContent finalFocus={finalFocus} className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-md">
+      <DialogContent
+        finalFocus={finalFocus}
+        className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-md"
+      >
         <DialogHeader>
           <DialogTitle className="break-words">Reset password for {name}</DialogTitle>
           <DialogDescription>
-            {isSelf ? "You will be signed out right away." : `${name} will be signed out everywhere.`} The new password works from the next sign-in.
+            {isSelf
+              ? "You will be signed out right away."
+              : `${name} will be signed out everywhere.`}{" "}
+            The new password works from the next sign-in.
           </DialogDescription>
         </DialogHeader>
-        {visible && <ResetPasswordForm onDismiss={onDismiss} onConfirm={onConfirm} onBusyChange={setBusy} />}
+        {visible && (
+          <ResetPasswordForm onDismiss={onDismiss} onConfirm={onConfirm} onBusyChange={setBusy} />
+        )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function ResetPasswordForm({ onDismiss, onConfirm, onBusyChange }: Pick<ResetPasswordModalProps, "onDismiss" | "onConfirm"> & { onBusyChange: (busy: boolean) => void }) {
+function ResetPasswordForm({
+  onDismiss,
+  onConfirm,
+  onBusyChange,
+}: Pick<ResetPasswordModalProps, "onDismiss" | "onConfirm"> & {
+  onBusyChange: (busy: boolean) => void;
+}) {
   const form = useForm<ResetPasswordValues>({
     resolver: zodResolver(resetPasswordSchema),
     mode: "onChange",

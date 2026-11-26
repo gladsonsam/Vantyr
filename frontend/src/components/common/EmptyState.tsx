@@ -1,6 +1,13 @@
 import React from "react";
 import { ServerOff, Loader2 } from "lucide-react";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@vantyr/ui/components/empty";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@vantyr/ui/components/empty";
 
 interface EmptyStateProps {
   title: string;
@@ -10,7 +17,13 @@ interface EmptyStateProps {
   iconVariant?: "default" | "icon";
 }
 
-export function EmptyState({ title, description, action, icon, iconVariant = "default" }: EmptyStateProps) {
+export function EmptyState({
+  title,
+  description,
+  action,
+  icon,
+  iconVariant = "default",
+}: EmptyStateProps) {
   return (
     <Empty className="bg-card">
       <EmptyHeader>

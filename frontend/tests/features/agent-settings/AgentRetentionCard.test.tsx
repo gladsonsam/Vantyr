@@ -1,11 +1,26 @@
-// @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  buttonByText,
+  byLabel,
+  click,
+  mountForm,
+  typeInto,
+  unmountForms,
+} from "@tests/support/formDom";
 import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
-import { buttonByText, byLabel, click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
-import { AgentRetentionCard } from "@/features/agent-settings/AgentRetentionCard";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({ retentionAgentGet: vi.fn(), retentionAgentPut: vi.fn(), retentionAgentDelete: vi.fn() }));
-vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e instanceof Error ? e.message : e) }));
+const api = (() => ({
+  retentionAgentGet: vi.fn(),
+  retentionAgentPut: vi.fn(),
+  retentionAgentDelete: vi.fn(),
+}))();
+await vi.mock("@/api", () => ({
+  api,
+  errorText: (e: unknown) => String(e instanceof Error ? e.message : e),
+}));
+
+const { AgentRetentionCard } = await import("@/features/agent-settings/AgentRetentionCard");
 
 const GLOBAL = { keylog_days: 14, window_days: 30, url_days: null };
 const inherited = { global: GLOBAL, override: null };
@@ -14,7 +29,10 @@ const overridden = { global: GLOBAL, override: { keylog_days: 0, window_days: nu
 beforeEach(() => vi.clearAllMocks());
 afterEach(unmountForms);
 
-const render = (isAdmin = true, id = "device") => mountForm(withQueryClient(<AgentRetentionCard agentId={id} isAdmin={isAdmin} />, createTestQueryClient()));
+const render = (isAdmin = true, id = "device") =>
+  mountForm(
+    withQueryClient(<AgentRetentionCard agentId={id} isAdmin={isAdmin} />, createTestQueryClient()),
+  );
 const buttons = () => [...document.querySelectorAll("button")].map((b) => b.textContent?.trim());
 
 describe("agent retention", () => {
@@ -26,7 +44,7 @@ describe("agent retention", () => {
     expect(byLabel("Websites").placeholder).toBe("Default: forever");
     expect(document.body.textContent).toContain("Uses the default: keeps 14 days.");
     expect(buttons()).not.toContain("Use defaults for all");
-    expect((buttonByText("Save")).disabled).toBe(true);
+    expect(buttonByText("Save").disabled).toBe(true);
   });
 
   it("shows saved overrides, with 0 as 'forever' and blank as inherited", async () => {
@@ -48,7 +66,11 @@ describe("agent retention", () => {
     await typeInto(byLabel("Websites"), "7");
     expect(buttonByText("Save").disabled).toBe(false);
     await click(buttonByText("Save"));
-    expect(api.retentionAgentPut).toHaveBeenCalledWith("device", { keylog_days: 0, window_days: null, url_days: 7 });
+    expect(api.retentionAgentPut).toHaveBeenCalledWith("device", {
+      keylog_days: 0,
+      window_days: null,
+      url_days: 7,
+    });
     expect(document.body.textContent).toContain("Saved.");
   });
 

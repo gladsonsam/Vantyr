@@ -53,9 +53,14 @@ export function TimelineOverview({
   const step = hours > 16 ? 4 : hours > 8 ? 2 : 1;
   const ticks = byDay
     ? midnightsBetween(range.start, range.end)
-    : Array.from({ length: Math.floor(hours / step) + 1 }, (_, i) => range.start + i * step * HOUR_MS);
+    : Array.from(
+        { length: Math.floor(hours / step) + 1 },
+        (_, i) => range.start + i * step * HOUR_MS,
+      );
   const tickLabel = (t: number) =>
-    byDay ? new Date(t).toLocaleDateString([], { month: "short", day: "numeric" }) : fmtTime(new Date(t));
+    byDay
+      ? new Date(t).toLocaleDateString([], { month: "short", day: "numeric" })
+      : fmtTime(new Date(t));
 
   const pct = (ms: number) => ((ms - range.start) / range.span) * 100;
   const topApps = stats.apps.slice(0, 6);
@@ -68,7 +73,10 @@ export function TimelineOverview({
             const idle = s.appName === IDLE_APP;
             const left = pct(s.startTime.getTime());
             const width = Math.max(pct(s.endTime.getTime()) - left, 0.35);
-            const dimmed = appFilterExe != null && !idle && s.appName.toLowerCase() !== appFilterExe.toLowerCase();
+            const dimmed =
+              appFilterExe != null &&
+              !idle &&
+              s.appName.toLowerCase() !== appFilterExe.toLowerCase();
             const alerted = (s.alertEvents?.length ?? 0) > 0;
             return (
               <button
@@ -77,7 +85,11 @@ export function TimelineOverview({
                 onClick={() => onSelect(s.id)}
                 title={`${idle ? "Idle" : s.appDisplayName || s.appName} · ${formatTimeRange(s.startTime, s.endTime)} · ${formatDuration(s.duration)}${alerted ? " · alert" : ""}`}
                 aria-label={`${idle ? "Idle" : s.appDisplayName || s.appName}, ${fmtTime(s.startTime)}${alerted ? ", alert" : ""}`}
-                style={{ left: `${left}%`, width: `${width}%`, background: idle ? undefined : appColor(s.appName) }}
+                style={{
+                  left: `${left}%`,
+                  width: `${width}%`,
+                  background: idle ? undefined : appColor(s.appName),
+                }}
                 className={cn(
                   "absolute inset-y-0 cursor-pointer transition-opacity hover:brightness-125 focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-foreground",
                   idle && "bg-muted-foreground/15",
@@ -117,14 +129,24 @@ export function TimelineOverview({
                 active && "bg-muted",
               )}
             >
-              <span className="size-2.5 rounded-[3px]" style={{ background: appColor(app.exe) }} aria-hidden />
+              <span
+                className="size-2.5 rounded-[3px]"
+                style={{ background: appColor(app.exe) }}
+                aria-hidden
+              />
               <span className="font-medium">{app.name}</span>
-              {app.secs >= 1 && <span className="tabular-nums text-[11.5px] text-muted-foreground">{formatDuration(app.secs)}</span>}
+              {app.secs >= 1 && (
+                <span className="tabular-nums text-[11.5px] text-muted-foreground">
+                  {formatDuration(app.secs)}
+                </span>
+              )}
             </button>
           );
         })}
         {stats.apps.length > topApps.length && (
-          <span className="px-2 text-xs text-muted-foreground">+{stats.apps.length - topApps.length} more</span>
+          <span className="px-2 text-xs text-muted-foreground">
+            +{stats.apps.length - topApps.length} more
+          </span>
         )}
         {stats.alerts > 0 && (
           <span

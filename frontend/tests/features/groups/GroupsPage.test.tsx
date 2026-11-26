@@ -1,14 +1,12 @@
-// @vitest-environment jsdom
+import { click, typeInto } from "@tests/support/formDom";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
-import { click, typeInto } from "@tests/support/formDom";
-import { GroupsPage } from "@/features/groups/GroupsPage";
-import { ruleCountsByGroup } from "@/features/groups/groupSummary";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({
+const api = (() => ({
   agentGroupsList: vi.fn(),
   agentGroupsCreate: vi.fn(async () => ({ id: "new" })),
   agentGroupsUpdate: vi.fn(async () => ({ ok: true })),
@@ -19,17 +17,36 @@ const api = vi.hoisted(() => ({
   agentsOverview: vi.fn(),
   alertRulesList: vi.fn(),
   alertRulesCreate: vi.fn(async () => ({ id: 9 })),
-}));
-vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e) }));
+}))();
+await vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e) }));
 // The shell renders page actions into its header; here they render in place.
-vi.mock("@/app/shell/AppShell", () => ({ PageActions: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
+await vi.mock("@/app/shell/AppShell", () => ({
+  PageActions: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
 
-const row = (id: string, name: string, description: string, member_count: number) => ({ id, name, description, created_at: "2026-10-01T00:00:00Z", member_count });
+const { GroupsPage } = await import("@/features/groups/GroupsPage");
+const { ruleCountsByGroup } = await import("@/features/groups/groupSummary");
+
+const row = (id: string, name: string, description: string, member_count: number) => ({
+  id,
+  name,
+  description,
+  created_at: "2026-10-01T00:00:00Z",
+  member_count,
+});
 const groups = [row("g1", "Workstations", "Employee laptops", 2), row("g2", "Kiosks", "", 1)];
-const agents = [{ id: "a1", name: "Alpha" }, { id: "a2", name: "Bravo" }, { id: "a3", name: "Charlie" }];
+const agents = [
+  { id: "a1", name: "Alpha" },
+  { id: "a2", name: "Bravo" },
+  { id: "a3", name: "Charlie" },
+];
 const rules = [
   { id: 1, name: "R1", scopes: [{ kind: "group", group_id: "g1" }] },
-  { id: 2, name: "R2", scopes: [{ kind: "group", group_id: "g1" }, { kind: "group", group_id: "g1" }, { kind: "all" }] },
+  {
+    id: 2,
+    name: "R2",
+    scopes: [{ kind: "group", group_id: "g1" }, { kind: "group", group_id: "g1" }, { kind: "all" }],
+  },
   { id: 3, name: "R3", scopes: [{ kind: "agent", agent_id: "a1" }] },
 ];
 
@@ -54,17 +71,24 @@ afterEach(async () => {
 });
 
 async function render(ui: ReactElement = <GroupsPage />) {
-  await act(async () => root.render(withQueryClient(<MemoryRouter>{ui}</MemoryRouter>, createTestQueryClient())));
+  await act(async () =>
+    root.render(withQueryClient(<MemoryRouter>{ui}</MemoryRouter>, createTestQueryClient())),
+  );
 }
 const rows = () => [...host.querySelectorAll('ul[aria-label="Agent groups"] > li')];
 const btn = (name: string, scope: ParentNode = document) =>
-  [...scope.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") ?? b.textContent)?.trim() === name) as HTMLButtonElement | undefined;
+  [...scope.querySelectorAll("button")].find(
+    (b) => (b.getAttribute("aria-label") ?? b.textContent)?.trim() === name,
+  ) as HTMLButtonElement | undefined;
 const dialog = () => document.querySelector<HTMLElement>('[role="dialog"], [role="alertdialog"]');
 async function openMenu(group: string) {
   await click(btn(`More actions for ${group}`)!);
   await act(async () => {});
 }
-const menuItem = (name: string) => [...document.querySelectorAll('[role="menuitem"]')].find((i) => i.textContent?.trim() === name) as HTMLElement;
+const menuItem = (name: string) =>
+  [...document.querySelectorAll('[role="menuitem"]')].find(
+    (i) => i.textContent?.trim() === name,
+  ) as HTMLElement;
 
 describe("GroupsPage list", () => {
   it("shows identity, description, device count and the alert rules that target each group", async () => {
@@ -116,7 +140,9 @@ describe("GroupsPage list", () => {
   it("only shows search for long lists, and an empty search can be cleared", async () => {
     await render();
     expect(host.querySelector('input[aria-label="Search groups"]')).toBeNull();
-    const many = Array.from({ length: 7 }, (_, i) => row(`x${i}`, `Group ${i}`, i === 4 ? "needle here" : "", i));
+    const many = Array.from({ length: 7 }, (_, i) =>
+      row(`x${i}`, `Group ${i}`, i === 4 ? "needle here" : "", i),
+    );
     api.agentGroupsList.mockResolvedValue({ groups: many });
     await render(<GroupsPage key="again" />);
     const search = host.querySelector<HTMLInputElement>('input[aria-label="Search groups"]')!;
@@ -137,7 +163,10 @@ describe("GroupsPage actions", () => {
     await typeInto(document.querySelector<HTMLInputElement>("#group-name")!, "Front desk");
     await typeInto(document.querySelector<HTMLInputElement>("#group-description")!, "Reception");
     await click(btn("Create group", dialog()!)!);
-    expect(api.agentGroupsCreate).toHaveBeenCalledWith({ name: "Front desk", description: "Reception" });
+    expect(api.agentGroupsCreate).toHaveBeenCalledWith({
+      name: "Front desk",
+      description: "Reception",
+    });
     expect(dialog()).toBeNull();
     expect(api.agentGroupsList).toHaveBeenCalledTimes(2);
   });
@@ -151,7 +180,10 @@ describe("GroupsPage actions", () => {
     expect(dialog()?.querySelector('[role="alert"]')?.textContent).toBe("Name taken");
     expect(host.querySelector('[role="alert"]')).toBeNull();
     await click(btn("Save changes", dialog()!)!);
-    expect(api.agentGroupsUpdate).toHaveBeenLastCalledWith("g2", { name: "Kiosks", description: "" });
+    expect(api.agentGroupsUpdate).toHaveBeenLastCalledWith("g2", {
+      name: "Kiosks",
+      description: "",
+    });
     expect(dialog()).toBeNull();
   });
 
@@ -191,25 +223,41 @@ describe("GroupsPage actions", () => {
     await act(async () => {});
     expect(api.agentGroupMembers).toHaveBeenCalledWith("g1");
     expect(dialog()?.textContent).toContain("Members: Workstations");
-    expect([...dialog()!.querySelectorAll('ul[aria-label="Devices in this group"] li p')].map((p) => p.textContent)).toEqual(["Alpha", "Bravo"]);
-    await click([...dialog()!.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent?.startsWith("Add"))!);
-    await click(dialog()!.querySelector<HTMLElement>('[role="checkbox"][aria-label="Add Charlie"]')!);
+    expect(
+      [...dialog()!.querySelectorAll('ul[aria-label="Devices in this group"] li p')].map(
+        (p) => p.textContent,
+      ),
+    ).toEqual(["Alpha", "Bravo"]);
+    await click(
+      [...dialog()!.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) =>
+        t.textContent?.startsWith("Add"),
+      )!,
+    );
+    await click(
+      dialog()!.querySelector<HTMLElement>('[role="checkbox"][aria-label="Add Charlie"]')!,
+    );
     api.agentGroupMembers.mockResolvedValue({ agent_ids: ["a1", "a2", "a3"] });
     await click(btn("Add 1 device", dialog()!)!);
     expect(api.agentGroupMembersAdd).toHaveBeenCalledWith("g1", { agent_ids: ["a3"] });
     // The member list and counts were re-read after the change.
     expect(api.agentGroupMembers).toHaveBeenCalledTimes(2);
     expect(api.agentGroupsList).toHaveBeenCalledTimes(2);
-    expect(dialog()?.querySelector('[role="status"]')?.textContent).toBe("Added 1 device to Workstations.");
+    expect(dialog()?.querySelector('[role="status"]')?.textContent).toBe(
+      "Added 1 device to Workstations.",
+    );
     expect(dialog()?.textContent).toContain("In group (3)");
   });
 
   it("reports a failed member load in the dialog with a retry that recovers", async () => {
-    api.agentGroupMembers.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({ agent_ids: ["a1"] });
+    api.agentGroupMembers
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValue({ agent_ids: ["a1"] });
     await render();
     await click(btn("Members", rows()[0])!);
     await act(async () => {});
-    expect(dialog()?.querySelector('[role="alert"]')?.textContent).toContain("Couldn’t load members: boom");
+    expect(dialog()?.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t load members: boom",
+    );
     await click(btn("Try again", dialog()!)!);
     expect(dialog()?.textContent).toContain("In group (1)");
   });
@@ -220,7 +268,9 @@ describe("GroupsPage actions", () => {
     edit.focus();
     await click(edit);
     await click(btn("Cancel", dialog()!)!);
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
     expect(document.activeElement).toBe(edit);
   });
 });

@@ -11,7 +11,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@vantyr/ui/components/dialog";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@vantyr/ui/components/input-group";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { HelpTip } from "@/components/common/HelpTip";
@@ -55,22 +60,40 @@ export function MembersModal(props: MembersModalProps) {
 }
 
 /** Split the fleet into this group's members and the devices that could still join, each sorted by name. */
-function splitDevices(agentsList: Agent[], ids: string[]): { members: Person[]; available: Person[] } {
+function splitDevices(
+  agentsList: Agent[],
+  ids: string[],
+): { members: Person[]; available: Person[] } {
   const counts = new Map<string, number>();
   for (const a of agentsList) counts.set(a.name, (counts.get(a.name) ?? 0) + 1);
   const byId = new Map<string, Person>(
-    agentsList.map((a) => [a.id, { id: a.id, name: a.name, known: true, duplicate: (counts.get(a.name) ?? 0) > 1 }]),
+    agentsList.map((a) => [
+      a.id,
+      { id: a.id, name: a.name, known: true, duplicate: (counts.get(a.name) ?? 0) > 1 },
+    ]),
   );
   const inGroup = new Set(ids);
   const byName = (x: Person, y: Person) => x.name.localeCompare(y.name);
   return {
-    members: ids.map((id) => byId.get(id) ?? { id, name: id, known: false, duplicate: false }).sort(byName),
-    available: agentsList.filter((a) => !inGroup.has(a.id)).map((a) => byId.get(a.id)!).sort(byName),
+    members: ids
+      .map((id) => byId.get(id) ?? { id, name: id, known: false, duplicate: false })
+      .sort(byName),
+    available: agentsList
+      .filter((a) => !inGroup.has(a.id))
+      .map((a) => byId.get(a.id)!)
+      .sort(byName),
   };
 }
 
 function MembersBody({
-  onDismiss, group, memberIds, loadError, onRetry, agentsList, onAddMembers, onRemoveMember,
+  onDismiss,
+  group,
+  memberIds,
+  loadError,
+  onRetry,
+  agentsList,
+  onAddMembers,
+  onRemoveMember,
 }: MembersModalProps & { group: AgentGroup }) {
   const [tab, setTab] = useState<Tab | null>(null);
   const [query, setQuery] = useState("");
@@ -84,22 +107,31 @@ function MembersBody({
   if (tab === null && memberIds !== null) setTab(members.length === 0 ? "add" : "members");
   const activeTab: Tab = tab ?? "members";
   const needle = query.trim().toLowerCase();
-  const matches = (p: Person) => !needle || p.name.toLowerCase().includes(needle) || p.id.toLowerCase().includes(needle);
+  const matches = (p: Person) =>
+    !needle || p.name.toLowerCase().includes(needle) || p.id.toLowerCase().includes(needle);
   const shownMembers = members.filter(matches);
   const shownAvailable = available.filter(matches);
-  const showSearch = (activeTab === "members" ? members : available).length >= SEARCH_FROM || needle !== "";
+  const showSearch =
+    (activeTab === "members" ? members : available).length >= SEARCH_FROM || needle !== "";
 
   // A staged device that was added elsewhere or no longer exists drops out of the selection.
   const chosen = selected.filter((id) => available.some((p) => p.id === id));
 
   const addChosen = () =>
-    void run(async () => {
-      await onAddMembers(chosen);
-      setSelected([]);
-    }, `Added ${plural(chosen.length, "device")} to ${group.name}.`);
+    void run(
+      async () => {
+        await onAddMembers(chosen);
+        setSelected([]);
+      },
+      `Added ${plural(chosen.length, "device")} to ${group.name}.`,
+    );
   const remove = (person: Person) =>
-    void run(() => onRemoveMember(person.id), `Removed ${person.known ? person.name : "the device"} from ${group.name}.`);
-  const toggle = (id: string) => setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    void run(
+      () => onRemoveMember(person.id),
+      `Removed ${person.known ? person.name : "the device"} from ${group.name}.`,
+    );
+  const toggle = (id: string) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   const toggleShown = (on: boolean) =>
     setSelected((prev) => {
       const shown = new Set(shownAvailable.map((p) => p.id));
@@ -118,25 +150,44 @@ function MembersBody({
     <>
       <DialogHeader>
         <DialogTitle className="min-w-0 break-words pr-8">Members: {group.name}</DialogTitle>
-        {description && <DialogDescription className="line-clamp-2">{description}</DialogDescription>}
+        {description && (
+          <DialogDescription className="line-clamp-2">{description}</DialogDescription>
+        )}
       </DialogHeader>
 
-      <MembersNotices error={error} canRetry={!failure && !!onRetry} onRetry={onRetry} outcome={outcome} outcomeRef={outcomeRef} />
+      <MembersNotices
+        error={error}
+        canRetry={!failure && !!onRetry}
+        onRetry={onRetry}
+        outcome={outcome}
+        outcomeRef={outcomeRef}
+      />
 
       {memberIds === null ? (
         loadError ? null : (
-        <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-          <Spinner /> Loading members…
-        </div>
+          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+            <Spinner /> Loading members…
+          </div>
         )
       ) : (
-        <Tabs value={activeTab} onValueChange={(value) => changeTab(value as Tab)} className="gap-3">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => changeTab(value as Tab)}
+          className="gap-3"
+        >
           <div className="flex items-center gap-1.5">
             <TabsList className="min-w-0 flex-1">
-              <TabsTrigger value="members" className="pointer-coarse:h-9">In group ({members.length})</TabsTrigger>
-              <TabsTrigger value="add" className="pointer-coarse:h-9">Add devices ({available.length})</TabsTrigger>
+              <TabsTrigger value="members" className="pointer-coarse:h-9">
+                In group ({members.length})
+              </TabsTrigger>
+              <TabsTrigger value="add" className="pointer-coarse:h-9">
+                Add devices ({available.length})
+              </TabsTrigger>
             </TabsList>
-            <HelpTip>Devices in a group inherit the alert rules that target it. Changes are saved as soon as you remove a device or add your selection.</HelpTip>
+            <HelpTip>
+              Devices in a group inherit the alert rules that target it. Changes are saved as soon
+              as you remove a device or add your selection.
+            </HelpTip>
           </div>
           {showSearch && <DeviceSearch query={query} onChange={setQuery} />}
           <TabsContent value="members">
@@ -176,8 +227,18 @@ function MembersBody({
   );
 }
 
-function MembersNotices({ error, canRetry, onRetry, outcome, outcomeRef }: {
-  error: string | null; canRetry: boolean; onRetry?: () => void; outcome: string | null; outcomeRef: RefObject<HTMLParagraphElement | null>;
+function MembersNotices({
+  error,
+  canRetry,
+  onRetry,
+  outcome,
+  outcomeRef,
+}: {
+  error: string | null;
+  canRetry: boolean;
+  onRetry?: () => void;
+  outcome: string | null;
+  outcomeRef: RefObject<HTMLParagraphElement | null>;
 }) {
   return (
     <>
@@ -194,7 +255,12 @@ function MembersNotices({ error, canRetry, onRetry, outcome, outcomeRef }: {
         </Alert>
       )}
       {outcome && (
-        <p ref={outcomeRef} tabIndex={-1} role="status" className="text-sm text-success outline-none">
+        <p
+          ref={outcomeRef}
+          tabIndex={-1}
+          role="status"
+          className="text-sm text-success outline-none"
+        >
           {outcome}
         </p>
       )}
@@ -225,18 +291,48 @@ function DeviceSearch({ query, onChange }: { query: string; onChange: (value: st
   );
 }
 
-function MemberRows({ rows, searching, canAdd, busy, onRemove, onClearSearch, onAddDevices }: {
-  rows: Person[]; searching: string; canAdd: boolean; busy: boolean;
-  onRemove: (person: Person) => void; onClearSearch: () => void; onAddDevices: () => void;
+function MemberRows({
+  rows,
+  searching,
+  canAdd,
+  busy,
+  onRemove,
+  onClearSearch,
+  onAddDevices,
+}: {
+  rows: Person[];
+  searching: string;
+  canAdd: boolean;
+  busy: boolean;
+  onRemove: (person: Person) => void;
+  onClearSearch: () => void;
+  onAddDevices: () => void;
 }) {
   if (rows.length === 0) {
-    if (searching) return <ListEmpty text={`No members match “${searching}”.`} action={{ label: "Clear search", run: onClearSearch }} />;
-    return <ListEmpty text="No devices are in this group yet." action={canAdd ? { label: "Add devices", run: onAddDevices } : undefined} />;
+    if (searching)
+      return (
+        <ListEmpty
+          text={`No members match “${searching}”.`}
+          action={{ label: "Clear search", run: onClearSearch }}
+        />
+      );
+    return (
+      <ListEmpty
+        text="No devices are in this group yet."
+        action={canAdd ? { label: "Add devices", run: onAddDevices } : undefined}
+      />
+    );
   }
   return (
-    <ul aria-label="Devices in this group" className="max-h-[40dvh] overflow-y-auto rounded-lg border border-foreground/[0.08] md:max-h-[50dvh]">
+    <ul
+      aria-label="Devices in this group"
+      className="max-h-[40dvh] overflow-y-auto rounded-lg border border-foreground/[0.08] md:max-h-[50dvh]"
+    >
       {rows.map((p) => (
-        <li key={p.id} className="flex min-h-11 items-center gap-3 border-b border-foreground/[0.06] px-3 py-1.5 last:border-b-0">
+        <li
+          key={p.id}
+          className="flex min-h-11 items-center gap-3 border-b border-foreground/[0.06] px-3 py-1.5 last:border-b-0"
+        >
           <DeviceName person={p} />
           <Button
             variant="ghost"
@@ -254,13 +350,38 @@ function MemberRows({ rows, searching, canAdd, busy, onRemove, onClearSearch, on
   );
 }
 
-function AvailableRows({ rows, searching, noDevices, chosen, busy, onToggle, onToggleShown, onClearSearch }: {
-  rows: Person[]; searching: string; noDevices: boolean; chosen: string[]; busy: boolean;
-  onToggle: (id: string) => void; onToggleShown: (on: boolean) => void; onClearSearch: () => void;
+function AvailableRows({
+  rows,
+  searching,
+  noDevices,
+  chosen,
+  busy,
+  onToggle,
+  onToggleShown,
+  onClearSearch,
+}: {
+  rows: Person[];
+  searching: string;
+  noDevices: boolean;
+  chosen: string[];
+  busy: boolean;
+  onToggle: (id: string) => void;
+  onToggleShown: (on: boolean) => void;
+  onClearSearch: () => void;
 }) {
   if (rows.length === 0) {
-    if (searching) return <ListEmpty text={`No available devices match “${searching}”.`} action={{ label: "Clear search", run: onClearSearch }} />;
-    return <ListEmpty text={noDevices ? "No devices are enrolled yet." : "Every device is already in this group."} />;
+    if (searching)
+      return (
+        <ListEmpty
+          text={`No available devices match “${searching}”.`}
+          action={{ label: "Clear search", run: onClearSearch }}
+        />
+      );
+    return (
+      <ListEmpty
+        text={noDevices ? "No devices are enrolled yet." : "Every device is already in this group."}
+      />
+    );
   }
   const chosenSet = new Set(chosen);
   const shownChosen = rows.filter((p) => chosenSet.has(p.id)).length;
@@ -276,10 +397,18 @@ function AvailableRows({ rows, searching, noDevices, chosen, busy, onToggle, onT
         />
         {searching ? `Select all ${rows.length} shown` : `Select all ${rows.length}`}
       </label>
-      <ul aria-label="Devices you can add" className="max-h-[36dvh] overflow-y-auto md:max-h-[46dvh]">
+      <ul
+        aria-label="Devices you can add"
+        className="max-h-[36dvh] overflow-y-auto md:max-h-[46dvh]"
+      >
         {rows.map((p) => (
           <li key={p.id} className="border-b border-foreground/[0.06] last:border-b-0">
-            <label className={cn("flex min-h-11 cursor-pointer items-center gap-3 px-3 py-1.5", chosenSet.has(p.id) && "bg-primary/[0.06]")}>
+            <label
+              className={cn(
+                "flex min-h-11 cursor-pointer items-center gap-3 px-3 py-1.5",
+                chosenSet.has(p.id) && "bg-primary/[0.06]",
+              )}
+            >
               <Checkbox
                 aria-label={`Add ${p.name}`}
                 checked={chosenSet.has(p.id)}
@@ -296,8 +425,18 @@ function AvailableRows({ rows, searching, noDevices, chosen, busy, onToggle, onT
 }
 
 /** The staged selection (not yet saved) with its confirm, beside Close. On a phone the confirm sits above Close. */
-function MembersFooter({ count, busy, onClear, onAdd, onDismiss }: {
-  count: number; busy: boolean; onClear: () => void; onAdd: () => void; onDismiss: () => void;
+function MembersFooter({
+  count,
+  busy,
+  onClear,
+  onAdd,
+  onDismiss,
+}: {
+  count: number;
+  busy: boolean;
+  onClear: () => void;
+  onAdd: () => void;
+  onDismiss: () => void;
 }) {
   return (
     <DialogFooter className="flex-col sm:flex-row sm:items-center">
@@ -306,7 +445,13 @@ function MembersFooter({ count, busy, onClear, onAdd, onDismiss }: {
           <span className="text-sm whitespace-nowrap">
             {count} selected <span className="text-muted-foreground">· not added yet</span>
           </span>
-          <Button variant="ghost" size="sm" className="pointer-coarse:h-9" disabled={busy} onClick={onClear}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="pointer-coarse:h-9"
+            disabled={busy}
+            onClick={onClear}
+          >
             Clear
           </Button>
         </div>
@@ -326,7 +471,9 @@ function MembersFooter({ count, busy, onClear, onAdd, onDismiss }: {
 function DeviceName({ person }: { person: Person }) {
   return (
     <div className="min-w-0 flex-1">
-      <p className="truncate text-sm font-medium">{person.known ? person.name : "Unknown device"}</p>
+      <p className="truncate text-sm font-medium">
+        {person.known ? person.name : "Unknown device"}
+      </p>
       {(person.duplicate || !person.known) && (
         <p className="truncate font-mono text-xs text-muted-foreground">{person.id.slice(0, 8)}…</p>
       )}
@@ -334,7 +481,13 @@ function DeviceName({ person }: { person: Person }) {
   );
 }
 
-function ListEmpty({ text, action }: { text: string; action?: { label: string; run: () => void } }) {
+function ListEmpty({
+  text,
+  action,
+}: {
+  text: string;
+  action?: { label: string; run: () => void };
+}) {
   return (
     <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-foreground/[0.12] px-4 py-8 text-center text-sm text-muted-foreground">
       <p>{text}</p>

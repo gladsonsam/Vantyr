@@ -1,20 +1,26 @@
-// @vitest-environment jsdom
+import { buttonByText, byLabel, click, typeInto } from "@tests/support/formDom";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
-import { buttonByText, byLabel, click, typeInto } from "@tests/support/formDom";
-import { ApiError } from "@/api";
-import { TwoFactorSettings } from "@/features/auth/TwoFactorSettings";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({
+const api = (() => ({
   twofaStatus: vi.fn(),
   twofaSetup: vi.fn(),
   twofaEnable: vi.fn(),
   twofaDisable: vi.fn(),
+}))();
+const originalModule0 = await import("@/api");
+await vi.mock("@/api", async () => ({ ...originalModule0, api }));
+const originalModule1 = await import("@/lib/utils");
+await vi.mock("@/lib/utils", async () => ({
+  ...originalModule1,
+  copyToClipboard: vi.fn(async () => true),
 }));
-vi.mock("@/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/api")>()), api }));
-vi.mock("@/lib/utils", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/utils")>()), copyToClipboard: vi.fn(async () => true) }));
+
+const { ApiError } = await import("@/api");
+const { TwoFactorSettings } = await import("@/features/auth/TwoFactorSettings");
 
 const SECRET = "JBSWY3DPEHPK3PXP";
 const setupReply = { secret: SECRET, otpauth_uri: `otpauth://totp/Vantyr:demo?secret=${SECRET}` };
@@ -41,10 +47,14 @@ afterEach(async () => {
 });
 
 async function render() {
-  await act(async () => root.render(withQueryClient(<TwoFactorSettings />, createTestQueryClient())));
+  await act(async () =>
+    root.render(withQueryClient(<TwoFactorSettings />, createTestQueryClient())),
+  );
 }
-const hasButton = (text: string) => [...document.querySelectorAll("button")].some((b) => b.textContent?.trim() === text);
-const alerts = () => [...document.querySelectorAll('[role="alert"]')].map((e) => e.textContent ?? "");
+const hasButton = (text: string) =>
+  [...document.querySelectorAll("button")].some((b) => b.textContent?.trim() === text);
+const alerts = () =>
+  [...document.querySelectorAll('[role="alert"]')].map((e) => e.textContent ?? "");
 
 describe("TwoFactorSettings", () => {
   it("shows the status and offers setup when it is off", async () => {
@@ -54,8 +64,10 @@ describe("TwoFactorSettings", () => {
     expect(buttonByText("Set up 2FA").disabled).toBe(false);
   });
 
-  it("never presents a failed status load as \"Not enabled\" or offers setup; Try again recovers", async () => {
-    api.twofaStatus.mockRejectedValueOnce(new ApiError("Service unavailable", 503)).mockResolvedValue({ enabled: true, pending: false });
+  it('never presents a failed status load as "Not enabled" or offers setup; Try again recovers', async () => {
+    api.twofaStatus
+      .mockRejectedValueOnce(new ApiError("Service unavailable", 503))
+      .mockResolvedValue({ enabled: true, pending: false });
     await render();
     expect(alerts()[0]).toContain("Couldn’t load your two-factor status: Service unavailable");
     expect(host.textContent).not.toContain("Not enabled");
@@ -69,7 +81,9 @@ describe("TwoFactorSettings", () => {
     const client = createTestQueryClient();
     await act(async () => root.render(withQueryClient(<TwoFactorSettings />, client)));
     api.twofaStatus.mockRejectedValue(new ApiError("offline", 0));
-    await act(async () => { await client.refetchQueries({ queryKey: ["auth", "2fa-status"] }).catch(() => undefined); });
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["auth", "2fa-status"] }).catch(() => undefined);
+    });
     expect(host.textContent).toContain("Not enabled");
     expect(alerts()[0]).toContain("Couldn’t refresh your two-factor status");
   });
@@ -79,7 +93,9 @@ describe("TwoFactorSettings", () => {
     await click(buttonByText("Set up 2FA"));
     expect(host.textContent).toContain(SECRET);
     expect(hasButton("Copy key")).toBe(true);
-    expect(host.querySelector<HTMLAnchorElement>("a")!.getAttribute("href")).toBe(setupReply.otpauth_uri);
+    expect(host.querySelector<HTMLAnchorElement>("a")!.getAttribute("href")).toBe(
+      setupReply.otpauth_uri,
+    );
     // The long otpauth URI is behind the link, not printed next to the key.
     expect(host.textContent).not.toContain("otpauth://");
     expect(document.activeElement?.textContent).toBe("Add this key to your authenticator app");
@@ -106,7 +122,9 @@ describe("TwoFactorSettings", () => {
     await vi.waitFor(() => expect(alerts()).toEqual(["Invalid code"]));
     expect(host.textContent).toContain(SECRET);
     // Focus returns once the box is enabled again (the request has finished).
-    await vi.waitFor(() => expect(document.activeElement).toBe(byLabel("Enter the 6-digit code to confirm")));
+    await vi.waitFor(() =>
+      expect(document.activeElement === byLabel("Enter the 6-digit code to confirm")).toBe(true),
+    );
   });
 
   it("lets Cancel setup throw the secret away and returns focus to the status", async () => {
@@ -138,7 +156,9 @@ describe("TwoFactorSettings", () => {
 
   it("turns 2FA off with a code (letters allowed for recovery codes) and shows failures inside the form", async () => {
     api.twofaStatus.mockResolvedValue({ enabled: true, pending: false });
-    api.twofaDisable.mockRejectedValueOnce(new ApiError("Wrong code", 401)).mockResolvedValue({ ok: true });
+    api.twofaDisable
+      .mockRejectedValueOnce(new ApiError("Wrong code", 401))
+      .mockResolvedValue({ ok: true });
     await render();
     const box = byLabel("Code to turn off two-factor authentication");
     expect(box.inputMode).toBe("text");

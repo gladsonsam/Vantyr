@@ -4,5 +4,7 @@ import { NotificationsContext } from "./useNotifications";
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const notifications = useNotificationStore();
-  return <NotificationsContext.Provider value={notifications}>{children}</NotificationsContext.Provider>;
+  return (
+    <NotificationsContext.Provider value={notifications}>{children}</NotificationsContext.Provider>
+  );
 }

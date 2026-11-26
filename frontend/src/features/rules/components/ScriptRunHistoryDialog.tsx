@@ -13,7 +13,13 @@ const HISTORY_PAGE = { limit: HISTORY_LIMIT };
 const toEvents = (d: { rows: ScheduledScriptEvent[] }) => d.rows;
 
 /** Each run of one script on each device, newest first, with what it printed. */
-export function ScriptRunHistoryDialog({ script, onClose }: { script: ScheduledScript | null; onClose: () => void }) {
+export function ScriptRunHistoryDialog({
+  script,
+  onClose,
+}: {
+  script: ScheduledScript | null;
+  onClose: () => void;
+}) {
   const query = useQuery({
     ...ruleQueries.scheduledScriptEventsForScript(script?.id ?? 0, HISTORY_PAGE),
     enabled: script !== null,
@@ -40,7 +46,10 @@ export function ScriptRunHistoryDialog({ script, onClose }: { script: ScheduledS
       onRetry={() => void query.refetch()}
       onClose={onClose}
     >
-      <ul aria-label="Runs of this script" className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-xl bg-muted/50">
+      <ul
+        aria-label="Runs of this script"
+        className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-xl bg-muted/50"
+      >
         {events.map((row) => (
           <RunRow key={`${row.agent_id}-${row.expected_fire_time}`} row={row} />
         ))}
@@ -56,7 +65,12 @@ function RunRow({ row }: { row: ScheduledScriptEvent }) {
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
         <span className={`text-sm font-medium ${RUN_TONE_CLASS[status.tone]}`}>{status.label}</span>
         <span className="min-w-0 truncate text-sm">{row.agent_name || "Unknown agent"}</span>
-        <time dateTime={row.expected_fire_time} className="font-mono text-xs text-muted-foreground tabular-nums">{fmtDateTime(row.expected_fire_time)}</time>
+        <time
+          dateTime={row.expected_fire_time}
+          className="font-mono text-xs text-muted-foreground tabular-nums"
+        >
+          {fmtDateTime(row.expected_fire_time)}
+        </time>
       </div>
       <RunOutput status={row.status} output={row.output} />
     </li>
@@ -69,14 +83,22 @@ function RunOutput({ status, output }: { status: string; output: string | null }
   if (!output) {
     return (
       <p className="text-xs text-muted-foreground">
-        {status === "fired" ? "Waiting for the device to report back." : status === "skipped_offline" ? "The device was offline, so it wasn’t sent." : "No output."}
+        {status === "fired"
+          ? "Waiting for the device to report back."
+          : status === "skipped_offline"
+            ? "The device was offline, so it wasn’t sent."
+            : "No output."}
       </p>
     );
   }
   const long = output.length > 240 || output.split("\n").length > 4;
   return (
     <div className="text-xs">
-      <pre className={`font-mono break-words whitespace-pre-wrap [overflow-wrap:anywhere] ${open || !long ? "" : "line-clamp-4"}`}>{output}</pre>
+      <pre
+        className={`font-mono break-words whitespace-pre-wrap [overflow-wrap:anywhere] ${open || !long ? "" : "line-clamp-4"}`}
+      >
+        {output}
+      </pre>
       {long && (
         <button
           type="button"

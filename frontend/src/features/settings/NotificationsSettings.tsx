@@ -68,7 +68,13 @@ function UnconfiguredRow({ p }: { p: NotificationProviderInfo }) {
   );
 }
 
-function TestResults({ results, labels }: { results: NotificationTestResult[]; labels: Record<string, string> }) {
+function TestResults({
+  results,
+  labels,
+}: {
+  results: NotificationTestResult[];
+  labels: Record<string, string>;
+}) {
   return (
     <div className="flex flex-col gap-2" role="status">
       {results.map((r) => (
@@ -93,7 +99,12 @@ function RefreshNotice({ query, children }: { query: StatusQuery; children: stri
     <Alert variant="destructive">
       <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
         <span>{children}</span>
-        <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={query.isFetching}
+          onClick={() => void query.refetch()}
+        >
           Try again
         </Button>
       </AlertDescription>
@@ -102,7 +113,13 @@ function RefreshNotice({ query, children }: { query: StatusQuery; children: stri
 }
 
 /** The sending side: one test button and what each channel answered. */
-function ChannelTest({ configured, labels }: { configured: number; labels: Record<string, string> }) {
+function ChannelTest({
+  configured,
+  labels,
+}: {
+  configured: number;
+  labels: Record<string, string>;
+}) {
   const test = useMutation({ mutationFn: () => api.notificationsTest() });
   return (
     <div className="flex flex-col gap-3">
@@ -111,7 +128,9 @@ function ChannelTest({ configured, labels }: { configured: number; labels: Recor
           {test.isPending && <Spinner />} Send test notification
         </Button>
         <span className="text-sm text-muted-foreground">
-          {configured === 0 ? "Set up a channel first." : `Sends a real message to ${configured === 1 ? "this channel" : `all ${configured} channels`}.`}
+          {configured === 0
+            ? "Set up a channel first."
+            : `Sends a real message to ${configured === 1 ? "this channel" : `all ${configured} channels`}.`}
         </span>
       </div>
       {test.error ? (
@@ -125,10 +144,19 @@ function ChannelTest({ configured, labels }: { configured: number; labels: Recor
   );
 }
 
-function ChannelList({ providers, query }: { providers: NotificationProviderInfo[]; query: StatusQuery }) {
+function ChannelList({
+  providers,
+  query,
+}: {
+  providers: NotificationProviderInfo[];
+  query: StatusQuery;
+}) {
   const configured = providers.filter((p) => p.enabled);
   const unconfigured = providers.filter((p) => !p.enabled);
-  const labels = useMemo(() => Object.fromEntries(providers.map((p) => [p.id, p.label])), [providers]);
+  const labels = useMemo(
+    () => Object.fromEntries(providers.map((p) => [p.id, p.label])),
+    [providers],
+  );
   return (
     <>
       <p className="text-sm text-muted-foreground">
@@ -136,7 +164,11 @@ function ChannelList({ providers, query }: { providers: NotificationProviderInfo
           ? `No channel is set up yet. ${providers.length} are available.`
           : `${configured.length} of ${providers.length} channels set up.`}
       </p>
-      {query.isError && <RefreshNotice query={query}>Couldn&apos;t refresh, so this list may be out of date.</RefreshNotice>}
+      {query.isError && (
+        <RefreshNotice query={query}>
+          Couldn&apos;t refresh, so this list may be out of date.
+        </RefreshNotice>
+      )}
       {configured.length > 0 && (
         <ul>
           {configured.map((p) => (
@@ -145,7 +177,10 @@ function ChannelList({ providers, query }: { providers: NotificationProviderInfo
         </ul>
       )}
       {unconfigured.length > 0 && (
-        <details className="group rounded-lg bg-muted/50 px-3.5 py-3" open={configured.length === 0 ? true : undefined}>
+        <details
+          className="group rounded-lg bg-muted/50 px-3.5 py-3"
+          open={configured.length === 0 ? true : undefined}
+        >
           <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
             {configured.length === 0 ? "Available channels" : "Not set up"} ({unconfigured.length})
           </summary>
@@ -162,7 +197,10 @@ function ChannelList({ providers, query }: { providers: NotificationProviderInfo
 }
 
 function ChannelsBody({ isAdmin, query }: { isAdmin: boolean; query: StatusQuery }) {
-  if (!isAdmin) return <p className="text-sm text-muted-foreground">Only admins can see and test alert channels.</p>;
+  if (!isAdmin)
+    return (
+      <p className="text-sm text-muted-foreground">Only admins can see and test alert channels.</p>
+    );
   const providers = query.data?.providers ?? null;
   if (providers) return <ChannelList providers={providers} query={query} />;
   if (query.isError) {
@@ -171,7 +209,12 @@ function ChannelsBody({ isAdmin, query }: { isAdmin: boolean; query: StatusQuery
         <AlertTitle>Couldn&apos;t load alert channels</AlertTitle>
         <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
           <span>{errorText(query.error)}</span>
-          <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
             Try again
           </Button>
         </AlertDescription>
@@ -193,14 +236,19 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
         <CardTitle className="flex items-center gap-1.5">
           Alert channels
           <HelpTip>
-            Fired alert rules (URL, keystroke, resource threshold, agent offline) are delivered to every channel configured here. Set a
-            channel&apos;s variables in the server environment (see <code className="font-mono">.env.example</code>), then restart.
-            Secrets stay on the server.
+            Fired alert rules (URL, keystroke, resource threshold, agent offline) are delivered to
+            every channel configured here. Set a channel&apos;s variables in the server environment
+            (see <code className="font-mono">.env.example</code>), then restart. Secrets stay on the
+            server.
           </HelpTip>
         </CardTitle>
         {isAdmin && (
           <CardAction>
-            <RefreshButton onClick={() => void statusQuery.refetch()} loading={statusQuery.isFetching} label="Refresh channels" />
+            <RefreshButton
+              onClick={() => void statusQuery.refetch()}
+              loading={statusQuery.isFetching}
+              label="Refresh channels"
+            />
           </CardAction>
         )}
       </CardHeader>

@@ -105,7 +105,9 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
       // including this dialog's own lists, which re-seeds the staged edits.
       await invalidateUrlCategoryViews(queryClient);
     } catch (e) {
-      setError(`Not saved completely. ${errorText(e)} Some changes may already be applied; your edits are kept here.`);
+      setError(
+        `Not saved completely. ${errorText(e)} Some changes may already be applied; your edits are kept here.`,
+      );
     } finally {
       setSaving(false);
     }
@@ -129,7 +131,8 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
           <DialogHeader>
             <DialogTitle>Manage categories</DialogTitle>
             <DialogDescription>
-              Rename the categories from the lists, hide them from analytics, or roll several into one group. Changes survive list updates and apply when you save.
+              Rename the categories from the lists, hide them from analytics, or roll several into
+              one group. Changes survive list updates and apply when you save.
             </DialogDescription>
           </DialogHeader>
 
@@ -161,8 +164,12 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
       <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Discard {pending} unsaved {pending === 1 ? "change" : "changes"}?</AlertDialogTitle>
-            <AlertDialogDescription>Closing now drops the edits you haven't saved.</AlertDialogDescription>
+            <AlertDialogTitle>
+              Discard {pending} unsaved {pending === 1 ? "change" : "changes"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Closing now drops the edits you haven't saved.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>
@@ -183,7 +190,15 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
   );
 }
 
-function EditorBody({ saveError, loadFailure, hasLists, loading, draft, setDraft, onRetry }: {
+function EditorBody({
+  saveError,
+  loadFailure,
+  hasLists,
+  loading,
+  draft,
+  setDraft,
+  onRetry,
+}: {
   saveError: string | null;
   loadFailure: unknown;
   hasLists: boolean;
@@ -203,15 +218,24 @@ function EditorBody({ saveError, loadFailure, hasLists, loading, draft, setDraft
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             <span>
-              {hasLists ? "Couldn't refresh the lists. What's shown may be out of date." : "Couldn't load the categories."} {errorText(loadFailure)}
+              {hasLists
+                ? "Couldn't refresh the lists. What's shown may be out of date."
+                : "Couldn't load the categories."}{" "}
+              {errorText(loadFailure)}
             </span>
-            <Button variant="outline" size="sm" onClick={onRetry}>Try again</Button>
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              Try again
+            </Button>
           </AlertDescription>
         </Alert>
       ) : null}
       {/* No editor without the real lists: an empty one could be saved over them. */}
       {!hasLists ? (
-        loadFailure ? null : <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><Spinner /> Loading categories…</p>
+        loadFailure ? null : (
+          <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+            <Spinner /> Loading categories…
+          </p>
+        )
       ) : (
         <>
           <CustomGroupsPanel
@@ -224,7 +248,9 @@ function EditorBody({ saveError, loadFailure, hasLists, loading, draft, setDraft
             draft={draft}
             loading={loading}
             onPatch={(key, patch) => setDraft((prev) => patchCategory(prev, key, patch))}
-            onAssignGroup={(key, value) => setDraft((prev) => assignCategoryGroup(prev, key, value))}
+            onAssignGroup={(key, value) =>
+              setDraft((prev) => assignCategoryGroup(prev, key, value))
+            }
           />
         </>
       )}
@@ -232,7 +258,16 @@ function EditorBody({ saveError, loadFailure, hasLists, loading, draft, setDraft
   );
 }
 
-function ManagerFooter({ saved, hasChanges, pending, blankGroup, saving, onDiscard, onClose, onSave }: {
+function ManagerFooter({
+  saved,
+  hasChanges,
+  pending,
+  blankGroup,
+  saving,
+  onDiscard,
+  onClose,
+  onSave,
+}: {
   saved: boolean;
   hasChanges: boolean;
   pending: number;
@@ -245,13 +280,21 @@ function ManagerFooter({ saved, hasChanges, pending, blankGroup, saving, onDisca
   return (
     <DialogFooter className="items-center">
       {saved && !hasChanges ? (
-        <span role="status" className="mr-auto text-sm text-success">Saved. Analytics and URL history now use these names.</span>
+        <span role="status" className="mr-auto text-sm text-success">
+          Saved. Analytics and URL history now use these names.
+        </span>
       ) : hasChanges ? (
         <span role="status" className="mr-auto text-sm text-muted-foreground">
-          {blankGroup ? "Every group needs a name." : `${pending} unsaved ${pending === 1 ? "change" : "changes"}`}
+          {blankGroup
+            ? "Every group needs a name."
+            : `${pending} unsaved ${pending === 1 ? "change" : "changes"}`}
         </span>
       ) : null}
-      {hasChanges ? <Button variant="outline" onClick={onDiscard} disabled={saving}>Discard changes</Button> : null}
+      {hasChanges ? (
+        <Button variant="outline" onClick={onDiscard} disabled={saving}>
+          Discard changes
+        </Button>
+      ) : null}
       <Button variant="outline" onClick={onClose} disabled={saving}>
         Close
       </Button>
@@ -262,6 +305,10 @@ function ManagerFooter({ saved, hasChanges, pending, blankGroup, saving, onDisca
   );
 }
 
-function loadedCategoryLists(categories: ServerCategoryLists["categories"] | undefined, groups: ServerCategoryLists["groups"] | undefined, loading: boolean): ServerCategoryLists | undefined {
+function loadedCategoryLists(
+  categories: ServerCategoryLists["categories"] | undefined,
+  groups: ServerCategoryLists["groups"] | undefined,
+  loading: boolean,
+): ServerCategoryLists | undefined {
   return categories && groups && !loading ? { categories, groups } : undefined;
 }

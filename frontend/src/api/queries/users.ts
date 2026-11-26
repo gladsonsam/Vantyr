@@ -34,13 +34,21 @@ export function useReloadAccounts() {
     ]);
 }
 
-export type UserProfileBody = { username?: string; display_name?: string; display_icon?: string | null };
+export type UserProfileBody = {
+  username?: string;
+  display_name?: string;
+  display_icon?: string | null;
+};
 
 export function useSetUserRoleMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, role }: { id: string; role: DashboardRole }) => api.userSetRole(id, role),
-    onSuccess: () => Promise.all([queryClient.invalidateQueries({ queryKey: authKeys.me() }), queryClient.invalidateQueries({ queryKey: userKeys.list() })]),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: authKeys.me() }),
+        queryClient.invalidateQueries({ queryKey: userKeys.list() }),
+      ]),
   });
 }
 
@@ -51,7 +59,10 @@ export function useDeleteUserMutation(options?: { onDeleted?: () => void }) {
     mutationFn: (id: string) => api.userDelete(id),
     onSuccess: () => {
       options?.onDeleted?.();
-      return Promise.all([queryClient.invalidateQueries({ queryKey: authKeys.me() }), queryClient.invalidateQueries({ queryKey: userKeys.list() })]);
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: authKeys.me() }),
+        queryClient.invalidateQueries({ queryKey: userKeys.list() }),
+      ]);
     },
   });
 }
@@ -60,10 +71,14 @@ export function useDeleteUserMutation(options?: { onDeleted?: () => void }) {
 export function useUpdateUserProfileMutation(options?: { onUpdated?: () => void }) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, body }: { id: string; body: UserProfileBody }) => api.userUpdateProfile(id, body),
+    mutationFn: ({ id, body }: { id: string; body: UserProfileBody }) =>
+      api.userUpdateProfile(id, body),
     onSuccess: () => {
       options?.onUpdated?.();
-      return Promise.all([queryClient.invalidateQueries({ queryKey: authKeys.me() }), queryClient.invalidateQueries({ queryKey: userKeys.list() })]);
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: authKeys.me() }),
+        queryClient.invalidateQueries({ queryKey: userKeys.list() }),
+      ]);
     },
   });
 }
@@ -72,14 +87,19 @@ export function useCreateUserMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: Parameters<typeof api.userCreate>[0]) => api.userCreate(body),
-    onSuccess: () => Promise.all([queryClient.invalidateQueries({ queryKey: authKeys.me() }), queryClient.invalidateQueries({ queryKey: userKeys.list() })]),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: authKeys.me() }),
+        queryClient.invalidateQueries({ queryKey: userKeys.list() }),
+      ]),
   });
 }
 
 export function useSetUserPasswordMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, password }: { id: string; password: string }) => api.userSetPassword(id, password),
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      api.userSetPassword(id, password),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: userKeys.list() }),
   });
 }
@@ -87,16 +107,23 @@ export function useSetUserPasswordMutation() {
 export function useLinkIdentityMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ userId, identity }: { userId: string; identity: { issuer: string; subject: string } }) =>
-      api.userIdentityLink(userId, identity),
-    onSuccess: (_data, { userId }) => queryClient.invalidateQueries({ queryKey: userKeys.identities(userId) }),
+    mutationFn: ({
+      userId,
+      identity,
+    }: {
+      userId: string;
+      identity: { issuer: string; subject: string };
+    }) => api.userIdentityLink(userId, identity),
+    onSuccess: (_data, { userId }) =>
+      queryClient.invalidateQueries({ queryKey: userKeys.identities(userId) }),
   });
 }
 
 export function useUnlinkIdentityMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ identityId }: { identityId: number; userId: string | null }) => api.identityUnlink(identityId),
+    mutationFn: ({ identityId }: { identityId: number; userId: string | null }) =>
+      api.identityUnlink(identityId),
     onSuccess: (_data, { userId }) =>
       userId ? queryClient.invalidateQueries({ queryKey: userKeys.identities(userId) }) : undefined,
   });

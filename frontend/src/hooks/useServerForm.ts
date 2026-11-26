@@ -1,5 +1,12 @@
 import { useEffect, useRef } from "react";
-import { useForm, type DefaultValues, type FieldValues, type Resolver, type UseFormProps, type UseFormReturn } from "react-hook-form";
+import {
+  useForm,
+  type DefaultValues,
+  type FieldValues,
+  type Resolver,
+  type UseFormProps,
+  type UseFormReturn,
+} from "react-hook-form";
 
 /**
  * A react-hook-form form seeded from server data. Like `useServerDraft`, it is re-seeded whenever a
@@ -22,7 +29,11 @@ export function useServerForm<V extends FieldValues, D>({
   initial: V;
   mode?: UseFormProps<V>["mode"];
 }): UseFormReturn<V, unknown, V> {
-  const form = useForm<V, unknown, V>({ resolver, mode, defaultValues: (data === undefined ? initial : toValues(data)) as DefaultValues<V> });
+  const form = useForm<V, unknown, V>({
+    resolver,
+    mode,
+    defaultValues: (data === undefined ? initial : toValues(data)) as DefaultValues<V>,
+  });
   const seeded = useRef(data === undefined ? 0 : version);
   const toValuesRef = useRef(toValues);
   useEffect(() => {

@@ -24,11 +24,23 @@ export function filterLog(text: string, query: string): FilteredLog {
 /** "1,204 lines" or "12 of 1,204 lines". */
 export function logCountLabel({ shown, total }: FilteredLog): string {
   const noun = total === 1 ? "line" : "lines";
-  return shown === total ? `${total.toLocaleString()} ${noun}` : `${shown.toLocaleString()} of ${total.toLocaleString()} ${noun}`;
+  return shown === total
+    ? `${total.toLocaleString()} ${noun}`
+    : `${shown.toLocaleString()} of ${total.toLocaleString()} ${noun}`;
 }
 
 /** What the empty log box says: loading, failed, nothing matched, or nothing logged. */
-export function logPlaceholder({ failed, waiting, filtering, total }: { failed: boolean; waiting: boolean; filtering: boolean; total: number }): string {
+export function logPlaceholder({
+  failed,
+  waiting,
+  filtering,
+  total,
+}: {
+  failed: boolean;
+  waiting: boolean;
+  filtering: boolean;
+  total: number;
+}): string {
   if (failed) return "The log couldn’t be loaded.";
   if (waiting) return "Loading…";
   if (filtering && total > 0) return "No lines match this filter.";

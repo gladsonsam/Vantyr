@@ -1,17 +1,21 @@
-// @vitest-environment jsdom
+import { click } from "@tests/support/formDom";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
-import { click } from "@tests/support/formDom";
-import { AppearanceSettings } from "@/features/settings/AppearanceSettings";
-import { AccountSettingsPage } from "@/features/settings/AccountSettingsPage";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({ twofaStatus: vi.fn() }));
-vi.mock("@/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/api")>()), api }));
+const api = (() => ({ twofaStatus: vi.fn() }))();
+const originalModule0 = await import("@/api");
+await vi.mock("@/api", async () => ({ ...originalModule0, api }));
 const changeTheme = vi.fn();
-vi.mock("@/app/providers/useAppTheme", () => ({ useAppTheme: () => ({ themeMode: "dark", changeTheme }) }));
+await vi.mock("@/app/providers/useAppTheme", () => ({
+  useAppTheme: () => ({ themeMode: "dark", changeTheme }),
+}));
+
+const { AppearanceSettings } = await import("@/features/settings/AppearanceSettings");
+const { AccountSettingsPage } = await import("@/features/settings/AccountSettingsPage");
 
 let host: HTMLDivElement;
 let root: Root;
@@ -30,12 +34,17 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
-const option = (name: string) => [...host.querySelectorAll<HTMLButtonElement>('[data-slot="toggle-group-item"]')].find((b) => b.textContent?.trim() === name)!;
+const option = (name: string) =>
+  [...host.querySelectorAll<HTMLButtonElement>('[data-slot="toggle-group-item"]')].find(
+    (b) => b.textContent?.trim() === name,
+  )!;
 
 describe("AppearanceSettings", () => {
   it("marks the current theme and switches with one press", async () => {
     const onThemeChange = vi.fn();
-    await act(async () => root.render(<AppearanceSettings themeMode="dark" onThemeChange={onThemeChange} />));
+    await act(async () =>
+      root.render(<AppearanceSettings themeMode="dark" onThemeChange={onThemeChange} />),
+    );
     expect(host.querySelector('[role="group"][aria-label="Theme"]')).toBeTruthy();
     expect(option("Dark").getAttribute("aria-pressed")).toBe("true");
     expect(option("Light").getAttribute("aria-pressed")).toBe("false");
@@ -45,7 +54,9 @@ describe("AppearanceSettings", () => {
 
   it("never deselects: pressing the chosen theme again changes nothing", async () => {
     const onThemeChange = vi.fn();
-    await act(async () => root.render(<AppearanceSettings themeMode="system" onThemeChange={onThemeChange} />));
+    await act(async () =>
+      root.render(<AppearanceSettings themeMode="system" onThemeChange={onThemeChange} />),
+    );
     await click(option("System"));
     expect(onThemeChange).not.toHaveBeenCalled();
   });
@@ -53,13 +64,24 @@ describe("AppearanceSettings", () => {
 
 describe("AccountSettingsPage", () => {
   it("holds only your own settings and points to the server Settings page for the rest", async () => {
-    await act(async () => root.render(
-      withQueryClient(<MemoryRouter><AccountSettingsPage /></MemoryRouter>, createTestQueryClient()),
-    ));
+    await act(async () =>
+      root.render(
+        withQueryClient(
+          <MemoryRouter>
+            <AccountSettingsPage />
+          </MemoryRouter>,
+          createTestQueryClient(),
+        ),
+      ),
+    );
     const text = host.textContent ?? "";
     expect(text).toContain("Appearance");
     expect(text).toContain("Two-factor authentication");
-    expect(host.querySelector<HTMLAnchorElement>('a[href="/settings"]')?.textContent).toBe("Settings");
-    expect([...host.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Back")).toBe(true);
+    expect(host.querySelector<HTMLAnchorElement>('a[href="/settings"]')?.textContent).toBe(
+      "Settings",
+    );
+    expect([...host.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Back")).toBe(
+      true,
+    );
   });
 });

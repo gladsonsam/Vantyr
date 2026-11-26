@@ -20,7 +20,12 @@ export function AccountSettingsPage() {
 
   return (
     <div className="flex max-w-2xl flex-col gap-6">
-      <Button variant="ghost" size="sm" className="-ml-2.5 w-fit pointer-coarse:h-9" onClick={() => navigate(from ?? "/", { replace: true })}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="-ml-2.5 w-fit pointer-coarse:h-9"
+        onClick={() => navigate(from ?? "/", { replace: true })}
+      >
         <ArrowLeft /> Back
       </Button>
 

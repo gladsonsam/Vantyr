@@ -1,20 +1,38 @@
-import { describe, expect, it } from "vitest";
-import { defaultInternetBlockForm, internetBlockFormToBody, internetBlockSchema, internetScheduleSchema, internetScheduleWindows, SCHEDULE_NEEDS_WINDOW } from "@/features/rules/lib/internetBlockForm";
+import { describe, expect, it } from "bun:test";
+import {
+  defaultInternetBlockForm,
+  internetBlockFormToBody,
+  internetBlockSchema,
+  internetScheduleSchema,
+  internetScheduleWindows,
+  SCHEDULE_NEEDS_WINDOW,
+} from "@/features/rules/lib/internetBlockForm";
 
 describe("internetBlockSchema", () => {
   it("accepts an unscheduled rule even with a nonsense window", () => {
-    const form = { ...defaultInternetBlockForm(), schedule_rows: [{ day_of_week: 1, start: "x", end: "y" }] };
+    const form = {
+      ...defaultInternetBlockForm(),
+      schedule_rows: [{ day_of_week: 1, start: "x", end: "y" }],
+    };
     expect(internetBlockSchema.safeParse(form).success).toBe(true);
   });
 
   it("rejects an enabled schedule with no usable window, on the schedule rows", () => {
-    const form = { ...defaultInternetBlockForm(), scheduled: true, schedule_rows: [{ day_of_week: 1, start: "10:00", end: "10:00" }] };
+    const form = {
+      ...defaultInternetBlockForm(),
+      scheduled: true,
+      schedule_rows: [{ day_of_week: 1, start: "10:00", end: "10:00" }],
+    };
     const result = internetBlockSchema.safeParse(form);
-    expect(result.error?.issues).toMatchObject([{ path: ["schedule_rows"], message: SCHEDULE_NEEDS_WINDOW }]);
+    expect(result.error?.issues).toMatchObject([
+      { path: ["schedule_rows"], message: SCHEDULE_NEEDS_WINDOW },
+    ]);
   });
 
   it("accepts an enabled schedule with one valid window", () => {
-    expect(internetBlockSchema.safeParse({ ...defaultInternetBlockForm(), scheduled: true }).success).toBe(true);
+    expect(
+      internetBlockSchema.safeParse({ ...defaultInternetBlockForm(), scheduled: true }).success,
+    ).toBe(true);
   });
 });
 
@@ -28,7 +46,10 @@ describe("internetBlockFormToBody", () => {
   it("sends empty scope ids as undefined", () => {
     const body = internetBlockFormToBody({
       ...defaultInternetBlockForm(),
-      scopes: [{ kind: "group", group_id: "g1", agent_id: "" }, { kind: "all", group_id: "", agent_id: "" }],
+      scopes: [
+        { kind: "group", group_id: "g1", agent_id: "" },
+        { kind: "all", group_id: "", agent_id: "" },
+      ],
     });
     expect(body.scopes).toEqual([
       { kind: "group", group_id: "g1", agent_id: undefined },
@@ -51,17 +72,27 @@ describe("internetBlockFormToBody", () => {
 
 describe("internetBlockSchema scope and window checks", () => {
   it("names a scope row that picks nothing", () => {
-    const form = { ...defaultInternetBlockForm(), scopes: [{ kind: "agent" as const, group_id: "", agent_id: "" }] };
-    expect(internetBlockSchema.safeParse(form).error?.issues).toMatchObject([{ path: ["scopes"], message: "Each agent scope must select an agent" }]);
+    const form = {
+      ...defaultInternetBlockForm(),
+      scopes: [{ kind: "agent" as const, group_id: "", agent_id: "" }],
+    };
+    expect(internetBlockSchema.safeParse(form).error?.issues).toMatchObject([
+      { path: ["scopes"], message: "Each agent scope must select an agent" },
+    ]);
   });
 
   it("names the window that would be dropped instead of saving the others silently", () => {
     const form = {
       ...defaultInternetBlockForm(),
       scheduled: true,
-      schedule_rows: [{ day_of_week: 1, start: "09:00", end: "17:00" }, { day_of_week: 2, start: "x", end: "17:00" }],
+      schedule_rows: [
+        { day_of_week: 1, start: "09:00", end: "17:00" },
+        { day_of_week: 2, start: "x", end: "17:00" },
+      ],
     };
-    expect(internetBlockSchema.safeParse(form).error?.issues).toMatchObject([{ path: ["schedule_rows"], message: "Window 2 needs two different times in HH:MM." }]);
+    expect(internetBlockSchema.safeParse(form).error?.issues).toMatchObject([
+      { path: ["schedule_rows"], message: "Window 2 needs two different times in HH:MM." },
+    ]);
   });
 });
 
@@ -75,9 +106,14 @@ describe("internetScheduleSchema", () => {
   });
 
   it("stores the windows when set hours are on, and rejects unusable ones", () => {
-    expect(internetScheduleWindows({ scheduled: true, schedule_rows: rows })).toEqual([{ day_of_week: 1, start_minute: 1080, end_minute: 1320 }]);
-    expect(internetScheduleSchema.safeParse({ scheduled: true, schedule_rows: [{ day_of_week: 1, start: "x", end: "y" }] }).error?.issues).toMatchObject([
-      { path: ["schedule_rows"], message: SCHEDULE_NEEDS_WINDOW },
+    expect(internetScheduleWindows({ scheduled: true, schedule_rows: rows })).toEqual([
+      { day_of_week: 1, start_minute: 1080, end_minute: 1320 },
     ]);
+    expect(
+      internetScheduleSchema.safeParse({
+        scheduled: true,
+        schedule_rows: [{ day_of_week: 1, start: "x", end: "y" }],
+      }).error?.issues,
+    ).toMatchObject([{ path: ["schedule_rows"], message: SCHEDULE_NEEDS_WINDOW }]);
   });
 });

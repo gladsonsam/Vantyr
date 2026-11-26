@@ -1,10 +1,19 @@
-import { describe, expect, it } from "vitest";
-import { deviceTime, preferenceKey, readItems, writeItems } from "@/features/recall/lib/recallRetrieval";
+import { describe, expect, it } from "bun:test";
+import {
+  deviceTime,
+  preferenceKey,
+  readItems,
+  writeItems,
+} from "@/features/recall/lib/recallRetrieval";
 
 describe("device wall clock", () => {
   it("uses the device zone rather than the viewer zone", () => {
-    expect(deviceTime("2026-10-03T09:15", "Australia/Perth")).toBe(Date.parse("2026-10-03T01:15:00Z"));
-    expect(deviceTime("2026-01-03T09:15", "America/New_York")).toBe(Date.parse("2026-01-03T14:15:00Z"));
+    expect(deviceTime("2026-10-03T09:15", "Australia/Perth")).toBe(
+      Date.parse("2026-10-03T01:15:00Z"),
+    );
+    expect(deviceTime("2026-01-03T09:15", "America/New_York")).toBe(
+      Date.parse("2026-01-03T14:15:00Z"),
+    );
   });
   it("rejects invalid dates, missing zones, DST gaps and repeated times", () => {
     expect(deviceTime("2026-02-30T09:15", "UTC")).toBeNull();
@@ -21,8 +30,12 @@ it("isolates browser preferences by server, user and device and survives malform
   expect(readItems(key)).toEqual([{ note: "private" }]);
   expect(readItems(preferenceKey("u2", "a"))).toEqual([]);
   expect(readItems(preferenceKey("u1", "b"))).toEqual([]);
-  localStorage.setItem("vantyr-server-settings", JSON.stringify({ serverOrigin: "https://other.example" }));
+  localStorage.setItem(
+    "vantyr-server-settings",
+    JSON.stringify({ serverOrigin: "https://other.example" }),
+  );
   expect(readItems(preferenceKey("u1", "a"))).toEqual([]);
   localStorage.removeItem("vantyr-server-settings");
-  localStorage.setItem(key, "broken"); expect(readItems(key)).toEqual([]);
+  localStorage.setItem(key, "broken");
+  expect(readItems(key)).toEqual([]);
 });

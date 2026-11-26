@@ -1,11 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import type { AppBlockRule } from "@/api/types";
-import { appBlockFormToBody, appBlockRuleToForm, appBlockSchema, defaultAppBlockForm } from "@/features/rules/lib/appBlockForm";
+import {
+  appBlockFormToBody,
+  appBlockRuleToForm,
+  appBlockSchema,
+  defaultAppBlockForm,
+} from "@/features/rules/lib/appBlockForm";
 
-const rule = (patch: Partial<AppBlockRule>): AppBlockRule => ({
-  id: 1, name: "", exe_pattern: "tiktok.exe", match_mode: "contains", enabled: true, scopes: [], schedules: [],
-  ...patch,
-} as AppBlockRule);
+const rule = (patch: Partial<AppBlockRule>): AppBlockRule =>
+  ({
+    id: 1,
+    name: "",
+    exe_pattern: "tiktok.exe",
+    match_mode: "contains",
+    enabled: true,
+    scopes: [],
+    schedules: [],
+    ...patch,
+  }) as AppBlockRule;
 
 describe("app block form mapping", () => {
   it("defaults to an unscheduled all-agents rule", () => {
@@ -35,12 +47,19 @@ describe("app block form mapping", () => {
   });
 
   it("ignores schedule rows while the schedule is switched off", () => {
-    const body = appBlockFormToBody({ ...defaultAppBlockForm(), exe_pattern: "a.exe", scheduled: false });
+    const body = appBlockFormToBody({
+      ...defaultAppBlockForm(),
+      exe_pattern: "a.exe",
+      scheduled: false,
+    });
     expect(body.schedules).toEqual([]);
   });
 
   it("restores a stored schedule into editable rows", () => {
-    const form = appBlockRuleToForm(rule({ name: "Label", schedules: [{ day_of_week: 2, start_minute: 60, end_minute: 120 }] }), "agent-1");
+    const form = appBlockRuleToForm(
+      rule({ name: "Label", schedules: [{ day_of_week: 2, start_minute: 60, end_minute: 120 }] }),
+      "agent-1",
+    );
     expect(form).toMatchObject({ label: "Label", scheduled: true });
     expect(form.schedule_rows).toEqual([{ day_of_week: 2, start: "01:00", end: "02:00" }]);
   });
@@ -55,11 +74,16 @@ describe("app block schema", () => {
   it("requires an exe name, ignoring surrounding spaces", () => {
     const result = appBlockSchema.safeParse({ ...defaultAppBlockForm(), exe_pattern: "   " });
     expect(result.success).toBe(false);
-    expect(result.error?.issues).toMatchObject([{ path: ["exe_pattern"], message: "EXE name is required." }]);
+    expect(result.error?.issues).toMatchObject([
+      { path: ["exe_pattern"], message: "EXE name is required." },
+    ]);
   });
 
   it("accepts a named exe and trims it", () => {
-    const result = appBlockSchema.safeParse({ ...defaultAppBlockForm(), exe_pattern: " tiktok.exe " });
+    const result = appBlockSchema.safeParse({
+      ...defaultAppBlockForm(),
+      exe_pattern: " tiktok.exe ",
+    });
     expect(result.data?.exe_pattern).toBe("tiktok.exe");
   });
 });

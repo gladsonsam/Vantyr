@@ -1,11 +1,19 @@
 import { z } from "zod";
 import type { api } from "@/api";
-import { emptyScheduleRow, expandScheduleRows, scheduleRowSchema } from "@/features/rules/lib/scheduleRows";
+import {
+  emptyScheduleRow,
+  expandScheduleRows,
+  scheduleRowSchema,
+} from "@/features/rules/lib/scheduleRows";
 
 export type MatchMode = "contains" | "exact";
 
 /** The protected executable a pattern would hit, if any (`protectedExes` is lowercase). */
-export function protectedHit(pattern: string, mode: MatchMode, protectedExes: string[]): string | null {
+export function protectedHit(
+  pattern: string,
+  mode: MatchMode,
+  protectedExes: string[],
+): string | null {
   const pat = pattern.trim().toLowerCase();
   if (!pat) return null;
   for (const p of protectedExes) {
@@ -35,7 +43,11 @@ export function createQuickAppBlockSchema(protectedExes: string[]) {
         return;
       }
       if (form.scheduled && expandScheduleRows(form.schedule_rows).length === 0) {
-        ctx.addIssue({ code: "custom", path: ["schedule_rows"], message: "Add a valid window (end after start)." });
+        ctx.addIssue({
+          code: "custom",
+          path: ["schedule_rows"],
+          message: "Add a valid window (end after start).",
+        });
       }
     });
 }
@@ -52,13 +64,18 @@ export const DEFAULT_QUICK_APP_BLOCK: QuickAppBlockValues = {
 };
 
 /** The request body for a valid form: this device only, or every device. */
-export function quickAppBlockToBody(values: QuickAppBlockValues, agentId: string): Parameters<typeof api.appBlockRulesCreate>[0] {
+export function quickAppBlockToBody(
+  values: QuickAppBlockValues,
+  agentId: string,
+): Parameters<typeof api.appBlockRulesCreate>[0] {
   const pattern = values.exe_pattern.trim();
   return {
     name: values.label.trim() || pattern,
     exe_pattern: pattern,
     match_mode: values.match_mode,
-    scopes: values.apply_to_all ? [{ kind: "all" as const }] : [{ kind: "agent" as const, agent_id: agentId }],
+    scopes: values.apply_to_all
+      ? [{ kind: "all" as const }]
+      : [{ kind: "agent" as const, agent_id: agentId }],
     schedules: values.scheduled ? expandScheduleRows(values.schedule_rows) : undefined,
   };
 }

@@ -13,7 +13,13 @@ const SCOPE_OPTIONS = [
 ];
 
 /** Rows of "all devices / a group / one agent" pickers shared by the rule editors. */
-export function ScopeRowsEditor({ rows, onChange, groups, agents, divided = true }: {
+export function ScopeRowsEditor({
+  rows,
+  onChange,
+  groups,
+  agents,
+  divided = true,
+}: {
   rows: ScopeFormRow[];
   onChange: (rows: ScopeFormRow[]) => void;
   groups: AgentGroup[];
@@ -37,7 +43,9 @@ export function ScopeRowsEditor({ rows, onChange, groups, agents, divided = true
               ariaLabel={`Scope ${i + 1} kind`}
               value={s.kind}
               options={SCOPE_OPTIONS}
-              onChange={(value) => onChange(updateScopeRow(rows, i, { kind: value as ScopeFormRow["kind"] }))}
+              onChange={(value) =>
+                onChange(updateScopeRow(rows, i, { kind: value as ScopeFormRow["kind"] }))
+              }
             />
           </div>
           {s.kind === "group" && (
@@ -63,13 +71,24 @@ export function ScopeRowsEditor({ rows, onChange, groups, agents, divided = true
             </div>
           )}
           {rows.length > 1 && (
-            <Button type="button" variant="ghost" className="pointer-coarse:h-9" aria-label={`Remove scope ${i + 1}`} onClick={() => onChange(rows.filter((_, j) => j !== i))}>
+            <Button
+              type="button"
+              variant="ghost"
+              className="pointer-coarse:h-9"
+              aria-label={`Remove scope ${i + 1}`}
+              onClick={() => onChange(rows.filter((_, j) => j !== i))}
+            >
               <X /> Remove
             </Button>
           )}
         </div>
       ))}
-      <Button type="button" variant="ghost" className="self-start pointer-coarse:h-9" onClick={() => onChange([...rows, emptyScopeRow()])}>
+      <Button
+        type="button"
+        variant="ghost"
+        className="self-start pointer-coarse:h-9"
+        onClick={() => onChange([...rows, emptyScopeRow()])}
+      >
         <Plus /> Add scope
       </Button>
     </div>

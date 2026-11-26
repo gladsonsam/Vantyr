@@ -81,4 +81,3 @@ export const AGENT_ICON_MAP: Readonly<Record<AgentIconKey, IconDef>> = AGENT_ICO
 export function isAgentIconKey(v: unknown): v is AgentIconKey {
   return typeof v === "string" && (v as string) in AGENT_ICON_MAP;
 }
-

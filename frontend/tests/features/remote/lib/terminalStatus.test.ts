@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { terminalStatus } from "@/features/remote/lib/terminalStatus";
 
 describe("terminalStatus", () => {
@@ -13,7 +13,10 @@ describe("terminalStatus", () => {
 
   it("starts a new shell only from an explicit button after the session is over", () => {
     expect(terminalStatus("ended").action).toEqual({ label: "New session", kind: "start" });
-    expect(terminalStatus("dropped")).toMatchObject({ tone: "warn", action: { label: "Reconnect", kind: "start" } });
+    expect(terminalStatus("dropped")).toMatchObject({
+      tone: "warn",
+      action: { label: "Reconnect", kind: "start" },
+    });
     const refused = terminalStatus("refused");
     expect(refused.tone).toBe("warn");
     expect(refused.text).toContain("allowed on the device");

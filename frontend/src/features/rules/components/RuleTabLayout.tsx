@@ -50,12 +50,18 @@ export interface RuleTabLayoutProps {
  * then banners, count, search, the rows and paging. A failed refresh keeps the rows already on screen.
  */
 export function RuleTabLayout(props: RuleTabLayoutProps) {
-  const { noun, createLabel, query, total, empty, saved, onDismissSaved, onCreate, dialogs } = props;
+  const { noun, createLabel, query, total, empty, saved, onDismissSaved, onCreate, dialogs } =
+    props;
   const retry = () => void query.refetch();
 
   // Only a first load that failed has nothing to show.
   if (query.isError && total === 0) {
-    return <LoadFailedCard message={`Couldn’t load ${noun}: ${errorText(query.error)}`} onRetry={retry} />;
+    return (
+      <LoadFailedCard
+        message={`Couldn’t load ${noun}: ${errorText(query.error)}`}
+        onRetry={retry}
+      />
+    );
   }
   if (query.isPending) return <Skeleton className="h-64 w-full rounded-xl" />;
   if (total === 0) {
@@ -80,18 +86,55 @@ export function RuleTabLayout(props: RuleTabLayoutProps) {
   return <RuleTabMain {...props} retry={retry} />;
 }
 
-function RuleTabMain({ noun, createLabel, query, total, countSummary, list, searchLabel, searchPlaceholder, actionError, onDismissAction, saved, onDismissSaved, banners, onCreate, rows, dialogs, retry }: RuleTabLayoutProps & { retry: () => void }) {
+function RuleTabMain({
+  noun,
+  createLabel,
+  query,
+  total,
+  countSummary,
+  list,
+  searchLabel,
+  searchPlaceholder,
+  actionError,
+  onDismissAction,
+  saved,
+  onDismissSaved,
+  banners,
+  onCreate,
+  rows,
+  dialogs,
+  retry,
+}: RuleTabLayoutProps & { retry: () => void }) {
   return (
     <div className="flex flex-col gap-4">
-      {actionError && <ErrorBanner message={actionError} actionLabel="Dismiss" onAction={onDismissAction} />}
+      {actionError && (
+        <ErrorBanner message={actionError} actionLabel="Dismiss" onAction={onDismissAction} />
+      )}
       {query.isError && (
-        <ErrorBanner message={`Couldn’t refresh ${noun}: ${errorText(query.error)}. Showing the last list that loaded.`} actionLabel="Try again" onAction={retry} />
+        <ErrorBanner
+          message={`Couldn’t refresh ${noun}: ${errorText(query.error)}. Showing the last list that loaded.`}
+          actionLabel="Try again"
+          onAction={retry}
+        />
       )}
       {banners}
       {saved && <Notice message={saved} onDismiss={onDismissSaved} />}
 
-      <RuleToolbar summary={list.query ? `${list.filteredCount} of ${total} ${noun.split(" ").pop()}` : countSummary} createLabel={createLabel} onCreate={onCreate} />
-      {list.showSearch && <RuleSearch label={searchLabel} placeholder={searchPlaceholder} query={list.query} onChange={list.setQuery} />}
+      <RuleToolbar
+        summary={
+          list.query ? `${list.filteredCount} of ${total} ${noun.split(" ").pop()}` : countSummary
+        }
+        createLabel={createLabel}
+        onCreate={onCreate}
+      />
+      {list.showSearch && (
+        <RuleSearch
+          label={searchLabel}
+          placeholder={searchPlaceholder}
+          query={list.query}
+          onChange={list.setQuery}
+        />
+      )}
 
       {list.displayed.length === 0 ? (
         <EmptyState

@@ -1,9 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import type { AppBlockRule } from "@/api/types";
-import { blockSourceLabel, capabilityPhrase, deleteConsequence, matchModeLabel, resolvedScopeKind, rulesSummary, scopeLabel } from "@/features/remote/lib/blocking";
+import {
+  blockSourceLabel,
+  capabilityPhrase,
+  deleteConsequence,
+  matchModeLabel,
+  resolvedScopeKind,
+  rulesSummary,
+  scopeLabel,
+} from "@/features/remote/lib/blocking";
 
 const rule = (over: Partial<AppBlockRule> = {}): AppBlockRule => ({
-  id: 1, name: "No games", exe_pattern: "steam.exe", match_mode: "exact", enabled: true, schedules: [], ...over,
+  id: 1,
+  name: "No games",
+  exe_pattern: "steam.exe",
+  match_mode: "exact",
+  enabled: true,
+  schedules: [],
+  ...over,
 });
 
 describe("blocking helpers", () => {

@@ -41,9 +41,15 @@ export function normalizeVersion(version: string | null | undefined) {
 }
 
 /** True when `latest` is a newer dotted version than `current` (so never for a downgrade). */
-export function isNewerVersion(latest: string | null | undefined, current: string | null | undefined) {
+export function isNewerVersion(
+  latest: string | null | undefined,
+  current: string | null | undefined,
+) {
   const parse = (version: string | null | undefined) =>
-    normalizeVersion(version).split(/[.+-]/).slice(0, 3).map((part) => Number.parseInt(part, 10));
+    normalizeVersion(version)
+      .split(/[.+-]/)
+      .slice(0, 3)
+      .map((part) => Number.parseInt(part, 10));
   const a = parse(latest);
   const b = parse(current);
   if (a.some(Number.isNaN) || b.some(Number.isNaN)) return false;
@@ -61,13 +67,29 @@ export function fleetState(row: {
   internetBlocked?: boolean | null;
 }): { label: string; color: string; soft: string } {
   if (!row.online) {
-    return { label: "Offline", color: "var(--muted-foreground)", soft: "color-mix(in srgb, var(--muted) 55%, transparent)" };
+    return {
+      label: "Offline",
+      color: "var(--muted-foreground)",
+      soft: "color-mix(in srgb, var(--muted) 55%, transparent)",
+    };
   }
   if (row.status === "active") {
-    return { label: "Active", color: "var(--success)", soft: "color-mix(in srgb, var(--success) 12%, transparent)" };
+    return {
+      label: "Active",
+      color: "var(--success)",
+      soft: "color-mix(in srgb, var(--success) 12%, transparent)",
+    };
   }
   if (row.status === "afk") {
-    return { label: "AFK", color: "var(--warning)", soft: "color-mix(in srgb, var(--warning) 12%, transparent)" };
+    return {
+      label: "AFK",
+      color: "var(--warning)",
+      soft: "color-mix(in srgb, var(--warning) 12%, transparent)",
+    };
   }
-  return { label: "Online", color: "var(--success)", soft: "color-mix(in srgb, var(--success) 8%, transparent)" };
+  return {
+    label: "Online",
+    color: "var(--success)",
+    soft: "color-mix(in srgb, var(--success) 8%, transparent)",
+  };
 }

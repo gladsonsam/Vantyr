@@ -18,7 +18,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "@tests/*": ["./tests/*"]
-    }
+    },
+    "types": ["bun", "node"]
   },
   "include": ["src", "tests"]
 }

@@ -67,3 +67,21 @@ The agent checks (`just agent`) need the Linux desktop packages listed in the `j
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+### JavaScript checks
+
+Install dependencies with `npm ci`. The project pins Bun 1.4.5, which runs the frontend tests and formats
+the JavaScript workspaces; Oxlint handles linting. CI pins the same Bun version.
+
+```sh
+npm test
+npm run lint
+npm run format
+npm run format:check
+```
+
+Tests use Bun's native runner and mocks with isolated files and four workers.
+Browser tests preload jsdom; module mocks are registered before dynamic imports.
+The small `frontend/tests/support/mock.ts` helper restores browser globals and
+provides getter spies and async assertion retries. Vitest is no longer installed
+or used. Generated API types are excluded from formatting.

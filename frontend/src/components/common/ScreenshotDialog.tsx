@@ -17,10 +17,19 @@ interface ScreenshotDialogProps {
 }
 
 /** Preview of the screenshot captured when an alert rule fired. */
-export function ScreenshotDialog({ eventId, onClose, title = "Screenshot" }: ScreenshotDialogProps) {
+export function ScreenshotDialog({
+  eventId,
+  onClose,
+  title = "Screenshot",
+}: ScreenshotDialogProps) {
   const src = eventId != null ? apiUrl(`/alert-rule-events/${eventId}/screenshot`) : null;
   return (
-    <Dialog open={eventId != null} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog
+      open={eventId != null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -36,7 +45,18 @@ export function ScreenshotDialog({ eventId, onClose, title = "Screenshot" }: Scr
         )}
         <DialogFooter>
           {src && (
-            <Button variant="outline" nativeButton={false} render={<a aria-label="Open screenshot in new tab" href={src} target="_blank" rel="noopener noreferrer" />}>
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={
+                <a
+                  aria-label="Open screenshot in new tab"
+                  href={src}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                />
+              }
+            >
               <ExternalLink /> Open in new tab
             </Button>
           )}

@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@vantyr/ui/components/button";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 import { Spinner } from "@vantyr/ui/components/spinner";
@@ -16,10 +9,7 @@ import {
   groupSessionsByDay,
   prepareTimelineSessions,
 } from "./sessionTimeline";
-import {
-  resolveDateRangeToDayBounds,
-  type ActivityDateValue,
-} from "./activityDateRange";
+import { resolveDateRangeToDayBounds, type ActivityDateValue } from "./activityDateRange";
 import { ActivityFilterBar } from "./ActivityFilterBar";
 import { SessionRow } from "./SessionRow";
 import { TimelineOverview } from "./DayOverview";
@@ -34,7 +24,8 @@ function usePinnedBarHeight(): number {
   useEffect(() => {
     const bar = document.querySelector<HTMLElement>(".agent-detail-section-tabs");
     if (!bar) return;
-    const measure = () => setHeight(getComputedStyle(bar).position === "sticky" ? bar.offsetHeight : 0);
+    const measure = () =>
+      setHeight(getComputedStyle(bar).position === "sticky" ? bar.offsetHeight : 0);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(bar);
@@ -72,11 +63,8 @@ export function ActivityTimeline({
   highlightTimestamp,
 }: ActivityTimelineProps) {
   const filters = useActivityFilters(agentId);
-  const { searchQuery, alertsOnly, appFilterExe, jumpRangeValue, isFiltered } =
-    filters;
-  const [screenshotModalId, setScreenshotModalId] = useState<number | null>(
-    null,
-  );
+  const { searchQuery, alertsOnly, appFilterExe, jumpRangeValue, isFiltered } = filters;
+  const [screenshotModalId, setScreenshotModalId] = useState<number | null>(null);
   const stickyTop = usePinnedBarHeight();
   /** Session picked from the overview strip; its row opens and scrolls into view. */
   const [focusedId, setFocusedId] = useState<string | null>(null);
@@ -106,14 +94,8 @@ export function ActivityTimeline({
     () => new Set(filteredSorted.map((s) => s.user).filter(Boolean)).size > 1,
     [filteredSorted],
   );
-  const dayGroups = useMemo(
-    () => groupSessionsByDay(filteredSorted),
-    [filteredSorted],
-  );
-  const stats = useMemo(
-    () => computeDayStats(filteredSorted),
-    [filteredSorted],
-  );
+  const dayGroups = useMemo(() => groupSessionsByDay(filteredSorted), [filteredSorted]);
+  const stats = useMemo(() => computeDayStats(filteredSorted), [filteredSorted]);
 
   /** Rows are rendered in slices so a long history does not mount thousands at once. */
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -239,9 +221,7 @@ export function ActivityTimeline({
 
         {filteredSorted.length === 0 ? (
           <div className="grid justify-items-center gap-3 py-10 text-center">
-            <p className="text-sm text-muted-foreground">
-              No loaded sessions match these filters.
-            </p>
+            <p className="text-sm text-muted-foreground">No loaded sessions match these filters.</p>
             <div className="flex flex-wrap justify-center gap-2">
               <Button variant="outline" onClick={filters.clearFilters}>
                 Clear filters
@@ -352,9 +332,7 @@ function TimelineRows({
                 <SessionRow
                   key={session.id}
                   session={session}
-                  highlighted={
-                    idx === highlightIndex && highlightTimestamp != null
-                  }
+                  highlighted={idx === highlightIndex && highlightTimestamp != null}
                   focused={focusedId === session.id}
                   onOpenScreenshot={onOpenScreenshot}
                   onFilterApp={filters.toggleAppFilter}
@@ -379,10 +357,7 @@ function allowAutoLoad({
   alertsOnly,
   jumpRangeValue,
   searchQuery,
-}: Pick<
-  ActivityTimelineProps,
-  "onLoadMore" | "hasMoreOlder" | "loadingMore" | "loading"
-> &
+}: Pick<ActivityTimelineProps, "onLoadMore" | "hasMoreOlder" | "loadingMore" | "loading"> &
   Pick<ActivityFilters, "alertsOnly" | "jumpRangeValue" | "searchQuery">) {
   return (
     Boolean(onLoadMore) &&
@@ -425,10 +400,7 @@ function TimelineLoadMore({
             Show more
           </Button>
         </div>
-      ) : onLoadMore &&
-        !jumpRangeValue &&
-        !alertsOnly &&
-        !searchQuery.trim() ? (
+      ) : onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
         <div className="grid justify-items-center gap-2 py-6 text-center">
           {hasMoreOlder ? (
             <Button

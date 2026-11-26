@@ -13,7 +13,9 @@ export function DemoEnvironment({ children }: { children: ReactNode }) {
     <ViewerConnectionContext.Provider value={useDemoViewerConnection}>
       <ScreenStreamSourceContext.Provider value={demoScreenStreamSource}>
         <RemoteEnvironmentContext.Provider value={demoRemoteEnvironment}>
-          <RecallEvidenceNoteContext.Provider value={demoRecallEvidenceNote}>{children}</RecallEvidenceNoteContext.Provider>
+          <RecallEvidenceNoteContext.Provider value={demoRecallEvidenceNote}>
+            {children}
+          </RecallEvidenceNoteContext.Provider>
         </RemoteEnvironmentContext.Provider>
       </ScreenStreamSourceContext.Provider>
     </ViewerConnectionContext.Provider>

@@ -55,7 +55,8 @@ export function invalidateUrlCategoryViews(queryClient: QueryClient): Promise<vo
 export function useUpsertUrlOverrideMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: Parameters<typeof api.urlCategorizationOverridesUpsert>[0]) => api.urlCategorizationOverridesUpsert(body),
+    mutationFn: (body: Parameters<typeof api.urlCategorizationOverridesUpsert>[0]) =>
+      api.urlCategorizationOverridesUpsert(body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: urlCategoryKeys.all }),
   });
 }
@@ -63,7 +64,8 @@ export function useUpsertUrlOverrideMutation() {
 export function useDeleteUrlOverrideMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ kind, id }: { kind: "domain" | "url"; id: number }) => api.urlCategorizationOverridesDelete(kind, id),
+    mutationFn: ({ kind, id }: { kind: "domain" | "url"; id: number }) =>
+      api.urlCategorizationOverridesDelete(kind, id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: urlCategoryKeys.all }),
   });
 }
@@ -71,19 +73,25 @@ export function useDeleteUrlOverrideMutation() {
 /** Re-run categorization over recent URL visits. */
 export function useRecalcUrlVisitsMutation() {
   const queryClient = useQueryClient();
-  return useMutation({ mutationFn: () => api.urlCategorizationRecalcUrlVisits({ limit: 100_000 }),
-    onSuccess: () => Promise.all([
-      queryClient.invalidateQueries({ queryKey: urlCategoryKeys.all }),
-      queryClient.invalidateQueries({ queryKey: agentKeys.all }),
-    ]) });
+  return useMutation({
+    mutationFn: () => api.urlCategorizationRecalcUrlVisits({ limit: 100_000 }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: urlCategoryKeys.all }),
+        queryClient.invalidateQueries({ queryKey: agentKeys.all }),
+      ]),
+  });
 }
 
 /** Re-run categorization over recent URL sessions. */
 export function useRecalcUrlSessionsMutation() {
   const queryClient = useQueryClient();
-  return useMutation({ mutationFn: () => api.urlCategorizationRecalcUrlSessions({ limit: 100_000 }),
-    onSuccess: () => Promise.all([
-      queryClient.invalidateQueries({ queryKey: urlCategoryKeys.all }),
-      queryClient.invalidateQueries({ queryKey: agentKeys.all }),
-    ]) });
+  return useMutation({
+    mutationFn: () => api.urlCategorizationRecalcUrlSessions({ limit: 100_000 }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: urlCategoryKeys.all }),
+        queryClient.invalidateQueries({ queryKey: agentKeys.all }),
+      ]),
+  });
 }

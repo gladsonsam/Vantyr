@@ -16,7 +16,12 @@ export function AuditStatusBadge({ status }: { status: string }) {
   const outcome = OUTCOMES[key];
   const Icon = outcome?.Icon ?? CircleAlert;
   return (
-    <span className={cn("inline-flex items-center gap-1 text-xs font-medium", outcome?.className ?? "text-muted-foreground")}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 text-xs font-medium",
+        outcome?.className ?? "text-muted-foreground",
+      )}
+    >
       <Icon className="size-3.5" aria-hidden />
       {outcome?.label ?? status}
     </span>

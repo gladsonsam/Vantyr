@@ -11,7 +11,13 @@ export function useGroupMutations(onGroupDeleted: (groupId: string) => void) {
   const invalidateGroups = () => queryClient.invalidateQueries({ queryKey: groupKeys.all });
 
   const saveGroup = useMutation({
-    mutationFn: async ({ id, data }: { id: string | null; data: { name: string; description: string } }) => {
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string | null;
+      data: { name: string; description: string };
+    }) => {
       if (id) await api.agentGroupsUpdate(id, data);
       else await api.agentGroupsCreate(data);
     },

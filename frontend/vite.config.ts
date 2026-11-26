@@ -43,7 +43,11 @@ export default defineConfig(({ mode }) => {
       allowedHosts: ["dev1-5173.gladsonsam.com"],
       proxy: {
         // The server refuses plain HTTP unless it sees a TLS-terminating proxy.
-        "/api": { target: apiTarget, changeOrigin: true, headers: { "x-forwarded-proto": "https" } },
+        "/api": {
+          target: apiTarget,
+          changeOrigin: true,
+          headers: { "x-forwarded-proto": "https" },
+        },
         "/ws": {
           target: apiTarget.replace(/^http/, "ws"),
           ws: true,

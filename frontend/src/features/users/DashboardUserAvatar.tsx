@@ -3,7 +3,6 @@ import { User } from "lucide-react";
 import { isUserPhotoDataUrl, parseUserLucideIcon } from "./userAvatar";
 import { PROFILE_LUCIDE_ICONS } from "./profileIcons";
 
-
 const hashHue = (s: string): number => {
   let h = 0;
   for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) >>> 0;

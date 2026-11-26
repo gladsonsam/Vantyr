@@ -34,14 +34,16 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
   const [enableRule, setEnableRule] = useState<InternetBlockRule | null>(null);
 
   const agentsById = useMemo(() => Object.fromEntries(agents.map((a) => [a.id, a])), [agents]);
-  const scopeText = (r: InternetBlockRule | null) => (r ? ruleScopeLabels(r.scopes, groups, agentsById).join(", ") : "");
+  const scopeText = (r: InternetBlockRule | null) =>
+    r ? ruleScopeLabels(r.scopes, groups, agentsById).join(", ") : "";
 
-  const { create, toggle, scheduleSave, remove, actionError, setActionError, saved, setSaved } = useInternetRuleMutations({
-    onCreated: () => setShowCreate(false),
-    onScheduleSaved: () => setScheduleRule(null),
-    onDeleted: () => setDeleteRule(null),
-    onToggled: () => setEnableRule(null),
-  });
+  const { create, toggle, scheduleSave, remove, actionError, setActionError, saved, setSaved } =
+    useInternetRuleMutations({
+      onCreated: () => setShowCreate(false),
+      onScheduleSaved: () => setScheduleRule(null),
+      onDeleted: () => setDeleteRule(null),
+      onToggled: () => setEnableRule(null),
+    });
   const haystack = useCallback(
     (r: InternetBlockRule) => [r.name, ...ruleScopeLabels(r.scopes, groups, agentsById)],
     [groups, agentsById],
@@ -103,8 +105,9 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
         onClose={() => setEnableRule(null)}
         onConfirm={() => enableRule && toggle.mutate(enableRule)}
       >
-        It has no schedule, so internet access is cut on {scopeText(enableRule)}: right away on connected devices, and on offline ones when they
-        reconnect. Their connection to Vantyr keeps working.
+        It has no schedule, so internet access is cut on {scopeText(enableRule)}: right away on
+        connected devices, and on offline ones when they reconnect. Their connection to Vantyr keeps
+        working.
       </ConfirmActionDialog>
       <ConfirmDeleteDialog
         open={deleteRule !== null}
@@ -113,8 +116,9 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
         onClose={() => setDeleteRule(null)}
         onConfirm={() => deleteRule && remove.mutate(deleteRule)}
       >
-        It stops blocking {scopeText(deleteRule)} as devices get the change; offline devices when they reconnect. Internet stays blocked on a
-        device that another rule or a manual block still covers. This can’t be undone.
+        It stops blocking {scopeText(deleteRule)} as devices get the change; offline devices when
+        they reconnect. Internet stays blocked on a device that another rule or a manual block still
+        covers. This can’t be undone.
         {remove.isError && (
           <span role="alert" className="mt-2 block text-destructive">
             Couldn’t delete it: {errorText(remove.error)}
@@ -136,7 +140,8 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
       searchPlaceholder="Search rules…"
       empty={{
         title: "No internet block rules yet",
-        description: "A rule cuts internet access for all devices, a group or one agent, always or during set hours.",
+        description:
+          "A rule cuts internet access for all devices, a group or one agent, always or during set hours.",
         icon: <Globe />,
       }}
       actionError={actionError}

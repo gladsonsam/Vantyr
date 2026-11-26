@@ -5,7 +5,9 @@ import { createQueryClient } from "@/app/queryClient";
 // Dev-only: `import.meta.env.DEV` is statically false in production builds, so the devtools chunk
 // is dropped from the bundle entirely.
 const QueryDevtools = import.meta.env.DEV
-  ? lazy(() => import("@tanstack/react-query-devtools").then((m) => ({ default: m.ReactQueryDevtools })))
+  ? lazy(() =>
+      import("@tanstack/react-query-devtools").then((m) => ({ default: m.ReactQueryDevtools })),
+    )
   : null;
 
 /** Owns the app's TanStack Query cache for server state. */

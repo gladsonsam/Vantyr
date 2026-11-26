@@ -40,17 +40,25 @@ const LOOPBACK_TEXT = /\b(loopback|pseudo-interface|localhost)\b/i;
  * ones holding only self-assigned (link-local) addresses with no gateway go to a folded group, so an
  * unplugged WiFi or Bluetooth adapter does not look like the machine's connection.
  */
-export function partitionAdapters(adapters: readonly Adapter[]): { active: Adapter[]; inactive: Adapter[] } {
+export function partitionAdapters(adapters: readonly Adapter[]): {
+  active: Adapter[];
+  inactive: Adapter[];
+} {
   const active: Adapter[] = [];
   const inactive: Adapter[] = [];
   for (const adapter of adapters) {
     const ips = adapter.ips ?? [];
-    const byText = LOOPBACK_TEXT.test(adapter.name ?? "") || LOOPBACK_TEXT.test(adapter.description ?? "");
+    const byText =
+      LOOPBACK_TEXT.test(adapter.name ?? "") || LOOPBACK_TEXT.test(adapter.description ?? "");
     const onlyLoopback = ips.length > 0 && ips.every(isLoopbackIp);
     const hasGateway = (adapter.gateways ?? []).some((gateway) => gateway.trim());
-    const onlyLinkLocal = ips.length > 0 && ips.every((ip) => isLinkLocalIp(ip) || isLoopbackIp(ip));
+    const onlyLinkLocal =
+      ips.length > 0 && ips.every((ip) => isLinkLocalIp(ip) || isLoopbackIp(ip));
     const unconfigured = ips.length === 0 && !hasGateway;
-    (byText || onlyLoopback || (onlyLinkLocal && !hasGateway) || unconfigured ? inactive : active).push(adapter);
+    (byText || onlyLoopback || (onlyLinkLocal && !hasGateway) || unconfigured
+      ? inactive
+      : active
+    ).push(adapter);
   }
   return { active, inactive };
 }
@@ -77,7 +85,12 @@ export function driveUsage(drive: Pick<Drive, "total_gb" | "available_gb">): Dri
   const total = drive.total_gb ?? 0;
   const free = drive.available_gb ?? 0;
   const used = Math.max(0, total - free);
-  return { total, free, used, pct: total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0 };
+  return {
+    total,
+    free,
+    used,
+    pct: total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0,
+  };
 }
 
 /** "C:" and "C:\" are the same drive: only show the mount point when it adds something. */
@@ -93,7 +106,9 @@ export function formatDisplays(monitors: readonly Monitor[] | undefined): string
   return monitors
     .map((monitor) => {
       const size = monitor.width && monitor.height ? `${monitor.width}×${monitor.height}` : "";
-      return [size, monitor.primary && monitors.length > 1 ? "primary" : ""].filter(Boolean).join(" ");
+      return [size, monitor.primary && monitors.length > 1 ? "primary" : ""]
+        .filter(Boolean)
+        .join(" ");
     })
     .filter(Boolean)
     .join(", ");
@@ -107,7 +122,9 @@ export function formatMemoryGb(totalMb: number | undefined): string {
 
 export function formatProcessor(info: Pick<AgentInfo, "cpu_brand" | "cpu_cores">): string {
   const brand = info.cpu_brand?.trim() ?? "";
-  const cores = info.cpu_cores ? `${info.cpu_cores} ${info.cpu_cores === 1 ? "core" : "cores"}` : "";
+  const cores = info.cpu_cores
+    ? `${info.cpu_cores} ${info.cpu_cores === 1 ? "core" : "cores"}`
+    : "";
   return [brand, cores].filter(Boolean).join(" · ");
 }
 
@@ -119,7 +136,9 @@ export interface Fact {
 }
 
 /** Facts with a value, in order; missing ones are left out instead of printing "—". */
-export function presentFacts(facts: ReadonlyArray<{ label: string; value?: string | null; copy?: boolean }>): Fact[] {
+export function presentFacts(
+  facts: ReadonlyArray<{ label: string; value?: string | null; copy?: boolean }>,
+): Fact[] {
   return facts.flatMap(({ label, value, copy }) => {
     const text = value?.trim();
     return text ? [{ label, value: text, copy }] : [];

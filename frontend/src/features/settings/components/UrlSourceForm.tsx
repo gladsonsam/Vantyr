@@ -11,7 +11,12 @@ import { sourceUrlSchema, type SourceUrlValues } from "../lib/urlCategorizationS
  * Where the UT1 lists are downloaded from. Edited here and only sent when "Save source URL" is
  * pressed; the button waits for a change, and the form says when the server took it.
  */
-export function UrlSourceForm({ status, version, saving, onSave }: {
+export function UrlSourceForm({
+  status,
+  version,
+  saving,
+  onSave,
+}: {
   status: UrlCategorizationStatus | null;
   /** Changes whenever a fresh status arrives; re-seeds the field. */
   version: number;
@@ -53,9 +58,13 @@ export function UrlSourceForm({ status, version, saving, onSave }: {
           {saving && <Spinner />} Save source URL
         </Button>
         {isDirty ? (
-          <span className="text-sm text-muted-foreground">Not saved yet. The next download uses the saved address.</span>
+          <span className="text-sm text-muted-foreground">
+            Not saved yet. The next download uses the saved address.
+          </span>
         ) : savedUrl !== null ? (
-          <span role="status" className="text-sm text-success">Saved. The next download uses this address.</span>
+          <span role="status" className="text-sm text-success">
+            Saved. The next download uses this address.
+          </span>
         ) : null}
       </div>
     </form>

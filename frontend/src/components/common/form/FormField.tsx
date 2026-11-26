@@ -36,7 +36,14 @@ export interface FormFieldProps<T extends FieldValues, N extends FieldPath<T>> {
  * control to get the destructive ring.
  */
 export function FormField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, description, id, className, hideError, children,
+  control,
+  name,
+  label,
+  description,
+  id,
+  className,
+  hideError,
+  children,
 }: FormFieldProps<T, N>) {
   const generatedId = useId();
   const fieldId = id ?? `${generatedId}-${name}`;

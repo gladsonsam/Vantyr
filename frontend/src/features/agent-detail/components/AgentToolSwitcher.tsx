@@ -1,7 +1,13 @@
 import { useMemo, useState } from "react";
 import { ChevronsUpDown } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@vantyr/ui/components/command";
+import {
+  Command,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@vantyr/ui/components/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@vantyr/ui/components/popover";
 import {
   AGENT_SECTION_META,
@@ -55,7 +61,9 @@ export function AgentToolSwitcher({ agentName, activeTab, onSelect }: AgentToolS
       >
         <CurrentIcon aria-hidden="true" className="text-muted-foreground" />
         <span className="min-w-0 truncate text-muted-foreground">{agentName}</span>
-        <span aria-hidden="true" className="text-muted-foreground/60">/</span>
+        <span aria-hidden="true" className="text-muted-foreground/60">
+          /
+        </span>
         <span className="shrink-0 font-semibold text-foreground">{current.label}</span>
         <span className="sr-only">, switch tool</span>
         <ChevronsUpDown aria-hidden="true" className="ml-auto size-3.5! text-muted-foreground" />
@@ -66,11 +74,19 @@ export function AgentToolSwitcher({ agentName, activeTab, onSelect }: AgentToolS
           <CommandList className="max-h-[min(26rem,calc(100dvh-9rem))] pb-1">
             {searching ? (
               <>
-                {matches.length === 0 && <div className="py-6 text-center text-sm">No tool matches that.</div>}
+                {matches.length === 0 && (
+                  <div className="py-6 text-center text-sm">No tool matches that.</div>
+                )}
                 {matches.length > 0 && (
                   <CommandGroup>
                     {matches.map((tab) => (
-                      <ToolItem key={tab} tab={tab} activeTab={activeTab} showGroup onChoose={choose} />
+                      <ToolItem
+                        key={tab}
+                        tab={tab}
+                        activeTab={activeTab}
+                        showGroup
+                        onChoose={choose}
+                      />
                     ))}
                   </CommandGroup>
                 )}
@@ -91,7 +107,17 @@ export function AgentToolSwitcher({ agentName, activeTab, onSelect }: AgentToolS
   );
 }
 
-function ToolItem({ tab, activeTab, showGroup = false, onChoose }: { tab: TabKey; activeTab: TabKey; showGroup?: boolean; onChoose: (tab: TabKey) => void }) {
+function ToolItem({
+  tab,
+  activeTab,
+  showGroup = false,
+  onChoose,
+}: {
+  tab: TabKey;
+  activeTab: TabKey;
+  showGroup?: boolean;
+  onChoose: (tab: TabKey) => void;
+}) {
   const meta = AGENT_TAB_META[tab];
   const Icon = meta.icon;
   const isCurrent = tab === activeTab;

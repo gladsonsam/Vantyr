@@ -11,4 +11,6 @@ export interface ViewerConnectionOptions {
  * Hook that connects the dashboard to the server's live event feed and returns the `send` for
  * viewer commands. The real one is {@link useWebSocket}; the demo build injects a simulated feed.
  */
-export type ViewerConnection = (options: ViewerConnectionOptions) => { send: (data: unknown) => void };
+export type ViewerConnection = (options: ViewerConnectionOptions) => {
+  send: (data: unknown) => void;
+};

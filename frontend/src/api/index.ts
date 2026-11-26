@@ -14,8 +14,19 @@ import { rulesEndpoints } from "@/api/endpoints/rules";
 import { auditEndpoints } from "@/api/endpoints/audit";
 
 export { ApiError, apiUrl, errorText, isApiError, setDashboardCsrfToken } from "./client";
-export { historyRangeQuery, historySearchQuery, type HistoryRangeOpts, type HistorySearchOpts } from "@/api/endpoints/recall";
-export { mjpegStreamUrl, notifyMjpegViewerLeft, type ClipboardReply, type ClipboardRequest, type MjpegStreamTuning } from "@/api/endpoints/remote";
+export {
+  historyRangeQuery,
+  historySearchQuery,
+  type HistoryRangeOpts,
+  type HistorySearchOpts,
+} from "@/api/endpoints/recall";
+export {
+  mjpegStreamUrl,
+  notifyMjpegViewerLeft,
+  type ClipboardReply,
+  type ClipboardRequest,
+  type MjpegStreamTuning,
+} from "@/api/endpoints/remote";
 export { SETTINGS_VERSION_POLL_INTERVAL_MS } from "@/api/endpoints/settings";
 
 /** Every REST endpoint, composed from the per-domain modules in `./endpoints`. */

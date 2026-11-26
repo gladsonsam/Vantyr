@@ -1,37 +1,87 @@
-// @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  buttonByText,
+  byLabel,
+  click,
+  mountForm,
+  typeInto,
+  unmountForms,
+} from "@tests/support/formDom";
 import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
-import { buttonByText, byLabel, click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { AgentRecallSettings } from "@/features/recall/components/AgentRecallSettings";
-import { RecallCaptureSettings } from "@/features/recall/components/RecallCaptureSettings";
-import type { AgentRecallSettings as Layers, DeviceModuleStatus, RecallSettings } from "@/api/types";
 
-const api = vi.hoisted(() => ({
+import type {
+  AgentRecallSettings as Layers,
+  DeviceModuleStatus,
+  RecallSettings,
+} from "@/api/types";
+
+const api = (() => ({
   agentRecallSettingsGet: vi.fn(),
   agentRecallSettingsPut: vi.fn(),
   agentRecallSettingsDelete: vi.fn(),
   recallSettingsGet: vi.fn(),
   recallSettingsPut: vi.fn(),
   agentModules: vi.fn(),
+}))();
+await vi.mock("@/api", () => ({
+  api,
+  errorText: (e: unknown) => String(e instanceof Error ? e.message : e),
 }));
-vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e instanceof Error ? e.message : e) }));
 
-const FLEET: RecallSettings = { enabled: true, interval_ms: 20_000, hot_interval_ms: 6_000, jpeg_quality: 45, max_dim: 1600, dedup_hamming: 4, keyframe_max_gap_ms: 300_000, ocr: true };
+const { AgentRecallSettings } = await import("@/features/recall/components/AgentRecallSettings");
+const { RecallCaptureSettings } =
+  await import("@/features/recall/components/RecallCaptureSettings");
+
+const FLEET: RecallSettings = {
+  enabled: true,
+  interval_ms: 20_000,
+  hot_interval_ms: 6_000,
+  jpeg_quality: 45,
+  max_dim: 1600,
+  dedup_hamming: 4,
+  keyframe_max_gap_ms: 300_000,
+  ocr: true,
+};
 const inheriting = (): Layers => ({ effective: FLEET, override: null, global: FLEET });
 const custom = (over: Partial<RecallSettings> = {}): Layers => {
   const mine = { ...FLEET, interval_ms: 60_000, ...over };
-  return { effective: mine, override: { ...mine, updated_at: "2026-10-03T00:00:00Z" }, global: FLEET };
+  return {
+    effective: mine,
+    override: { ...mine, updated_at: "2026-10-03T00:00:00Z" },
+    global: FLEET,
+  };
 };
-const device = (recall: { enabled: boolean; available?: boolean } | null, over: Partial<DeviceModuleStatus> = {}): DeviceModuleStatus => ({
-  online: true,
-  reported_at: "2026-10-03T00:00:00Z",
-  authorization_current: true,
-  pending: [],
-  state: { type: "module_states", schema_version: 1, revision: 1, modules: recall ? [{ module: "recall", available: true, revision: 1, authorization_required: !recall.enabled, ...recall }] : [] },
-  ...over,
-}) as DeviceModuleStatus;
+const device = (
+  recall: { enabled: boolean; available?: boolean } | null,
+  over: Partial<DeviceModuleStatus> = {},
+): DeviceModuleStatus =>
+  ({
+    online: true,
+    reported_at: "2026-10-03T00:00:00Z",
+    authorization_current: true,
+    pending: [],
+    state: {
+      type: "module_states",
+      schema_version: 1,
+      revision: 1,
+      modules: recall
+        ? [
+            {
+              module: "recall",
+              available: true,
+              revision: 1,
+              authorization_required: !recall.enabled,
+              ...recall,
+            },
+          ]
+        : [],
+    },
+    ...over,
+  }) as DeviceModuleStatus;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -40,9 +90,24 @@ beforeEach(() => {
 afterEach(unmountForms);
 
 const renderAgent = (props: { isAdmin?: boolean; canOperate?: boolean; id?: string } = {}) =>
-  mountForm(withQueryClient(<AgentRecallSettings agentId={props.id ?? "device"} isAdmin={props.isAdmin ?? true} canOperate={props.canOperate} />, createTestQueryClient()));
-const buttons = () => [...document.querySelectorAll("button")].map((b) => b.getAttribute("aria-label") ?? b.textContent?.trim());
-const mode = (name: string) => document.querySelector(`[aria-label="Capture settings mode"] [aria-label="${name}"]`) as HTMLButtonElement;
+  mountForm(
+    withQueryClient(
+      <AgentRecallSettings
+        agentId={props.id ?? "device"}
+        isAdmin={props.isAdmin ?? true}
+        canOperate={props.canOperate}
+      />,
+      createTestQueryClient(),
+    ),
+  );
+const buttons = () =>
+  [...document.querySelectorAll("button")].map(
+    (b) => b.getAttribute("aria-label") ?? b.textContent?.trim(),
+  );
+const mode = (name: string) =>
+  document.querySelector(
+    `[aria-label="Capture settings mode"] [aria-label="${name}"]`,
+  ) as HTMLButtonElement;
 
 describe("per-device capture settings", () => {
   it("keeps what is saved apart from what the device allows", async () => {
@@ -61,7 +126,9 @@ describe("per-device capture settings", () => {
     expect(byLabel("Interval (seconds)").disabled).toBe(true);
     expect(byLabel("Interval (seconds)").value).toBe("20");
     expect(document.getElementById("recall-dedup")).toBeNull();
-    const more = [...document.querySelectorAll("button")].find((b) => b.textContent?.startsWith("More options"))!;
+    const more = [...document.querySelectorAll("button")].find((b) =>
+      b.textContent?.startsWith("More options"),
+    )!;
     expect(more.textContent).toContain("Duplicates 4 · keyframe every 5 min");
     await click(more);
     expect(byLabel("Duplicate threshold (0–64)").disabled).toBe(true);
@@ -88,11 +155,16 @@ describe("per-device capture settings", () => {
     api.agentRecallSettingsPut.mockResolvedValue({ ok: true });
     await renderAgent();
     await click(mode("Custom"));
-    expect(document.body.textContent).toContain("later changes to the fleet defaults will not apply to it");
+    expect(document.body.textContent).toContain(
+      "later changes to the fleet defaults will not apply to it",
+    );
     await typeInto(byLabel("Interval (seconds)"), "45");
     api.agentRecallSettingsGet.mockResolvedValue(custom({ interval_ms: 45_000 }));
     await click(buttonByText("Save"));
-    expect(api.agentRecallSettingsPut).toHaveBeenCalledWith("device", { ...FLEET, interval_ms: 45_000 });
+    expect(api.agentRecallSettingsPut).toHaveBeenCalledWith("device", {
+      ...FLEET,
+      interval_ms: 45_000,
+    });
     expect(document.body.textContent).toContain("Saved. A connected device is sent it now");
   });
 
@@ -164,7 +236,10 @@ describe("capture number fields (shared with the fleet defaults)", () => {
     expect(field.getAttribute("aria-invalid")).toBe("false");
     expect(buttonByText("Save").disabled).toBe(false);
     await click(buttonByText("Save"));
-    expect(api.agentRecallSettingsPut).toHaveBeenCalledWith("device", expect.objectContaining({ max_dim: 1920 }));
+    expect(api.agentRecallSettingsPut).toHaveBeenCalledWith(
+      "device",
+      expect.objectContaining({ max_dim: 1920 }),
+    );
   });
 
   it("returns an invalid entry to the last valid value when the field loses focus", async () => {
@@ -181,24 +256,42 @@ describe("capture number fields (shared with the fleet defaults)", () => {
   });
 
   it("keeps seconds and minutes at the server's precision, and allows 0 = full resolution", async () => {
-    api.agentRecallSettingsGet.mockResolvedValue(custom({ interval_ms: 1_500, keyframe_max_gap_ms: 10_000 }));
+    api.agentRecallSettingsGet.mockResolvedValue(
+      custom({ interval_ms: 1_500, keyframe_max_gap_ms: 10_000 }),
+    );
     api.agentRecallSettingsPut.mockResolvedValue({ ok: true });
     await renderAgent();
     expect(byLabel("Interval (seconds)").value).toBe("1.5");
     await typeInto(byLabel("Max dimension (px)"), "0");
-    await click([...document.querySelectorAll("button")].find((b) => b.textContent?.startsWith("More options"))!);
+    await click(
+      [...document.querySelectorAll("button")].find((b) =>
+        b.textContent?.startsWith("More options"),
+      )!,
+    );
     expect(byLabel("Keyframe every (minutes)").value).toBe("0.17");
     await typeInto(byLabel("Duplicate threshold (0–64)"), "65");
     expect(byLabel("Duplicate threshold (0–64)").getAttribute("aria-invalid")).toBe("true");
     await click(buttonByText("Save"));
-    expect(api.agentRecallSettingsPut).toHaveBeenCalledWith("device", expect.objectContaining({ max_dim: 0, interval_ms: 1_500, keyframe_max_gap_ms: 10_000, dedup_hamming: 4 }));
+    expect(api.agentRecallSettingsPut).toHaveBeenCalledWith(
+      "device",
+      expect.objectContaining({
+        max_dim: 0,
+        interval_ms: 1_500,
+        keyframe_max_gap_ms: 10_000,
+        dedup_hamming: 4,
+      }),
+    );
   });
 
   it("locks the tuning fields while recording is off, but leaves Record screen editable", async () => {
     api.agentRecallSettingsGet.mockResolvedValue(custom({ enabled: false }));
     await renderAgent();
     expect(byLabel("Interval (seconds)").disabled).toBe(true);
-    expect((document.querySelector('[aria-label="Record screen"]') as HTMLButtonElement).getAttribute("aria-disabled")).not.toBe("true");
+    expect(
+      (document.querySelector('[aria-label="Record screen"]') as HTMLButtonElement).getAttribute(
+        "aria-disabled",
+      ),
+    ).not.toBe("true");
     expect(document.body.textContent).toContain("Saved: do not record");
     expect(document.body.textContent).toContain("Capture is off in saved settings");
   });
@@ -206,13 +299,18 @@ describe("capture number fields (shared with the fleet defaults)", () => {
 
 describe("device switching", () => {
   it("never carries a draft or a message over to another device", async () => {
-    api.agentRecallSettingsGet.mockImplementation(async (id: string) => (id === "a" ? custom() : custom({ jpeg_quality: 70 })));
+    api.agentRecallSettingsGet.mockImplementation(async (id: string) =>
+      id === "a" ? custom() : custom({ jpeg_quality: 70 }),
+    );
     api.agentRecallSettingsPut.mockResolvedValue({ ok: true });
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
     const client = createTestQueryClient();
-    const show = (id: string) => act(async () => root.render(withQueryClient(<AgentRecallSettings agentId={id} isAdmin />, client)));
+    const show = (id: string) =>
+      act(async () =>
+        root.render(withQueryClient(<AgentRecallSettings agentId={id} isAdmin />, client)),
+      );
     await show("a");
     await typeInto(byLabel("JPEG quality (1–100)"), "80");
     await click(buttonByText("Save"));
@@ -237,12 +335,16 @@ describe("fleet-default capture settings still behave as before", () => {
     await typeInto(byLabel("JPEG quality (1–100)"), "70");
     await click(buttonByText("Save capture settings"));
     expect(api.recallSettingsPut).toHaveBeenCalledWith({ ...FLEET, jpeg_quality: 70 });
-    expect(document.body.textContent).toContain("Saved. Connected devices were sent the new defaults.");
+    expect(document.body.textContent).toContain(
+      "Saved. Connected devices were sent the new defaults.",
+    );
   });
 
   it("is read-only for non-admins", async () => {
     api.recallSettingsGet.mockResolvedValue(FLEET);
-    await mountForm(withQueryClient(<RecallCaptureSettings isAdmin={false} />, createTestQueryClient()));
+    await mountForm(
+      withQueryClient(<RecallCaptureSettings isAdmin={false} />, createTestQueryClient()),
+    );
     expect(byLabel("Interval (seconds)").disabled).toBe(true);
     expect(document.body.textContent).toContain("Only admins can change capture settings.");
   });
@@ -252,7 +354,9 @@ describe("fleet-default capture settings still behave as before", () => {
     await mountForm(withQueryClient(<RecallCaptureSettings isAdmin />, createTestQueryClient()));
     expect(document.body.textContent).toContain("Couldn't load capture settings. boom");
     expect(document.querySelectorAll("input")).toHaveLength(0);
-    expect([...document.querySelectorAll("button")].map((b) => b.textContent?.trim())).not.toContain("Save capture settings");
+    expect(
+      [...document.querySelectorAll("button")].map((b) => b.textContent?.trim()),
+    ).not.toContain("Save capture settings");
     api.recallSettingsGet.mockResolvedValue(FLEET);
     await click(buttonByText("Try again"));
     expect(byLabel("JPEG quality (1–100)").value).toBe("45");

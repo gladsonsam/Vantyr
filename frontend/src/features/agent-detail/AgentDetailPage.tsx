@@ -109,7 +109,10 @@ export function AgentDetailPage({
     scrollRequested: searchParams.get("scroll") === "activity",
     hasMoment: Boolean(highlightTimestamp),
   });
-  const goToTool = useCallback((tab: TabKey) => landOnPick(tab, onTabChange), [landOnPick, onTabChange]);
+  const goToTool = useCallback(
+    (tab: TabKey) => landOnPick(tab, onTabChange),
+    [landOnPick, onTabChange],
+  );
 
   useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
@@ -120,7 +123,9 @@ export function AgentDetailPage({
   const currentStatus = statusFor(agent, liveStatus);
   const tone = statusTone(currentStatus.status);
   const infoUpdatedTsSecs =
-    typeof resolvedInfo?.ts === "number" && Number.isFinite(resolvedInfo.ts) ? resolvedInfo.ts : null;
+    typeof resolvedInfo?.ts === "number" && Number.isFinite(resolvedInfo.ts)
+      ? resolvedInfo.ts
+      : null;
   const uptimeSecs = useMemo(() => {
     if (resolvedInfo?.uptime_secs == null) return undefined;
     if (!agent.online) return resolvedInfo.uptime_secs;
@@ -179,7 +184,16 @@ export function AgentDetailPage({
         setConfirmAction(action);
       }
     },
-    [agent.id, agent.name, agent.online, dashboardRole, onNotifyError, onNotifyInfo, onNotifyWarning, sendWsMessage],
+    [
+      agent.id,
+      agent.name,
+      agent.online,
+      dashboardRole,
+      onNotifyError,
+      onNotifyInfo,
+      onNotifyWarning,
+      sendWsMessage,
+    ],
   );
 
   const confirmAndRun = useCallback(() => {
@@ -209,7 +223,16 @@ export function AgentDetailPage({
     sendWsMessage({ type: "control", agent_id: agent.id, cmd: { type: "ShutdownHost" } });
     onNotifyWarning("Shutdown sent", agent.name);
     setTimeout(() => setPendingAction((prev) => (prev === "shutdown-host" ? null : prev)), 800);
-  }, [agent.id, agent.name, agent.online, confirmAction, dashboardRole, onNotifyError, onNotifyWarning, sendWsMessage]);
+  }, [
+    agent.id,
+    agent.name,
+    agent.online,
+    confirmAction,
+    dashboardRole,
+    onNotifyError,
+    onNotifyWarning,
+    sendWsMessage,
+  ]);
 
   const deleteThisAgent = useCallback(() => {
     setDeletingAgent(true);
@@ -287,7 +310,9 @@ export function AgentDetailPage({
                 <AlertTitle>Nothing is turned on for {agent.name} yet</AlertTitle>
                 <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
                   <span>Turn modules on in the Vantyr app on {agent.name}.</span>
-                  <Button variant="outline" size="sm" onClick={() => goToTool("settings")}>View modules</Button>
+                  <Button variant="outline" size="sm" onClick={() => goToTool("settings")}>
+                    View modules
+                  </Button>
                 </AlertDescription>
               </Alert>
             </div>
@@ -322,70 +347,110 @@ export function AgentDetailPage({
           <AgentSectionNav agentName={agent.name} activeTab={activeTab} onTabChange={goToTool} />
 
           {/* Tool content. At least a screen tall, so even a short tool can scroll up under the pinned bar. */}
-          <div data-agent-tool-content className="min-h-[calc(100svh-4rem)] px-3 pt-4 pb-8 sm:px-5 md:px-8 md:py-6">
+          <div
+            data-agent-tool-content
+            className="min-h-[calc(100svh-4rem)] px-3 pt-4 pb-8 sm:px-5 md:px-8 md:py-6"
+          >
             <ErrorBoundary resetKey={shownTab} label={`tab:${shownTab}`}>
               {tabContent}
             </ErrorBoundary>
           </div>
-
         </div>
 
         <AgentActionDialogs
-          agentName={agent.name} confirmAction={confirmAction} setConfirmAction={setConfirmAction}
-          pendingAction={pendingAction} confirmAndRun={confirmAndRun}
-          confirmDeleteAgent={confirmDeleteAgent} setConfirmDeleteAgent={setConfirmDeleteAgent}
-          deletingAgent={deletingAgent} deleteThisAgent={deleteThisAgent}
+          agentName={agent.name}
+          confirmAction={confirmAction}
+          setConfirmAction={setConfirmAction}
+          pendingAction={pendingAction}
+          confirmAndRun={confirmAndRun}
+          confirmDeleteAgent={confirmDeleteAgent}
+          setConfirmDeleteAgent={setConfirmDeleteAgent}
+          deletingAgent={deletingAgent}
+          deleteThisAgent={deleteThisAgent}
         />
       </main>
     </div>
   );
 }
 
-function AgentActionDialogs({ agentName, confirmAction, setConfirmAction, pendingAction, confirmAndRun, confirmDeleteAgent, setConfirmDeleteAgent, deletingAgent, deleteThisAgent }: {
-  agentName: string; confirmAction: AgentAction | null; setConfirmAction: (action: AgentAction | null) => void;
-  pendingAction: AgentAction | null; confirmAndRun: () => void; confirmDeleteAgent: boolean;
-  setConfirmDeleteAgent: (open: boolean) => void; deletingAgent: boolean; deleteThisAgent: () => void;
+function AgentActionDialogs({
+  agentName,
+  confirmAction,
+  setConfirmAction,
+  pendingAction,
+  confirmAndRun,
+  confirmDeleteAgent,
+  setConfirmDeleteAgent,
+  deletingAgent,
+  deleteThisAgent,
+}: {
+  agentName: string;
+  confirmAction: AgentAction | null;
+  setConfirmAction: (action: AgentAction | null) => void;
+  pendingAction: AgentAction | null;
+  confirmAndRun: () => void;
+  confirmDeleteAgent: boolean;
+  setConfirmDeleteAgent: (open: boolean) => void;
+  deletingAgent: boolean;
+  deleteThisAgent: () => void;
 }) {
-  return <>
-        <AlertDialog open={confirmAction === "restart-host" || confirmAction === "shutdown-host"} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{confirmAction === "restart-host" ? `Restart ${agentName}?` : `Shut down ${agentName}?`}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {confirmAction === "restart-host"
-                  ? "Unsaved work may be lost."
-                  : "You may need Wake on LAN to bring it back."}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={pendingAction === "restart-host" || pendingAction === "shutdown-host"}
-                onClick={confirmAndRun}
-              >
-                {(pendingAction === "restart-host" || pendingAction === "shutdown-host") && <Spinner />}
-                {confirmAction === "restart-host" ? "Restart" : "Shutdown"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+  return (
+    <>
+      <AlertDialog
+        open={confirmAction === "restart-host" || confirmAction === "shutdown-host"}
+        onOpenChange={(open) => {
+          if (!open) setConfirmAction(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmAction === "restart-host"
+                ? `Restart ${agentName}?`
+                : `Shut down ${agentName}?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmAction === "restart-host"
+                ? "Unsaved work may be lost."
+                : "You may need Wake on LAN to bring it back."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={pendingAction === "restart-host" || pendingAction === "shutdown-host"}
+              onClick={confirmAndRun}
+            >
+              {(pendingAction === "restart-host" || pendingAction === "shutdown-host") && (
+                <Spinner />
+              )}
+              {confirmAction === "restart-host" ? "Restart" : "Shutdown"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-        <AlertDialog open={confirmDeleteAgent} onOpenChange={setConfirmDeleteAgent}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete {agentName}?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Removes the agent and its history. This can't be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={deletingAgent}>Cancel</AlertDialogCancel>
-              <AlertDialogAction variant="destructive" disabled={deletingAgent} onClick={deleteThisAgent}>
-                {deletingAgent && <Spinner />} Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-  </>;
+      <AlertDialog open={confirmDeleteAgent} onOpenChange={setConfirmDeleteAgent}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {agentName}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Removes the agent and its history. This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingAgent}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deletingAgent}
+              onClick={deleteThisAgent}
+            >
+              {deletingAgent && <Spinner />} Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
 }

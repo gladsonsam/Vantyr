@@ -26,7 +26,9 @@ export function parseTokenUses(raw: string): number {
 
 /** The request body for the typed options. An empty expiry means the server default. */
 export function tokenValuesToBody(values: EnrollmentTokenValues): EnrollmentTokenBody {
-  const body: EnrollmentTokenBody = { uses: Math.max(1, Math.min(MAX_TOKEN_USES, Number(values.uses) || 1)) };
+  const body: EnrollmentTokenBody = {
+    uses: Math.max(1, Math.min(MAX_TOKEN_USES, Number(values.uses) || 1)),
+  };
   const rawHours = values.expire_hours.trim();
   if (rawHours !== "") {
     body.expires_in_hours = Math.max(1, Math.min(MAX_EXPIRY_HOURS, parseInt(rawHours, 10) || 0));

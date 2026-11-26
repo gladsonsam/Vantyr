@@ -30,7 +30,9 @@ const KIND_ICON: Record<MergedActivityRow["kind"], LucideIcon> = {
 
 function clock(time: string | undefined): string {
   const date = parseTimestamp(time);
-  return date ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
+  return date
+    ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "—";
 }
 
 /** One evidence row: time, kind icon (named for screen readers), content, optional action. */
@@ -47,14 +49,25 @@ function RowShell({
 }) {
   const Icon = KIND_ICON[kind];
   return (
-    <div className={cn("flex items-start gap-2.5 border-l-2 py-2 pl-3 not-first:border-t", KIND_BORDER[kind])}>
-      <span title={fmtDateTimePrecise(time)} className="w-[4.5rem] shrink-0 pt-px tabular-nums text-[11.5px] text-muted-foreground">
+    <div
+      className={cn(
+        "flex items-start gap-2.5 border-l-2 py-2 pl-3 not-first:border-t",
+        KIND_BORDER[kind],
+      )}
+    >
+      <span
+        title={fmtDateTimePrecise(time)}
+        className="w-[4.5rem] shrink-0 pt-px tabular-nums text-[11.5px] text-muted-foreground"
+      >
         {clock(time)}
       </span>
       <Icon
         size={13}
         aria-hidden="true"
-        className={cn("mt-0.5 shrink-0", kind === "alert" ? "text-destructive" : "text-muted-foreground")}
+        className={cn(
+          "mt-0.5 shrink-0",
+          kind === "alert" ? "text-destructive" : "text-muted-foreground",
+        )}
       />
       <span className="sr-only">{KIND_LABEL[kind]}</span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">{children}</div>
@@ -97,7 +110,9 @@ function UrlRow({ url, browser }: { url: string; browser?: string }) {
   const inner = (
     <>
       <span className="truncate tabular-nums text-[11.5px] group-hover/url:underline">{text}</span>
-      {browser ? <span className="shrink-0 text-[10.5px] text-muted-foreground">{browser}</span> : null}
+      {browser ? (
+        <span className="shrink-0 text-[10.5px] text-muted-foreground">{browser}</span>
+      ) : null}
     </>
   );
   return isHttpUrl(url) ? (
@@ -120,7 +135,12 @@ type RowProps = {
 type DeepLink = ((state: ActivityUrlStateV1) => void) | null;
 
 /** One row of a session's merged window / URL / alert stream. */
-export function MergedActivityRowView({ row, onOpenScreenshot, agentId, onActivityDeepLink }: RowProps) {
+export function MergedActivityRowView({
+  row,
+  onOpenScreenshot,
+  agentId,
+  onActivityDeepLink,
+}: RowProps) {
   const deepLink = agentId && onActivityDeepLink ? onActivityDeepLink : null;
   switch (row.kind) {
     case "window":
@@ -133,7 +153,13 @@ export function MergedActivityRowView({ row, onOpenScreenshot, agentId, onActivi
   }
 }
 
-function WindowActivityRow({ row, deepLink }: { row: Extract<MergedActivityRow, { kind: "window" }>; deepLink: DeepLink }) {
+function WindowActivityRow({
+  row,
+  deepLink,
+}: {
+  row: Extract<MergedActivityRow, { kind: "window" }>;
+  deepLink: DeepLink;
+}) {
   const win = row.window;
   const title = (win.window_title ?? "").trim();
   return (
@@ -142,7 +168,10 @@ function WindowActivityRow({ row, deepLink }: { row: Extract<MergedActivityRow, 
       time={win.timestamp}
       action={
         deepLink && title ? (
-          <SearchAction label={`Search the timeline for “${title}”`} onClick={() => deepLink({ v: 1, q: win.window_title })} />
+          <SearchAction
+            label={`Search the timeline for “${title}”`}
+            onClick={() => deepLink({ v: 1, q: win.window_title })}
+          />
         ) : null
       }
     >
@@ -151,7 +180,13 @@ function WindowActivityRow({ row, deepLink }: { row: Extract<MergedActivityRow, 
   );
 }
 
-function PageActivityRow({ row, deepLink }: { row: Extract<MergedActivityRow, { kind: "page" | "url" }>; deepLink: DeepLink }) {
+function PageActivityRow({
+  row,
+  deepLink,
+}: {
+  row: Extract<MergedActivityRow, { kind: "page" | "url" }>;
+  deepLink: DeepLink;
+}) {
   const u = row.url;
   return (
     <RowShell
@@ -159,7 +194,10 @@ function PageActivityRow({ row, deepLink }: { row: Extract<MergedActivityRow, { 
       time={row.kind === "page" ? row.window.timestamp : u.timestamp}
       action={
         deepLink && u.url.trim() ? (
-          <SearchAction label="Search the timeline for this URL" onClick={() => deepLink({ v: 1, q: u.url })} />
+          <SearchAction
+            label="Search the timeline for this URL"
+            onClick={() => deepLink({ v: 1, q: u.url })}
+          />
         ) : null
       }
     >
@@ -197,7 +235,10 @@ function AlertActivityRow({
             {triggerText}
           </a>
         ) : (
-          <span className="tabular-nums text-[12px] text-muted-foreground [word-break:break-word]" title={triggerText}>
+          <span
+            className="tabular-nums text-[12px] text-muted-foreground [word-break:break-word]"
+            title={triggerText}
+          >
             {triggerText}
           </span>
         )
@@ -210,7 +251,12 @@ function AlertActivityRow({
           aria-label="View alert screenshot full size"
           title="View full size"
         >
-          <img src={apiUrl(`/alert-rule-events/${ev.id}/screenshot`)} alt="" className="block max-h-32 max-w-full" loading="lazy" />
+          <img
+            src={apiUrl(`/alert-rule-events/${ev.id}/screenshot`)}
+            alt=""
+            className="block max-h-32 max-w-full"
+            loading="lazy"
+          />
         </button>
       ) : ev.screenshot_requested ? (
         <span className="text-[11px] text-muted-foreground">Screenshot pending</span>

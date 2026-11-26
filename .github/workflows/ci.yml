@@ -107,6 +107,9 @@ jobs:
           npm run lint -w packages/ui
           npm run typecheck -w packages/ui
 
+      - name: Check formatting
+        run: npm run format:check
+
       - name: Test
         run: npm test -w frontend
 
@@ -213,7 +216,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7.1.0
         with:
-          python-version: '3.15'
+          python-version: "3.15"
       - name: Install updater signature verifier
         run: |
           sudo apt-get update

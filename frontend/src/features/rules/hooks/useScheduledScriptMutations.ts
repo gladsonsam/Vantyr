@@ -9,12 +9,21 @@ import type { ScheduledScriptBody } from "../lib/scheduledScriptForm";
  * The changes the scheduled script list makes. A refused switch or run is kept as `actionError`; a refused
  * save or delete stays on its mutation so the dialog that asked for it can show it. `saved` is what last succeeded.
  */
-export function useScheduledScriptMutations({ onSaved, onDeleted, onRunRequested }: { onSaved: () => void; onDeleted: () => void; onRunRequested: () => void }) {
+export function useScheduledScriptMutations({
+  onSaved,
+  onDeleted,
+  onRunRequested,
+}: {
+  onSaved: () => void;
+  onDeleted: () => void;
+  onRunRequested: () => void;
+}) {
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   // Scripts and their run feed share the `scheduledScripts` key prefix, so this reloads both.
-  const refreshScripts = () => queryClient.invalidateQueries({ queryKey: ruleKeys.scheduledScripts() });
+  const refreshScripts = () =>
+    queryClient.invalidateQueries({ queryKey: ruleKeys.scheduledScripts() });
 
   const save = useMutation({
     mutationFn: async ({ id, body }: { id: number | null; body: ScheduledScriptBody }) => {
@@ -40,7 +49,8 @@ export function useScheduledScriptMutations({ onSaved, onDeleted, onRunRequested
   const toggle = useMutation({
     mutationFn: (r: ScheduledScript) => api.scheduledScriptsUpdate(r.id, { enabled: !r.enabled }),
     onSuccess: () => refreshScripts(),
-    onError: (e, r) => setActionError(`Couldn’t turn ${r.enabled ? "off" : "on"} “${r.name}”: ${errorText(e)}`),
+    onError: (e, r) =>
+      setActionError(`Couldn’t turn ${r.enabled ? "off" : "on"} “${r.name}”: ${errorText(e)}`),
   });
 
   const trigger = useMutation({

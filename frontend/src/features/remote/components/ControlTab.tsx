@@ -7,7 +7,12 @@ import { ruleKeys, ruleQueries } from "@/api/queries/rules";
 import type { AgentInfo, AppBlockRule } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { AppBlockModal } from "./AppBlockModal";
-import { AppRulesSection, BlockInternetDialog, DeleteRuleDialog, InternetSection } from "./BlockingSections";
+import {
+  AppRulesSection,
+  BlockInternetDialog,
+  DeleteRuleDialog,
+  InternetSection,
+} from "./BlockingSections";
 
 interface ControlTabProps {
   agentId: string;
@@ -23,7 +28,13 @@ const NO_RULES: AppBlockRule[] = [];
 const toRules = (r: { rules: AppBlockRule[] }) => r.rules;
 
 /** Blocking: the device's internet policy and the apps that are closed on it (admins only). */
-export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo }: ControlTabProps) {
+export function ControlTab({
+  agentId,
+  agentName,
+  agentOnline,
+  isAdmin,
+  agentInfo,
+}: ControlTabProps) {
   const queryClient = useQueryClient();
   const [confirmingBlock, setConfirmingBlock] = useState(false);
 
@@ -60,21 +71,27 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
 
   /** Patch this agent's cached rule list after the server confirmed a change. */
   const patchRules = (forAgent: string, update: (rules: AppBlockRule[]) => AppBlockRule[]) =>
-    queryClient.setQueryData(ruleQueries.appBlockRulesForAgent(forAgent).queryKey, (prev) =>
-      prev && { ...prev, rules: update(prev.rules) });
+    queryClient.setQueryData(
+      ruleQueries.appBlockRulesForAgent(forAgent).queryKey,
+      (prev) => prev && { ...prev, rules: update(prev.rules) },
+    );
 
   const toggle = useMutation({
     mutationFn: (vars: { agentId: string; rule: AppBlockRule }) =>
       api.appBlockRulesUpdate(vars.rule.id, { enabled: !vars.rule.enabled }),
     onSuccess: (_, { agentId: forAgent, rule }) =>
-      patchRules(forAgent, (prev) => prev.map((r) => r.id === rule.id ? { ...r, enabled: !r.enabled } : r)),
+      patchRules(forAgent, (prev) =>
+        prev.map((r) => (r.id === rule.id ? { ...r, enabled: !r.enabled } : r)),
+      ),
     onError: (e) => setMutationErr(errorText(e)),
   });
   const togglingId = toggle.isPending ? toggle.variables.rule.id : null;
 
   const remove = useMutation({
-    mutationFn: (vars: { agentId: string; rule: AppBlockRule }) => api.appBlockRulesDelete(vars.rule.id),
-    onSuccess: (_, { agentId: forAgent, rule }) => patchRules(forAgent, (prev) => prev.filter((r) => r.id !== rule.id)),
+    mutationFn: (vars: { agentId: string; rule: AppBlockRule }) =>
+      api.appBlockRulesDelete(vars.rule.id),
+    onSuccess: (_, { agentId: forAgent, rule }) =>
+      patchRules(forAgent, (prev) => prev.filter((r) => r.id !== rule.id)),
     onError: (e) => setMutationErr(errorText(e)),
     onSettled: () => setDeletingRule(null),
   });

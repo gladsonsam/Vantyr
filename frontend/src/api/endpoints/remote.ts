@@ -6,7 +6,12 @@ export type MjpegStreamTuning = {
 };
 
 /** Multipart MJPEG URL; `session` must match {@link notifyMjpegViewerLeft}. `monitor` is a 0-based index (omit for primary). */
-export function mjpegStreamUrl(agentId: string, session: string, tuning?: MjpegStreamTuning, monitor?: number): string {
+export function mjpegStreamUrl(
+  agentId: string,
+  session: string,
+  tuning?: MjpegStreamTuning,
+  monitor?: number,
+): string {
   const qs = new URLSearchParams();
   qs.set("session", session);
   if (tuning) {
@@ -33,11 +38,24 @@ export function notifyMjpegViewerLeft(agentId: string, session: string): void {
   });
 }
 
-export type ClipboardRequest = { action: "read"; control_token: string } | { action: "write"; control_token: string; text: string };
-export interface ClipboardReply { ok: true; text?: string }
+export type ClipboardRequest =
+  | { action: "read"; control_token: string }
+  | { action: "write"; control_token: string; text: string };
+export interface ClipboardReply {
+  ok: true;
+  text?: string;
+}
 
 export const remoteEndpoints = {
-  agentClipboard: (agentId: string, body: ClipboardRequest, signal?: AbortSignal): Promise<ClipboardReply> => requestJson(`/agents/${encodeURIComponent(agentId)}/clipboard`, {
-    method: "POST", headers: { "Content-Type": "application/json", ...csrfHeaders() }, body: JSON.stringify(body), signal,
-  }),
+  agentClipboard: (
+    agentId: string,
+    body: ClipboardRequest,
+    signal?: AbortSignal,
+  ): Promise<ClipboardReply> =>
+    requestJson(`/agents/${encodeURIComponent(agentId)}/clipboard`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...csrfHeaders() },
+      body: JSON.stringify(body),
+      signal,
+    }),
 };

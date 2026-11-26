@@ -1,5 +1,9 @@
 import { useCallback, useRef } from "react";
-import type { FrameSource, FrameSourceOptions, ScreenStreamSource } from "@/features/remote/lib/screenStreamSource";
+import type {
+  FrameSource,
+  FrameSourceOptions,
+  ScreenStreamSource,
+} from "@/features/remote/lib/screenStreamSource";
 import { DemoScreen } from "./DemoScreen";
 
 /** Placeholder image for the demo stream: it drives load state and pointer mapping, invisible over the mock desktop. */
@@ -17,7 +21,14 @@ const unstamped = () => ({ ok: true, stamp: null });
  * and pointer mapping, invisible over the mock desktop. There is no capture geometry, so input
  * is never stamped and the display always counts as verified.
  */
-function useDemoFrameSource({ agentId, streamUrl: requestedUrl, session, streamEnabled, online, report }: FrameSourceOptions): FrameSource {
+function useDemoFrameSource({
+  agentId,
+  streamUrl: requestedUrl,
+  session,
+  streamEnabled,
+  online,
+  report,
+}: FrameSourceOptions): FrameSource {
   const imgRef = useRef<HTMLImageElement>(null);
   // The session in the fragment gives every reconnect a fresh src, like the real stream's URL.
   const streamUrl = requestedUrl ? `${demoStreamUrl(agentId)}#${session}` : "";
@@ -25,7 +36,10 @@ function useDemoFrameSource({ agentId, streamUrl: requestedUrl, session, streamE
   const onLoad = () => {
     if (!streamEnabled) return;
     const img = imgRef.current;
-    const size = img && img.naturalWidth > 0 && img.naturalHeight > 0 ? { width: img.naturalWidth, height: img.naturalHeight } : undefined;
+    const size =
+      img && img.naturalWidth > 0 && img.naturalHeight > 0
+        ? { width: img.naturalWidth, height: img.naturalHeight }
+        : undefined;
     report({ streaming: true, error: false, size });
   };
   const onError = () => report({ streaming: false, error: true });
@@ -63,7 +77,16 @@ function useDemoFrameSource({ agentId, streamUrl: requestedUrl, session, streamE
               alt="Agent screen"
               onLoad={onLoad}
               onError={onError}
-              style={{ transform, position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: visible ? "block" : "none", ...(online ? { opacity: 0 } : {}) }}
+              style={{
+                transform,
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                display: visible ? "block" : "none",
+                ...(online ? { opacity: 0 } : {}),
+              }}
             />
           )}
         </>

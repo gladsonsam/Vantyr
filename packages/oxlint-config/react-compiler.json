@@ -1,8 +1,6 @@
 {
   "$schema": "../../node_modules/oxlint/configuration_schema.json",
-  "extends": [
-    "./base.json"
-  ],
+  "extends": ["./base.json"],
   "rules": {
     "react/static-components": "error",
     "react/use-memo": "error",

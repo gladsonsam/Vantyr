@@ -37,9 +37,7 @@ function Sparkline({ values }: { values: number[] }) {
   const pad = 4;
   if (values.length < 2) {
     return (
-      <div className="p-2 text-sm text-muted-foreground">
-        Not enough samples to chart yet.
-      </div>
+      <div className="p-2 text-sm text-muted-foreground">Not enough samples to chart yet.</div>
     );
   }
   const n = values.length;
@@ -118,9 +116,7 @@ export function ResourceHistory({ agentId }: { agentId: string }) {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : !points || points.length === 0 ? (
-          <div className="p-6 text-center text-sm text-muted-foreground">
-            No samples yet.
-          </div>
+          <div className="p-6 text-center text-sm text-muted-foreground">No samples yet.</div>
         ) : (
           SERIES.map((s) => {
             const vals = points.map((p) => p[s.key]);

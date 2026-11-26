@@ -13,7 +13,10 @@
     "demo": "npm run dev:demo -w frontend",
     "dev": "npm run dev -w frontend",
     "lint": "npm run lint --workspaces --if-present",
-    "lint:fix": "npm run lint:fix --workspaces --if-present"
+    "lint:fix": "npm run lint:fix --workspaces --if-present",
+    "test": "npm test -w frontend",
+    "format": "bun fmt frontend agent/ui-src packages package.json bunfig.toml .github/workflows",
+    "format:check": "bun fmt --check frontend agent/ui-src packages package.json bunfig.toml .github/workflows"
   },
   "overrides": {
     "esbuild": "^0.28.2",
@@ -21,8 +24,9 @@
   },
   "devDependencies": {
     "ajv": "^8.20.0",
+    "bun": "1.4.5",
+    "oxlint": "^1.95.0",
     "shadcn": "^4.23.0",
-    "typescript": "^6.0.3",
-    "oxlint": "^1.95.0"
+    "typescript": "^6.0.3"
   }
 }

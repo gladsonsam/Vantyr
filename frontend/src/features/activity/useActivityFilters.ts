@@ -1,9 +1,6 @@
 import { useCallback, useMemo, useState, type SetStateAction } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import {
-  resolveDateRangeToDayBounds,
-  type ActivityDateValue,
-} from "./activityDateRange";
+import { resolveDateRangeToDayBounds, type ActivityDateValue } from "./activityDateRange";
 import {
   applyActivityStateToSearchParams,
   readActivityStateFromSearchParams,
@@ -38,8 +35,7 @@ function valuesFromUrl(params: URLSearchParams): FilterValues {
 function urlState(values: FilterValues): ActivityUrlStateV1 | null {
   const bounds = resolveDateRangeToDayBounds(values.jumpRangeValue);
   const app = values.appFilterExe?.trim() || null;
-  if (!values.searchQuery.trim() && !values.alertsOnly && !app && !bounds)
-    return null;
+  if (!values.searchQuery.trim() && !values.alertsOnly && !app && !bounds) return null;
   // Preserve the draft's whitespace while typing a multiword search.
   return {
     v: 1,
@@ -70,10 +66,7 @@ export function useActivityFilters(agentId: string | undefined) {
   const fromUrl = useMemo(() => valuesFromUrl(searchParams), [searchParams]);
   const values = agentId ? fromUrl : local;
   const update = useCallback(
-    <K extends keyof FilterValues>(
-      key: K,
-      action: SetStateAction<FilterValues[K]>,
-    ) => {
+    <K extends keyof FilterValues>(key: K, action: SetStateAction<FilterValues[K]>) => {
       if (agentId) {
         setSearchParams(
           (previous) =>
@@ -100,23 +93,19 @@ export function useActivityFilters(agentId: string | undefined) {
     [update],
   );
   const setJumpRangeValue = useCallback(
-    (action: SetStateAction<ActivityDateValue>) =>
-      update("jumpRangeValue", action),
+    (action: SetStateAction<ActivityDateValue>) => update("jumpRangeValue", action),
     [update],
   );
   const toggleAppFilter = useCallback(
     (exe: string) =>
-      setAppFilterExe((previous) =>
-        previous?.toLowerCase() === exe.toLowerCase() ? null : exe,
-      ),
+      setAppFilterExe((previous) => (previous?.toLowerCase() === exe.toLowerCase() ? null : exe)),
     [setAppFilterExe],
   );
   const clearFilters = useCallback(() => {
     if (agentId)
-      setSearchParams(
-        (previous) => applyActivityStateToSearchParams(previous, null),
-        { replace: true },
-      );
+      setSearchParams((previous) => applyActivityStateToSearchParams(previous, null), {
+        replace: true,
+      });
     else setLocal(EMPTY_FILTERS);
   }, [agentId, setSearchParams]);
   const deepLinkToActivity = useCallback(

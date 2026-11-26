@@ -31,7 +31,11 @@ export function resolveDateRangeToDayBounds(
 
 type DatePresetKey = "all" | "today" | "last-7" | "last-30" | "custom";
 
-export const DATE_PRESETS: { key: Exclude<DatePresetKey, "custom">; label: string; days: number | null }[] = [
+export const DATE_PRESETS: {
+  key: Exclude<DatePresetKey, "custom">;
+  label: string;
+  days: number | null;
+}[] = [
   { key: "all", label: "All days", days: null },
   { key: "today", label: "Today", days: 1 },
   { key: "last-7", label: "Last 7 days", days: 7 },
@@ -70,5 +74,7 @@ export function dateRangeLabel(value: ActivityDateValue): string {
   const key = presetKeyForValue(value);
   const preset = DATE_PRESETS.find((p) => p.key === key);
   if (preset) return preset.label;
-  return bounds.start === bounds.end ? shortDay(bounds.start) : `${shortDay(bounds.start)} – ${shortDay(bounds.end)}`;
+  return bounds.start === bounds.end
+    ? shortDay(bounds.start)
+    : `${shortDay(bounds.start)} – ${shortDay(bounds.end)}`;
 }

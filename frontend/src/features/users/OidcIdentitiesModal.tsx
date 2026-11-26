@@ -36,24 +36,53 @@ interface OidcIdentitiesModalProps {
   onUnlink: (identityId: number) => Promise<void>;
 }
 
-export function OidcIdentitiesModal({ visible, onDismiss, finalFocus, name, ...rest }: OidcIdentitiesModalProps) {
+export function OidcIdentitiesModal({
+  visible,
+  onDismiss,
+  finalFocus,
+  name,
+  ...rest
+}: OidcIdentitiesModalProps) {
   // The dialog can't be dismissed while a link or unlink request is in flight.
   const [busy, setBusy] = useState(false);
   return (
     <Dialog open={visible} onOpenChange={(open) => !open && !busy && onDismiss()}>
-      <DialogContent finalFocus={finalFocus} className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-lg">
+      <DialogContent
+        finalFocus={finalFocus}
+        className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-lg"
+      >
         <DialogHeader>
           <DialogTitle className="break-words">Linked identities for {name}</DialogTitle>
-          <DialogDescription>Signing in through any of these identity-provider accounts opens this account.</DialogDescription>
+          <DialogDescription>
+            Signing in through any of these identity-provider accounts opens this account.
+          </DialogDescription>
         </DialogHeader>
-        {visible && <OidcIdentitiesBody onDismiss={onDismiss} onBusyChange={setBusy} busy={busy} name={name} {...rest} />}
+        {visible && (
+          <OidcIdentitiesBody
+            onDismiss={onDismiss}
+            onBusyChange={setBusy}
+            busy={busy}
+            name={name}
+            {...rest}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
 }
 
 /** One linked identity; unlinking asks first, in the row, because that account can no longer sign in. */
-function IdentityRow({ identity, name, disabled, onUnlink }: { identity: DashboardIdentity; name: string; disabled: boolean; onUnlink: (id: number) => Promise<void> }) {
+function IdentityRow({
+  identity,
+  name,
+  disabled,
+  onUnlink,
+}: {
+  identity: DashboardIdentity;
+  name: string;
+  disabled: boolean;
+  onUnlink: (id: number) => Promise<void>;
+}) {
   const [asking, setAsking] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +114,15 @@ function IdentityRow({ identity, name, disabled, onUnlink }: { identity: Dashboa
           </div>
         </dl>
         {!asking && (
-          <Button type="button" variant="ghost" size="icon-sm" className="pointer-coarse:size-9" aria-label={`Unlink identity ${identity.subject}`} disabled={disabled} onClick={() => setAsking(true)}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="pointer-coarse:size-9"
+            aria-label={`Unlink identity ${identity.subject}`}
+            disabled={disabled}
+            onClick={() => setAsking(true)}
+          >
             <Unlink />
           </Button>
         )}
@@ -94,10 +131,25 @@ function IdentityRow({ identity, name, disabled, onUnlink }: { identity: Dashboa
         <div className="flex flex-col gap-2 rounded-lg bg-muted/60 p-3 text-sm">
           <p>{name} will no longer be able to sign in with this identity.</p>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="destructive" size="sm" disabled={removing} onClick={() => void confirm()}>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={removing}
+              onClick={() => void confirm()}
+            >
               {removing && <Spinner />} Unlink
             </Button>
-            <Button type="button" variant="outline" size="sm" disabled={removing} onClick={() => { setAsking(false); setError(null); }}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={removing}
+              onClick={() => {
+                setAsking(false);
+                setError(null);
+              }}
+            >
               Keep linked
             </Button>
           </div>
@@ -108,10 +160,25 @@ function IdentityRow({ identity, name, disabled, onUnlink }: { identity: Dashboa
   );
 }
 
-function IdentityList({ identities, loadError, loading, name, busy, onReload, onUnlink }: Pick<OidcIdentitiesModalProps, "identities" | "loadError" | "loading" | "onReload" | "onUnlink"> & { name: string; busy: boolean }) {
+function IdentityList({
+  identities,
+  loadError,
+  loading,
+  name,
+  busy,
+  onReload,
+  onUnlink,
+}: Pick<
+  OidcIdentitiesModalProps,
+  "identities" | "loadError" | "loading" | "onReload" | "onUnlink"
+> & { name: string; busy: boolean }) {
   if (!identities) {
     return loadError ? (
-      <ErrorBanner message={`Couldn't load linked identities: ${loadError}`} onRetry={onReload} retrying={loading} />
+      <ErrorBanner
+        message={`Couldn't load linked identities: ${loadError}`}
+        onRetry={onReload}
+        retrying={loading}
+      />
     ) : (
       <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
         <Spinner /> Loading linked identities…
@@ -120,7 +187,13 @@ function IdentityList({ identities, loadError, loading, name, busy, onReload, on
   }
   return (
     <div className="flex flex-col gap-3">
-      {loadError && <ErrorBanner message={`Couldn't refresh linked identities: ${loadError}. Showing the list from the last successful load.`} onRetry={onReload} retrying={loading} />}
+      {loadError && (
+        <ErrorBanner
+          message={`Couldn't refresh linked identities: ${loadError}. Showing the list from the last successful load.`}
+          onRetry={onReload}
+          retrying={loading}
+        />
+      )}
       {identities.length === 0 ? (
         <p className="text-sm text-muted-foreground">No linked identities.</p>
       ) : (
@@ -134,7 +207,18 @@ function IdentityList({ identities, loadError, loading, name, busy, onReload, on
   );
 }
 
-function OidcIdentitiesBody({ onDismiss, onBusyChange, busy, name, onLink, onUnlink, ...list }: Omit<OidcIdentitiesModalProps, "visible"> & { onBusyChange: (busy: boolean) => void; busy: boolean }) {
+function OidcIdentitiesBody({
+  onDismiss,
+  onBusyChange,
+  busy,
+  name,
+  onLink,
+  onUnlink,
+  ...list
+}: Omit<OidcIdentitiesModalProps, "visible"> & {
+  onBusyChange: (busy: boolean) => void;
+  busy: boolean;
+}) {
   const form = useForm<LinkIdentityValues>({
     resolver: zodResolver(linkIdentitySchema),
     mode: "onChange",
@@ -168,11 +252,35 @@ function OidcIdentitiesBody({ onDismiss, onBusyChange, busy, name, onLink, onUnl
   return (
     <>
       <IdentityList {...list} name={name} busy={busy} onUnlink={unlink} />
-      <form onSubmit={submit} noValidate aria-label="Link an identity" className="flex flex-col gap-4 border-t border-foreground/[0.06] pt-4">
+      <form
+        onSubmit={submit}
+        noValidate
+        aria-label="Link an identity"
+        className="flex flex-col gap-4 border-t border-foreground/[0.06] pt-4"
+      >
         <h3 className="text-sm font-medium">Link another identity</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <InputField control={form.control} name="issuer" id="oidc-issuer" label="Issuer" placeholder="https://idp.example.com" disabled={isSubmitting} autoComplete="off" className="h-9 font-mono text-xs" hideError />
-          <InputField control={form.control} name="subject" id="oidc-subject" label="Subject (sub)" disabled={isSubmitting} autoComplete="off" className="h-9 font-mono text-xs" hideError />
+          <InputField
+            control={form.control}
+            name="issuer"
+            id="oidc-issuer"
+            label="Issuer"
+            placeholder="https://idp.example.com"
+            disabled={isSubmitting}
+            autoComplete="off"
+            className="h-9 font-mono text-xs"
+            hideError
+          />
+          <InputField
+            control={form.control}
+            name="subject"
+            id="oidc-subject"
+            label="Subject (sub)"
+            disabled={isSubmitting}
+            autoComplete="off"
+            className="h-9 font-mono text-xs"
+            hideError
+          />
         </div>
         <DialogError prefix="Couldn't link" message={error} />
         <Button type="submit" className="self-start" disabled={!isValid || isSubmitting || busy}>

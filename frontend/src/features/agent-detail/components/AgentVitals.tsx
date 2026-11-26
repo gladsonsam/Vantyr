@@ -45,7 +45,18 @@ function memoryParts(info: AgentInfo | null) {
 }
 
 function vitalList(
-  { agent, info, liveStatus, uptimeText, lastSeenText, version, updateAvailable }: Pick<AgentVitalsProps, "agent" | "info" | "liveStatus" | "uptimeText" | "lastSeenText" | "version" | "updateAvailable">,
+  {
+    agent,
+    info,
+    liveStatus,
+    uptimeText,
+    lastSeenText,
+    version,
+    updateAvailable,
+  }: Pick<
+    AgentVitalsProps,
+    "agent" | "info" | "liveStatus" | "uptimeText" | "lastSeenText" | "version" | "updateAvailable"
+  >,
   cpuPct: number | null,
   internetBlocked: boolean | null,
 ): Vital[] {
@@ -57,18 +68,40 @@ function vitalList(
   return [
     ...(online
       ? [
-          { label: "CPU", value: cpuPct != null ? `${cpuPct}%` : "—", extra: cores, tone: "text-foreground", pct: cpuPct ?? undefined },
-          { label: "Session", value: activity === "afk" ? "Away" : "Active", tone: activity === "afk" ? "text-warning" : "text-success" },
+          {
+            label: "CPU",
+            value: cpuPct != null ? `${cpuPct}%` : "—",
+            extra: cores,
+            tone: "text-foreground",
+            pct: cpuPct ?? undefined,
+          },
+          {
+            label: "Session",
+            value: activity === "afk" ? "Away" : "Active",
+            tone: activity === "afk" ? "text-warning" : "text-success",
+          },
         ]
       : []),
     { label: "Memory", value: mem.text, tone: "text-foreground", pct: mem.pct },
-    { label: online ? "Uptime" : "Last seen", value: online ? uptimeText : lastSeenText, tone: "text-foreground" },
+    {
+      label: online ? "Uptime" : "Last seen",
+      value: online ? uptimeText : lastSeenText,
+      tone: "text-foreground",
+    },
     { label: "IP", value: primaryIp(info) ?? "—", tone: "text-foreground", mono: true },
-    { label: "Version", value: `v${version}`, tone: updateAvailable ? "text-warning" : "text-foreground" },
+    {
+      label: "Version",
+      value: `v${version}`,
+      tone: updateAvailable ? "text-warning" : "text-foreground",
+    },
     {
       label: "Internet",
       value: internetBlocked == null ? "—" : internetBlocked ? "Blocked" : "Allowed",
-      tone: internetBlocked ? "text-destructive" : internetBlocked === false ? "text-success" : "text-muted-foreground",
+      tone: internetBlocked
+        ? "text-destructive"
+        : internetBlocked === false
+          ? "text-success"
+          : "text-muted-foreground",
     },
   ];
 }
@@ -88,15 +121,26 @@ export function AgentVitals({
   className,
 }: AgentVitalsProps) {
   const online = agent.online;
-  const internetQuery = useQuery({ ...ruleQueries.internetBlocked(agent.id), select: (res) => Boolean(res.blocked) });
+  const internetQuery = useQuery({
+    ...ruleQueries.internetBlocked(agent.id),
+    select: (res) => Boolean(res.blocked),
+  });
   const internetBlocked = internetQuery.data ?? null;
 
   // Live CPU load isn't part of the system-info snapshot — pull the most recent
   // sample from the metrics time-series (same source the resource history chart uses).
-  const cpuQuery = useQuery({ ...agentQueries.metrics(agent.id, 1), enabled: online, select: latestCpuPct });
-  const cpuPct = online ? cpuQuery.data ?? null : null;
+  const cpuQuery = useQuery({
+    ...agentQueries.metrics(agent.id, 1),
+    enabled: online,
+    select: latestCpuPct,
+  });
+  const cpuPct = online ? (cpuQuery.data ?? null) : null;
 
-  const vitals = vitalList({ agent, info, liveStatus, uptimeText, lastSeenText, version, updateAvailable }, cpuPct, internetBlocked);
+  const vitals = vitalList(
+    { agent, info, liveStatus, uptimeText, lastSeenText, version, updateAvailable },
+    cpuPct,
+    internetBlocked,
+  );
 
   return (
     <dl
@@ -108,18 +152,36 @@ export function AgentVitals({
       )}
     >
       {vitals.map((vital) => (
-        <div key={vital.label} className="flex min-w-0 items-baseline justify-between gap-2 sm:block">
+        <div
+          key={vital.label}
+          className="flex min-w-0 items-baseline justify-between gap-2 sm:block"
+        >
           <dt className="shrink-0 text-[11px] font-medium text-muted-foreground">{vital.label}</dt>
           <dd
-            className={cn("m-0 min-w-0 truncate text-right text-[13px] font-semibold tabular-nums sm:mt-0.5 sm:text-left", vital.mono && "font-mono", vital.tone)}
+            className={cn(
+              "m-0 min-w-0 truncate text-right text-[13px] font-semibold tabular-nums sm:mt-0.5 sm:text-left",
+              vital.mono && "font-mono",
+              vital.tone,
+            )}
             title={vital.extra ? `${vital.value} · ${vital.extra}` : vital.value}
           >
             {vital.value}
-            {vital.extra && <span className="hidden font-normal text-muted-foreground sm:inline"> · {vital.extra}</span>}
+            {vital.extra && (
+              <span className="hidden font-normal text-muted-foreground sm:inline">
+                {" "}
+                · {vital.extra}
+              </span>
+            )}
           </dd>
           {vital.pct != null && (
-            <div aria-hidden="true" className="mt-1.5 hidden h-[3px] overflow-hidden rounded-full bg-foreground/10 sm:block">
-              <div className="h-full rounded-full bg-primary/80" style={{ width: `${vital.pct}%` }} />
+            <div
+              aria-hidden="true"
+              className="mt-1.5 hidden h-[3px] overflow-hidden rounded-full bg-foreground/10 sm:block"
+            >
+              <div
+                className="h-full rounded-full bg-primary/80"
+                style={{ width: `${vital.pct}%` }}
+              />
             </div>
           )}
         </div>

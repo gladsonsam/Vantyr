@@ -70,4 +70,3 @@ export function AppIcon({
 
   return fallback;
 }
-

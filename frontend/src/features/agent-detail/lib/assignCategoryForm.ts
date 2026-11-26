@@ -22,7 +22,12 @@ export const assignCategorySchema = z.object({
 });
 export type AssignCategoryValues = z.infer<typeof assignCategorySchema>;
 
-export const ASSIGN_CATEGORY_DEFAULTS: AssignCategoryValues = { customKey: "", specific: false, categoryKey: "", note: "" };
+export const ASSIGN_CATEGORY_DEFAULTS: AssignCategoryValues = {
+  customKey: "",
+  specific: false,
+  categoryKey: "",
+  note: "",
+};
 
 export interface OverrideBody {
   kind: "domain" | "url";
@@ -47,7 +52,11 @@ export function defaultCategoryKey(customKey: string, groups: CustomGroup[]): st
 }
 
 /** UT1 options for the "more specific" select: only those inside the chosen custom category. */
-export function specificCategoryOptions(customKey: string, groups: CustomGroup[], options: CategoryOption[]): CategoryOption[] {
+export function specificCategoryOptions(
+  customKey: string,
+  groups: CustomGroup[],
+  options: CategoryOption[],
+): CategoryOption[] {
   if (!customKey) return options;
   const group = groups.find((g) => g.key === customKey);
   if (!group) return options;

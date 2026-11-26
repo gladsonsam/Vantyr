@@ -59,8 +59,11 @@ export type AppBlockRule = Omit<AppBlockRuleListItem, "scopes" | "created_at"> &
 export type { ScheduledScriptRow as ScheduledScript } from "./generated/ScheduledScriptRow";
 
 /** A scope or schedule as the dashboard sends it: the server treats absent ids / day as `null`. */
-export type ScheduledScriptScope = Pick<GeneratedScope, "kind"> & Partial<Pick<GeneratedScope, "group_id" | "agent_id">>;
-export type ScheduledScriptSchedule = Omit<GeneratedSchedule, "day_of_week"> & Partial<Pick<GeneratedSchedule, "day_of_week">>;
+export type ScheduledScriptScope = Pick<GeneratedScope, "kind"> &
+  Partial<Pick<GeneratedScope, "group_id" | "agent_id">>;
+export type ScheduledScriptSchedule = Omit<GeneratedSchedule, "day_of_week"> &
+  Partial<Pick<GeneratedSchedule, "day_of_week">>;
 
 /** The per-script log lacks `rule_name`/`is_manual`, which only the global feed carries. */
-export type ScheduledScriptEvent = ScriptExecutionEvent & Partial<Pick<ExecutionEvent, "rule_name" | "is_manual">>;
+export type ScheduledScriptEvent = ScriptExecutionEvent &
+  Partial<Pick<ExecutionEvent, "rule_name" | "is_manual">>;

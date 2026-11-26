@@ -1,7 +1,13 @@
 /** Pure helpers for the Analytics tab: category labels, durations and the summary figures. */
 
 export type CategoryOption = { value: string; label: string };
-export type CustomGroup = { id: number; key: string; label: string; hidden: boolean; ut1_keys: string[] };
+export type CustomGroup = {
+  id: number;
+  key: string;
+  label: string;
+  hidden: boolean;
+  ut1_keys: string[];
+};
 
 export function humanizeCategoryKey(key: string): string {
   const raw = (key || "").trim();
@@ -32,15 +38,22 @@ export function stripWww(hostname: string): string {
 }
 
 /** Enabled UT1 categories as sorted select options. */
-export function toCategoryOptions(res: { categories: { key: string; label?: string; enabled: boolean }[] }): CategoryOption[] {
+export function toCategoryOptions(res: {
+  categories: { key: string; label?: string; enabled: boolean }[];
+}): CategoryOption[] {
   return (res.categories ?? [])
     .filter((c) => c.enabled)
-    .map((c) => ({ value: c.key, label: c.label?.trim() ? (c.label as string) : humanizeCategoryKey(c.key) }))
+    .map((c) => ({
+      value: c.key,
+      label: c.label?.trim() ? (c.label as string) : humanizeCategoryKey(c.key),
+    }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /** Visible custom category groups, sorted by label. */
-export function toCustomGroups(res: { rows: { id: number; key: string; label_en: string; hidden: boolean; ut1_keys: string[] }[] }): CustomGroup[] {
+export function toCustomGroups(res: {
+  rows: { id: number; key: string; label_en: string; hidden: boolean; ut1_keys: string[] }[];
+}): CustomGroup[] {
   return (res.rows ?? [])
     .filter((r) => !r.hidden)
     .map((r) => ({
@@ -79,17 +92,23 @@ export interface AnalyticsSummary {
  * The headline figures: total browsing time, visit count and the leading site. The total is never
  * smaller than the category times it sits above (the session feed can lag or be capped).
  */
-export function summarizeAnalytics(categories: CategoryRow[], sites: SiteRow[], sessions: SessionRow[]): AnalyticsSummary {
+export function summarizeAnalytics(
+  categories: CategoryRow[],
+  sites: SiteRow[],
+  sessions: SessionRow[],
+): AnalyticsSummary {
   const sessionMs = sessions.reduce((acc, r) => acc + (Number(r.duration_ms) || 0), 0);
   const categoryMs = categories.reduce((acc, r) => acc + (Number(r.time_ms) || 0), 0);
   const visitCount = sites.reduce((acc, r) => acc + (Number(r.visit_count) || 0), 0);
 
   const site = sites[0];
-  const topSite = !site || !(site.hostname || "").trim() ? null : { hostname: stripWww(site.hostname), timeMs: Number(site.time_ms) || 0 };
+  const topSite =
+    !site || !(site.hostname || "").trim()
+      ? null
+      : { hostname: stripWww(site.hostname), timeMs: Number(site.time_ms) || 0 };
 
   return { totalMs: Math.max(sessionMs, categoryMs), visitCount, topSite };
 }
-
 
 /**
  * Best available visit count. Both feeds are capped, and the site feed narrows
@@ -116,7 +135,10 @@ export interface CategorySlice {
  * Categories as shares of `totalMs` (largest first). `otherMs` is time the category rows do not
  * account for (the feed can be capped), so the bar never claims more than it knows.
  */
-export function categorySlices(categories: CategoryRow[], totalMs: number): { slices: CategorySlice[]; otherMs: number } {
+export function categorySlices(
+  categories: CategoryRow[],
+  totalMs: number,
+): { slices: CategorySlice[]; otherMs: number } {
   const slices = categories
     .map((r) => ({
       key: (r.category_key || "").trim(),
@@ -128,7 +150,10 @@ export function categorySlices(categories: CategoryRow[], totalMs: number): { sl
     }))
     .filter((c) => c.timeMs > 0)
     .sort((a, b) => b.timeMs - a.timeMs);
-  const denominator = Math.max(totalMs, slices.reduce((acc, c) => acc + c.timeMs, 0));
+  const denominator = Math.max(
+    totalMs,
+    slices.reduce((acc, c) => acc + c.timeMs, 0),
+  );
   if (denominator <= 0) return { slices: [], otherMs: 0 };
   for (const slice of slices) slice.share = slice.timeMs / denominator;
   const covered = slices.reduce((acc, c) => acc + c.timeMs, 0);

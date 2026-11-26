@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "bun:test";
 import { mergeLiveStatus } from "@/features/fleet/lib/liveStatus";
 
 describe("mergeLiveStatus", () => {
@@ -24,7 +24,11 @@ describe("mergeLiveStatus", () => {
 
   it("applies the latest patch field over an earlier one (last-write-wins per field)", () => {
     const afterAfk = mergeLiveStatus({ activity: "active" }, { activity: "afk", idleSecs: 10 });
-    const afterActive = mergeLiveStatus(afterAfk, { activity: "active", idleSecs: 0, idleSinceMs: undefined });
+    const afterActive = mergeLiveStatus(afterAfk, {
+      activity: "active",
+      idleSecs: 0,
+      idleSinceMs: undefined,
+    });
     expect(afterActive.activity).toBe("active");
     expect(afterActive.idleSecs).toBe(0);
   });

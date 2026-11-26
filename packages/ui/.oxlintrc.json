@@ -1,26 +1,16 @@
 {
   "$schema": "../../node_modules/oxlint/configuration_schema.json",
-  "extends": [
-    "../oxlint-config/base.json"
-  ],
-  "ignorePatterns": [
-    "dist",
-    "node_modules"
-  ],
+  "extends": ["../oxlint-config/base.json"],
+  "ignorePatterns": ["dist", "node_modules"],
   "overrides": [
     {
-      "files": [
-        "src/components/**/*.tsx"
-      ],
+      "files": ["src/components/**/*.tsx"],
       "rules": {
         "react/only-export-components": "off"
       }
     }
   ],
-  "plugins": [
-    "typescript",
-    "react"
-  ],
+  "plugins": ["typescript", "react"],
   "env": {
     "browser": true
   }

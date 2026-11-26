@@ -1,20 +1,39 @@
-// @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
 import { buttonByText, click, mountForm, unmountForms } from "@tests/support/formDom";
-import { BrowserPushToggle } from "@/features/settings/BrowserPushToggle";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({ pushVapidPublicKey: vi.fn(), pushSubscribe: vi.fn(), pushUnsubscribe: vi.fn() }));
-const pwa = vi.hoisted(() => ({ isPushSupported: vi.fn(), getExistingSubscription: vi.fn(), subscribeToPush: vi.fn() }));
-vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e instanceof Error ? e.message : e) }));
-vi.mock("@/lib/pwa", () => pwa);
+const api = (() => ({
+  pushVapidPublicKey: vi.fn(),
+  pushSubscribe: vi.fn(),
+  pushUnsubscribe: vi.fn(),
+}))();
+const pwa = (() => ({
+  isPushSupported: vi.fn(),
+  getExistingSubscription: vi.fn(),
+  subscribeToPush: vi.fn(),
+}))();
+await vi.mock("@/api", () => ({
+  api,
+  errorText: (e: unknown) => String(e instanceof Error ? e.message : e),
+}));
+await vi.mock("@/lib/pwa", () => pwa);
+
+const { BrowserPushToggle } = await import("@/features/settings/BrowserPushToggle");
 
 let permission: NotificationPermission = "default";
 let requested: NotificationPermission = "granted";
-let subscription: { endpoint: string; unsubscribe: () => Promise<boolean>; toJSON: () => unknown } | null = null;
+let subscription: {
+  endpoint: string;
+  unsubscribe: () => Promise<boolean>;
+  toJSON: () => unknown;
+} | null = null;
 const makeSub = () => ({
   endpoint: "https://push.example/1",
-  unsubscribe: vi.fn(async () => { subscription = null; return true; }),
+  unsubscribe: vi.fn(async () => {
+    subscription = null;
+    return true;
+  }),
   toJSON: () => ({ endpoint: "https://push.example/1", keys: { p256dh: "p", auth: "a" } }),
 });
 
@@ -25,11 +44,19 @@ beforeEach(() => {
   subscription = null;
   const NotificationStub = function Notification() {};
   Object.defineProperty(NotificationStub, "permission", { get: () => permission });
-  Object.assign(NotificationStub, { requestPermission: vi.fn(async () => { permission = requested; return requested; }) });
+  Object.assign(NotificationStub, {
+    requestPermission: vi.fn(async () => {
+      permission = requested;
+      return requested;
+    }),
+  });
   Object.assign(globalThis, { Notification: NotificationStub });
   pwa.isPushSupported.mockReturnValue(true);
   pwa.getExistingSubscription.mockImplementation(async () => subscription);
-  pwa.subscribeToPush.mockImplementation(async () => { subscription = makeSub(); return subscription; });
+  pwa.subscribeToPush.mockImplementation(async () => {
+    subscription = makeSub();
+    return subscription;
+  });
   api.pushVapidPublicKey.mockResolvedValue({ publicKey: "KEY", enabled: true });
   api.pushSubscribe.mockResolvedValue({ ok: true });
   api.pushUnsubscribe.mockResolvedValue({ ok: true });
@@ -71,7 +98,10 @@ describe("browser notifications", () => {
     await render();
     expect(text()).toContain("Off");
     await click(toggle());
-    expect(api.pushSubscribe).toHaveBeenCalledWith({ endpoint: "https://push.example/1", keys: { p256dh: "p", auth: "a" } });
+    expect(api.pushSubscribe).toHaveBeenCalledWith({
+      endpoint: "https://push.example/1",
+      keys: { p256dh: "p", auth: "a" },
+    });
     expect(toggle().getAttribute("aria-checked")).toBe("true");
     expect(text()).toContain("On");
   });
@@ -88,7 +118,9 @@ describe("browser notifications", () => {
   it("locks the switch when notifications are blocked for the site", async () => {
     permission = "denied";
     await render();
-    expect(toggle().hasAttribute("disabled") || toggle().getAttribute("aria-disabled") === "true").toBe(true);
+    expect(
+      toggle().hasAttribute("disabled") || toggle().getAttribute("aria-disabled") === "true",
+    ).toBe(true);
     expect(text()).toContain("blocked for this site");
   });
 

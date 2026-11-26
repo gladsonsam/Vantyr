@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { formatAuditAction, formatAuditDetail, isPageView } from "@/features/logs/auditDetail";
 
 describe("formatAuditDetail", () => {
@@ -15,8 +15,12 @@ describe("formatAuditDetail", () => {
   });
 
   it("falls back to the error code and tolerates truncated JSON", () => {
-    expect(formatAuditDetail("x", { error: '{"code":"module_rep' }).pairs[0].value).toBe('{"code":"module_rep');
-    expect(formatAuditDetail("x", { error: '{"code":"not_allowed"}' }).pairs[0].value).toBe("not allowed");
+    expect(formatAuditDetail("x", { error: '{"code":"module_rep' }).pairs[0].value).toBe(
+      '{"code":"module_rep',
+    );
+    expect(formatAuditDetail("x", { error: '{"code":"not_allowed"}' }).pairs[0].value).toBe(
+      "not allowed",
+    );
   });
 
   it("returns nothing for empty or paging-only details", () => {

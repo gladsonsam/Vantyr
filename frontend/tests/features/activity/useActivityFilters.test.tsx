@@ -1,19 +1,14 @@
 import { act, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
-import { afterEach, beforeEach, expect, it } from "vitest";
-import {
-  useActivityFilters,
-  type ActivityFilters,
-} from "@/features/activity/useActivityFilters";
+import { afterEach, beforeEach, expect, it } from "bun:test";
+import { useActivityFilters, type ActivityFilters } from "@/features/activity/useActivityFilters";
 import {
   encodeActivityState,
   readActivityStateFromSearchParams,
 } from "@/features/activity/activityUrl";
 let host: HTMLDivElement, root: Root;
-let filters: ActivityFilters,
-  location: string,
-  navigate: ReturnType<typeof useNavigate>;
+let filters: ActivityFilters, location: string, navigate: ReturnType<typeof useNavigate>;
 function Harness({ agentId }: { agentId?: string }) {
   const current = useActivityFilters(agentId),
     route = useLocation(),
@@ -47,9 +42,7 @@ it("keeps multiword draft whitespace and unrelated deep-link parameters while ed
   );
   await act(async () => filters.setSearchQuery("hello "));
   expect(filters.searchQuery).toBe("hello ");
-  expect(
-    readActivityStateFromSearchParams(new URLSearchParams(location))?.q,
-  ).toBe("hello ");
+  expect(readActivityStateFromSearchParams(new URLSearchParams(location))?.q).toBe("hello ");
   await act(async () => filters.setSearchQuery("hello world"));
   await act(async () => filters.toggleAppFilter("Editor.exe"));
   expect(filters.searchQuery).toBe("hello world");
@@ -101,9 +94,7 @@ it("keeps fleet filters local and supports functional updates", async () => {
     ),
   );
   await act(async () => filters.setSearchQuery("fleet"));
-  await act(async () =>
-    filters.setSearchQuery((previous) => `${previous} search`),
-  );
+  await act(async () => filters.setSearchQuery((previous) => `${previous} search`));
   await act(async () => filters.setAlertsOnly((previous) => !previous));
   expect(filters.searchQuery).toBe("fleet search");
   expect(filters.alertsOnly).toBe(true);

@@ -16,7 +16,12 @@ import { agentRecallHref } from "@/features/recall/lib/recallUrl";
 import type { AgentInfo, WindowEvent as WindowEventRow, WindowTopRow } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
-import { LoadFailed, MonitoringToolbar, ROW_ACTIONS_CLASS, ROW_ACTION_BUTTON_CLASS } from "@/features/agent-detail/components/MonitoringToolbar";
+import {
+  LoadFailed,
+  MonitoringToolbar,
+  ROW_ACTIONS_CLASS,
+  ROW_ACTION_BUTTON_CLASS,
+} from "@/features/agent-detail/components/MonitoringToolbar";
 import { listCountLabel, titleRestatesApp } from "@/features/agent-detail/lib/monitoring";
 import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
@@ -68,7 +73,9 @@ function windowColumns(
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
-      cell: ({ row, table }) => <DayTimeCell table={table} columnId="timestamp" ts={row.original.timestamp} />,
+      cell: ({ row, table }) => (
+        <DayTimeCell table={table} columnId="timestamp" ts={row.original.timestamp} />
+      ),
       meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
     }),
     columnHelper.accessor("exe_name", {
@@ -95,18 +102,36 @@ function windowColumns(
       header: ({ column }) => <DataTableColumnHeader column={column} title="Window title" />,
       cell: ({ row }) => {
         const item = row.original;
-        const title = titleRestatesApp(item.window_title, item.app_display, item.exe_name) ? "" : item.window_title;
+        const title = titleRestatesApp(item.window_title, item.app_display, item.exe_name)
+          ? ""
+          : item.window_title;
         return (
           <div className="flex items-start justify-between gap-2.5">
-            <span className="min-w-0 wrap-break-word">{title || <span className="text-muted-foreground">Untitled window</span>}</span>
+            <span className="min-w-0 wrap-break-word">
+              {title || <span className="text-muted-foreground">Untitled window</span>}
+            </span>
             <span className={ROW_ACTIONS_CLASS}>
               {item.window_title?.trim() ? (
-                <Button variant="ghost" size="icon-sm" className={ROW_ACTION_BUTTON_CLASS} aria-label="Show in timeline" title="Show in timeline" onClick={() => openInActivity(item.window_title)}>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={ROW_ACTION_BUTTON_CLASS}
+                  aria-label="Show in timeline"
+                  title="Show in timeline"
+                  onClick={() => openInActivity(item.window_title)}
+                >
                   <Activity />
                 </Button>
               ) : null}
               {item.timestamp ? (
-                <Button variant="ghost" size="icon-sm" className={ROW_ACTION_BUTTON_CLASS} aria-label="Open in Recall" title="Open in Recall" onClick={() => openInRecall(item.timestamp)}>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={ROW_ACTION_BUTTON_CLASS}
+                  aria-label="Open in Recall"
+                  title="Open in Recall"
+                  onClick={() => openInRecall(item.timestamp)}
+                >
                   <History />
                 </Button>
               ) : null}
@@ -157,8 +182,16 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
   const activeWindowAvailable = capabilityAvailable(agentInfo, "active_window");
   const [windowsQuery, topWindowsQuery] = useQueries({
     queries: [
-      { ...agentQueries.windows(agentId, WINDOWS_PAGE), enabled: activeWindowAvailable, select: toWindowEvents },
-      { ...agentQueries.topWindows(agentId, TOP_WINDOWS_PAGE), enabled: activeWindowAvailable, select: toTopWindows },
+      {
+        ...agentQueries.windows(agentId, WINDOWS_PAGE),
+        enabled: activeWindowAvailable,
+        select: toWindowEvents,
+      },
+      {
+        ...agentQueries.topWindows(agentId, TOP_WINDOWS_PAGE),
+        enabled: activeWindowAvailable,
+        select: toTopWindows,
+      },
     ],
   });
   const items = windowsQuery.data ?? NO_WINDOWS;
@@ -196,7 +229,13 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
   const filteringText = String(table.state.globalFilter ?? "");
 
   if (!activeWindowAvailable) {
-    return <CapabilityNotice info={agentInfo} capability="active_window" title="Window tracking unavailable" />;
+    return (
+      <CapabilityNotice
+        info={agentInfo}
+        capability="active_window"
+        title="Window tracking unavailable"
+      />
+    );
   }
 
   const failed = windowsQuery.isError;
@@ -248,11 +287,18 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
       )}
       {failed ? <LoadFailed what="window history" onRetry={fetchWindows} /> : null}
       <div className="px-2 py-2">
-        <DataTable dayGroupColumn="timestamp"
+        <DataTable
+          dayGroupColumn="timestamp"
           table={table}
           loading={loading}
           loadingText="Loading windows…"
-          emptyText={failed ? "Nothing to show." : filteringText ? "No windows match this search." : "No windows recorded yet."}
+          emptyText={
+            failed
+              ? "Nothing to show."
+              : filteringText
+                ? "No windows match this search."
+                : "No windows recorded yet."
+          }
           bodyClassName="[&_td]:align-top"
         />
       </div>

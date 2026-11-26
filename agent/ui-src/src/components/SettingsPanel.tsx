@@ -26,14 +26,7 @@ import type {
   StatusResponse,
   UpdateDialogState,
 } from "../types";
-import {
-  ConnectionStatus,
-  Field,
-  Notice,
-  Spinner,
-  TextInput,
-  Toggle,
-} from "./AgentUi";
+import { ConnectionStatus, Field, Notice, Spinner, TextInput, Toggle } from "./AgentUi";
 import { ClearAllLogsModal, ExitModal, UpdateModal } from "./SettingsModals";
 import { invoke } from "../lib/tauri";
 import { cn, getErrorMessage } from "../lib/utils";
@@ -65,20 +58,35 @@ function ModulePermissions() {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
-    const refresh = () => invoke<{ modules: ModuleState[] }>("get_module_permissions")
-      .then((state) => { if (active) setModules(state.modules); })
-      .catch((e: unknown) => { if (active) setError(getErrorMessage(e)); });
+    const refresh = () =>
+      invoke<{ modules: ModuleState[] }>("get_module_permissions")
+        .then((state) => {
+          if (active) setModules(state.modules);
+        })
+        .catch((e: unknown) => {
+          if (active) setError(getErrorMessage(e));
+        });
     void refresh();
     const timer = setInterval(() => void refresh(), 2000);
-    return () => { active = false; clearInterval(timer); };
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, []);
   async function change(module: string, enabled: boolean) {
-    setBusy(true); setError("");
+    setBusy(true);
+    setError("");
     try {
-      const state = await invoke<{ modules: ModuleState[] }>("set_module_permission", { module, enabled });
+      const state = await invoke<{ modules: ModuleState[] }>("set_module_permission", {
+        module,
+        enabled,
+      });
       setModules(state.modules);
-    } catch (e) { setError(getErrorMessage(e)); }
-    finally { setBusy(false); }
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <div className="flex flex-col gap-1">
@@ -92,10 +100,7 @@ function ModulePermissions() {
         </p>
       )}
       {modules.map((m) => (
-        <Label
-          key={m.module}
-          className="flex items-center gap-3 py-1 text-sm font-normal"
-        >
+        <Label key={m.module} className="flex items-center gap-3 py-1 text-sm font-normal">
           <Checkbox
             checked={m.enabled}
             disabled={busy || !m.available}
@@ -131,7 +136,63 @@ function defaultConfig(): AgentConfig {
 }
 
 export function SettingsPanel() {
-  const { nav, setNav, config, setConfig, loading, saving, saveMsg, status, newPw, setNewPw, confirmPw, setConfirmPw, updateDialog, setUpdateDialog, adoptCode, setAdoptCode, adoptBusy, adoptMsg, discovered, scanning, appVersion, logSources, setLogSourceId, logText, logsManualRefresh, logClearing, logClearMsg, clearMenuOpen, setClearMenuOpen, clearAllConfirmOpen, setClearAllConfirmOpen, exitDialogOpen, setExitDialogOpen, exitPw, setExitPw, exitBusy, exitError, setExitError, serverUrlInputRef, logViewportRef, logStickToBottomRef, clearMenuRef, activeNav, currentLogSourceId, refreshLogs, handleSave, handleRemovePassword, clearLogs, clearAllLogs, openUpdateCheck, applyManualUpdate, scanLanServers, adoptWithCode, handleExit, confirmExit } = useSettingsModel();
+  const {
+    nav,
+    setNav,
+    config,
+    setConfig,
+    loading,
+    saving,
+    saveMsg,
+    status,
+    newPw,
+    setNewPw,
+    confirmPw,
+    setConfirmPw,
+    updateDialog,
+    setUpdateDialog,
+    adoptCode,
+    setAdoptCode,
+    adoptBusy,
+    adoptMsg,
+    discovered,
+    scanning,
+    appVersion,
+    logSources,
+    setLogSourceId,
+    logText,
+    logsManualRefresh,
+    logClearing,
+    logClearMsg,
+    clearMenuOpen,
+    setClearMenuOpen,
+    clearAllConfirmOpen,
+    setClearAllConfirmOpen,
+    exitDialogOpen,
+    setExitDialogOpen,
+    exitPw,
+    setExitPw,
+    exitBusy,
+    exitError,
+    setExitError,
+    serverUrlInputRef,
+    logViewportRef,
+    logStickToBottomRef,
+    clearMenuRef,
+    activeNav,
+    currentLogSourceId,
+    refreshLogs,
+    handleSave,
+    handleRemovePassword,
+    clearLogs,
+    clearAllLogs,
+    openUpdateCheck,
+    applyManualUpdate,
+    scanLanServers,
+    adoptWithCode,
+    handleExit,
+    confirmExit,
+  } = useSettingsModel();
 
   if (loading) {
     return (
@@ -195,16 +256,66 @@ export function SettingsPanel() {
         >
           <div className="shrink-0">
             <h2 className="text-xl font-medium tracking-tight">{activeNav.label}</h2>
-            {activeNav.description && <p className="mt-1 text-sm text-muted-foreground">{activeNav.description}</p>}
+            {activeNav.description && (
+              <p className="mt-1 text-sm text-muted-foreground">{activeNav.description}</p>
+            )}
           </div>
 
-          {nav === "dashboard" && <DashboardSettingsSection config={config} status={status} openUpdateCheck={openUpdateCheck} />}
+          {nav === "dashboard" && (
+            <DashboardSettingsSection
+              config={config}
+              status={status}
+              openUpdateCheck={openUpdateCheck}
+            />
+          )}
 
-          {nav === "connection" && <ConnectionSettingsSection config={config} setConfig={setConfig} adoptCode={adoptCode} setAdoptCode={setAdoptCode} adoptBusy={adoptBusy} adoptMsg={adoptMsg} discovered={discovered} scanning={scanning} serverUrlInputRef={serverUrlInputRef} scanLanServers={scanLanServers} adoptWithCode={adoptWithCode} />}
+          {nav === "connection" && (
+            <ConnectionSettingsSection
+              config={config}
+              setConfig={setConfig}
+              adoptCode={adoptCode}
+              setAdoptCode={setAdoptCode}
+              adoptBusy={adoptBusy}
+              adoptMsg={adoptMsg}
+              discovered={discovered}
+              scanning={scanning}
+              serverUrlInputRef={serverUrlInputRef}
+              scanLanServers={scanLanServers}
+              adoptWithCode={adoptWithCode}
+            />
+          )}
 
-          {nav === "security" && <SecuritySettingsSection config={config} saving={saving} newPw={newPw} setNewPw={setNewPw} confirmPw={confirmPw} setConfirmPw={setConfirmPw} handleRemovePassword={handleRemovePassword} />}
+          {nav === "security" && (
+            <SecuritySettingsSection
+              config={config}
+              saving={saving}
+              newPw={newPw}
+              setNewPw={setNewPw}
+              confirmPw={confirmPw}
+              setConfirmPw={setConfirmPw}
+              handleRemovePassword={handleRemovePassword}
+            />
+          )}
 
-          {nav === "logs" && <LogsSettingsSection logSources={logSources} setLogSourceId={setLogSourceId} logText={logText} logsManualRefresh={logsManualRefresh} logClearing={logClearing} logClearMsg={logClearMsg} clearMenuOpen={clearMenuOpen} setClearMenuOpen={setClearMenuOpen} setClearAllConfirmOpen={setClearAllConfirmOpen} logViewportRef={logViewportRef} logStickToBottomRef={logStickToBottomRef} clearMenuRef={clearMenuRef} currentLogSourceId={currentLogSourceId} refreshLogs={refreshLogs} clearLogs={clearLogs} />}
+          {nav === "logs" && (
+            <LogsSettingsSection
+              logSources={logSources}
+              setLogSourceId={setLogSourceId}
+              logText={logText}
+              logsManualRefresh={logsManualRefresh}
+              logClearing={logClearing}
+              logClearMsg={logClearMsg}
+              clearMenuOpen={clearMenuOpen}
+              setClearMenuOpen={setClearMenuOpen}
+              setClearAllConfirmOpen={setClearAllConfirmOpen}
+              logViewportRef={logViewportRef}
+              logStickToBottomRef={logStickToBottomRef}
+              clearMenuRef={clearMenuRef}
+              currentLogSourceId={currentLogSourceId}
+              refreshLogs={refreshLogs}
+              clearLogs={clearLogs}
+            />
+          )}
         </section>
       </div>
 
@@ -259,7 +370,9 @@ export function SettingsPanel() {
       />
       <UpdateModal
         dialog={updateDialog}
-        onClose={() => setUpdateDialog((dialog) => (dialog?.phase === "installing" ? dialog : null))}
+        onClose={() =>
+          setUpdateDialog((dialog) => (dialog?.phase === "installing" ? dialog : null))
+        }
         onApply={() => void applyManualUpdate()}
       />
     </main>
@@ -268,7 +381,7 @@ export function SettingsPanel() {
 
 /** State and IPC ownership for the local settings window. */
 function useSettingsModel() {
-const [nav, setNav] = useState<NavId>("dashboard");
+  const [nav, setNav] = useState<NavId>("dashboard");
   const [config, setConfig] = useState<AgentConfig>(defaultConfig);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -337,15 +450,21 @@ const [nav, setNav] = useState<NavId>("dashboard");
   }, []);
 
   useEffect(() => {
-    invoke<string>("get_app_version").then(setAppVersion).catch(() => setAppVersion(""));
-    void invoke<LogSourceDesc[]>("list_log_sources").then(setLogSources).catch(() => setLogSources([]));
+    invoke<string>("get_app_version")
+      .then(setAppVersion)
+      .catch(() => setAppVersion(""));
+    void invoke<LogSourceDesc[]>("list_log_sources")
+      .then(setLogSources)
+      .catch(() => setLogSources([]));
   }, []);
 
   const refreshLogs = useCallback(
     async (manual: boolean) => {
       if (manual) setLogsManualRefresh(true);
       try {
-        setLogText(await invoke<string>("read_log_file_tail", { kind: currentLogSourceId, maxKb: 512 }));
+        setLogText(
+          await invoke<string>("read_log_file_tail", { kind: currentLogSourceId, maxKb: 512 }),
+        );
       } catch (error: unknown) {
         setLogText(`(Could not read log: ${getErrorMessage(error)})`);
       } finally {
@@ -400,7 +519,10 @@ const [nav, setNav] = useState<NavId>("dashboard");
     }
     setSaving(true);
     try {
-      const payload: AgentConfig & { new_password?: string } = { ...config, ...(newPw ? { new_password: newPw } : {}) };
+      const payload: AgentConfig & { new_password?: string } = {
+        ...config,
+        ...(newPw ? { new_password: newPw } : {}),
+      };
       await invoke("save_config", { config: payload });
       setSaveMsg({ text: "Settings saved.", ok: true });
       setNewPw("");
@@ -453,7 +575,9 @@ const [nav, setNav] = useState<NavId>("dashboard");
     setLogClearing(true);
     setLogClearMsg(null);
     try {
-      await Promise.allSettled(logSources.map((source) => invoke("clear_log_file", { kind: source.id })));
+      await Promise.allSettled(
+        logSources.map((source) => invoke("clear_log_file", { kind: source.id })),
+      );
       void refreshLogs(false);
       setLogClearMsg("All logs cleared.");
     } finally {
@@ -490,7 +614,9 @@ const [nav, setNav] = useState<NavId>("dashboard");
     setScanning(true);
     setAdoptMsg(null);
     try {
-      const list = await invoke<DiscoveredServer[]>("discover_vantyr_mdns_servers", { opts: { timeoutMs: 4000 } });
+      const list = await invoke<DiscoveredServer[]>("discover_vantyr_mdns_servers", {
+        opts: { timeoutMs: 4000 },
+      });
       setDiscovered(list);
       if (list.length === 1) {
         setConfig((current) => ({ ...current, server_url: list[0].wssUrl }));
@@ -518,7 +644,11 @@ const [nav, setNav] = useState<NavId>("dashboard");
     try {
       const agentName = config.agent_name.trim();
       await invoke("adopt_with_enrollment_code", {
-        payload: { serverUrl: url, enrollmentCode: adoptCode.trim(), agentName: agentName.length > 0 ? agentName : null },
+        payload: {
+          serverUrl: url,
+          enrollmentCode: adoptCode.trim(),
+          agentName: agentName.length > 0 ? agentName : null,
+        },
       });
       setAdoptCode("");
       setConfig(await invoke<AgentConfig>("get_config"));
@@ -558,279 +688,448 @@ const [nav, setNav] = useState<NavId>("dashboard");
     }
   }, [exitPw]);
 
-
-  return { nav, setNav, config, setConfig, loading, saving, saveMsg, status, newPw, setNewPw, confirmPw, setConfirmPw, updateDialog, setUpdateDialog, adoptCode, setAdoptCode, adoptBusy, adoptMsg, discovered, scanning, appVersion, logSources, setLogSourceId, logText, logsManualRefresh, logClearing, logClearMsg, clearMenuOpen, setClearMenuOpen, clearAllConfirmOpen, setClearAllConfirmOpen, exitDialogOpen, setExitDialogOpen, exitPw, setExitPw, exitBusy, exitError, setExitError, serverUrlInputRef, logViewportRef, logStickToBottomRef, clearMenuRef, activeNav, currentLogSourceId, refreshLogs, handleSave, handleRemovePassword, clearLogs, clearAllLogs, openUpdateCheck, applyManualUpdate, scanLanServers, adoptWithCode, handleExit, confirmExit };
+  return {
+    nav,
+    setNav,
+    config,
+    setConfig,
+    loading,
+    saving,
+    saveMsg,
+    status,
+    newPw,
+    setNewPw,
+    confirmPw,
+    setConfirmPw,
+    updateDialog,
+    setUpdateDialog,
+    adoptCode,
+    setAdoptCode,
+    adoptBusy,
+    adoptMsg,
+    discovered,
+    scanning,
+    appVersion,
+    logSources,
+    setLogSourceId,
+    logText,
+    logsManualRefresh,
+    logClearing,
+    logClearMsg,
+    clearMenuOpen,
+    setClearMenuOpen,
+    clearAllConfirmOpen,
+    setClearAllConfirmOpen,
+    exitDialogOpen,
+    setExitDialogOpen,
+    exitPw,
+    setExitPw,
+    exitBusy,
+    exitError,
+    setExitError,
+    serverUrlInputRef,
+    logViewportRef,
+    logStickToBottomRef,
+    clearMenuRef,
+    activeNav,
+    currentLogSourceId,
+    refreshLogs,
+    handleSave,
+    handleRemovePassword,
+    clearLogs,
+    clearAllLogs,
+    openUpdateCheck,
+    applyManualUpdate,
+    scanLanServers,
+    adoptWithCode,
+    handleExit,
+    confirmExit,
+  };
 }
 
-function DashboardSettingsSection({ config, status, openUpdateCheck }: Pick<ReturnType<typeof useSettingsModel>, "config" | "status" | "openUpdateCheck">) {
-  return (<Card className="max-w-2xl p-6">
-              <div className="flex flex-col gap-5">
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-sm text-muted-foreground">Connection</span>
-                  <ConnectionStatus {...status} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-sm text-muted-foreground">Agent name</span>
-                  <span className="text-sm font-medium break-all">
-                    {config.agent_name.trim() || "—"}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-sm text-muted-foreground">Server URL</span>
-                  <span className="text-sm font-medium break-all">
-                    {config.server_url.trim() || "—"}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-sm text-muted-foreground">Updates</span>
-                  <span>
-                    <Button variant="secondary" onClick={() => void openUpdateCheck()}>
-                      <RefreshCw size={16} aria-hidden="true" />
-                      Check for updates
-                    </Button>
-                  </span>
-                </div>
-              </div>
-            </Card>);
+function DashboardSettingsSection({
+  config,
+  status,
+  openUpdateCheck,
+}: Pick<ReturnType<typeof useSettingsModel>, "config" | "status" | "openUpdateCheck">) {
+  return (
+    <Card className="max-w-2xl p-6">
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm text-muted-foreground">Connection</span>
+          <ConnectionStatus {...status} />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm text-muted-foreground">Agent name</span>
+          <span className="text-sm font-medium break-all">{config.agent_name.trim() || "—"}</span>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm text-muted-foreground">Server URL</span>
+          <span className="text-sm font-medium break-all">{config.server_url.trim() || "—"}</span>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm text-muted-foreground">Updates</span>
+          <span>
+            <Button variant="secondary" onClick={() => void openUpdateCheck()}>
+              <RefreshCw size={16} aria-hidden="true" />
+              Check for updates
+            </Button>
+          </span>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
-function ConnectionSettingsSection({ config, setConfig, adoptCode, setAdoptCode, adoptBusy, adoptMsg, discovered, scanning, serverUrlInputRef, scanLanServers, adoptWithCode }: Pick<ReturnType<typeof useSettingsModel>, "config" | "setConfig" | "adoptCode" | "setAdoptCode" | "adoptBusy" | "adoptMsg" | "discovered" | "scanning" | "serverUrlInputRef" | "scanLanServers" | "adoptWithCode">) {
-  return (<div className="grid items-start gap-6 xl:grid-cols-2">
-              <Card className="p-6">
-                <CardHeader className="px-0 pt-0">
-                  <CardTitle>Enrollment</CardTitle>
-                </CardHeader>
-                <CardContent className="px-0 pb-0">
-                  <div className="flex flex-col gap-5">
-                    <Field label="Server URL">
-                      <TextInput
-                        ref={serverUrlInputRef}
-                        value={config.server_url}
-                        onChange={(event) => setConfig((current) => ({ ...current, server_url: event.currentTarget.value }))}
-                        placeholder="wss://host/ws/agent"
-                      />
-                    </Field>
-                    {discovered.length > 1 && (
-                      <div className="flex w-full flex-col gap-2">
-                        <Label>Found servers</Label>
-                        <Select
-                          value=""
-                          onValueChange={(value) => {
-                            if (value) {
-                              setConfig((current) => ({ ...current, server_url: value }));
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select discovered server" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {discovered.map((server) => (
-                              <SelectItem key={server.wssUrl} value={server.wssUrl}>
-                                {(server.instanceName?.trim() || server.wssUrl) +
-                                  (server.instanceName?.trim() ? ` — ${server.wssUrl}` : "")}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    <span>
-                      <Button variant="secondary" disabled={scanning} onClick={() => void scanLanServers()}>
-                        {scanning ? (
-                          <Loader2 size={16} aria-hidden="true" className="animate-spin" />
-                        ) : (
-                          <Search size={16} aria-hidden="true" />
-                        )}
-                        Find on network
-                      </Button>
-                    </span>
-                    <Field label="Pairing code">
-                      <TextInput
-                        value={adoptCode}
-                        onChange={(event) => setAdoptCode(event.currentTarget.value)}
-                        placeholder="Optional"
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                      />
-                    </Field>
-                    <span>
-                      <Button variant="default" disabled={adoptBusy} onClick={() => void adoptWithCode()}>
-                        {adoptBusy ? (
-                          <Loader2 size={16} aria-hidden="true" className="animate-spin" />
-                        ) : (
-                          <KeyRound size={16} aria-hidden="true" />
-                        )}
-                        Request access
-                      </Button>
-                    </span>
-                    {adoptMsg && (
-                      <Notice tone={adoptMsg.ok ? "success" : "error"} title={adoptMsg.ok ? "Done" : "Notice"}>
-                        {adoptMsg.text}
-                      </Notice>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="p-6">
-                <CardHeader className="px-0 pt-0">
-                  <CardTitle>Credentials</CardTitle>
-                </CardHeader>
-                <CardContent className="px-0 pb-0">
-                  <div className="flex flex-col gap-5">
-                    <Field label="Agent name">
-                      <TextInput
-                        value={config.agent_name}
-                        onChange={(event) => setConfig((current) => ({ ...current, agent_name: event.currentTarget.value }))}
-                        placeholder="My-PC"
-                      />
-                    </Field>
-                    <Field label="Agent token">
-                      <TextInput
-                        value={config.agent_token}
-                        onChange={(event) => setConfig((current) => ({ ...current, agent_token: event.currentTarget.value }))}
-                        type="password"
-                        placeholder="Issued by approval"
-                        autoComplete="new-password"
-                      />
-                    </Field>
-                    <Toggle checked={config.auto_update_enabled} onChange={(checked) => setConfig((c) => ({ ...c, auto_update_enabled: checked }))}>
-                      Auto-update agent
-                    </Toggle>
-                    <Toggle checked={config.tray_icon_enabled} onChange={(checked) => setConfig((c) => ({ ...c, tray_icon_enabled: checked }))}>
-                      Show tray icon
-                    </Toggle>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>);
-}
-
-function SecuritySettingsSection({ config, saving, newPw, setNewPw, confirmPw, setConfirmPw, handleRemovePassword }: Pick<ReturnType<typeof useSettingsModel>, "config" | "saving" | "newPw" | "setNewPw" | "confirmPw" | "setConfirmPw" | "handleRemovePassword">) {
-  return (<div className="flex max-w-2xl flex-col gap-6">
-              <Card className="p-6">
-                <ModulePermissions />
-              </Card>
-              <Card className="p-6">
-                <CardHeader className="px-0 pt-0">
-                  <CardTitle>Password</CardTitle>
-                  <CardDescription>Leave blank to keep the current one.</CardDescription>
-                </CardHeader>
-                <CardContent className="px-0 pb-0">
-                  <div className="flex flex-col gap-5">
-                    <Field label="New password">
-                      <TextInput value={newPw} onChange={(event) => setNewPw(event.currentTarget.value)} type="password" />
-                    </Field>
-                    <Field label="Confirm password">
-                      <TextInput value={confirmPw} onChange={(event) => setConfirmPw(event.currentTarget.value)} type="password" />
-                    </Field>
-                    {config.ui_password_hash && (
-                      <span>
-                        <Button variant="destructive" onClick={() => void handleRemovePassword()} disabled={saving}>
-                          Remove password
-                        </Button>
-                      </span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>);
-}
-
-function LogsSettingsSection({ logSources, setLogSourceId, logText, logsManualRefresh, logClearing, logClearMsg, clearMenuOpen, setClearMenuOpen, setClearAllConfirmOpen, logViewportRef, logStickToBottomRef, clearMenuRef, currentLogSourceId, refreshLogs, clearLogs }: Pick<ReturnType<typeof useSettingsModel>, "logSources" | "setLogSourceId" | "logText" | "logsManualRefresh" | "logClearing" | "logClearMsg" | "clearMenuOpen" | "setClearMenuOpen" | "setClearAllConfirmOpen" | "logViewportRef" | "logStickToBottomRef" | "clearMenuRef" | "currentLogSourceId" | "refreshLogs" | "clearLogs">) {
-  return (<div className="flex min-h-0 flex-1 flex-col gap-4">
-              <Card className="shrink-0 p-6">
-                <CardHeader className="px-0 pt-0">
-                  <CardTitle>Logs</CardTitle>
-                  <CardDescription>Last 512 KiB</CardDescription>
-                </CardHeader>
-                <CardContent className="px-0 pb-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Select
-                      value={logSources.length === 0 ? "" : currentLogSourceId}
-                      onValueChange={(value) => setLogSourceId(value ?? "")}
-                      disabled={logSources.length === 0}
-                    >
-                      <SelectTrigger className="min-w-44">
-                        <SelectValue placeholder="No log sources" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {logSources.map((source) => (
-                          <SelectItem key={source.id} value={source.id}>
-                            {source.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button variant="secondary" disabled={logsManualRefresh} onClick={() => void refreshLogs(true)}>
-                      {logsManualRefresh ? (
-                        <Loader2 size={16} aria-hidden="true" className="animate-spin" />
-                      ) : (
-                        <RefreshCw size={16} aria-hidden="true" />
-                      )}
-                      Refresh
-                    </Button>
-                    <Button variant="secondary" onClick={() => void invoke("open_log_location", { kind: currentLogSourceId }).catch(() => {})}>
-                      <FolderOpen size={16} aria-hidden="true" />
-                      Open location
-                    </Button>
-                    <div className="relative ml-auto inline-flex" ref={clearMenuRef}>
-                      <Button
-                        variant="secondary"
-                        disabled={logClearing}
-                        onClick={() => void clearLogs()}
-                        className="rounded-r-none border-r-0"
-                      >
-                        {logClearing ? (
-                          <Loader2 size={16} aria-hidden="true" className="animate-spin" />
-                        ) : (
-                          <Trash2 size={16} aria-hidden="true" />
-                        )}
-                        Clear
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="icon"
-                        disabled={logClearing || logSources.length === 0}
-                        onClick={() => setClearMenuOpen((o) => !o)}
-                        aria-label="More clear options"
-                        className="rounded-l-none"
-                      >
-                        <ChevronDown size={14} aria-hidden="true" />
-                      </Button>
-                      {clearMenuOpen && (
-                        <div className="absolute top-full right-0 z-10 mt-1 min-w-40 rounded-lg border border-border bg-popover p-1 shadow-md">
-                          <button
-                            type="button"
-                            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium whitespace-nowrap text-destructive hover:bg-destructive/10"
-                            onClick={() => { setClearMenuOpen(false); setClearAllConfirmOpen(true); }}
-                          >
-                            <Trash size={14} aria-hidden="true" />
-                            Clear all logs
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    {logClearMsg && (
-                      <span className="text-xs text-muted-foreground">{logClearMsg}</span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-              <Textarea
-                ref={logViewportRef}
-                aria-label="Agent log output"
-                value={logText || "Loading..."}
-                readOnly
-                spellCheck={false}
-                wrap="off"
-                onScroll={() => {
-                  const el = logViewportRef.current;
-                  if (!el) return;
-                  logStickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 8;
-                }}
-                className="min-h-0 flex-1 resize-none overflow-auto font-mono text-xs leading-relaxed whitespace-pre md:text-xs [field-sizing:fixed]"
+function ConnectionSettingsSection({
+  config,
+  setConfig,
+  adoptCode,
+  setAdoptCode,
+  adoptBusy,
+  adoptMsg,
+  discovered,
+  scanning,
+  serverUrlInputRef,
+  scanLanServers,
+  adoptWithCode,
+}: Pick<
+  ReturnType<typeof useSettingsModel>,
+  | "config"
+  | "setConfig"
+  | "adoptCode"
+  | "setAdoptCode"
+  | "adoptBusy"
+  | "adoptMsg"
+  | "discovered"
+  | "scanning"
+  | "serverUrlInputRef"
+  | "scanLanServers"
+  | "adoptWithCode"
+>) {
+  return (
+    <div className="grid items-start gap-6 xl:grid-cols-2">
+      <Card className="p-6">
+        <CardHeader className="px-0 pt-0">
+          <CardTitle>Enrollment</CardTitle>
+        </CardHeader>
+        <CardContent className="px-0 pb-0">
+          <div className="flex flex-col gap-5">
+            <Field label="Server URL">
+              <TextInput
+                ref={serverUrlInputRef}
+                value={config.server_url}
+                onChange={(event) =>
+                  setConfig((current) => ({ ...current, server_url: event.currentTarget.value }))
+                }
+                placeholder="wss://host/ws/agent"
               />
-            </div>);
+            </Field>
+            {discovered.length > 1 && (
+              <div className="flex w-full flex-col gap-2">
+                <Label>Found servers</Label>
+                <Select
+                  value=""
+                  onValueChange={(value) => {
+                    if (value) {
+                      setConfig((current) => ({ ...current, server_url: value }));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select discovered server" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {discovered.map((server) => (
+                      <SelectItem key={server.wssUrl} value={server.wssUrl}>
+                        {(server.instanceName?.trim() || server.wssUrl) +
+                          (server.instanceName?.trim() ? ` — ${server.wssUrl}` : "")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <span>
+              <Button variant="secondary" disabled={scanning} onClick={() => void scanLanServers()}>
+                {scanning ? (
+                  <Loader2 size={16} aria-hidden="true" className="animate-spin" />
+                ) : (
+                  <Search size={16} aria-hidden="true" />
+                )}
+                Find on network
+              </Button>
+            </span>
+            <Field label="Pairing code">
+              <TextInput
+                value={adoptCode}
+                onChange={(event) => setAdoptCode(event.currentTarget.value)}
+                placeholder="Optional"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+              />
+            </Field>
+            <span>
+              <Button variant="default" disabled={adoptBusy} onClick={() => void adoptWithCode()}>
+                {adoptBusy ? (
+                  <Loader2 size={16} aria-hidden="true" className="animate-spin" />
+                ) : (
+                  <KeyRound size={16} aria-hidden="true" />
+                )}
+                Request access
+              </Button>
+            </span>
+            {adoptMsg && (
+              <Notice
+                tone={adoptMsg.ok ? "success" : "error"}
+                title={adoptMsg.ok ? "Done" : "Notice"}
+              >
+                {adoptMsg.text}
+              </Notice>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="p-6">
+        <CardHeader className="px-0 pt-0">
+          <CardTitle>Credentials</CardTitle>
+        </CardHeader>
+        <CardContent className="px-0 pb-0">
+          <div className="flex flex-col gap-5">
+            <Field label="Agent name">
+              <TextInput
+                value={config.agent_name}
+                onChange={(event) =>
+                  setConfig((current) => ({ ...current, agent_name: event.currentTarget.value }))
+                }
+                placeholder="My-PC"
+              />
+            </Field>
+            <Field label="Agent token">
+              <TextInput
+                value={config.agent_token}
+                onChange={(event) =>
+                  setConfig((current) => ({ ...current, agent_token: event.currentTarget.value }))
+                }
+                type="password"
+                placeholder="Issued by approval"
+                autoComplete="new-password"
+              />
+            </Field>
+            <Toggle
+              checked={config.auto_update_enabled}
+              onChange={(checked) => setConfig((c) => ({ ...c, auto_update_enabled: checked }))}
+            >
+              Auto-update agent
+            </Toggle>
+            <Toggle
+              checked={config.tray_icon_enabled}
+              onChange={(checked) => setConfig((c) => ({ ...c, tray_icon_enabled: checked }))}
+            >
+              Show tray icon
+            </Toggle>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SecuritySettingsSection({
+  config,
+  saving,
+  newPw,
+  setNewPw,
+  confirmPw,
+  setConfirmPw,
+  handleRemovePassword,
+}: Pick<
+  ReturnType<typeof useSettingsModel>,
+  "config" | "saving" | "newPw" | "setNewPw" | "confirmPw" | "setConfirmPw" | "handleRemovePassword"
+>) {
+  return (
+    <div className="flex max-w-2xl flex-col gap-6">
+      <Card className="p-6">
+        <ModulePermissions />
+      </Card>
+      <Card className="p-6">
+        <CardHeader className="px-0 pt-0">
+          <CardTitle>Password</CardTitle>
+          <CardDescription>Leave blank to keep the current one.</CardDescription>
+        </CardHeader>
+        <CardContent className="px-0 pb-0">
+          <div className="flex flex-col gap-5">
+            <Field label="New password">
+              <TextInput
+                value={newPw}
+                onChange={(event) => setNewPw(event.currentTarget.value)}
+                type="password"
+              />
+            </Field>
+            <Field label="Confirm password">
+              <TextInput
+                value={confirmPw}
+                onChange={(event) => setConfirmPw(event.currentTarget.value)}
+                type="password"
+              />
+            </Field>
+            {config.ui_password_hash && (
+              <span>
+                <Button
+                  variant="destructive"
+                  onClick={() => void handleRemovePassword()}
+                  disabled={saving}
+                >
+                  Remove password
+                </Button>
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function LogsSettingsSection({
+  logSources,
+  setLogSourceId,
+  logText,
+  logsManualRefresh,
+  logClearing,
+  logClearMsg,
+  clearMenuOpen,
+  setClearMenuOpen,
+  setClearAllConfirmOpen,
+  logViewportRef,
+  logStickToBottomRef,
+  clearMenuRef,
+  currentLogSourceId,
+  refreshLogs,
+  clearLogs,
+}: Pick<
+  ReturnType<typeof useSettingsModel>,
+  | "logSources"
+  | "setLogSourceId"
+  | "logText"
+  | "logsManualRefresh"
+  | "logClearing"
+  | "logClearMsg"
+  | "clearMenuOpen"
+  | "setClearMenuOpen"
+  | "setClearAllConfirmOpen"
+  | "logViewportRef"
+  | "logStickToBottomRef"
+  | "clearMenuRef"
+  | "currentLogSourceId"
+  | "refreshLogs"
+  | "clearLogs"
+>) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <Card className="shrink-0 p-6">
+        <CardHeader className="px-0 pt-0">
+          <CardTitle>Logs</CardTitle>
+          <CardDescription>Last 512 KiB</CardDescription>
+        </CardHeader>
+        <CardContent className="px-0 pb-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={logSources.length === 0 ? "" : currentLogSourceId}
+              onValueChange={(value) => setLogSourceId(value ?? "")}
+              disabled={logSources.length === 0}
+            >
+              <SelectTrigger className="min-w-44">
+                <SelectValue placeholder="No log sources" />
+              </SelectTrigger>
+              <SelectContent>
+                {logSources.map((source) => (
+                  <SelectItem key={source.id} value={source.id}>
+                    {source.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="secondary"
+              disabled={logsManualRefresh}
+              onClick={() => void refreshLogs(true)}
+            >
+              {logsManualRefresh ? (
+                <Loader2 size={16} aria-hidden="true" className="animate-spin" />
+              ) : (
+                <RefreshCw size={16} aria-hidden="true" />
+              )}
+              Refresh
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                void invoke("open_log_location", { kind: currentLogSourceId }).catch(() => {})
+              }
+            >
+              <FolderOpen size={16} aria-hidden="true" />
+              Open location
+            </Button>
+            <div className="relative ml-auto inline-flex" ref={clearMenuRef}>
+              <Button
+                variant="secondary"
+                disabled={logClearing}
+                onClick={() => void clearLogs()}
+                className="rounded-r-none border-r-0"
+              >
+                {logClearing ? (
+                  <Loader2 size={16} aria-hidden="true" className="animate-spin" />
+                ) : (
+                  <Trash2 size={16} aria-hidden="true" />
+                )}
+                Clear
+              </Button>
+              <Button
+                variant="secondary"
+                size="icon"
+                disabled={logClearing || logSources.length === 0}
+                onClick={() => setClearMenuOpen((o) => !o)}
+                aria-label="More clear options"
+                className="rounded-l-none"
+              >
+                <ChevronDown size={14} aria-hidden="true" />
+              </Button>
+              {clearMenuOpen && (
+                <div className="absolute top-full right-0 z-10 mt-1 min-w-40 rounded-lg border border-border bg-popover p-1 shadow-md">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium whitespace-nowrap text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      setClearMenuOpen(false);
+                      setClearAllConfirmOpen(true);
+                    }}
+                  >
+                    <Trash size={14} aria-hidden="true" />
+                    Clear all logs
+                  </button>
+                </div>
+              )}
+            </div>
+            {logClearMsg && <span className="text-xs text-muted-foreground">{logClearMsg}</span>}
+          </div>
+        </CardContent>
+      </Card>
+      <Textarea
+        ref={logViewportRef}
+        aria-label="Agent log output"
+        value={logText || "Loading..."}
+        readOnly
+        spellCheck={false}
+        wrap="off"
+        onScroll={() => {
+          const el = logViewportRef.current;
+          if (!el) return;
+          logStickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 8;
+        }}
+        className="min-h-0 flex-1 resize-none overflow-auto font-mono text-xs leading-relaxed whitespace-pre md:text-xs [field-sizing:fixed]"
+      />
+    </div>
+  );
 }

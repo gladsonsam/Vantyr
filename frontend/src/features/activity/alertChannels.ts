@@ -8,12 +8,7 @@
  */
 
 /** The five channels an alert rule can fire on. */
-export type AlertChannelKey =
-  | "url"
-  | "keys"
-  | "url_category"
-  | "resource"
-  | "agent_offline";
+export type AlertChannelKey = "url" | "keys" | "url_category" | "resource" | "agent_offline";
 
 const CHANNEL_LABELS: Record<AlertChannelKey, string> = {
   url: "URL",

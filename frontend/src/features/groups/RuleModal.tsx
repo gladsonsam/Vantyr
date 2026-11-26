@@ -71,8 +71,15 @@ function emptyScopeRow(): RuleScopeRow {
 function ruleToValues(rule: AlertRule | null): GroupRuleValues {
   if (!rule) {
     return {
-      name: "", channel: "url", pattern: "", match_mode: "substring", case_insensitive: true,
-      cooldown_secs: 300, enabled: true, take_screenshot: false, scopes: [emptyScopeRow()],
+      name: "",
+      channel: "url",
+      pattern: "",
+      match_mode: "substring",
+      case_insensitive: true,
+      cooldown_secs: 300,
+      enabled: true,
+      take_screenshot: false,
+      scopes: [emptyScopeRow()],
     };
   }
   return {
@@ -84,13 +91,22 @@ function ruleToValues(rule: AlertRule | null): GroupRuleValues {
     cooldown_secs: rule.cooldown_secs,
     enabled: rule.enabled,
     take_screenshot: Boolean(rule.take_screenshot),
-    scopes: rule.scopes.length === 0
-      ? [emptyScopeRow()]
-      : rule.scopes.map((s) => ({ kind: s.kind, group_id: s.group_id ?? "", agent_id: s.agent_id ?? "" })),
+    scopes:
+      rule.scopes.length === 0
+        ? [emptyScopeRow()]
+        : rule.scopes.map((s) => ({
+            kind: s.kind,
+            group_id: s.group_id ?? "",
+            agent_id: s.agent_id ?? "",
+          })),
   };
 }
 
-function updateScopeRow(rows: RuleScopeRow[], index: number, patch: Partial<RuleScopeRow>): RuleScopeRow[] {
+function updateScopeRow(
+  rows: RuleScopeRow[],
+  index: number,
+  patch: Partial<RuleScopeRow>,
+): RuleScopeRow[] {
   const next = [...rows];
   const cur = { ...next[index], ...patch };
   if (patch.kind === "all") {
@@ -105,7 +121,12 @@ function updateScopeRow(rows: RuleScopeRow[], index: number, patch: Partial<Rule
   return next;
 }
 
-function CheckRow({ checked, disabled, onChange, label }: {
+function CheckRow({
+  checked,
+  disabled,
+  onChange,
+  label,
+}: {
   checked: boolean;
   disabled: boolean;
   onChange: (next: boolean) => void;
@@ -113,27 +134,55 @@ function CheckRow({ checked, disabled, onChange, label }: {
 }) {
   return (
     <label className="flex cursor-pointer items-center gap-2 text-sm select-none">
-      <Checkbox checked={checked} disabled={disabled} onCheckedChange={(value) => onChange(value === true)} />
+      <Checkbox
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(value) => onChange(value === true)}
+      />
       {label}
     </label>
   );
 }
 
-export function RuleModal({ visible, onDismiss, rule, heading, agentOptions, groupOptions, onSave }: RuleModalProps) {
+export function RuleModal({
+  visible,
+  onDismiss,
+  rule,
+  heading,
+  agentOptions,
+  groupOptions,
+  onSave,
+}: RuleModalProps) {
   // The dialog can't be dismissed while the save request is in flight.
   const [busy, setBusy] = useState(false);
   return (
     <Dialog open={visible} onOpenChange={(open) => !open && !busy && onDismiss()}>
       <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-2xl">
         {visible && (
-          <RuleForm rule={rule} heading={heading} agentOptions={agentOptions} groupOptions={groupOptions} onDismiss={onDismiss} onSave={onSave} onBusyChange={setBusy} />
+          <RuleForm
+            rule={rule}
+            heading={heading}
+            agentOptions={agentOptions}
+            groupOptions={groupOptions}
+            onDismiss={onDismiss}
+            onSave={onSave}
+            onBusyChange={setBusy}
+          />
         )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function RuleForm({ rule, heading, agentOptions, groupOptions, onDismiss, onSave, onBusyChange }: Omit<RuleModalProps, "visible"> & { onBusyChange: (busy: boolean) => void }) {
+function RuleForm({
+  rule,
+  heading,
+  agentOptions,
+  groupOptions,
+  onDismiss,
+  onSave,
+  onBusyChange,
+}: Omit<RuleModalProps, "visible"> & { onBusyChange: (busy: boolean) => void }) {
   const form = useForm<GroupRuleValues>({
     resolver: zodResolver(groupRuleSchema),
     mode: "onChange",
@@ -169,12 +218,22 @@ function RuleForm({ rule, heading, agentOptions, groupOptions, onDismiss, onSave
         <DialogDescription>Raises an alert when an agent in its scope matches.</DialogDescription>
       </DialogHeader>
 
-      <InputField control={control} name="name" id="rule-name" label="Name (optional)" disabled={isSubmitting} />
+      <InputField
+        control={control}
+        name="name"
+        id="rule-name"
+        label="Name (optional)"
+        disabled={isSubmitting}
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <FormField control={control} name="channel" id="rule-channel" label="Channel">
           {({ field, id }) => (
-            <Select value={field.value} onValueChange={(v) => field.onChange(v as AlertRuleChannel)} disabled={isSubmitting}>
+            <Select
+              value={field.value}
+              onValueChange={(v) => field.onChange(v as AlertRuleChannel)}
+              disabled={isSubmitting}
+            >
               <SelectTrigger id={id} className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -190,7 +249,11 @@ function RuleForm({ rule, heading, agentOptions, groupOptions, onDismiss, onSave
         </FormField>
         <FormField control={control} name="match_mode" id="rule-match" label="Match mode">
           {({ field, id }) => (
-            <Select value={field.value} onValueChange={(v) => field.onChange(v as AlertRuleMatchMode)} disabled={isSubmitting}>
+            <Select
+              value={field.value}
+              onValueChange={(v) => field.onChange(v as AlertRuleMatchMode)}
+              disabled={isSubmitting}
+            >
               <SelectTrigger id={id} className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -213,20 +276,43 @@ function RuleForm({ rule, heading, agentOptions, groupOptions, onDismiss, onSave
         label="Pattern"
         disabled={isSubmitting}
         hideError
-        description={matchMode === "regex"
-          ? "Rust regex; case sensitivity follows the checkbox below."
-          : "Substring match."}
+        description={
+          matchMode === "regex"
+            ? "Rust regex; case sensitivity follows the checkbox below."
+            : "Substring match."
+        }
       />
 
       <div className="flex flex-wrap gap-x-6 gap-y-2">
         <FormField control={control} name="case_insensitive" className="w-auto">
-          {({ field }) => <CheckRow checked={field.value} disabled={isSubmitting} onChange={field.onChange} label="Case-insensitive" />}
+          {({ field }) => (
+            <CheckRow
+              checked={field.value}
+              disabled={isSubmitting}
+              onChange={field.onChange}
+              label="Case-insensitive"
+            />
+          )}
         </FormField>
         <FormField control={control} name="take_screenshot" className="w-auto">
-          {({ field }) => <CheckRow checked={field.value} disabled={isSubmitting} onChange={field.onChange} label="Take screenshot on trigger" />}
+          {({ field }) => (
+            <CheckRow
+              checked={field.value}
+              disabled={isSubmitting}
+              onChange={field.onChange}
+              label="Take screenshot on trigger"
+            />
+          )}
         </FormField>
         <FormField control={control} name="enabled" className="w-auto">
-          {({ field }) => <CheckRow checked={field.value} disabled={isSubmitting} onChange={field.onChange} label="Enabled" />}
+          {({ field }) => (
+            <CheckRow
+              checked={field.value}
+              disabled={isSubmitting}
+              onChange={field.onChange}
+              label="Enabled"
+            />
+          )}
         </FormField>
       </div>
 
@@ -257,7 +343,11 @@ function RuleForm({ rule, heading, agentOptions, groupOptions, onDismiss, onSave
                       <FieldLabel htmlFor={`scope-kind-${index}`}>Applies to</FieldLabel>
                       <Select
                         value={row.kind}
-                        onValueChange={(v) => field.onChange(updateScopeRow(scopes, index, { kind: v as AlertRuleScopeKind }))}
+                        onValueChange={(v) =>
+                          field.onChange(
+                            updateScopeRow(scopes, index, { kind: v as AlertRuleScopeKind }),
+                          )
+                        }
                         disabled={isSubmitting}
                       >
                         <SelectTrigger id={`scope-kind-${index}`} className="w-full">
@@ -277,7 +367,9 @@ function RuleForm({ rule, heading, agentOptions, groupOptions, onDismiss, onSave
                         <FieldLabel htmlFor={`scope-group-${index}`}>Group</FieldLabel>
                         <Select
                           value={row.group_id || undefined}
-                          onValueChange={(v) => field.onChange(updateScopeRow(scopes, index, { group_id: v ?? "" }))}
+                          onValueChange={(v) =>
+                            field.onChange(updateScopeRow(scopes, index, { group_id: v ?? "" }))
+                          }
                           disabled={isSubmitting}
                         >
                           <SelectTrigger id={`scope-group-${index}`} className="w-full">
@@ -304,7 +396,9 @@ function RuleForm({ rule, heading, agentOptions, groupOptions, onDismiss, onSave
                         <FieldLabel htmlFor={`scope-agent-${index}`}>Agent</FieldLabel>
                         <Select
                           value={row.agent_id || undefined}
-                          onValueChange={(v) => field.onChange(updateScopeRow(scopes, index, { agent_id: v ?? "" }))}
+                          onValueChange={(v) =>
+                            field.onChange(updateScopeRow(scopes, index, { agent_id: v ?? "" }))
+                          }
                           disabled={isSubmitting}
                         >
                           <SelectTrigger id={`scope-agent-${index}`} className="w-full">
@@ -350,7 +444,10 @@ function RuleForm({ rule, heading, agentOptions, groupOptions, onDismiss, onSave
       </FormField>
 
       {saveError && (
-        <div role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm break-words text-destructive">
+        <div
+          role="alert"
+          className="rounded-lg bg-destructive/10 px-3 py-2 text-sm break-words text-destructive"
+        >
           Couldn’t save the rule: {saveError}
         </div>
       )}

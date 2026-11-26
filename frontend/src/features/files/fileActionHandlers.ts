@@ -3,14 +3,42 @@ import type { AgentFs, FileItem } from "./useAgentFs";
 
 export type FileClipboard = { mode: "copy" | "move"; srcPaths: string[] };
 interface ActionContext {
-  selected: FileItem[]; selectedItem: FileItem | null; selectedPath: string | null; selectedPaths: string[];
-  oneSelected: boolean; oneFileSelected: boolean; clipboard: FileClipboard | null; canUpload: boolean; downloading: string | null;
-  fs: Pick<AgentFs, "download" | "openPreview">; setFsMessage: AgentFs["setFsMessage"];
-  setClipboard: (clipboard: FileClipboard | null) => void; setPrompt: (prompt: "move" | "rename") => void;
-  setDeleteOpen: (open: boolean) => void; copyText: (text: string) => Promise<void>; paste: (clipboard: FileClipboard) => Promise<void>;
+  selected: FileItem[];
+  selectedItem: FileItem | null;
+  selectedPath: string | null;
+  selectedPaths: string[];
+  oneSelected: boolean;
+  oneFileSelected: boolean;
+  clipboard: FileClipboard | null;
+  canUpload: boolean;
+  downloading: string | null;
+  fs: Pick<AgentFs, "download" | "openPreview">;
+  setFsMessage: AgentFs["setFsMessage"];
+  setClipboard: (clipboard: FileClipboard | null) => void;
+  setPrompt: (prompt: "move" | "rename") => void;
+  setDeleteOpen: (open: boolean) => void;
+  copyText: (text: string) => Promise<void>;
+  paste: (clipboard: FileClipboard) => Promise<void>;
 }
 /** Keep toolbar/context-menu action guards and dispatch in one place. */
-export function createFileActionHandlers({ selected, selectedItem, selectedPath, selectedPaths, oneSelected, oneFileSelected, clipboard, canUpload, downloading, fs, setFsMessage, setClipboard, setPrompt, setDeleteOpen, copyText, paste }: ActionContext) {
+export function createFileActionHandlers({
+  selected,
+  selectedItem,
+  selectedPath,
+  selectedPaths,
+  oneSelected,
+  oneFileSelected,
+  clipboard,
+  canUpload,
+  downloading,
+  fs,
+  setFsMessage,
+  setClipboard,
+  setPrompt,
+  setDeleteOpen,
+  copyText,
+  paste,
+}: ActionContext) {
   const isActionDisabled = (action: FileAction): boolean => {
     switch (action) {
       case "copy_path":

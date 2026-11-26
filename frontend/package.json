@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "test": "vitest run",
+    "test": "bun test --isolate --parallel=4",
     "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
@@ -39,6 +39,8 @@
   },
   "devDependencies": {
     "@tanstack/react-query-devtools": "^5.108.4",
+    "@types/bun": "^1.4.5",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^26.6.10",
     "@types/react": "^19.3.2",
     "@types/react-dom": "^19.3.0",
@@ -46,7 +48,6 @@
     "jsdom": "^31.0.1",
     "react-doctor": "^0.9.23",
     "typescript": "^6.0.3",
-    "vite": "^8.3.8",
-    "vitest": "^5.1.1"
+    "vite": "^8.3.8"
   }
 }

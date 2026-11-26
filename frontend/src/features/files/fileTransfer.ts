@@ -41,8 +41,7 @@ export function uploadTimeoutMs(totalChunks: number): number {
 }
 
 export type ChunkProgress =
-  | { status: "partial"; percent: number }
-  | { status: "complete"; parts: Uint8Array[] };
+  { status: "partial"; percent: number } | { status: "complete"; parts: Uint8Array[] };
 
 /**
  * Reassembles downloads that arrive as indexed chunks, possibly out of order. Each chunk is

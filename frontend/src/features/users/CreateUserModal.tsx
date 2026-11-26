@@ -35,23 +35,39 @@ interface CreateUserModalProps {
   onCreate: (data: CreateUserValues) => Promise<void>;
 }
 
-export function CreateUserModal({ visible, onDismiss, finalFocus, onCreate }: CreateUserModalProps) {
+export function CreateUserModal({
+  visible,
+  onDismiss,
+  finalFocus,
+  onCreate,
+}: CreateUserModalProps) {
   // The dialog can't be dismissed while the create request is in flight.
   const [busy, setBusy] = useState(false);
   return (
     <Dialog open={visible} onOpenChange={(open) => !open && !busy && onDismiss()}>
-      <DialogContent finalFocus={finalFocus} className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-lg">
+      <DialogContent
+        finalFocus={finalFocus}
+        className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-lg"
+      >
         <DialogHeader>
           <DialogTitle>Create user</DialogTitle>
-          <DialogDescription>They sign in with this username and a temporary password.</DialogDescription>
+          <DialogDescription>
+            They sign in with this username and a temporary password.
+          </DialogDescription>
         </DialogHeader>
-        {visible && <CreateUserForm onDismiss={onDismiss} onCreate={onCreate} onBusyChange={setBusy} />}
+        {visible && (
+          <CreateUserForm onDismiss={onDismiss} onCreate={onCreate} onBusyChange={setBusy} />
+        )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function CreateUserForm({ onDismiss, onCreate, onBusyChange }: Omit<CreateUserModalProps, "visible"> & { onBusyChange: (busy: boolean) => void }) {
+function CreateUserForm({
+  onDismiss,
+  onCreate,
+  onBusyChange,
+}: Omit<CreateUserModalProps, "visible"> & { onBusyChange: (busy: boolean) => void }) {
   const form = useForm<CreateUserValues>({
     resolver: zodResolver(createUserSchema),
     mode: "onChange",
@@ -80,7 +96,15 @@ function CreateUserForm({ onDismiss, onCreate, onBusyChange }: Omit<CreateUserMo
     <form onSubmit={submit} noValidate className="contents">
       <div className="flex flex-col gap-5">
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <InputField control={control} name="username" id="create-username" label="Username" disabled={isSubmitting} autoComplete="off" className="h-9" />
+          <InputField
+            control={control}
+            name="username"
+            id="create-username"
+            label="Username"
+            disabled={isSubmitting}
+            autoComplete="off"
+            className="h-9"
+          />
           <InputField
             control={control}
             name="display_name"
@@ -95,7 +119,11 @@ function CreateUserForm({ onDismiss, onCreate, onBusyChange }: Omit<CreateUserMo
         <FormField control={control} name="role" id="create-role" label="Role">
           {({ field, id }) => (
             <>
-              <Select value={field.value} onValueChange={(value) => field.onChange(value as DashboardRole)} disabled={isSubmitting}>
+              <Select
+                value={field.value}
+                onValueChange={(value) => field.onChange(value as DashboardRole)}
+                disabled={isSubmitting}
+              >
                 <SelectTrigger id={id} className="h-9 w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -107,7 +135,9 @@ function CreateUserForm({ onDismiss, onCreate, onBusyChange }: Omit<CreateUserMo
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">{ROLE_OPTIONS.find((o) => o.value === role)?.description}</p>
+              <p className="text-xs text-muted-foreground">
+                {ROLE_OPTIONS.find((o) => o.value === role)?.description}
+              </p>
             </>
           )}
         </FormField>

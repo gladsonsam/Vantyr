@@ -13,16 +13,9 @@ const reasonLabels: Record<RecallContextReason, string> = {
   invalid_url: "host unavailable",
   invalid_context: "metadata invalid",
 };
-function stateLabel(
-  status: RecallContextStatus,
-  reason: RecallContextReason | null,
-) {
+function stateLabel(status: RecallContextStatus, reason: RecallContextReason | null) {
   const label =
-    status === "not_collected"
-      ? "Not collected"
-      : status === "uncertain"
-        ? "Uncertain"
-        : "Unknown";
+    status === "not_collected" ? "Not collected" : status === "uncertain" ? "Uncertain" : "Unknown";
   return `${label}${reason ? ` (${reasonLabels[reason]})` : ""}`;
 }
 type Context = ReturnType<typeof parseRecallContext>;
@@ -35,17 +28,13 @@ function foregroundLabel(context: Context) {
     : stateLabel(context.window.status, context.window.reason);
 }
 function monitorEvidence(context: Context) {
-  if (!context)
-    return "Missing context does not mean no app or browser was present.";
-  if (context.monitor_relation === "same")
-    return "Foreground window was on this display.";
-  if (context.monitor_relation === "other")
-    return "Foreground window was on another display.";
+  if (!context) return "Missing context does not mean no app or browser was present.";
+  if (context.monitor_relation === "same") return "Foreground window was on this display.";
+  if (context.monitor_relation === "other") return "Foreground window was on another display.";
   return "Its display is unknown.";
 }
 function ContextTitle({ context }: { context: NonNullable<Context> }) {
-  if (context.window.status !== "observed" || !context.window.title)
-    return null;
+  if (context.window.status !== "observed" || !context.window.title) return null;
   return (
     <span>
       Title: {context.window.title}

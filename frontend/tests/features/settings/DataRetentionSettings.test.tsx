@@ -1,12 +1,23 @@
-// @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  buttonByText,
+  byLabel,
+  click,
+  mountForm,
+  typeInto,
+  unmountForms,
+} from "@tests/support/formDom";
 import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
-import { buttonByText, byLabel, click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
-import { DataRetentionSettings } from "@/features/settings/DataRetentionSettings";
-import { useRetentionSettings } from "@/features/settings/hooks/useRetentionSettings";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({ retentionGlobalGet: vi.fn(), retentionGlobalPut: vi.fn() }));
-vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e instanceof Error ? e.message : e) }));
+const api = (() => ({ retentionGlobalGet: vi.fn(), retentionGlobalPut: vi.fn() }))();
+await vi.mock("@/api", () => ({
+  api,
+  errorText: (e: unknown) => String(e instanceof Error ? e.message : e),
+}));
+
+const { DataRetentionSettings } = await import("@/features/settings/DataRetentionSettings");
+const { useRetentionSettings } = await import("@/features/settings/hooks/useRetentionSettings");
 
 const saved = { keylog_days: 14, window_days: null, url_days: 30 };
 
@@ -15,7 +26,8 @@ function Harness({ isAdmin }: { isAdmin: boolean }) {
   return <DataRetentionSettings form={form} isAdmin={isAdmin} />;
 }
 
-const render = (isAdmin = true) => mountForm(withQueryClient(<Harness isAdmin={isAdmin} />, createTestQueryClient()));
+const render = (isAdmin = true) =>
+  mountForm(withQueryClient(<Harness isAdmin={isAdmin} />, createTestQueryClient()));
 const buttons = () => [...document.querySelectorAll("button")].map((b) => b.textContent?.trim());
 const text = () => document.body.textContent ?? "";
 
@@ -72,7 +84,11 @@ describe("global data retention", () => {
 
   it("saves a longer limit and forever as null without a warning, then says it saved", async () => {
     api.retentionGlobalGet.mockResolvedValue(saved);
-    api.retentionGlobalPut.mockResolvedValue({ keylog_days: 60, window_days: null, url_days: null });
+    api.retentionGlobalPut.mockResolvedValue({
+      keylog_days: 60,
+      window_days: null,
+      url_days: null,
+    });
     await render();
     await typeInto(byLabel("Keystrokes"), "60");
     await typeInto(byLabel("Websites"), "0");
@@ -80,7 +96,11 @@ describe("global data retention", () => {
     expect(text()).toContain("Saved: 14 days.");
     await click(buttonByText("Save"));
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
-    expect(api.retentionGlobalPut).toHaveBeenCalledWith({ keylog_days: 60, window_days: null, url_days: null });
+    expect(api.retentionGlobalPut).toHaveBeenCalledWith({
+      keylog_days: 60,
+      window_days: null,
+      url_days: null,
+    });
     expect(text()).toContain("Saved. Data older than these limits is deleted automatically.");
     expect(buttonByText("Save").disabled).toBe(true);
     expect(byLabel("Websites").value).toBe("0");
@@ -88,12 +108,20 @@ describe("global data retention", () => {
 
   it("says nothing is deleted when every limit is forever", async () => {
     api.retentionGlobalGet.mockResolvedValue(saved);
-    api.retentionGlobalPut.mockResolvedValue({ keylog_days: null, window_days: null, url_days: null });
+    api.retentionGlobalPut.mockResolvedValue({
+      keylog_days: null,
+      window_days: null,
+      url_days: null,
+    });
     await render();
     await typeInto(byLabel("Keystrokes"), "");
     await typeInto(byLabel("Websites"), "0");
     await click(buttonByText("Save"));
-    expect(api.retentionGlobalPut).toHaveBeenCalledWith({ keylog_days: null, window_days: null, url_days: null });
+    expect(api.retentionGlobalPut).toHaveBeenCalledWith({
+      keylog_days: null,
+      window_days: null,
+      url_days: null,
+    });
     expect(text()).toContain("Saved. Nothing is deleted automatically.");
   });
 
@@ -107,7 +135,9 @@ describe("global data retention", () => {
     const dialog = document.querySelector('[role="alertdialog"]');
     expect(dialog?.textContent).toContain("cannot be recovered");
     expect(dialog?.textContent).toContain("Keystrokes: older than 7 days (now 14 days)");
-    expect(dialog?.textContent).toContain("App windows and activity: older than 90 days (now forever)");
+    expect(dialog?.textContent).toContain(
+      "App windows and activity: older than 90 days (now forever)",
+    );
     expect(dialog?.textContent).not.toContain("Websites:");
     expect(api.retentionGlobalPut).not.toHaveBeenCalled();
 
@@ -117,7 +147,11 @@ describe("global data retention", () => {
 
     await click(buttonByText("Save"));
     await click(buttonByText("Save and delete older data"));
-    expect(api.retentionGlobalPut).toHaveBeenCalledWith({ keylog_days: 7, window_days: 90, url_days: 30 });
+    expect(api.retentionGlobalPut).toHaveBeenCalledWith({
+      keylog_days: 7,
+      window_days: 90,
+      url_days: 30,
+    });
     expect(text()).toContain("Saved.");
   });
 

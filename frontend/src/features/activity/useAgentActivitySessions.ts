@@ -32,7 +32,10 @@ const REFRESH_EVENTS = new Set<WsEvent["event"]>([
  * superseding activation (or unmount) drops the late result instead of
  * flashing it.
  */
-function startActivityLoad(load: () => Promise<unknown>, setLoading: (loading: boolean) => void): () => void {
+function startActivityLoad(
+  load: () => Promise<unknown>,
+  setLoading: (loading: boolean) => void,
+): () => void {
   let cancelled = false;
   setLoading(true);
   void load().then(
@@ -208,9 +211,15 @@ export function useAgentActivitySessions(agentId: string, activeTab: TabKey) {
       };
 
       const [windowsRes, urlsRes, keysRes, alertsRes] = await Promise.allSettled([
-        h.windows ? api.windows(agentId, { limit: pageSize, offset: next.windows }) : Promise.resolve({ rows: [] }),
-        h.urls ? api.urls(agentId, { limit: pageSize, offset: next.urls }) : Promise.resolve({ rows: [] }),
-        h.keys ? api.keys(agentId, { limit: pageSize, offset: next.keys }) : Promise.resolve({ rows: [] }),
+        h.windows
+          ? api.windows(agentId, { limit: pageSize, offset: next.windows })
+          : Promise.resolve({ rows: [] }),
+        h.urls
+          ? api.urls(agentId, { limit: pageSize, offset: next.urls })
+          : Promise.resolve({ rows: [] }),
+        h.keys
+          ? api.keys(agentId, { limit: pageSize, offset: next.keys })
+          : Promise.resolve({ rows: [] }),
         h.alerts
           ? api.agentAlertRuleEvents(agentId, { limit: pageSize, offset: next.alerts })
           : Promise.resolve({ rows: [] }),

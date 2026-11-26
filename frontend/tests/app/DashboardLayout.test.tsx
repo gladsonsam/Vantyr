@@ -1,8 +1,8 @@
-// @vitest-environment jsdom
+import { testMock as vi } from "@tests/support/mock";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it } from "bun:test";
 import type { Agent } from "@/api/types";
 import { DashboardLayout } from "@/app/DashboardLayout";
 import { AgentsContext, type AgentsContextValue } from "@/app/providers/useAgents";
@@ -14,20 +14,49 @@ let el: HTMLDivElement;
 let root: Root;
 
 const agent: Agent = {
-  id: "pc-1", name: "Office PC", online: true, last_seen: "2026-01-01", first_seen: "2026-01-01",
-  icon: null, agent_version: null, connected_at: null, last_connected_at: null, last_disconnected_at: null,
+  id: "pc-1",
+  name: "Office PC",
+  online: true,
+  last_seen: "2026-01-01",
+  first_seen: "2026-01-01",
+  icon: null,
+  agent_version: null,
+  connected_at: null,
+  last_connected_at: null,
+  last_disconnected_at: null,
 };
-const admin = { id: "u1", username: "admin", role: "admin", display_name: "", display_icon: null, csrf_token: "csrf" } as const;
+const admin = {
+  id: "u1",
+  username: "admin",
+  role: "admin",
+  display_name: "",
+  display_icon: null,
+  csrf_token: "csrf",
+} as const;
 const session: SessionContextValue = {
-  authenticated: true, user: admin, navUser: admin,
-  refresh: async () => {}, completeLogin: () => {}, logout: async () => {},
+  authenticated: true,
+  user: admin,
+  navUser: admin,
+  refresh: async () => {},
+  completeLogin: () => {},
+  logout: async () => {},
 };
 const agents: AgentsContextValue = {
-  agents: { [agent.id]: agent }, liveStatus: {}, agentInfo: {}, agentInfoReceivedAtMs: {}, initialized: true,
-  setSelectedAgentId: () => {}, send: () => {}, refresh: async () => {},
+  agents: { [agent.id]: agent },
+  liveStatus: {},
+  agentInfo: {},
+  agentInfoReceivedAtMs: {},
+  initialized: true,
+  setSelectedAgentId: () => {},
+  send: () => {},
+  refresh: async () => {},
 };
 const notifications = {
-  notifications: [], removeNotification: () => {}, info: () => "", warning: () => "", error: () => "",
+  notifications: [],
+  removeNotification: () => {},
+  info: () => "",
+  warning: () => "",
+  error: () => "",
 } as unknown as NotificationsValue;
 
 function TitledPage({ title, hideTopBar }: { title: string; hideTopBar?: boolean }) {
@@ -54,7 +83,10 @@ async function renderAt(path: string) {
             <Route element={<DashboardLayout />}>
               <Route index element={<TitledPage title="Agents" />} />
               <Route path="/logs" element={<TitledPage title="Audit log" />} />
-              <Route path="/agents/:agentId" element={<TitledPage title="Agent Details" hideTopBar />} />
+              <Route
+                path="/agents/:agentId"
+                element={<TitledPage title="Agent Details" hideTopBar />}
+              />
             </Route>
           </Routes>
         </MemoryRouter>
@@ -64,10 +96,16 @@ async function renderAt(path: string) {
 }
 
 beforeEach(() => {
-  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  (
+    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: false, media: query,
-    addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {},
+    matches: false,
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
     dispatchEvent: () => false,
   }));
   el = document.createElement("div");

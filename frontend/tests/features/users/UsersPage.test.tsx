@@ -1,13 +1,13 @@
-// @vitest-environment jsdom
+import { click, typeInto } from "@tests/support/formDom";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
-import { click, typeInto } from "@tests/support/formDom";
-import type { QueryClient } from "@tanstack/react-query";
-import { UsersPage } from "@/features/users/UsersPage";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({
+import type { QueryClient } from "@tanstack/react-query";
+
+const api = (() => ({
   me: vi.fn(),
   usersList: vi.fn(),
   userSetRole: vi.fn(async () => ({ ok: true })),
@@ -18,12 +18,26 @@ const api = vi.hoisted(() => ({
   userIdentities: vi.fn(async () => ({ identities: [] })),
   userIdentityLink: vi.fn(async () => ({ ok: true })),
   identityUnlink: vi.fn(async () => ({ ok: true })),
+}))();
+await vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e) }));
+await vi.mock("@/app/providers/useSession", () => ({
+  useSession: () => ({ refresh: vi.fn(async () => {}) }),
 }));
-vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e) }));
-vi.mock("@/app/providers/useSession", () => ({ useSession: () => ({ refresh: vi.fn(async () => {}) }) }));
 
-const user = (id: string, username: string, role: "admin" | "operator" | "viewer", display_name = "") => ({
-  id, username, role, display_name, display_icon: null, created_at: "2026-01-01T00:00:00Z",
+const { UsersPage } = await import("@/features/users/UsersPage");
+
+const user = (
+  id: string,
+  username: string,
+  role: "admin" | "operator" | "viewer",
+  display_name = "",
+) => ({
+  id,
+  username,
+  role,
+  display_name,
+  display_icon: null,
+  created_at: "2026-01-01T00:00:00Z",
 });
 const me = { ...user("a", "root", "admin", "Root Admin"), csrf_token: "t" };
 const ops = user("o", "ops", "operator", "Ops User");
@@ -54,14 +68,20 @@ async function render(ui: ReactElement = <UsersPage />) {
 }
 const rows = () => [...host.querySelectorAll('ul[aria-label="Users"] > li')];
 const btn = (name: string, scope: ParentNode = document) =>
-  [...scope.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") ?? b.textContent)?.trim() === name) as HTMLButtonElement | undefined;
+  [...scope.querySelectorAll("button")].find(
+    (b) => (b.getAttribute("aria-label") ?? b.textContent)?.trim() === name,
+  ) as HTMLButtonElement | undefined;
 const dialog = () => document.querySelector<HTMLElement>('[role="dialog"], [role="alertdialog"]');
-const alerts = (scope: ParentNode = document) => [...scope.querySelectorAll('[role="alert"]')].map((e) => e.textContent ?? "");
+const alerts = (scope: ParentNode = document) =>
+  [...scope.querySelectorAll('[role="alert"]')].map((e) => e.textContent ?? "");
 async function openMenu(name: string) {
   await click(btn(`Manage ${name}`)!);
   await act(async () => {});
 }
-const menuItem = (text: string) => [...document.querySelectorAll('[role="menuitem"]')].find((i) => i.textContent?.trim().startsWith(text)) as HTMLElement | undefined;
+const menuItem = (text: string) =>
+  [...document.querySelectorAll('[role="menuitem"]')].find((i) =>
+    i.textContent?.trim().startsWith(text),
+  ) as HTMLElement | undefined;
 
 describe("Users list", () => {
   it("shows one row per account with role, you-marker and a summary of the directory", async () => {
@@ -91,13 +111,17 @@ describe("Users list", () => {
     api.usersList.mockRejectedValue(new Error("offline"));
     await click(btn("Refresh users")!);
     expect(rows()).toHaveLength(3);
-    expect(host.textContent).toContain("Couldn't refresh users: offline. Showing the list from the last successful load.");
+    expect(host.textContent).toContain(
+      "Couldn't refresh users: offline. Showing the list from the last successful load.",
+    );
   });
 
   it("only shows search for long lists and says when nobody matches", async () => {
     await render();
     expect(host.querySelector('input[aria-label="Search users"]')).toBeNull();
-    const many = Array.from({ length: 7 }, (_, i) => user(`x${i}`, `user${i}`, "viewer", i === 4 ? "Needle Person" : ""));
+    const many = Array.from({ length: 7 }, (_, i) =>
+      user(`x${i}`, `user${i}`, "viewer", i === 4 ? "Needle Person" : ""),
+    );
     api.usersList.mockResolvedValue({ users: [list[0], ...many] });
     await render(<UsersPage key="again" />);
     const search = host.querySelector<HTMLInputElement>('input[aria-label="Search users"]')!;
@@ -125,7 +149,11 @@ describe("Users actions", () => {
     await openMenu("Ops User");
     await click(menuItem("Change role")!);
     await act(async () => {});
-    await click([...document.querySelectorAll('[role="menuitemradio"]')].find((i) => i.textContent?.trim() === "Admin")!);
+    await click(
+      [...document.querySelectorAll('[role="menuitemradio"]')].find(
+        (i) => i.textContent?.trim() === "Admin",
+      )!,
+    );
     expect(dialog()?.textContent).toContain("Make Ops User an admin?");
     expect(dialog()?.textContent).toContain("Ops User will be signed out everywhere");
     expect(api.userSetRole).not.toHaveBeenCalled();
@@ -139,9 +167,15 @@ describe("Users actions", () => {
     await openMenu("Ops User");
     await click(menuItem("Change role")!);
     await act(async () => {});
-    await click([...document.querySelectorAll('[role="menuitemradio"]')].find((i) => i.textContent?.trim() === "Viewer")!);
+    await click(
+      [...document.querySelectorAll('[role="menuitemradio"]')].find(
+        (i) => i.textContent?.trim() === "Viewer",
+      )!,
+    );
     await click(btn("Change role", dialog()!)!);
-    expect(alerts(dialog()!)).toEqual(["Couldn't change the role: Cannot demote the last admin user"]);
+    expect(alerts(dialog()!)).toEqual([
+      "Couldn't change the role: Cannot demote the last admin user",
+    ]);
     expect(dialog()).not.toBeNull();
   });
 
@@ -183,7 +217,9 @@ describe("Account states", () => {
 describe("My profile", () => {
   async function openProfile() {
     await render();
-    await click([...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent === "My profile")!);
+    await click(
+      [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent === "My profile")!,
+    );
   }
 
   it("saves only when something changed, sends only the changes and says it saved", async () => {
@@ -211,11 +247,15 @@ describe("My profile", () => {
     await openProfile();
     const name = () => host.querySelector<HTMLInputElement>("#avatar-full-name")!;
     api.me.mockResolvedValue({ ...me, display_name: "Renamed elsewhere" });
-    await act(async () => { await client.invalidateQueries({ queryKey: ["auth", "me"] }); });
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["auth", "me"] });
+    });
     expect(name().value).toBe("Renamed elsewhere");
     await typeInto(name(), "Mine");
     api.me.mockResolvedValue({ ...me, display_name: "Renamed again", username: "new-admin" });
-    await act(async () => { await client.invalidateQueries({ queryKey: ["auth", "me"] }); });
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["auth", "me"] });
+    });
     expect(name().value).toBe("Mine");
     await click(btn("Save profile")!);
     expect(api.userUpdateProfile).toHaveBeenCalledWith("a", { display_name: "Mine" });
@@ -230,7 +270,9 @@ describe("My profile", () => {
     expect(api.userUpdateProfile).toHaveBeenCalledWith("a", { display_name: "Mine" });
     expect(host.textContent).toContain("Profile saved.");
     api.me.mockResolvedValue({ ...me, display_name: "Elsewhere" });
-    await act(async () => { await client.invalidateQueries({ queryKey: ["auth", "me"] }); });
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["auth", "me"] });
+    });
     expect(name().value).toBe("Elsewhere");
   });
 });

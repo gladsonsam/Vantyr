@@ -1,4 +1,8 @@
-import { useFleetPreferences, type FleetStatusFilter, type SavedFleetView } from "@/features/fleet/lib/fleetPreferences";
+import {
+  useFleetPreferences,
+  type FleetStatusFilter,
+  type SavedFleetView,
+} from "@/features/fleet/lib/fleetPreferences";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { Agent, AgentInfo, AgentLiveStatus } from "@/api/types";
 import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
@@ -47,7 +51,11 @@ function osFromInfo(info: AgentInfo | null | undefined): OsKind {
   if (os.includes("windows")) return "windows";
   if (os.includes("darwin") || os.includes("mac")) return "macos";
   if (os.includes("docker")) return "docker";
-  if (/linux|ubuntu|debian|fedora|cent\s?os|red\s?hat|rhel|arch|alpine|suse|mint|rocky|alma|gentoo|kali|manjaro|raspbian/.test(os))
+  if (
+    /linux|ubuntu|debian|fedora|cent\s?os|red\s?hat|rhel|arch|alpine|suse|mint|rocky|alma|gentoo|kali|manjaro|raspbian/.test(
+      os,
+    )
+  )
     return "linux";
   return "unknown";
 }
@@ -73,15 +81,26 @@ export function useFleetTable({
   const enrichment = useFleetSummary(Object.keys(agents), preferenceScope);
   const [powerModal, setPowerModal] = useState<null | { agentId: string }>(null);
   // Bulk-delete selection (admin only; visible when `onDeleteAgents` is provided).
-  const [selection, setSelection] = useState<{ scope: string | null; ids: Set<string> }>({ scope: preferenceScope, ids: new Set() });
-  const selected = useMemo(() => selection.scope === preferenceScope ? selection.ids : new Set<string>(), [selection, preferenceScope]);
-  const setSelected = useCallback((change: Set<string> | ((previous: Set<string>) => Set<string>)) => {
-    setSelection((previous) => {
-      const old = previous.scope === preferenceScope ? previous.ids : new Set<string>();
-      const ids = typeof change === "function" ? change(old) : change;
-      return previous.scope === preferenceScope && ids === old ? previous : { scope: preferenceScope, ids };
-    });
-  }, [preferenceScope]);
+  const [selection, setSelection] = useState<{ scope: string | null; ids: Set<string> }>({
+    scope: preferenceScope,
+    ids: new Set(),
+  });
+  const selected = useMemo(
+    () => (selection.scope === preferenceScope ? selection.ids : new Set<string>()),
+    [selection, preferenceScope],
+  );
+  const setSelected = useCallback(
+    (change: Set<string> | ((previous: Set<string>) => Set<string>)) => {
+      setSelection((previous) => {
+        const old = previous.scope === preferenceScope ? previous.ids : new Set<string>();
+        const ids = typeof change === "function" ? change(old) : change;
+        return previous.scope === preferenceScope && ids === old
+          ? previous
+          : { scope: preferenceScope, ids };
+      });
+    },
+    [preferenceScope],
+  );
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null);
   const deleteInFlight = useRef(false);
   const [fleetSort, setFleetSort] = useFleetSort();
@@ -90,11 +109,22 @@ export function useFleetTable({
 
   const [preferences, updatePreferences] = useFleetPreferences(preferenceScope);
   const favoriteIds = useMemo(() => new Set(preferences.favorites), [preferences.favorites]);
-  const [filters, setFilters] = useState<{ scope: string | null; search: string; status: FleetStatusFilter; view: "grid" | "table"; favoritesOnly: boolean }>({ scope: preferenceScope, search: "", status: "all", view: "grid", favoritesOnly: false });
-  const currentFilters = filters.scope === preferenceScope ? filters : { search: "", status: "all" as const, view: "grid" as const, favoritesOnly: false };
+  const [filters, setFilters] = useState<{
+    scope: string | null;
+    search: string;
+    status: FleetStatusFilter;
+    view: "grid" | "table";
+    favoritesOnly: boolean;
+  }>({ scope: preferenceScope, search: "", status: "all", view: "grid", favoritesOnly: false });
+  const currentFilters =
+    filters.scope === preferenceScope
+      ? filters
+      : { search: "", status: "all" as const, view: "grid" as const, favoritesOnly: false };
   const [interactionScope, setInteractionScope] = useState(preferenceScope);
-  const contextChanged = Boolean(preferenceScope && interactionScope && preferenceScope !== interactionScope);
-  const query = contextChanged ? "" : controlledQuery ?? currentFilters.search;
+  const contextChanged = Boolean(
+    preferenceScope && interactionScope && preferenceScope !== interactionScope,
+  );
+  const query = contextChanged ? "" : (controlledQuery ?? currentFilters.search);
   // The parent-owned query mirrors the scope: notify it after commit, since
   // parent state must not update during render.
   const notifiedScope = useRef(preferenceScope);
@@ -106,19 +136,51 @@ export function useFleetTable({
   }, [preferenceScope, onQueryChange]);
   if (interactionScope !== preferenceScope) {
     setInteractionScope(preferenceScope);
-    setDeleteIds(null); setPowerModal(null); setDeleteError(null);
+    setDeleteIds(null);
+    setPowerModal(null);
+    setDeleteError(null);
   }
   const viewMode = controlledViewMode ?? currentFilters.view;
-  const changeFilters = (change: Partial<Omit<typeof filters, "scope">>) => setFilters((previous) => ({ ...(previous.scope === preferenceScope ? previous : { search: "", status: "all" as const, view: "grid" as const, favoritesOnly: false }), scope: preferenceScope, ...change }));
-  const changeQuery = (value: string) => { changeFilters({ search: value }); onQueryChange?.(value); };
-  const changeView = (value: "grid" | "table") => { changeFilters({ view: value }); onViewModeChange?.(value); };
-  const applyView = (view: SavedFleetView) => {
-    changeFilters({ search: view.search, view: view.view, status: view.status, favoritesOnly: view.favoritesOnly });
-    onQueryChange?.(view.search); onViewModeChange?.(view.view); setFleetSort(view.sort);
+  const changeFilters = (change: Partial<Omit<typeof filters, "scope">>) =>
+    setFilters((previous) => ({
+      ...(previous.scope === preferenceScope
+        ? previous
+        : { search: "", status: "all" as const, view: "grid" as const, favoritesOnly: false }),
+      scope: preferenceScope,
+      ...change,
+    }));
+  const changeQuery = (value: string) => {
+    changeFilters({ search: value });
+    onQueryChange?.(value);
   };
-  const toggleFavorite = (id: string) => updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.includes(id) ? previous.favorites.filter((favorite) => favorite !== id) : [...previous.favorites, id] }));
+  const changeView = (value: "grid" | "table") => {
+    changeFilters({ view: value });
+    onViewModeChange?.(value);
+  };
+  const applyView = (view: SavedFleetView) => {
+    changeFilters({
+      search: view.search,
+      view: view.view,
+      status: view.status,
+      favoritesOnly: view.favoritesOnly,
+    });
+    onQueryChange?.(view.search);
+    onViewModeChange?.(view.view);
+    setFleetSort(view.sort);
+  };
+  const toggleFavorite = (id: string) =>
+    updatePreferences((previous) => ({
+      ...previous,
+      favorites: previous.favorites.includes(id)
+        ? previous.favorites.filter((favorite) => favorite !== id)
+        : [...previous.favorites, id],
+    }));
   useEffect(() => {
-    if (preferences.favorites.some((id) => !agents[id])) updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.filter((id) => Boolean(agents[id])) }));
+    if (preferences.favorites.some((id) => !agents[id]))
+      updatePreferences((previous) => ({
+        ...previous,
+        favorites: previous.favorites.filter((id) => Boolean(agents[id])),
+      }));
   }, [agents, preferences.favorites, updatePreferences]);
 
   useEffect(() => {
@@ -133,7 +195,8 @@ export function useFleetTable({
       const summary = entry?.status === "ready" ? entry.summary : null;
       const info = agentInfo[id] ?? summary?.info ?? null;
       const status = liveStatus[id];
-      const displayName = agent.name?.trim() || info?.config_agent_name?.trim() || info?.hostname?.trim() || id;
+      const displayName =
+        agent.name?.trim() || info?.config_agent_name?.trim() || info?.hostname?.trim() || id;
       const version = agent.agent_version ?? info?.agent_version ?? null;
       const idleSecs =
         status?.activity === "afk"
@@ -142,7 +205,7 @@ export function useFleetTable({
             : status.idleSecs
           : undefined;
       const liveUptimeBase = info?.uptime_secs;
-      const liveUptimeReceivedAt = agentInfo[id] ? agentInfoReceivedAtMs[id] ?? 0 : 0;
+      const liveUptimeReceivedAt = agentInfo[id] ? (agentInfoReceivedAtMs[id] ?? 0) : 0;
       const effectiveUptimeSecs =
         liveUptimeBase == null
           ? undefined
@@ -159,8 +222,14 @@ export function useFleetTable({
 
       const effectiveLiveStatus = {
         ...status,
-        app: status?.app !== undefined || status?.window !== undefined ? status.app : summary?.last_window?.app,
-        window: status?.app !== undefined || status?.window !== undefined ? status.window : summary?.last_window?.title,
+        app:
+          status?.app !== undefined || status?.window !== undefined
+            ? status.app
+            : summary?.last_window?.app,
+        window:
+          status?.app !== undefined || status?.window !== undefined
+            ? status.window
+            : summary?.last_window?.title,
       };
 
       return {
@@ -168,8 +237,11 @@ export function useFleetTable({
         appBlockEnabledCount: blockedApps,
         appBlockExamples: null,
         enrichmentStatus: entry?.status ?? "loading",
-        infoReportedAt: agentInfo[id] ? null : summary?.info_reported_at ?? null,
-        windowReportedAt: status?.app !== undefined || status?.window !== undefined ? null : summary?.last_window?.reported_at ?? null,
+        infoReportedAt: agentInfo[id] ? null : (summary?.info_reported_at ?? null),
+        windowReportedAt:
+          status?.app !== undefined || status?.window !== undefined
+            ? null
+            : (summary?.last_window?.reported_at ?? null),
         displayName,
         effectiveUptimeSecs,
         idleSecs,
@@ -202,9 +274,21 @@ export function useFleetTable({
       if (currentFilters.favoritesOnly && !favoriteIds.has(row.id)) return false;
       if (currentFilters.status === "online" && !row.online) return false;
       if (currentFilters.status === "offline" && row.online) return false;
-      if ((currentFilters.status === "active" || currentFilters.status === "afk") && row.status !== currentFilters.status) return false;
+      if (
+        (currentFilters.status === "active" || currentFilters.status === "afk") &&
+        row.status !== currentFilters.status
+      )
+        return false;
       if (!needle) return true;
-      return [row.displayName, row.id, row.user, row.ip, row.lastWindow, row.liveStatus?.app, row.liveStatus?.url]
+      return [
+        row.displayName,
+        row.id,
+        row.user,
+        row.ip,
+        row.lastWindow,
+        row.liveStatus?.app,
+        row.liveStatus?.url,
+      ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle));
     });
@@ -212,7 +296,9 @@ export function useFleetTable({
     return sortFleet(next, fleetSort);
   }, [query, rows, fleetSort, currentFilters.favoritesOnly, currentFilters.status, favoriteIds]);
 
-  const modalRow = powerModal?.agentId ? (rows.find((row) => row.id === powerModal.agentId) ?? null) : null;
+  const modalRow = powerModal?.agentId
+    ? (rows.find((row) => row.id === powerModal.agentId) ?? null)
+    : null;
 
   const canDelete = typeof onDeleteAgents === "function";
   const selectedIds = useMemo(() => [...selected], [selected]);
@@ -265,7 +351,10 @@ export function useFleetTable({
       await onDeleteAgents(ids);
       const removedIds = new Set(ids);
       setSelected((prev) => new Set([...prev].filter((id) => !removedIds.has(id))));
-      updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.filter((id) => !removedIds.has(id)) }));
+      updatePreferences((previous) => ({
+        ...previous,
+        favorites: previous.favorites.filter((id) => !removedIds.has(id)),
+      }));
       setDeleteIds(null);
       setPowerModal(null);
       onRefresh();

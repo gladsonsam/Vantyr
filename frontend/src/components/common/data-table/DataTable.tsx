@@ -1,7 +1,14 @@
 import { Fragment, type ComponentProps, type ReactNode } from "react";
 import { FlexRender, type Row, type RowData } from "@tanstack/react-table";
 import { Spinner } from "@vantyr/ui/components/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@vantyr/ui/components/table";
 import { cn, fmtDayLabel, parseTimestamp } from "@/lib/utils";
 import { isDayGrouped } from "./dayGroups";
 import type { DataTableFeatures } from "./features";
@@ -56,7 +63,12 @@ export function DataTable<TData extends RowData>({
   const uniform = new Set(
     table
       .getAllLeafColumns()
-      .filter((column) => column.columnDef.meta?.hideWhenUniform && rows.length > 0 && rows.every((row) => row.getValue(column.id) === rows[0].getValue(column.id)))
+      .filter(
+        (column) =>
+          column.columnDef.meta?.hideWhenUniform &&
+          rows.length > 0 &&
+          rows.every((row) => row.getValue(column.id) === rows[0].getValue(column.id)),
+      )
       .map((column) => column.id),
   );
   const dayOf = (row: Row<DataTableFeatures, TData>) => {
@@ -74,8 +86,13 @@ export function DataTable<TData extends RowData>({
               return (
                 <TableHead
                   key={header.id}
-                  className={cn(header.column.columnDef.meta?.headerClassName, uniform.has(header.column.id) && "hidden")}
-                  aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined}
+                  className={cn(
+                    header.column.columnDef.meta?.headerClassName,
+                    uniform.has(header.column.id) && "hidden",
+                  )}
+                  aria-sort={
+                    sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined
+                  }
                 >
                   {header.isPlaceholder ? null : <FlexRender header={header} />}
                 </TableHead>
@@ -100,30 +117,38 @@ export function DataTable<TData extends RowData>({
             const day = grouped ? dayOf(row) : null;
             const previous = grouped && index > 0 ? dayOf(rows[index - 1]) : null;
             return (
-            <Fragment key={row.id}>
-            {day && day.key !== previous?.key && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={columnCount} className="bg-muted/40 py-1.5! text-xs font-medium text-muted-foreground max-sm:basis-full max-sm:-mx-3 max-sm:-my-3 max-sm:px-3! max-sm:py-1.5!">
-                  {day.label}
-                </TableCell>
-              </TableRow>
-            )}
-            <TableRow {...getRowProps?.(row)} className={cn("group/row", getRowProps?.(row)?.className)}>
-              {row.getAllCells().map((cell) => {
-                const meta = cell.column.columnDef.meta;
-                return (
-                  <TableCell
-                    key={cell.id}
-                    data-label={meta?.label || undefined}
-                    className={cn(meta?.className, uniform.has(cell.column.id) && "hidden!")}
-                    onClick={meta?.stopRowClick ? (event) => event.stopPropagation() : undefined}
-                  >
-                    <FlexRender cell={cell} />
-                  </TableCell>
-                );
-              })}
-            </TableRow>
-            </Fragment>
+              <Fragment key={row.id}>
+                {day && day.key !== previous?.key && (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell
+                      colSpan={columnCount}
+                      className="bg-muted/40 py-1.5! text-xs font-medium text-muted-foreground max-sm:basis-full max-sm:-mx-3 max-sm:-my-3 max-sm:px-3! max-sm:py-1.5!"
+                    >
+                      {day.label}
+                    </TableCell>
+                  </TableRow>
+                )}
+                <TableRow
+                  {...getRowProps?.(row)}
+                  className={cn("group/row", getRowProps?.(row)?.className)}
+                >
+                  {row.getAllCells().map((cell) => {
+                    const meta = cell.column.columnDef.meta;
+                    return (
+                      <TableCell
+                        key={cell.id}
+                        data-label={meta?.label || undefined}
+                        className={cn(meta?.className, uniform.has(cell.column.id) && "hidden!")}
+                        onClick={
+                          meta?.stopRowClick ? (event) => event.stopPropagation() : undefined
+                        }
+                      >
+                        <FlexRender cell={cell} />
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              </Fragment>
             );
           })
         )}

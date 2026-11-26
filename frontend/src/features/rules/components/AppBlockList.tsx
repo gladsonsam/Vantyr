@@ -11,7 +11,15 @@ export type AppBlockAction = "history" | "edit" | "delete";
 const MATCH_LABEL = { exact: "Exact name", contains: "Name contains" } as const;
 
 /** One row per app block rule: whether it is on, which app, where it applies and when. */
-export function AppBlockList({ rules, groups, agentsById, contextAgentId, switchesDisabled, onToggle, onAction }: {
+export function AppBlockList({
+  rules,
+  groups,
+  agentsById,
+  contextAgentId,
+  switchesDisabled,
+  onToggle,
+  onAction,
+}: {
   rules: AppBlockRule[];
   groups: AgentGroup[];
   agentsById: Record<string, Agent>;
@@ -39,7 +47,9 @@ export function AppBlockList({ rules, groups, agentsById, contextAgentId, switch
             lead={
               <>
                 <span className="inline-flex min-w-0 items-center gap-1.5">
-                  {contextAgentId && <AppIcon agentId={contextAgentId} exeName={r.exe_pattern} size={16} />}
+                  {contextAgentId && (
+                    <AppIcon agentId={contextAgentId} exeName={r.exe_pattern} size={16} />
+                  )}
                   <span className="min-w-0 break-all font-mono text-xs">{r.exe_pattern}</span>
                 </span>
                 <span className="text-xs">{MATCH_LABEL[r.match_mode] ?? r.match_mode}</span>
@@ -48,7 +58,9 @@ export function AppBlockList({ rules, groups, agentsById, contextAgentId, switch
             state={!r.enabled && "Off, not blocking"}
             facts={
               <>
-                <RuleFact icon={Users} title={scopes.join(", ")}>{scopes.join(", ")}</RuleFact>
+                <RuleFact icon={Users} title={scopes.join(", ")}>
+                  {scopes.join(", ")}
+                </RuleFact>
                 <RuleFact icon={Clock} title={scheduleCaption(r.schedules)}>
                   {when.join(", ")}
                   {scheduled && " · device time"}
@@ -57,13 +69,27 @@ export function AppBlockList({ rules, groups, agentsById, contextAgentId, switch
             }
             actions={
               <>
-                <Button variant="outline" className="pointer-coarse:h-9" aria-label={`Closed-app history for ${title}`} onClick={() => onAction(r, "history")}>
+                <Button
+                  variant="outline"
+                  className="pointer-coarse:h-9"
+                  aria-label={`Closed-app history for ${title}`}
+                  onClick={() => onAction(r, "history")}
+                >
                   <History /> History
                 </Button>
-                <Button variant="ghost" className="pointer-coarse:h-9" aria-label={`Edit ${title}`} onClick={() => onAction(r, "edit")}>
+                <Button
+                  variant="ghost"
+                  className="pointer-coarse:h-9"
+                  aria-label={`Edit ${title}`}
+                  onClick={() => onAction(r, "edit")}
+                >
                   <Pencil /> Edit
                 </Button>
-                <RuleDeleteMenu title={title} deleteLabel="Delete rule…" onDelete={() => onAction(r, "delete")} />
+                <RuleDeleteMenu
+                  title={title}
+                  deleteLabel="Delete rule…"
+                  onDelete={() => onAction(r, "delete")}
+                />
               </>
             }
           />

@@ -28,7 +28,10 @@ export function toLastRuns(data: { rows: ScheduledScriptEvent[] }): LastRuns {
  * script is never shown as never having run just because its results didn't load.
  */
 export function useScheduledScriptRuns() {
-  const query = useQuery({ ...ruleQueries.scheduledScriptEventsAll(EVENTS_PAGE), select: toLastRuns });
+  const query = useQuery({
+    ...ruleQueries.scheduledScriptEventsAll(EVENTS_PAGE),
+    select: toLastRuns,
+  });
   return {
     lastRuns: query.data ?? NO_RUNS,
     failed: query.isError && !query.data,

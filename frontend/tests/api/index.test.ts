@@ -1,5 +1,11 @@
-import { describe, it, expect } from "vitest";
-import { ApiError, isApiError, errorText, historyRangeQuery, historySearchQuery } from "@/api/index";
+import { describe, it, expect } from "bun:test";
+import {
+  ApiError,
+  isApiError,
+  errorText,
+  historyRangeQuery,
+  historySearchQuery,
+} from "@/api/index";
 
 describe("ApiError", () => {
   it("isApiError narrows only genuine ApiError instances", () => {
@@ -22,7 +28,15 @@ describe("errorText", () => {
 
 describe("Recall query encoding", () => {
   it("preserves display zero and safely encodes continuation filters", () => {
-    const params = new URLSearchParams(historyRangeQuery({ monitor: 0, cursor: "opaque+/=", scope: "retained", sort: "newest", limit: 100 }));
+    const params = new URLSearchParams(
+      historyRangeQuery({
+        monitor: 0,
+        cursor: "opaque+/=",
+        scope: "retained",
+        sort: "newest",
+        limit: 100,
+      }),
+    );
     expect(params.get("monitor")).toBe("0");
     expect(params.get("cursor")).toBe("opaque+/=");
     expect(params.get("scope")).toBe("retained");
@@ -31,8 +45,25 @@ describe("Recall query encoding", () => {
   });
 });
 
-it("encodes literal context filters and explicit clears without changing default OCR search",()=>{
-  const legacy=new URLSearchParams(historySearchQuery("needle",{monitor:0}));expect(legacy.get("q")).toBe("needle");expect(legacy.has("context")).toBe(false);
-  const params=new URLSearchParams(historySearchQuery("",{app:"editor_%\\.exe",app_mode:"prefix",title:"<img> %_ +&",url_host:null,context:"known",sort:"newest",cursor:"opaque+/="}));
-  expect(params.get("app")).toBe("editor_%\\.exe");expect(params.get("app_mode")).toBe("prefix");expect(params.get("title")).toBe("<img> %_ +&");expect(params.get("url_host")).toBe("");expect(params.get("context")).toBe("known");expect(params.get("cursor")).toBe("opaque+/=");
+it("encodes literal context filters and explicit clears without changing default OCR search", () => {
+  const legacy = new URLSearchParams(historySearchQuery("needle", { monitor: 0 }));
+  expect(legacy.get("q")).toBe("needle");
+  expect(legacy.has("context")).toBe(false);
+  const params = new URLSearchParams(
+    historySearchQuery("", {
+      app: "editor_%\\.exe",
+      app_mode: "prefix",
+      title: "<img> %_ +&",
+      url_host: null,
+      context: "known",
+      sort: "newest",
+      cursor: "opaque+/=",
+    }),
+  );
+  expect(params.get("app")).toBe("editor_%\\.exe");
+  expect(params.get("app_mode")).toBe("prefix");
+  expect(params.get("title")).toBe("<img> %_ +&");
+  expect(params.get("url_host")).toBe("");
+  expect(params.get("context")).toBe("known");
+  expect(params.get("cursor")).toBe("opaque+/=");
 });

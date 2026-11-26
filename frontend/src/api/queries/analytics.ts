@@ -18,10 +18,12 @@ function rangeWindow(range: AnalyticsRange): { from: string; to: string } {
 
 export const analyticsKeys = {
   agent: (id: string) => [...agentKeys.agent(id), "analytics"] as const,
-  categories: (id: string, range: AnalyticsRange) => [...analyticsKeys.agent(id), "categories", range] as const,
+  categories: (id: string, range: AnalyticsRange) =>
+    [...analyticsKeys.agent(id), "categories", range] as const,
   sites: (id: string, range: AnalyticsRange, customCategoryKey: string | null) =>
     [...analyticsKeys.agent(id), "sites", range, customCategoryKey] as const,
-  sessions: (id: string, range: AnalyticsRange) => [...analyticsKeys.agent(id), "sessions", range] as const,
+  sessions: (id: string, range: AnalyticsRange) =>
+    [...analyticsKeys.agent(id), "sessions", range] as const,
 };
 
 export const analyticsQueries = {
@@ -34,7 +36,11 @@ export const analyticsQueries = {
     queryOptions({
       queryKey: analyticsKeys.sites(id, range, customCategoryKey),
       queryFn: () =>
-        api.agentAnalyticsUrlSites(id, { ...rangeWindow(range), limit: 25, custom_category_key: customCategoryKey ?? undefined }),
+        api.agentAnalyticsUrlSites(id, {
+          ...rangeWindow(range),
+          limit: 25,
+          custom_category_key: customCategoryKey ?? undefined,
+        }),
     }),
   sessions: (id: string, range: AnalyticsRange) =>
     queryOptions({

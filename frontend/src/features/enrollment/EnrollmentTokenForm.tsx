@@ -40,7 +40,11 @@ function optionsSummary(values: Partial<EnrollmentTokenValues>): string {
   return `${uses} · expires in ${body.expires_in_hours ? `${body.expires_in_hours}h` : "10 min"}`;
 }
 
-export function EnrollmentTokenForm({ layout, onGenerate, extra }: {
+export function EnrollmentTokenForm({
+  layout,
+  onGenerate,
+  extra,
+}: {
   layout: keyof typeof LAYOUTS;
   onGenerate: (body: EnrollmentTokenBody) => Promise<void>;
   extra?: ReactNode;
@@ -78,8 +82,21 @@ export function EnrollmentTokenForm({ layout, onGenerate, extra }: {
             description="Devices that can join with it."
           />
           {/* Empty sends no expiry and the server applies its 10-minute default. */}
-          <InputField control={control} name="expire_hours" id="enroll-expire" label="Expires in (hours)" placeholder="10 minutes" className={l.input} />
-          <InputField control={control} name="note" id="enroll-note" label="Note (optional)" className={l.input} />
+          <InputField
+            control={control}
+            name="expire_hours"
+            id="enroll-expire"
+            label="Expires in (hours)"
+            placeholder="10 minutes"
+            className={l.input}
+          />
+          <InputField
+            control={control}
+            name="note"
+            id="enroll-note"
+            label="Note (optional)"
+            className={l.input}
+          />
         </div>
       )}
       <div className={l.buttons}>
@@ -98,7 +115,9 @@ export function EnrollmentTokenForm({ layout, onGenerate, extra }: {
             onClick={() => setOptionsOpen((open) => !open)}
           >
             Options
-            {!showOptions && <span className="font-normal text-muted-foreground/70">{summary}</span>}
+            {!showOptions && (
+              <span className="font-normal text-muted-foreground/70">{summary}</span>
+            )}
             <ChevronDown className={cn("transition-transform", showOptions && "rotate-180")} />
           </Button>
         )}

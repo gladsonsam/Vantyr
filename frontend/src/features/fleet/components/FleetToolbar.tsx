@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDownUp, Bookmark, BookmarkPlus, LayoutGrid, List, Search, Star, Trash2, X } from "lucide-react";
+import {
+  ArrowDownUp,
+  Bookmark,
+  BookmarkPlus,
+  LayoutGrid,
+  List,
+  Search,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import {
   Dialog,
@@ -25,11 +35,20 @@ import {
 } from "@vantyr/ui/components/dropdown-menu";
 import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
 import { Input } from "@vantyr/ui/components/input";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@vantyr/ui/components/input-group";
 import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { Toggle } from "@vantyr/ui/components/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
-import type { FleetPreferences, FleetStatusFilter, SavedFleetView } from "@/features/fleet/lib/fleetPreferences";
+import type {
+  FleetPreferences,
+  FleetStatusFilter,
+  SavedFleetView,
+} from "@/features/fleet/lib/fleetPreferences";
 import { DEFAULT_FLEET_SORT, type FleetSort } from "@/features/fleet/lib/fleetSort";
 
 const SORT_LABELS: Record<FleetSort["key"], string> = {
@@ -42,7 +61,8 @@ const SORT_LABELS: Record<FleetSort["key"], string> = {
 
 function directionLabel(key: FleetSort["key"], direction: FleetSort["direction"]) {
   if (key === "connectivity") return direction === "asc" ? "Online first" : "Offline first";
-  if (key === "last_seen" || key === "first_seen") return direction === "asc" ? "Oldest first" : "Newest first";
+  if (key === "last_seen" || key === "first_seen")
+    return direction === "asc" ? "Oldest first" : "Newest first";
   if (key === "agent_version") return direction === "asc" ? "Lowest first" : "Highest first";
   return direction === "asc" ? "A–Z" : "Z–A";
 }
@@ -73,29 +93,60 @@ const STATUS_TABS: { value: FleetStatusFilter; label: string }[] = [
   { value: "offline", label: "Offline" },
 ];
 
-export function FleetToolbar({ current, counts, preferences, ready, onSearch, onStatus, onView, onSort, onFavoritesOnly, onApply, onSave, onRemove, onClear }: Props) {
+export function FleetToolbar({
+  current,
+  counts,
+  preferences,
+  ready,
+  onSearch,
+  onStatus,
+  onView,
+  onSort,
+  onFavoritesOnly,
+  onApply,
+  onSave,
+  onRemove,
+  onClear,
+}: Props) {
   const [saveOpen, setSaveOpen] = useState(false);
   const [name, setName] = useState("");
   const tabsScroller = useRef<HTMLDivElement>(null);
-  const filtered = Boolean(current.search.trim() || current.status !== "all" || current.favoritesOnly);
+  const filtered = Boolean(
+    current.search.trim() || current.status !== "all" || current.favoritesOnly,
+  );
   const trimmed = name.trim();
-  const full = preferences.views.length >= 20 && !preferences.views.some((view) => view.name === trimmed);
+  const full =
+    preferences.views.length >= 20 && !preferences.views.some((view) => view.name === trimmed);
   const canSave = ready && Boolean(trimmed) && !full && current.search.length <= 512;
 
   useEffect(() => {
-    tabsScroller.current?.querySelector<HTMLElement>("[data-active]")?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    tabsScroller.current
+      ?.querySelector<HTMLElement>("[data-active]")
+      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [current.status]);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-end gap-4 border-b border-foreground/[0.06]">
-        <div ref={tabsScroller} className="-mb-px min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] max-sm:[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [&::-webkit-scrollbar]:hidden">
-          <Tabs value={current.status} onValueChange={(value) => onStatus(value as FleetStatusFilter)}>
+        <div
+          ref={tabsScroller}
+          className="-mb-px min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] max-sm:[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [&::-webkit-scrollbar]:hidden"
+        >
+          <Tabs
+            value={current.status}
+            onValueChange={(value) => onStatus(value as FleetStatusFilter)}
+          >
             <TabsList variant="line" aria-label="Device status" className="h-11! w-max gap-2 p-0">
               {STATUS_TABS.map((tab) => (
-                <TabsTrigger key={tab.value} value={tab.value} className="h-full! flex-none gap-2 px-2.5 after:bottom-0!">
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className="h-full! flex-none gap-2 px-2.5 after:bottom-0!"
+                >
                   {tab.label}
-                  <span className="text-xs text-muted-foreground tabular-nums">{counts[tab.value]}</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {counts[tab.value]}
+                  </span>
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -115,10 +166,18 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
               if (next) onView(next);
             }}
           >
-            <ToggleGroupItem value="grid" aria-label="Grid view" className="rounded-md! aria-pressed:bg-background">
+            <ToggleGroupItem
+              value="grid"
+              aria-label="Grid view"
+              className="rounded-md! aria-pressed:bg-background"
+            >
               <LayoutGrid />
             </ToggleGroupItem>
-            <ToggleGroupItem value="table" aria-label="List view" className="rounded-md! aria-pressed:bg-background">
+            <ToggleGroupItem
+              value="table"
+              aria-label="List view"
+              className="rounded-md! aria-pressed:bg-background"
+            >
               <List />
             </ToggleGroupItem>
           </ToggleGroup>
@@ -138,7 +197,11 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
           />
           {current.search && (
             <InputGroupAddon align="inline-end">
-              <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => onSearch("")}>
+              <InputGroupButton
+                size="icon-xs"
+                aria-label="Clear search"
+                onClick={() => onSearch("")}
+              >
                 <X />
               </InputGroupButton>
             </InputGroupAddon>
@@ -147,7 +210,13 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
 
         <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:shrink-0">
           {filtered && (
-            <Button variant="ghost" size="default" aria-label="Clear filters" title="Clear filters" onClick={onClear}>
+            <Button
+              variant="ghost"
+              size="default"
+              aria-label="Clear filters"
+              title="Clear filters"
+              onClick={onClear}
+            >
               <X />
               <span className="hidden sm:inline">Clear filters</span>
             </Button>
@@ -167,14 +236,31 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
           </Toggle>
 
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="default" aria-label="Sort devices" title="Sort devices" />}>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="default"
+                  aria-label="Sort devices"
+                  title="Sort devices"
+                />
+              }
+            >
               <ArrowDownUp />
-              <span className="hidden sm:inline">{current.sort.key === DEFAULT_FLEET_SORT.key && current.sort.direction === DEFAULT_FLEET_SORT.direction ? "Sort" : SORT_LABELS[current.sort.key]}</span>
+              <span className="hidden sm:inline">
+                {current.sort.key === DEFAULT_FLEET_SORT.key &&
+                current.sort.direction === DEFAULT_FLEET_SORT.direction
+                  ? "Sort"
+                  : SORT_LABELS[current.sort.key]}
+              </span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Sort by</DropdownMenuLabel>
-                <DropdownMenuRadioGroup value={current.sort.key} onValueChange={(key) => onSort({ ...current.sort, key: key as FleetSort["key"] })}>
+                <DropdownMenuRadioGroup
+                  value={current.sort.key}
+                  onValueChange={(key) => onSort({ ...current.sort, key: key as FleetSort["key"] })}
+                >
                   {(Object.keys(SORT_LABELS) as FleetSort["key"][]).map((key) => (
                     <DropdownMenuRadioItem key={key} value={key}>
                       {SORT_LABELS[key]}
@@ -187,7 +273,9 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
                 <DropdownMenuLabel>Order</DropdownMenuLabel>
                 <DropdownMenuRadioGroup
                   value={current.sort.direction}
-                  onValueChange={(direction) => onSort({ ...current.sort, direction: direction as FleetSort["direction"] })}
+                  onValueChange={(direction) =>
+                    onSort({ ...current.sort, direction: direction as FleetSort["direction"] })
+                  }
                 >
                   {(["asc", "desc"] as const).map((direction) => (
                     <DropdownMenuRadioItem key={direction} value={direction}>
@@ -200,7 +288,17 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
           </DropdownMenu>
 
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="default" title="Saved views" aria-label="Views" disabled={!ready} />}>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="default"
+                  title="Saved views"
+                  aria-label="Views"
+                  disabled={!ready}
+                />
+              }
+            >
               <Bookmark />
               <span className="hidden sm:inline">Views</span>
             </DropdownMenuTrigger>
@@ -208,7 +306,9 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Saved views</DropdownMenuLabel>
                 {preferences.views.length === 0 ? (
-                  <div className="px-1.5 py-1 text-xs text-muted-foreground">No saved views yet.</div>
+                  <div className="px-1.5 py-1 text-xs text-muted-foreground">
+                    No saved views yet.
+                  </div>
                 ) : (
                   preferences.views.map((view) => (
                     <DropdownMenuItem key={view.name} onClick={() => onApply(view)}>
@@ -228,7 +328,11 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     {preferences.views.map((view) => (
-                      <DropdownMenuItem key={view.name} variant="destructive" onClick={() => onRemove(view.name)}>
+                      <DropdownMenuItem
+                        key={view.name}
+                        variant="destructive"
+                        onClick={() => onRemove(view.name)}
+                      >
                         {view.name}
                       </DropdownMenuItem>
                     ))}
@@ -254,12 +358,24 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
           >
             <DialogHeader>
               <DialogTitle>Save view</DialogTitle>
-              <DialogDescription>Saves the current search, status, favorites, sort and layout.</DialogDescription>
+              <DialogDescription>
+                Saves the current search, status, favorites, sort and layout.
+              </DialogDescription>
             </DialogHeader>
             <Field>
               <FieldLabel htmlFor="fleet-view-name">View name</FieldLabel>
-              <Input id="fleet-view-name" autoFocus maxLength={80} value={name} onChange={(event) => setName(event.target.value)} />
-              <FieldDescription>{full ? "You already have 20 views. Remove one first." : "Saving an existing name replaces that view."}</FieldDescription>
+              <Input
+                id="fleet-view-name"
+                autoFocus
+                maxLength={80}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+              <FieldDescription>
+                {full
+                  ? "You already have 20 views. Remove one first."
+                  : "Saving an existing name replaces that view."}
+              </FieldDescription>
             </Field>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setSaveOpen(false)}>

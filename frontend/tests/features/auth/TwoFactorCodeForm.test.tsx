@@ -1,6 +1,14 @@
-// @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { buttonByText, byLabel, click, fieldErrors, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, describe, expect, it } from "bun:test";
+import {
+  buttonByText,
+  byLabel,
+  click,
+  fieldErrors,
+  mountForm,
+  typeInto,
+  unmountForms,
+} from "@tests/support/formDom";
 import { TwoFactorCodeForm } from "@/features/auth/TwoFactorCodeForm";
 import { disableCodeSchema, enrollCodeSchema } from "@/features/auth/twoFactorSchemas";
 
@@ -19,7 +27,14 @@ describe("TwoFactorCodeForm", () => {
   it("keeps the button disabled until the code is acceptable, then submits it trimmed", async () => {
     const onSubmit = vi.fn();
     await mountForm(
-      <TwoFactorCodeForm schema={enrollCodeSchema} id="code" label="Code" submitLabel="Enable 2FA" busy={false} onSubmit={onSubmit} />,
+      <TwoFactorCodeForm
+        schema={enrollCodeSchema}
+        id="code"
+        label="Code"
+        submitLabel="Enable 2FA"
+        busy={false}
+        onSubmit={onSubmit}
+      />,
     );
     expect(buttonByText("Enable 2FA").disabled).toBe(true);
     await typeInto(byLabel("Code"), "12345");
@@ -32,7 +47,14 @@ describe("TwoFactorCodeForm", () => {
 
   it("disables everything while busy", async () => {
     await mountForm(
-      <TwoFactorCodeForm schema={disableCodeSchema} id="code" label="Code" submitLabel="Disable 2FA" busy onSubmit={vi.fn()} />,
+      <TwoFactorCodeForm
+        schema={disableCodeSchema}
+        id="code"
+        label="Code"
+        submitLabel="Disable 2FA"
+        busy
+        onSubmit={vi.fn()}
+      />,
     );
     expect(byLabel("Code").disabled).toBe(true);
     expect(buttonByText("Disable 2FA").disabled).toBe(true);

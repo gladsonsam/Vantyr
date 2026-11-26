@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import type { Session, SessionAlertEvent } from "@/features/activity/sessionAggregator";
 import {
   buildMergedActivityTimeline,
@@ -82,7 +82,15 @@ describe("sessionMatchesSearch", () => {
     end: BASE + 1000,
     user: "CORP\\alice",
     urls: [{ id: 1, url: "https://docs.rs/tokio", browser: "Chrome", timestamp: iso(BASE) }],
-    keystrokes: [{ id: 2, window_title: "Notes", exe_name: "notepad.exe", keys: "hello world", timestamp: iso(BASE) }],
+    keystrokes: [
+      {
+        id: 2,
+        window_title: "Notes",
+        exe_name: "notepad.exe",
+        keys: "hello world",
+        timestamp: iso(BASE),
+      },
+    ],
     alertEvents: [alert(3, BASE, { rule_name: "Gambling", snippet: "casino" })],
   });
 
@@ -127,7 +135,10 @@ describe("mergeAlertEvents", () => {
   });
 
   it("dedupes by id and sorts chronologically", () => {
-    const merged = mergeAlertEvents([alert(2, BASE + 2000), alert(1, BASE)], [alert(2, BASE + 2000), alert(3, BASE + 1000)]);
+    const merged = mergeAlertEvents(
+      [alert(2, BASE + 2000), alert(1, BASE)],
+      [alert(2, BASE + 2000), alert(3, BASE + 1000)],
+    );
     expect(merged?.map((a) => a.id)).toEqual([1, 3, 2]);
   });
 });
@@ -177,15 +188,35 @@ describe("mergeAdjacentByApp", () => {
 
 describe("dedupeWindowsByTimestampAndTitle", () => {
   it("drops repeats of the same title at the same instant", () => {
-    const w = (id: number, title: string, ms: number) => ({ id, window_title: title, exe_name: "x.exe", timestamp: iso(ms) });
-    const out = dedupeWindowsByTimestampAndTitle([w(1, "A", BASE), w(2, "A", BASE), w(3, "B", BASE), w(4, "A", BASE + 1)]);
+    const w = (id: number, title: string, ms: number) => ({
+      id,
+      window_title: title,
+      exe_name: "x.exe",
+      timestamp: iso(ms),
+    });
+    const out = dedupeWindowsByTimestampAndTitle([
+      w(1, "A", BASE),
+      w(2, "A", BASE),
+      w(3, "B", BASE),
+      w(4, "A", BASE + 1),
+    ]);
     expect(out.map((x) => x.id)).toEqual([1, 3, 4]);
   });
 });
 
 describe("buildMergedActivityTimeline", () => {
-  const w = (id: number, title: string, ms: number) => ({ id, window_title: title, exe_name: "chrome.exe", timestamp: iso(ms) });
-  const u = (id: number, url: string, ms: number) => ({ id, url, browser: "Chrome", timestamp: iso(ms) });
+  const w = (id: number, title: string, ms: number) => ({
+    id,
+    window_title: title,
+    exe_name: "chrome.exe",
+    timestamp: iso(ms),
+  });
+  const u = (id: number, url: string, ms: number) => ({
+    id,
+    url,
+    browser: "Chrome",
+    timestamp: iso(ms),
+  });
 
   it("orders rows newest first and skips untitled windows", () => {
     const rows = buildMergedActivityTimeline(
@@ -264,11 +295,22 @@ describe("filterTimelineSessions", () => {
   });
 
   it("applies alerts-only, app, search and day filters", () => {
-    expect(apps(filterTimelineSessions(sessions, { ...none, alertsOnly: true }))).toEqual(["chrome.exe"]);
-    expect(apps(filterTimelineSessions(sessions, { ...none, app: "code.EXE" }))).toEqual(["Code.exe"]);
-    expect(apps(filterTimelineSessions(sessions, { ...none, query: "notes" }))).toEqual(["Code.exe"]);
+    expect(apps(filterTimelineSessions(sessions, { ...none, alertsOnly: true }))).toEqual([
+      "chrome.exe",
+    ]);
+    expect(apps(filterTimelineSessions(sessions, { ...none, app: "code.EXE" }))).toEqual([
+      "Code.exe",
+    ]);
+    expect(apps(filterTimelineSessions(sessions, { ...none, query: "notes" }))).toEqual([
+      "Code.exe",
+    ]);
     expect(
-      apps(filterTimelineSessions(sessions, { ...none, days: { start: "2026-01-15", end: "2026-01-20" } })),
+      apps(
+        filterTimelineSessions(sessions, {
+          ...none,
+          days: { start: "2026-01-15", end: "2026-01-20" },
+        }),
+      ),
     ).toEqual(["chrome.exe"]);
   });
 });

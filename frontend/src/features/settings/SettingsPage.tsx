@@ -26,8 +26,16 @@ const NO_CLAIMS: PendingAgentClaim[] = [];
 /** The sections, in tab order; `hint` says what is inside so nobody opens each one to find out. */
 const SECTIONS = [
   { id: "agents", label: "Agents", hint: "Enroll new devices and approve the ones waiting." },
-  { id: "data", label: "Data", hint: "How long data is kept, screen capture defaults and website categories." },
-  { id: "alerts", label: "Alerts", hint: "Where alert matches are sent, and notifications on this browser." },
+  {
+    id: "data",
+    label: "Data",
+    hint: "How long data is kept, screen capture defaults and website categories.",
+  },
+  {
+    id: "alerts",
+    label: "Alerts",
+    hint: "Where alert matches are sent, and notifications on this browser.",
+  },
   { id: "system", label: "System", hint: "Version, updates and storage." },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -72,17 +80,22 @@ export function SettingsPage() {
   const releaseQuery = useQuery(settingsQueries.releaseCheck());
   // A failed forced re-check keeps the last known release on screen (the query keeps its data).
   const checkGithubRelease = () =>
-    void queryClient.fetchQuery(settingsQueries.releaseCheck(true)).then(() => undefined, () => undefined);
+    void queryClient.fetchQuery(settingsQueries.releaseCheck(true)).then(
+      () => undefined,
+      () => undefined,
+    );
 
   // ── URL categorization (admin) ────────────────────────────────────────────
   const urlCat = useUrlCategorization(isAdmin);
 
   // ── Enrollment (admin) ────────────────────────────────────────────────────
   const tokensQuery = useQuery({ ...enrollmentQueries.tokens(), enabled: isAdmin });
-  const enrollTokens = tokensQuery.isError ? NO_TOKENS : tokensQuery.data?.tokens ?? NO_TOKENS;
+  const enrollTokens = tokensQuery.isError ? NO_TOKENS : (tokensQuery.data?.tokens ?? NO_TOKENS);
   const enrollTokensLoading = tokensQuery.isFetching;
   // `undefined` shows the list's own load error; the token actions report theirs here.
-  const [enrollTokensActionError, setEnrollTokensError] = useState<string | null | undefined>(undefined);
+  const [enrollTokensActionError, setEnrollTokensError] = useState<string | null | undefined>(
+    undefined,
+  );
   const enrollTokensError = enrollmentError(enrollTokensActionError, tokensQuery.error);
   const loadEnrollmentTokens = async () => {
     if (!isAdmin) return;
@@ -91,7 +104,9 @@ export function SettingsPage() {
   };
 
   const claimsQuery = useQuery({ ...enrollmentQueries.claims(), enabled: isAdmin });
-  const enrollClaims: PendingAgentClaim[] = claimsQuery.isError ? NO_CLAIMS : claimsQuery.data?.claims ?? NO_CLAIMS;
+  const enrollClaims: PendingAgentClaim[] = claimsQuery.isError
+    ? NO_CLAIMS
+    : (claimsQuery.data?.claims ?? NO_CLAIMS);
   const enrollClaimsLoading = claimsQuery.isFetching;
   const loadEnrollmentClaims = async () => {
     if (!isAdmin) return;
@@ -111,7 +126,11 @@ export function SettingsPage() {
   };
 
   return (
-    <Tabs value={section} onValueChange={(next) => setParams({ section: String(next) }, { replace: true })} className="gap-4">
+    <Tabs
+      value={section}
+      onValueChange={(next) => setParams({ section: String(next) }, { replace: true })}
+      className="gap-4"
+    >
       <TabsList aria-label="Settings sections">
         {SECTIONS.map(({ id, label }) => (
           <TabsTrigger key={id} value={id}>
@@ -140,8 +159,12 @@ export function SettingsPage() {
           setEnrollTokensError={setEnrollTokensError}
           loadEnrollmentTokens={loadEnrollmentTokens}
           onGenerateToken={(body) => api.createAgentEnrollmentToken(body)}
-          onRevokeToken={async (id) => { await api.revokeAgentEnrollmentToken(id); }}
-          onRevokeAllTokens={async () => { await api.revokeAllAgentEnrollmentTokens(); }}
+          onRevokeToken={async (id) => {
+            await api.revokeAgentEnrollmentToken(id);
+          }}
+          onRevokeAllTokens={async () => {
+            await api.revokeAllAgentEnrollmentTokens();
+          }}
           onListTokenUses={(id) => api.listAgentEnrollmentTokenUses(id).then((r) => r.uses ?? [])}
         />
         <SecuritySettings />
@@ -190,6 +213,9 @@ export function SettingsPage() {
   );
 }
 
-function enrollmentError(actionError: string | null | undefined, loadError: unknown): string | null {
+function enrollmentError(
+  actionError: string | null | undefined,
+  loadError: unknown,
+): string | null {
   return actionError !== undefined ? actionError : loadError ? messageOf(loadError) : null;
 }

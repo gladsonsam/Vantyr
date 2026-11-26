@@ -1,9 +1,27 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import type { DashboardUser } from "@/api/types";
-import { createdOn, deleteBlock, directorySummary, filterUsers, roleChangeBlock, roleChangeConsequence, userLabel } from "@/features/users/userDirectory";
+import {
+  createdOn,
+  deleteBlock,
+  directorySummary,
+  filterUsers,
+  roleChangeBlock,
+  roleChangeConsequence,
+  userLabel,
+} from "@/features/users/userDirectory";
 
-const user = (id: string, username: string, role: DashboardUser["role"], display_name = ""): DashboardUser => ({
-  id, username, role, display_name, display_icon: null, created_at: "2026-01-01T00:00:00Z",
+const user = (
+  id: string,
+  username: string,
+  role: DashboardUser["role"],
+  display_name = "",
+): DashboardUser => ({
+  id,
+  username,
+  role,
+  display_name,
+  display_icon: null,
+  created_at: "2026-01-01T00:00:00Z",
 });
 const admin = user("a", "root", "admin", "Root Admin");
 const second = user("b", "second", "admin");
@@ -72,7 +90,9 @@ describe("createdOn", () => {
 
 describe("roleChangeConsequence", () => {
   it("says the person is signed out, and warns when you demote yourself", () => {
-    expect(roleChangeConsequence(op, "admin", false).join(" ")).toContain("Ops User will be signed out everywhere");
+    expect(roleChangeConsequence(op, "admin", false).join(" ")).toContain(
+      "Ops User will be signed out everywhere",
+    );
     const self = roleChangeConsequence(admin, "viewer", true).join(" ");
     expect(self).toContain("You will be signed out");
     expect(self).toContain("no longer be able to manage users");

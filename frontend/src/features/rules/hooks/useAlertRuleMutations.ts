@@ -10,7 +10,13 @@ import { channelLabel, ruleTitle } from "../lib/alertRuleSummary";
  * The three changes the alert rule list makes. A refused switch change is kept as `actionError`; a refused save or
  * delete stays on its mutation so the dialog that asked for it can show it. `saved` is what last succeeded.
  */
-export function useAlertRuleMutations({ onSaved, onDeleted }: { onSaved: () => void; onDeleted: () => void }) {
+export function useAlertRuleMutations({
+  onSaved,
+  onDeleted,
+}: {
+  onSaved: () => void;
+  onDeleted: () => void;
+}) {
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -39,7 +45,10 @@ export function useAlertRuleMutations({ onSaved, onDeleted }: { onSaved: () => v
         })),
       }),
     onSuccess: () => refreshRules(),
-    onError: (e, r) => setActionError(`Couldn’t turn ${r.enabled ? "off" : "on"} “${ruleTitle(r)}”: ${errorText(e)}`),
+    onError: (e, r) =>
+      setActionError(
+        `Couldn’t turn ${r.enabled ? "off" : "on"} “${ruleTitle(r)}”: ${errorText(e)}`,
+      ),
   });
 
   const save = useMutation({
@@ -49,7 +58,9 @@ export function useAlertRuleMutations({ onSaved, onDeleted }: { onSaved: () => v
     },
     onSuccess: async (_data, { id, body }) => {
       onSaved();
-      setSaved(`${id === null ? "Created" : "Saved"} “${body.name || body.pattern || channelLabel(body.channel)}”.`);
+      setSaved(
+        `${id === null ? "Created" : "Saved"} “${body.name || body.pattern || channelLabel(body.channel)}”.`,
+      );
       await refreshRules();
     },
   });

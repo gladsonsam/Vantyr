@@ -41,25 +41,16 @@ export function RecallPage() {
     key: location.key,
   }));
   // `?agent=` seeds the selection, so a link can point at a specific machine.
-  const [agentId, setAgentId] = useState<string | null>(() =>
-    searchParams.get("agent"),
-  );
-  const {
-    syncTimerRef,
-    writtenSearch,
-    clearWrittenSearch,
-    syncUrl,
-    syncSearch,
-  } = useRecallUrlWriters({ restored, location, agentId, setSearchParams });
+  const [agentId, setAgentId] = useState<string | null>(() => searchParams.get("agent"));
+  const { syncTimerRef, writtenSearch, clearWrittenSearch, syncUrl, syncSearch } =
+    useRecallUrlWriters({ restored, location, agentId, setSearchParams });
 
   // Agents that actually have recall history — the full fleet list would mostly be
   // devices with nothing to replay.
-  const { loadingAgents, error, agentsWithHistory, agents } =
-    useRecallAgentOptions();
+  const { loadingAgents, error, agentsWithHistory, agents } = useRecallAgentOptions();
   // Default to an online, recently seen agent. The functional update keeps an
   // explicit user pick.
-  const [prevAgentsForDefault, setPrevAgentsForDefault] =
-    useState(agentsWithHistory);
+  const [prevAgentsForDefault, setPrevAgentsForDefault] = useState(agentsWithHistory);
   if (prevAgentsForDefault !== agentsWithHistory && agentsWithHistory) {
     setPrevAgentsForDefault(agentsWithHistory);
     const first = pickDefaultAgentId(agentsWithHistory);
@@ -72,10 +63,7 @@ export function RecallPage() {
     key: location.key,
     search: location.search,
   });
-  if (
-    lastLocation.key !== location.key ||
-    lastLocation.search !== location.search
-  ) {
+  if (lastLocation.key !== location.key || lastLocation.search !== location.search) {
     setLastLocation({ key: location.key, search: location.search });
     if (writtenSearch === location.search) clearWrittenSearch();
     else {
@@ -95,8 +83,7 @@ export function RecallPage() {
     [agents, agentId],
   );
 
-  const unavailableAgent =
-    !!agentId && !loadingAgents && !error && !selectedAgent;
+  const unavailableAgent = !!agentId && !loadingAgents && !error && !selectedAgent;
 
   const picker = (
     <RecallAgentPicker
@@ -122,12 +109,8 @@ export function RecallPage() {
         </Alert>
       )}
       {unavailableAgent && (
-        <div
-          role="status"
-          className="text-sm text-muted-foreground [overflow-wrap:anywhere]"
-        >
-          Linked agent “{agentId}” is unavailable or has no recorded Recall
-          history.
+        <div role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">
+          Linked agent “{agentId}” is unavailable or has no recorded Recall history.
           {agents.length > 0
             ? " Choose an agent with history from the picker."
             : " No agents with Recall history are currently available."}
@@ -260,13 +243,8 @@ function RecallAgentPicker({
         onValueChange={onChange}
         disabled={loadingAgents || agents.length === 0}
       >
-        <SelectTrigger
-          className="h-9 w-full"
-          aria-label="Agent with screen history"
-        >
-          <SelectValue
-            placeholder={loadingAgents ? "Loading agents…" : "Choose an agent"}
-          />
+        <SelectTrigger className="h-9 w-full" aria-label="Agent with screen history">
+          <SelectValue placeholder={loadingAgents ? "Loading agents…" : "Choose an agent"} />
         </SelectTrigger>
         <SelectContent>
           {agents.length === 0 ? (
@@ -285,18 +263,14 @@ function RecallAgentPicker({
                   }
                 />
                 <span className="truncate">{a.name}</span>
-                <span className="text-muted-foreground">
-                  {a.online ? "online" : "offline"}
-                </span>
+                <span className="text-muted-foreground">{a.online ? "online" : "offline"}</span>
               </SelectItem>
             ))
           )}
         </SelectContent>
       </Select>
       {unavailableAgent && (
-        <p className="text-xs text-muted-foreground">
-          Unavailable agent ({agentId})
-        </p>
+        <p className="text-xs text-muted-foreground">Unavailable agent ({agentId})</p>
       )}
     </div>
   );
@@ -307,10 +281,7 @@ function useRecallAgentOptions() {
     queries: [agentQueries.overview(), recallQueries.devices()],
   });
   const loadingAgents = overviewQuery.isPending || devicesQuery.isPending;
-  const error =
-    overviewQuery.isError || devicesQuery.isError
-      ? "Failed to load agents."
-      : null;
+  const error = overviewQuery.isError || devicesQuery.isError ? "Failed to load agents." : null;
   const agentsWithHistory = useMemo<Agent[] | null>(() => {
     if (!overviewQuery.data || !devicesQuery.data) return null;
     const withHistory = new Set(devicesQuery.data.agent_ids);

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
-import { keepOnTool, landOnTool, shouldLandOnArrival } from "@/features/agent-detail/lib/toolLanding";
+import {
+  keepOnTool,
+  landOnTool,
+  shouldLandOnArrival,
+} from "@/features/agent-detail/lib/toolLanding";
 
 interface UseToolLandingOptions {
   rootRef: RefObject<HTMLElement | null>;
@@ -15,7 +19,13 @@ interface UseToolLandingOptions {
  * reloaded address, browser back/forward and the palette. One landing per arrival, so a click and
  * the address change it causes never scroll twice.
  */
-export function useToolLanding({ rootRef, agentId, activeTab, scrollRequested, hasMoment }: UseToolLandingOptions) {
+export function useToolLanding({
+  rootRef,
+  agentId,
+  activeTab,
+  scrollRequested,
+  hasMoment,
+}: UseToolLandingOptions) {
   const clickedRef = useRef<TabKey | null>(null);
   const arrivedAgentRef = useRef<string | null>(null);
   const hasMomentRef = useRef(hasMoment);
@@ -45,7 +55,15 @@ export function useToolLanding({ rootRef, agentId, activeTab, scrollRequested, h
     const clicked = clickedRef.current === activeTab;
     clickedRef.current = null;
     if (clicked) land(activeTab, false);
-    else if (shouldLandOnArrival({ tab: activeTab, scrollRequested, hasMoment: hasMomentRef.current, firstArrival })) land(activeTab, true);
+    else if (
+      shouldLandOnArrival({
+        tab: activeTab,
+        scrollRequested,
+        hasMoment: hasMomentRef.current,
+        firstArrival,
+      })
+    )
+      land(activeTab, true);
     return () => stopRef.current();
   }, [agentId, activeTab, scrollRequested, land]);
 

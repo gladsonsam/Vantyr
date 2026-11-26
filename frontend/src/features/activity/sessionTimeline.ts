@@ -79,7 +79,11 @@ export function groupSessionsByDay(sessions: Session[]): DayGroup[] {
 }
 
 export function formatTimeRange(start: Date, end: Date): string {
-  const opts: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", second: "2-digit" };
+  const opts: Intl.DateTimeFormatOptions = {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  };
   const startStr = start.toLocaleTimeString([], opts);
   const endStr = end.toLocaleTimeString([], opts);
   if (!isSameDay(start, end)) {
@@ -120,7 +124,8 @@ export function mergeAdjacentByApp(sessions: Session[]): Session[] {
         endTime: last.endTime > s.endTime ? last.endTime : s.endTime,
         duration: Math.round(
           (Math.max(last.endTime.getTime(), s.endTime.getTime()) -
-            Math.min(last.startTime.getTime(), s.startTime.getTime())) / 1000
+            Math.min(last.startTime.getTime(), s.startTime.getTime())) /
+            1000,
         ),
         urls: [...last.urls, ...s.urls],
         keystrokes: [...last.keystrokes, ...s.keystrokes],
@@ -181,8 +186,12 @@ function mergeWindowUrlAtSameInstant(rows: MergedActivityRow[]): MergedActivityR
     let j = i;
     while (j < rows.length && rows[j].time === t) j++;
     const group = rows.slice(i, j);
-    const urls = group.filter((r): r is Extract<MergedActivityRow, { kind: "url" }> => r.kind === "url");
-    const wins = group.filter((r): r is Extract<MergedActivityRow, { kind: "window" }> => r.kind === "window");
+    const urls = group.filter(
+      (r): r is Extract<MergedActivityRow, { kind: "url" }> => r.kind === "url",
+    );
+    const wins = group.filter(
+      (r): r is Extract<MergedActivityRow, { kind: "window" }> => r.kind === "window",
+    );
 
     if (urls.length === 1 && wins.length >= 1) {
       const urlR = urls[0];
@@ -290,7 +299,10 @@ export function filterTimelineSessions(sessions: Session[], filter: TimelineFilt
  * Index of the session closest to `timestamp` (0 distance when it falls inside one). On ties a
  * real session wins over an idle one. -1 when there is no timestamp or no sessions.
  */
-export function findHighlightIndex(sessions: Session[], timestamp: string | null | undefined): number {
+export function findHighlightIndex(
+  sessions: Session[],
+  timestamp: string | null | undefined,
+): number {
   if (!timestamp || sessions.length === 0) return -1;
   const targetMs = new Date(timestamp).getTime();
   if (isNaN(targetMs)) return -1;

@@ -1,6 +1,7 @@
 import type { AlertRule } from "@/api/types";
 
-export const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
+export const plural = (count: number, one: string, many = `${one}s`) =>
+  `${count} ${count === 1 ? one : many}`;
 
 /** How many alert rules target each group directly (rules for everyone or one device don't count). */
 export function ruleCountsByGroup(rules: AlertRule[]): Map<string, number> {

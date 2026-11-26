@@ -52,9 +52,7 @@ export async function getExistingSubscription(): Promise<PushSubscription | null
  * Subscribe this browser to push using the server's VAPID public key. Assumes
  * notification permission has already been granted. Returns the new subscription.
  */
-export async function subscribeToPush(
-  vapidPublicKey: string,
-): Promise<PushSubscription> {
+export async function subscribeToPush(vapidPublicKey: string): Promise<PushSubscription> {
   const reg = await getRegistration();
   if (!reg) throw new Error("Service worker is not available.");
   // Reuse an existing subscription if present (idempotent re-enable).

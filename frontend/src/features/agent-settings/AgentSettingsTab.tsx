@@ -86,7 +86,11 @@ export function AgentSettingsTab({
           <TabsTrigger
             key={id}
             value={id}
-            className={cn(sideList ? "h-9 flex-none justify-start px-3 data-active:bg-muted dark:data-active:bg-muted" : "h-10 flex-none px-2")}
+            className={cn(
+              sideList
+                ? "h-9 flex-none justify-start px-3 data-active:bg-muted dark:data-active:bg-muted"
+                : "h-10 flex-none px-2",
+            )}
           >
             <Icon aria-hidden="true" />
             <span>{label}</span>
@@ -103,12 +107,21 @@ export function AgentSettingsTab({
 
         <TabsContent value="general">
           <div className="flex flex-col gap-4">
-            <AgentIconCard key={`icon-${agentId}`} agentId={agentId} agentName={agentName} canOperate={canOperate} />
-            {isAdmin && <AgentReplacementSettings key={agentId} agentId={agentId} agentName={agentName} />}
+            <AgentIconCard
+              key={`icon-${agentId}`}
+              agentId={agentId}
+              agentName={agentName}
+              canOperate={canOperate}
+            />
+            {isAdmin && (
+              <AgentReplacementSettings key={agentId} agentId={agentId} agentName={agentName} />
+            )}
             {isAdmin && onDeleteAgent && (
               <Alert variant="destructive">
                 <AlertDescription className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-                  <span className="min-w-0 flex-1 basis-56">Permanently removes this device and its history. You will be asked to confirm.</span>
+                  <span className="min-w-0 flex-1 basis-56">
+                    Permanently removes this device and its history. You will be asked to confirm.
+                  </span>
                   <Button variant="destructive" onClick={onDeleteAgent}>
                     Delete agent
                   </Button>
@@ -120,7 +133,11 @@ export function AgentSettingsTab({
 
         {isAdmin && (
           <TabsContent value="groups">
-            <AgentGroupsCard key={agentId} agentId={agentId} onOpenAgentGroups={onOpenAgentGroups} />
+            <AgentGroupsCard
+              key={agentId}
+              agentId={agentId}
+              onOpenAgentGroups={onOpenAgentGroups}
+            />
           </TabsContent>
         )}
 
@@ -134,8 +151,18 @@ export function AgentSettingsTab({
 
         <TabsContent value="updates">
           <div className="flex flex-col gap-6">
-            <AgentUpdateCard key={`update-${agentId}`} agentId={agentId} agentOnline={agentOnline} agentVersion={agentVersion} isAdmin={isAdmin} />
-            <AgentAutoUpdateCard key={`auto-update-${agentId}`} agentId={agentId} isAdmin={isAdmin} />
+            <AgentUpdateCard
+              key={`update-${agentId}`}
+              agentId={agentId}
+              agentOnline={agentOnline}
+              agentVersion={agentVersion}
+              isAdmin={isAdmin}
+            />
+            <AgentAutoUpdateCard
+              key={`auto-update-${agentId}`}
+              agentId={agentId}
+              isAdmin={isAdmin}
+            />
           </div>
         </TabsContent>
       </div>

@@ -37,12 +37,7 @@ export function RecallDayPanel(context: RecallDayContext) {
     </div>
   );
 }
-function useDayPanelModel({
-  agentId,
-  day,
-  summary,
-  segments,
-}: RecallDayContext) {
+function useDayPanelModel({ agentId, day, summary, segments }: RecallDayContext) {
   const segmentChooserId = useId();
   const totals = summary?.totals;
   const [appFilter, setAppFilter] = useState<string>("all");
@@ -71,9 +66,7 @@ function useDayPanelModel({
   const activeSecs = totals?.active_seconds ?? byCategory.total;
 
   const topApps = useMemo(() => {
-    const rows = (summary?.top_apps ?? [])
-      .slice()
-      .sort((a, b) => b.seconds - a.seconds);
+    const rows = (summary?.top_apps ?? []).slice().sort((a, b) => b.seconds - a.seconds);
     return rows.map((a) => ({
       ...a,
       pct: activeSecs > 0 ? (a.seconds / activeSecs) * 100 : 0,
@@ -143,8 +136,7 @@ function useDayPanelModel({
 
   const legendCats = useMemo(() => {
     const seen = new Map<string, number>();
-    for (const s of segments)
-      seen.set(s.category, (seen.get(s.category) ?? 0) + 1);
+    for (const s of segments) seen.set(s.category, (seen.get(s.category) ?? 0) + 1);
     return [...seen.keys()].slice(0, 6);
   }, [segments]);
 
@@ -176,8 +168,7 @@ function useDayPanelModel({
 }
 function DayPanelHeader({ context, model }: PanelSectionProps) {
   const { summary, segments, timezone, loading } = context;
-  const { dayLabel, empty, activeSecs, totals, byCategory, focusPct, filterValue } =
-    model;
+  const { dayLabel, empty, activeSecs, totals, byCategory, focusPct, filterValue } = model;
   return (
     <section className="rounded-xl bg-card p-5">
       <div className="min-w-0">
@@ -195,14 +186,11 @@ function DayPanelHeader({ context, model }: PanelSectionProps) {
         {summary?.narrative && (
           <>
             <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-              {summary.source === "rule"
-                ? "Rule-derived inference"
-                : "Derived narrative"}
+              {summary.source === "rule" ? "Rule-derived inference" : "Derived narrative"}
               <span aria-hidden="true">·</span>
               Inferred from activity
               <HelpTip>
-                Highlights open near their source time. Claims have no frame
-                citations.
+                Highlights open near their source time. Claims have no frame citations.
               </HelpTip>
             </p>
             <p className="mt-2 max-w-180 text-sm leading-relaxed text-muted-foreground">
@@ -219,8 +207,8 @@ function DayPanelHeader({ context, model }: PanelSectionProps) {
       ) : (
         !empty && (
           <p className="pt-3 font-mono text-xs text-muted-foreground">
-            {formatDuration(activeSecs)} active ·{" "}
-            {totals?.segment_count ?? segments.length} sessions
+            {formatDuration(activeSecs)} active · {totals?.segment_count ?? segments.length}{" "}
+            sessions
             {byCategory.rows[0]
               ? ` · top ${catLabel(byCategory.rows[0].cat)} ${Math.round(byCategory.rows[0].pct)}%`
               : ""}
@@ -343,10 +331,7 @@ function DayHighlights({ context, model }: PanelSectionProps) {
       {" "}
       {highlights.length > 0 && (
         <section className="rounded-xl bg-card p-5">
-          <CardTitle
-            title="Highlights"
-            sub="derived activity — open source time"
-          />
+          <CardTitle title="Highlights" sub="derived activity — open source time" />
           <div className="mt-3.5 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
             {highlights.slice(0, 6).map((h) => {
               const secs = durationMs(h.start_ts, h.end_ts) / 1000;
@@ -366,9 +351,7 @@ function DayHighlights({ context, model }: PanelSectionProps) {
                       {formatDuration(secs)}
                     </span>
                   </span>
-                  <span className="line-clamp-2 text-[13px] leading-snug">
-                    {h.label}
-                  </span>
+                  <span className="line-clamp-2 text-[13px] leading-snug">{h.label}</span>
                   <span className="text-xs text-muted-foreground">
                     {catLabel(h.category)} · Open source time →
                   </span>
@@ -403,9 +386,7 @@ function DayTimeline({ context, model }: PanelSectionProps) {
               id={segmentChooserId}
               value=""
               onChange={(event) => {
-                const segment = sourceSegments.find(
-                  (s) => String(s.id) === event.target.value,
-                );
+                const segment = sourceSegments.find((s) => String(s.id) === event.target.value);
                 if (segment) onSeek(segment.start_ts);
               }}
               style={{
@@ -426,12 +407,8 @@ function DayTimeline({ context, model }: PanelSectionProps) {
               {sourceSegments.map((seg) => (
                 <option key={seg.id} value={String(seg.id)}>
                   {timeIn(timezone, seg.start_ts)} ·{" "}
-                  {formatDuration(durationMs(seg.start_ts, seg.end_ts) / 1000)}{" "}
-                  ·{" "}
-                  {seg.title ||
-                    seg.summary ||
-                    seg.app ||
-                    catLabel(seg.category)}
+                  {formatDuration(durationMs(seg.start_ts, seg.end_ts) / 1000)} ·{" "}
+                  {seg.title || seg.summary || seg.app || catLabel(seg.category)}
                 </option>
               ))}
             </select>
@@ -458,12 +435,7 @@ function DayTimeline({ context, model }: PanelSectionProps) {
           </div>
           <div className="mt-1.5 flex justify-between gap-2 font-mono text-[11px] text-muted-foreground">
             <span>{timeIn(timezone, sourceSegments[0].start_ts)}</span>
-            <span>
-              {timeIn(
-                timezone,
-                sourceSegments[sourceSegments.length - 1].end_ts,
-              )}
-            </span>
+            <span>{timeIn(timezone, sourceSegments[sourceSegments.length - 1].end_ts)}</span>
           </div>
           {legendCats.length > 0 && (
             <div className="mt-2.5 flex flex-wrap gap-3.5 text-xs text-muted-foreground">
@@ -488,8 +460,7 @@ function DayTimeline({ context, model }: PanelSectionProps) {
 
 function DaySessions({ context, model }: PanelSectionProps) {
   const { timezone, onSeek } = context;
-  const { sessions, visibleSessions, appOptions, filterValue, setAppFilter } =
-    model;
+  const { sessions, visibleSessions, appOptions, filterValue, setAppFilter } = model;
   return (
     <>
       {" "}
@@ -499,10 +470,7 @@ function DaySessions({ context, model }: PanelSectionProps) {
             <CardTitle
               title="Sessions"
               sub={`${visibleSessions.length} of ${sessions.length} · ${formatDuration(
-                visibleSessions.reduce(
-                  (s, x) => s + durationMs(x.start_ts, x.end_ts) / 1000,
-                  0,
-                ),
+                visibleSessions.reduce((s, x) => s + durationMs(x.start_ts, x.end_ts) / 1000, 0),
               )}`}
             />
             {appOptions.length > 1 && (
@@ -526,8 +494,7 @@ function DaySessions({ context, model }: PanelSectionProps) {
 
           <div className="mt-2 flex flex-col divide-y divide-foreground/[0.06]">
             {visibleSessions.map((seg) => {
-              const title =
-                seg.title || seg.summary || seg.app || "Untitled stretch";
+              const title = seg.title || seg.summary || seg.app || "Untitled stretch";
               const distracting = (seg.distraction_score ?? 0) >= 0.5;
               return (
                 <button
@@ -541,9 +508,7 @@ function DaySessions({ context, model }: PanelSectionProps) {
                       {timeIn(timezone, seg.start_ts)}
                     </span>
                     <span className="mt-0.5 block font-mono text-[11px] whitespace-nowrap text-muted-foreground">
-                      {formatDuration(
-                        durationMs(seg.start_ts, seg.end_ts) / 1000,
-                      )}
+                      {formatDuration(durationMs(seg.start_ts, seg.end_ts) / 1000)}
                     </span>
                   </span>
                   <span
@@ -559,40 +524,28 @@ function DaySessions({ context, model }: PanelSectionProps) {
                       {title}
                     </span>
                     <span className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground">
-                      <span>
-                        {seg.source === "rule"
-                          ? "Rule-derived"
-                          : "Derived activity"}
-                      </span>
+                      <span>{seg.source === "rule" ? "Rule-derived" : "Derived activity"}</span>
                       {seg.app && (
                         <span className="max-w-55 overflow-hidden rounded-md bg-muted/70 px-1.5 py-px font-mono text-ellipsis whitespace-nowrap">
                           {seg.app}
                         </span>
                       )}
                       <span>
-                        {timeIn(timezone, seg.start_ts)} →{" "}
-                        {timeIn(timezone, seg.end_ts)}
+                        {timeIn(timezone, seg.start_ts)} → {timeIn(timezone, seg.end_ts)}
                       </span>
                       {distracting && (
-                        <span className="whitespace-nowrap text-warning">
-                          distracting
-                        </span>
+                        <span className="whitespace-nowrap text-warning">distracting</span>
                       )}
                     </span>
                   </span>
-                  <span
-                    aria-hidden="true"
-                    className="shrink-0 text-base text-muted-foreground"
-                  >
+                  <span aria-hidden="true" className="shrink-0 text-base text-muted-foreground">
                     ›
                   </span>
                 </button>
               );
             })}
             {visibleSessions.length === 0 && (
-              <p className="py-2 text-sm text-muted-foreground">
-                No sessions for this filter.
-              </p>
+              <p className="py-2 text-sm text-muted-foreground">No sessions for this filter.</p>
             )}
           </div>
         </section>
@@ -605,11 +558,7 @@ function CardTitle({ title, sub }: { title: string; sub?: string }) {
   return (
     <div className="flex flex-wrap items-baseline gap-2.5">
       <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
-      {sub && (
-        <div className="font-mono text-[11.5px] text-muted-foreground">
-          {sub}
-        </div>
-      )}
+      {sub && <div className="font-mono text-[11.5px] text-muted-foreground">{sub}</div>}
     </div>
   );
 }

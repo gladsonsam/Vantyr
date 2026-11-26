@@ -47,10 +47,7 @@ export function catLabel(cat: string): string {
  * names yesterday in the morning. `en-CA` formats as `YYYY-MM-DD`.
  */
 export function todayIso(tz?: string): string {
-  return new Date().toLocaleDateString(
-    "en-CA",
-    tz ? { timeZone: tz } : undefined,
-  );
+  return new Date().toLocaleDateString("en-CA", tz ? { timeZone: tz } : undefined);
 }
 
 /** Time-of-day in the agent's zone, so labels match the day they're filed under. */
@@ -142,10 +139,7 @@ function midnightFormatter(timeZone: string) {
 }
 
 /** Midnight boundaries in the agent zone, including 23/25-hour DST days. */
-export function dayRange(
-  day: string,
-  tz: string | null,
-): { fromMs: number; toMs: number } {
+export function dayRange(day: string, tz: string | null): { fromMs: number; toMs: number } {
   const midnight = (date: string) => {
     if (!tz) return new Date(`${date}T00:00:00`).getTime();
     const target = Date.parse(`${date}T00:00:00Z`);

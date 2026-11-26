@@ -3,10 +3,27 @@ import type { DisplayedRemoteFrame } from "@/features/remote/hooks/useMjpegFrame
 import type { RemoteKeyboardHandle } from "@/features/remote/components/RemoteSoftwareKeyboard";
 import { controlGeometryAvailable } from "@/features/remote/lib/remoteFrame";
 import { RemoteHeldInput } from "@/features/remote/lib/remoteHeldInput";
-import { buttonName, createWheelAccumulator, isModifierKey, keyDownAction } from "@/features/remote/lib/remoteKeys";
+import {
+  buttonName,
+  createWheelAccumulator,
+  isModifierKey,
+  keyDownAction,
+} from "@/features/remote/lib/remoteKeys";
 import { remoteImagePoint } from "@/features/remote/lib/remotePointer";
-import { clampPan, cursorLocation, remoteTextChunks, touchPoint, type Point, type TouchAction, type TouchMode } from "@/features/remote/lib/remoteTouch";
-import type { CaptureStamp, FrameSource, FrameSurface } from "@/features/remote/lib/screenStreamSource";
+import {
+  clampPan,
+  cursorLocation,
+  remoteTextChunks,
+  touchPoint,
+  type Point,
+  type TouchAction,
+  type TouchMode,
+} from "@/features/remote/lib/remoteTouch";
+import type {
+  CaptureStamp,
+  FrameSource,
+  FrameSurface,
+} from "@/features/remote/lib/screenStreamSource";
 
 /**
  * Map a pointer position (clientX/Y) to remote-host pixel coordinates.
@@ -16,11 +33,31 @@ import type { CaptureStamp, FrameSource, FrameSurface } from "@/features/remote/
  * fullscreen where the viewport ratio can differ from the stream ratio).
  * We compute the actual rendered image area first, then map into it.
  */
-function pointerToImageCoords(img: FrameSurface, clientX: number, clientY: number, clampDrag = false): Point | null {
-  return remoteImagePoint(img.getBoundingClientRect(), img.naturalWidth, img.naturalHeight, clientX, clientY, clampDrag);
+function pointerToImageCoords(
+  img: FrameSurface,
+  clientX: number,
+  clientY: number,
+  clampDrag = false,
+): Point | null {
+  return remoteImagePoint(
+    img.getBoundingClientRect(),
+    img.naturalWidth,
+    img.naturalHeight,
+    clientX,
+    clientY,
+    clampDrag,
+  );
 }
 
-type Gesture = { id: number; start: Point; last: Point; point: Point; moved: boolean; scroll: Point; action: TouchAction };
+type Gesture = {
+  id: number;
+  start: Point;
+  last: Point;
+  point: Point;
+  moved: boolean;
+  scroll: Point;
+  action: TouchAction;
+};
 
 /**
  * Remote control input over the live screen: mouse, touch (direct or trackpad, tap / right /
@@ -62,7 +99,11 @@ export function useRemoteInput({
 }) {
   const { surface, inputStamp, verifiedNow } = frames;
   const lastPresentedIdentity = useRef<string | null>(null);
-  const inputContext = useRef<{ agentId: string; token: string | null; stamp: CaptureStamp | null } | null>(null);
+  const inputContext = useRef<{
+    agentId: string;
+    token: string | null;
+    stamp: CaptureStamp | null;
+  } | null>(null);
   /** rAF token for batching mouse-move messages. */
   const rafMoveRef = useRef<number | null>(null);
   const pendingMoveRef = useRef<Point | null>(null);
@@ -108,14 +149,25 @@ export function useRemoteInput({
     (cmd: Record<string, unknown>, release = false) => {
       if (release && (cmd.type === "KeyUp" || cmd.type === "MouseUp")) {
         const context = inputContext.current;
-        if (context) sendWsMessage({ type: "control", agent_id: context.agentId, lease_token: context.token, cmd: { ...cmd, ...context.stamp } });
+        if (context)
+          sendWsMessage({
+            type: "control",
+            agent_id: context.agentId,
+            lease_token: context.token,
+            cmd: { ...cmd, ...context.stamp },
+          });
         return;
       }
       if (!inputEnabledRef.current) return;
       const { ok, stamp } = inputStamp();
       if (!ok) return;
       inputContext.current = { agentId, token: leaseToken, stamp };
-      sendWsMessage({ type: "control", agent_id: agentId, lease_token: leaseToken, cmd: { ...cmd, ...stamp } });
+      sendWsMessage({
+        type: "control",
+        agent_id: agentId,
+        lease_token: leaseToken,
+        cmd: { ...cmd, ...stamp },
+      });
     },
     [agentId, sendWsMessage, leaseToken, inputStamp],
   );
@@ -126,16 +178,17 @@ export function useRemoteInput({
     if (rafMoveRef.current != null) cancelAnimationFrame(rafMoveRef.current);
     rafMoveRef.current = null;
     pendingMoveRef.current = null;
-    heldInput.current.releaseAll().forEach(cmd => ctrl(cmd, true));
+    heldInput.current.releaseAll().forEach((cmd) => ctrl(cmd, true));
     inputContext.current = null;
   }, [ctrl, keyboardRef]);
   useLayoutEffect(() => {
-    beforeDisplayRef.current = frame => {
+    beforeDisplayRef.current = (frame) => {
       const g = frame?.geometry;
       const identity = g ? `${g.capture_id}:${g.geometry_revision}` : null;
       if (lastPresentedIdentity.current !== identity || !frame || !controlGeometryAvailable(g)) {
         releaseHeldInput();
-        cursor.current = null; setCursorPreview(null);
+        cursor.current = null;
+        setCursorPreview(null);
       }
       if (!controlGeometryAvailable(g)) inputEnabledRef.current = false;
       lastPresentedIdentity.current = identity;
@@ -144,12 +197,18 @@ export function useRemoteInput({
   const releasePointer = useCallback(() => {
     gesture.current = null;
     if (rafMoveRef.current !== null) cancelAnimationFrame(rafMoveRef.current);
-    rafMoveRef.current = null; pendingMoveRef.current = null;
-    heldInput.current.releaseButtons().forEach(cmd => ctrl(cmd, true));
+    rafMoveRef.current = null;
+    pendingMoveRef.current = null;
+    heldInput.current.releaseButtons().forEach((cmd) => ctrl(cmd, true));
   }, [ctrl]);
   useEffect(() => {
-    if (!inputEnabled) { releaseHeldInput(); return; }
-    const onVisibility = () => { if (document.hidden) releaseHeldInput(); };
+    if (!inputEnabled) {
+      releaseHeldInput();
+      return;
+    }
+    const onVisibility = () => {
+      if (document.hidden) releaseHeldInput();
+    };
     window.addEventListener("blur", releaseHeldInput);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
@@ -165,17 +224,29 @@ export function useRemoteInput({
     releaseHeldInput();
   }, [releaseHeldInput]);
 
-  const sendText = useCallback((text: string) => {
-    if (!inputEnabledRef.current) return false;
-    try { remoteTextChunks(text).forEach(chunk => ctrl({ type: "TypeText", text: chunk })); setInputError(""); return true; }
-    catch (error) { setInputError((error as Error).message); return false; }
-  }, [ctrl]);
+  const sendText = useCallback(
+    (text: string) => {
+      if (!inputEnabledRef.current) return false;
+      try {
+        remoteTextChunks(text).forEach((chunk) => ctrl({ type: "TypeText", text: chunk }));
+        setInputError("");
+        return true;
+      } catch (error) {
+        setInputError((error as Error).message);
+        return false;
+      }
+    },
+    [ctrl],
+  );
   // A new device or monitor resets the local view during render; the cursor
   // marker ref resets in the effect below, which owns the DOM-adjacent refs.
   const [prevViewScope, setPrevViewScope] = useState({ agentId, monitorIndex });
   if (prevViewScope.agentId !== agentId || prevViewScope.monitorIndex !== monitorIndex) {
     setPrevViewScope({ agentId, monitorIndex });
-    setCursorPreview(null); setZoom(1); setPan({ x: 0, y: 0 }); setInputError("");
+    setCursorPreview(null);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setInputError("");
   }
   useEffect(() => {
     cursor.current = null;
@@ -184,75 +255,177 @@ export function useRemoteInput({
   // Rotation, browser chrome and software-keyboard changes can shrink the stage.
   // Cancel a gesture before reclamping the local view to the new dimensions.
   useEffect(() => {
-    const stage = containerRef.current?.querySelector<HTMLElement>(".screen-remote-stage, .vantyr-screen-frame");
+    const stage = containerRef.current?.querySelector<HTMLElement>(
+      ".screen-remote-stage, .vantyr-screen-frame",
+    );
     if (!stage) return;
     const resize = () => {
       releasePointer();
-      const bounds = stage.getBoundingClientRect(), img = surface();
-      setPan(previous => clampPan(previous, bounds.width, bounds.height, zoom, img?.naturalWidth, img?.naturalHeight));
+      const bounds = stage.getBoundingClientRect(),
+        img = surface();
+      setPan((previous) =>
+        clampPan(
+          previous,
+          bounds.width,
+          bounds.height,
+          zoom,
+          img?.naturalWidth,
+          img?.naturalHeight,
+        ),
+      );
     };
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(resize) : null;
-    observer?.observe(stage); window.addEventListener("resize", resize); window.visualViewport?.addEventListener("resize", resize);
-    return () => { observer?.disconnect(); window.removeEventListener("resize", resize); window.visualViewport?.removeEventListener("resize", resize); };
+    observer?.observe(stage);
+    window.addEventListener("resize", resize);
+    window.visualViewport?.addEventListener("resize", resize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", resize);
+      window.visualViewport?.removeEventListener("resize", resize);
+    };
   }, [zoom, surface, releasePointer, containerRef]);
 
   const { fullscreen, pseudoFs, aspectRatio } = layout;
   useLayoutEffect(() => {
-    const img = surface(), marker = cursorMarker.current, overlay = overlayRef.current;
+    const img = surface(),
+      marker = cursorMarker.current,
+      overlay = overlayRef.current;
     if (!img || !marker || !overlay || !cursorPreview) return;
-    const point = cursorLocation(img.getBoundingClientRect(), img.naturalWidth, img.naturalHeight, cursorPreview);
-    if (!point) { marker.style.display = "none"; return; }
+    const point = cursorLocation(
+      img.getBoundingClientRect(),
+      img.naturalWidth,
+      img.naturalHeight,
+      cursorPreview,
+    );
+    if (!point) {
+      marker.style.display = "none";
+      return;
+    }
     const bounds = overlay.getBoundingClientRect();
-    marker.style.display = "block"; marker.style.left = `${point.x - bounds.left}px`; marker.style.top = `${point.y - bounds.top}px`;
+    marker.style.display = "block";
+    marker.style.left = `${point.x - bounds.left}px`;
+    marker.style.top = `${point.y - bounds.top}px`;
   }, [cursorPreview, zoom, pan, touchMode, fullscreen, pseudoFs, aspectRatio, surface, overlayRef]);
 
   const beginTouch = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (gesture.current || (!inputEnabledRef.current && touchAction !== "pan") || (["tap", "right", "drag"].includes(touchAction) && !pointerAllowedNow())) return;
+    if (
+      gesture.current ||
+      (!inputEnabledRef.current && touchAction !== "pan") ||
+      (["tap", "right", "drag"].includes(touchAction) && !pointerAllowedNow())
+    )
+      return;
     const img = surface();
     if (!img && touchAction !== "pan") return;
     const client = { x: event.clientX, y: event.clientY };
-    const current = cursor.current ?? { x: (img?.naturalWidth ?? 0) / 2, y: (img?.naturalHeight ?? 0) / 2 };
-    const point = touchAction === "pan" ? current : touchPoint(touchMode, img!.getBoundingClientRect(), img!.naturalWidth, img!.naturalHeight, client, current, { x: 0, y: 0 });
+    const current = cursor.current ?? {
+      x: (img?.naturalWidth ?? 0) / 2,
+      y: (img?.naturalHeight ?? 0) / 2,
+    };
+    const point =
+      touchAction === "pan"
+        ? current
+        : touchPoint(
+            touchMode,
+            img!.getBoundingClientRect(),
+            img!.naturalWidth,
+            img!.naturalHeight,
+            client,
+            current,
+            { x: 0, y: 0 },
+          );
     if (!point) return;
-    event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId);
-    gesture.current = { id: event.pointerId, start: client, last: client, point, moved: false, scroll: { x: 0, y: 0 }, action: touchAction };
-    cursor.current = point; setCursorPreview(point);
-    if (touchAction === "drag") { heldInput.current.buttonDown("left", point); ctrl({ type: "MouseDown", ...point, button: "left" }); }
+    event.preventDefault();
+    event.currentTarget.focus();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    gesture.current = {
+      id: event.pointerId,
+      start: client,
+      last: client,
+      point,
+      moved: false,
+      scroll: { x: 0, y: 0 },
+      action: touchAction,
+    };
+    cursor.current = point;
+    setCursorPreview(point);
+    if (touchAction === "drag") {
+      heldInput.current.buttonDown("left", point);
+      ctrl({ type: "MouseDown", ...point, button: "left" });
+    }
   };
   const moveTouch = (event: React.PointerEvent<HTMLDivElement>) => {
     const state = gesture.current;
     if (!state || state.id !== event.pointerId) return;
     event.preventDefault();
-    const client = { x: event.clientX, y: event.clientY }, delta = { x: client.x - state.last.x, y: client.y - state.last.y };
+    const client = { x: event.clientX, y: event.clientY },
+      delta = { x: client.x - state.last.x, y: client.y - state.last.y };
     state.last = client;
     if (Math.hypot(client.x - state.start.x, client.y - state.start.y) > 8) state.moved = true;
     if (state.action === "pan") {
       const bounds = event.currentTarget.getBoundingClientRect();
-      setPan(previous => clampPan({ x: previous.x + delta.x, y: previous.y + delta.y }, bounds.width, bounds.height, zoom, surface()?.naturalWidth, surface()?.naturalHeight)); return;
+      setPan((previous) =>
+        clampPan(
+          { x: previous.x + delta.x, y: previous.y + delta.y },
+          bounds.width,
+          bounds.height,
+          zoom,
+          surface()?.naturalWidth,
+          surface()?.naturalHeight,
+        ),
+      );
+      return;
     }
     if (!inputEnabledRef.current) return;
     if (state.action === "scroll") {
-      state.scroll.x -= delta.x; state.scroll.y -= delta.y;
-      const dx = Math.max(-10, Math.min(10, Math.trunc(state.scroll.x / 40))), dy = Math.max(-10, Math.min(10, Math.trunc(state.scroll.y / 40)));
-      if (dx || dy) { ctrl({ type: "MouseScroll", delta_x: dx, delta_y: dy }); state.scroll.x -= dx * 40; state.scroll.y -= dy * 40; } return;
+      state.scroll.x -= delta.x;
+      state.scroll.y -= delta.y;
+      const dx = Math.max(-10, Math.min(10, Math.trunc(state.scroll.x / 40))),
+        dy = Math.max(-10, Math.min(10, Math.trunc(state.scroll.y / 40)));
+      if (dx || dy) {
+        ctrl({ type: "MouseScroll", delta_x: dx, delta_y: dy });
+        state.scroll.x -= dx * 40;
+        state.scroll.y -= dy * 40;
+      }
+      return;
     }
     const img = surface();
     if (!img) return;
-    const point = touchPoint(touchMode, img.getBoundingClientRect(), img.naturalWidth, img.naturalHeight, client, state.point, delta, state.action === "drag");
+    const point = touchPoint(
+      touchMode,
+      img.getBoundingClientRect(),
+      img.naturalWidth,
+      img.naturalHeight,
+      client,
+      state.point,
+      delta,
+      state.action === "drag",
+    );
     if (!point) return;
-    state.point = point; cursor.current = point; setCursorPreview(point); heldInput.current.move(point);
+    state.point = point;
+    cursor.current = point;
+    setCursorPreview(point);
+    heldInput.current.move(point);
     if (touchMode === "trackpad" || state.action === "drag") ctrl({ type: "MouseMove", ...point });
   };
   const endTouch = (event: React.PointerEvent<HTMLDivElement>) => {
     const state = gesture.current;
     if (!state || state.id !== event.pointerId) return;
     if (event.clientX !== state.last.x || event.clientY !== state.last.y) moveTouch(event);
-    if (Math.hypot(event.clientX - state.start.x, event.clientY - state.start.y) > 8) state.moved = true;
-    gesture.current = null; event.preventDefault();
-    if (state.action === "drag") { if (heldInput.current.buttonUp("left")) ctrl({ type: "MouseUp", ...state.point, button: "left" }, true); }
-    else if (inputEnabledRef.current && !state.moved && (state.action === "tap" || state.action === "right")) {
+    if (Math.hypot(event.clientX - state.start.x, event.clientY - state.start.y) > 8)
+      state.moved = true;
+    gesture.current = null;
+    event.preventDefault();
+    if (state.action === "drag") {
+      if (heldInput.current.buttonUp("left"))
+        ctrl({ type: "MouseUp", ...state.point, button: "left" }, true);
+    } else if (
+      inputEnabledRef.current &&
+      !state.moved &&
+      (state.action === "tap" || state.action === "right")
+    ) {
       const button = state.action === "right" ? "right" : "left";
-      ctrl({ type: "MouseDown", ...state.point, button }); ctrl({ type: "MouseUp", ...state.point, button });
+      ctrl({ type: "MouseDown", ...state.point, button });
+      ctrl({ type: "MouseUp", ...state.point, button });
     }
   };
 
@@ -266,7 +439,10 @@ export function useRemoteInput({
   }, [ctrl]);
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType === "touch" || touchAction === "pan") { moveTouch(e); return; }
+    if (e.pointerType === "touch" || touchAction === "pan") {
+      moveTouch(e);
+      return;
+    }
     if (!pointerAllowedNow() || !e.isPrimary || !surface()) return;
     const pt = pointerToImageCoords(surface()!, e.clientX, e.clientY, e.buttons !== 0);
     if (!pt) return;
@@ -278,7 +454,10 @@ export function useRemoteInput({
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType === "touch" || touchAction === "pan") { beginTouch(e); return; }
+    if (e.pointerType === "touch" || touchAction === "pan") {
+      beginTouch(e);
+      return;
+    }
     onScreenGesture?.();
     if (!pointerAllowedNow() || !surface()) return;
     const pt = pointerToImageCoords(surface()!, e.clientX, e.clientY);
@@ -296,12 +475,16 @@ export function useRemoteInput({
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType === "touch" || touchAction === "pan") { endTouch(e); return; }
+    if (e.pointerType === "touch" || touchAction === "pan") {
+      endTouch(e);
+      return;
+    }
     if (!pointerAllowedNow() || !surface()) return;
     e.preventDefault();
     const pt = pointerToImageCoords(surface()!, e.clientX, e.clientY, true);
     if (!pt) return;
-    if (heldInput.current.buttonUp(buttonName(e.button))) ctrl({ type: "MouseUp", x: pt.x, y: pt.y, button: buttonName(e.button) });
+    if (heldInput.current.buttonUp(buttonName(e.button)))
+      ctrl({ type: "MouseUp", x: pt.x, y: pt.y, button: buttonName(e.button) });
   };
 
   // Wheel must be a *native* non-passive listener: React's synthetic `onWheel`
@@ -352,7 +535,8 @@ export function useRemoteInput({
       if (!inputEnabledRef.current) return;
       e.preventDefault();
       if (isModifierKey(e.key)) {
-        if (heldInput.current.keyUp(e.key.toLowerCase())) ctrl({ type: "KeyUp", key: e.key.toLowerCase() });
+        if (heldInput.current.keyUp(e.key.toLowerCase()))
+          ctrl({ type: "KeyUp", key: e.key.toLowerCase() });
       }
     },
     [ctrl],

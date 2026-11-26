@@ -12,7 +12,13 @@ const HISTORY_PAGE = { limit: HISTORY_LIMIT };
 const toEvents = (d: { rows: AppBlockEvent[] }) => d.rows;
 
 /** Each time one app block rule closed an app on a device, newest first. */
-export function AppBlockHistoryDialog({ rule, onClose }: { rule: AppBlockRule | null; onClose: () => void }) {
+export function AppBlockHistoryDialog({
+  rule,
+  onClose,
+}: {
+  rule: AppBlockRule | null;
+  onClose: () => void;
+}) {
   const historyQuery = useQuery({
     ...ruleQueries.appBlockEventsForRule(rule?.id ?? 0, HISTORY_PAGE),
     enabled: rule !== null,
@@ -40,11 +46,24 @@ export function AppBlockHistoryDialog({ rule, onClose }: { rule: AppBlockRule | 
       onRetry={() => void historyQuery.refetch()}
       onClose={onClose}
     >
-      <ul aria-label="Apps closed by this rule" className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-xl bg-muted/50">
+      <ul
+        aria-label="Apps closed by this rule"
+        className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-xl bg-muted/50"
+      >
         {events.map((row) => (
-          <li key={row.id} className="flex flex-col gap-1 border-b border-foreground/[0.06] p-3 last:border-b-0 sm:flex-row sm:items-baseline sm:gap-4">
-            <time dateTime={row.killed_at} className="font-mono text-xs tabular-nums sm:w-44 sm:shrink-0">{fmtDateTime(row.killed_at)}</time>
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">{row.agent_name || "Unknown agent"}</span>
+          <li
+            key={row.id}
+            className="flex flex-col gap-1 border-b border-foreground/[0.06] p-3 last:border-b-0 sm:flex-row sm:items-baseline sm:gap-4"
+          >
+            <time
+              dateTime={row.killed_at}
+              className="font-mono text-xs tabular-nums sm:w-44 sm:shrink-0"
+            >
+              {fmtDateTime(row.killed_at)}
+            </time>
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">
+              {row.agent_name || "Unknown agent"}
+            </span>
             <span className="min-w-0 font-mono text-xs break-all">{row.exe_name}</span>
           </li>
         ))}

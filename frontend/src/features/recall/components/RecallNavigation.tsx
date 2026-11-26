@@ -1,18 +1,49 @@
 import { useEffect, useRef, useState } from "react";
-import { Bookmark as BookmarkIcon, BookmarkPlus, ChevronRight, Crosshair, Link2 } from "lucide-react";
+import {
+  Bookmark as BookmarkIcon,
+  BookmarkPlus,
+  ChevronRight,
+  Crosshair,
+  Link2,
+} from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Input } from "@vantyr/ui/components/input";
 import { Label } from "@vantyr/ui/components/label";
 import { api } from "@/api";
 import type { ScreenFrame } from "@/api/types";
 import { recallPageHref } from "@/features/recall/lib/recallUrl";
-import { deviceTime, readItems, writeItems, type Bookmark, type SavedSearch } from "@/features/recall/lib/recallRetrieval";
+import {
+  deviceTime,
+  readItems,
+  writeItems,
+  type Bookmark,
+  type SavedSearch,
+} from "@/features/recall/lib/recallRetrieval";
 import { shortDateIn, timeIn } from "@/features/recall/lib/recallFormat";
 import { HelpTip } from "@/components/common/HelpTip";
 
-export function RecallNavigation({ agentId, timezone, atMs, monitor, displayedFrame, preferencesKey, search, onSeek, onRange, onMonitor }: {
-  agentId: string; timezone: string | null; atMs: number; monitor: number | null; displayedFrame: Pick<ScreenFrame, "id" | "captured_at" | "monitor"> | null; preferencesKey: string | null; search?:SavedSearch|null;
-  onSeek: (iso: string) => void; onRange: (range: { fromMs: number; toMs: number }) => void; onMonitor: (monitor: number | null) => void;
+export function RecallNavigation({
+  agentId,
+  timezone,
+  atMs,
+  monitor,
+  displayedFrame,
+  preferencesKey,
+  search,
+  onSeek,
+  onRange,
+  onMonitor,
+}: {
+  agentId: string;
+  timezone: string | null;
+  atMs: number;
+  monitor: number | null;
+  displayedFrame: Pick<ScreenFrame, "id" | "captured_at" | "monitor"> | null;
+  preferencesKey: string | null;
+  search?: SavedSearch | null;
+  onSeek: (iso: string) => void;
+  onRange: (range: { fromMs: number; toMs: number }) => void;
+  onMonitor: (monitor: number | null) => void;
 }) {
   const [jump, setJump] = useState("");
   const [from, setFrom] = useState("");
@@ -25,31 +56,66 @@ export function RecallNavigation({ agentId, timezone, atMs, monitor, displayedFr
   // Bookmarks belong to this server/user/device scope; a new one reloads them
   // and clears the transient link/message/note feedback.
   const [prevBookmarksScope, setPrevBookmarksScope] = useState({ preferencesKey, agentId });
-  if (prevBookmarksScope.preferencesKey !== preferencesKey || prevBookmarksScope.agentId !== agentId) {
+  if (
+    prevBookmarksScope.preferencesKey !== preferencesKey ||
+    prevBookmarksScope.agentId !== agentId
+  ) {
     setPrevBookmarksScope({ preferencesKey, agentId });
-    setBookmarks(preferencesKey ? readItems<Bookmark>(`${preferencesKey}:bookmarks`).filter(b => b != null && typeof b.id === "string" && typeof b.note === "string" && Number.isFinite(Date.parse(b.at)) && Number.isSafeInteger(b.frameId) && (b.monitor == null || Number.isSafeInteger(b.monitor))) : []);
-    setLink(""); setMessage(""); setNote("");
+    setBookmarks(
+      preferencesKey
+        ? readItems<Bookmark>(`${preferencesKey}:bookmarks`).filter(
+            (b) =>
+              b != null &&
+              typeof b.id === "string" &&
+              typeof b.note === "string" &&
+              Number.isFinite(Date.parse(b.at)) &&
+              Number.isSafeInteger(b.frameId) &&
+              (b.monitor == null || Number.isSafeInteger(b.monitor)),
+          )
+        : [],
+    );
+    setLink("");
+    setMessage("");
+    setNote("");
   }
   useEffect(() => {
     // This counter cancels asynchronous requests, rather than referencing a DOM node.
-    // oxlint-disable-next-line react/exhaustive-deps
-    return () => { generation.current++; };
+    return () => {
+      // oxlint-disable-next-line react/exhaustive-deps
+      generation.current++;
+    };
   }, [preferencesKey, agentId]);
   const persist = (next: Bookmark[]) => {
-    if (!preferencesKey || !writeItems(`${preferencesKey}:bookmarks`, next)) { setMessage("Browser storage is unavailable; changes were not saved."); return; }
+    if (!preferencesKey || !writeItems(`${preferencesKey}:bookmarks`, next)) {
+      setMessage("Browser storage is unavailable; changes were not saved.");
+      return;
+    }
     setBookmarks(next);
   };
   const copy = async () => {
     const token = generation.current;
     // A frame can precede the playhead or belong to one display in an all-display view.
     // Copy its exact recording coordinates whenever a frame is displayed.
-    const url = new URL(recallPageHref(agentId, {
-      at: displayedFrame?.captured_at ?? new Date(atMs).toISOString(),
-      monitor: displayedFrame?.monitor ?? monitor,
-      search,
-    }), location.origin).href;
-    try { await navigator.clipboard.writeText(url); if (token === generation.current) { setLink(""); setMessage("Moment link copied."); } }
-    catch { if (token === generation.current) { setLink(url); setMessage("Clipboard unavailable. Select and copy the link below."); } }
+    const url = new URL(
+      recallPageHref(agentId, {
+        at: displayedFrame?.captured_at ?? new Date(atMs).toISOString(),
+        monitor: displayedFrame?.monitor ?? monitor,
+        search,
+      }),
+      location.origin,
+    ).href;
+    try {
+      await navigator.clipboard.writeText(url);
+      if (token === generation.current) {
+        setLink("");
+        setMessage("Moment link copied.");
+      }
+    } catch {
+      if (token === generation.current) {
+        setLink(url);
+        setMessage("Clipboard unavailable. Select and copy the link below.");
+      }
+    }
   };
   const open = async (bookmark: Bookmark) => {
     const token = ++generation.current;
@@ -57,39 +123,206 @@ export function RecallNavigation({ agentId, timezone, atMs, monitor, displayedFr
     try {
       const result = await api.historyFrameAt(agentId, bookmark.at, bookmark.monitor);
       if (token !== generation.current) return;
-      if (!result.frame || result.frame.id !== bookmark.frameId) { setMessage("This bookmarked recording is missing or expired. The note is still saved locally; you can remove it below."); return; }
-      onMonitor(bookmark.monitor); onSeek(bookmark.at); setMessage("");
-    } catch { if (token === generation.current) setMessage("Could not check this recording. Try again when the server is available."); }
+      if (!result.frame || result.frame.id !== bookmark.frameId) {
+        setMessage(
+          "This bookmarked recording is missing or expired. The note is still saved locally; you can remove it below.",
+        );
+        return;
+      }
+      onMonitor(bookmark.monitor);
+      onSeek(bookmark.at);
+      setMessage("");
+    } catch {
+      if (token === generation.current)
+        setMessage("Could not check this recording. Try again when the server is available.");
+    }
   };
-  return <section className="recall-navigation rounded-xl bg-card p-4" aria-label="Recall navigation and local bookmarks">
-    <h3 className="flex items-center gap-1 text-sm font-medium">Go to a moment <HelpTip>Bookmarks and notes are saved in this browser only. Recordings expire with the retention settings.</HelpTip></h3>
-    {!preferencesKey && <p role="status" className="mt-2 text-sm text-muted-foreground">Checking your account…</p>}
-    <div className="recall-retrieval-fields">
-      <Label><span className="text-xs text-muted-foreground">Jump to time </span><Input type="datetime-local" value={jump} onChange={e => setJump(e.target.value)} className="h-9" /></Label>
-      <Button variant="outline" size="lg" disabled={!timezone} onClick={() => { const ms = deviceTime(jump, timezone); if (ms == null) setMessage("Enter a valid device time. Ambiguous or skipped DST times are invalid."); else { generation.current++; onSeek(new Date(ms).toISOString()); setMessage(""); } }}><Crosshair />Jump</Button>
-      <Button variant="outline" size="lg" className="sm:ml-auto" onClick={() => void copy()}><Link2 />Copy link to current moment</Button>
-    </div>
-    <div className="recall-retrieval-fields">
-      <Label className="min-w-0 flex-1 basis-56"><span className="sr-only">Bookmark note </span><Input value={note} maxLength={2000} placeholder="Note for this bookmark (optional)" onChange={e => setNote(e.target.value)} className="h-9 w-full" /></Label>
-      <Button variant="outline" size="lg" disabled={!preferencesKey || !displayedFrame} onClick={() => { if (!displayedFrame) return; const { id: frameId, captured_at: at, monitor: frameMonitor } = displayedFrame; const id = `${frameId}:${frameMonitor}`; persist([{ id, at, frameId, monitor: frameMonitor, note }, ...bookmarks.filter(b => b.id !== id)].slice(0, 100)); }}><BookmarkPlus />Bookmark current moment</Button>
-    </div>
-    <details className="recall-context-filters">
-      <summary className="flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground"><ChevronRight className="recall-options-chevron size-4 shrink-0" aria-hidden="true" />Load a custom time range</summary>
+  return (
+    <section
+      className="recall-navigation rounded-xl bg-card p-4"
+      aria-label="Recall navigation and local bookmarks"
+    >
+      <h3 className="flex items-center gap-1 text-sm font-medium">
+        Go to a moment{" "}
+        <HelpTip>
+          Bookmarks and notes are saved in this browser only. Recordings expire with the retention
+          settings.
+        </HelpTip>
+      </h3>
+      {!preferencesKey && (
+        <p role="status" className="mt-2 text-sm text-muted-foreground">
+          Checking your account…
+        </p>
+      )}
       <div className="recall-retrieval-fields">
-        <Label>Range from <Input type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} className="h-9" /></Label>
-        <Label>Range to <Input type="datetime-local" value={to} onChange={e => setTo(e.target.value)} className="h-9" /></Label>
-        <Button variant="outline" size="lg" disabled={!timezone} onClick={() => { const start = deviceTime(from, timezone), end = deviceTime(to, timezone); if (start == null || end == null || start >= end) setMessage("Enter a valid start and later end in the device timezone. Ambiguous or skipped DST times are invalid."); else { generation.current++; onRange({ fromMs: start, toMs: end }); setMessage(""); } }}>Load custom range</Button>
+        <Label>
+          <span className="text-xs text-muted-foreground">Jump to time </span>
+          <Input
+            type="datetime-local"
+            value={jump}
+            onChange={(e) => setJump(e.target.value)}
+            className="h-9"
+          />
+        </Label>
+        <Button
+          variant="outline"
+          size="lg"
+          disabled={!timezone}
+          onClick={() => {
+            const ms = deviceTime(jump, timezone);
+            if (ms == null)
+              setMessage("Enter a valid device time. Ambiguous or skipped DST times are invalid.");
+            else {
+              // oxlint-disable-next-line react/exhaustive-deps
+              generation.current++;
+              onSeek(new Date(ms).toISOString());
+              setMessage("");
+            }
+          }}
+        >
+          <Crosshair />
+          Jump
+        </Button>
+        <Button variant="outline" size="lg" className="sm:ml-auto" onClick={() => void copy()}>
+          <Link2 />
+          Copy link to current moment
+        </Button>
       </div>
-    </details>
-    {bookmarks.length > 0 && <div className="mt-2 flex flex-col gap-2" aria-label="Bookmarks">
-      <p className="text-sm font-medium">Bookmarks ({bookmarks.length})</p>
-      {bookmarks.map(b => <div className="flex flex-wrap items-center gap-2" key={b.id}>
-        <Button variant="outline" size="lg" onClick={() => void open(b)}><BookmarkIcon />{shortDateIn(timezone, Date.parse(b.at))} · {timeIn(timezone, b.at)} · {b.monitor == null ? "All displays" : `Display ${b.monitor + 1}`}</Button>
-        <Label className="min-w-0 flex-1 basis-48"><span className="sr-only">Saved note </span><Input value={b.note} maxLength={2000} placeholder="Add a note" onChange={e => persist(bookmarks.map(item => item.id === b.id ? { ...item, note: e.target.value } : item))} className="h-9 w-full" /></Label>
-        <Button variant="ghost" size="lg" onClick={() => { generation.current++; persist(bookmarks.filter(item => item.id !== b.id)); }}>Remove bookmark</Button>
-      </div>)}
-    </div>}
-    {message && <p role="status" className="mt-2 text-sm text-muted-foreground">{message}</p>}
-    {link && <Label>Moment link <Input className="recall-copy-link h-9" readOnly value={link} onFocus={e => e.target.select()} /></Label>}
-  </section>;
+      <div className="recall-retrieval-fields">
+        <Label className="min-w-0 flex-1 basis-56">
+          <span className="sr-only">Bookmark note </span>
+          <Input
+            value={note}
+            maxLength={2000}
+            placeholder="Note for this bookmark (optional)"
+            onChange={(e) => setNote(e.target.value)}
+            className="h-9 w-full"
+          />
+        </Label>
+        <Button
+          variant="outline"
+          size="lg"
+          disabled={!preferencesKey || !displayedFrame}
+          onClick={() => {
+            if (!displayedFrame) return;
+            const { id: frameId, captured_at: at, monitor: frameMonitor } = displayedFrame;
+            const id = `${frameId}:${frameMonitor}`;
+            persist(
+              [
+                { id, at, frameId, monitor: frameMonitor, note },
+                ...bookmarks.filter((b) => b.id !== id),
+              ].slice(0, 100),
+            );
+          }}
+        >
+          <BookmarkPlus />
+          Bookmark current moment
+        </Button>
+      </div>
+      <details className="recall-context-filters">
+        <summary className="flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground">
+          <ChevronRight className="recall-options-chevron size-4 shrink-0" aria-hidden="true" />
+          Load a custom time range
+        </summary>
+        <div className="recall-retrieval-fields">
+          <Label>
+            Range from{" "}
+            <Input
+              type="datetime-local"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="h-9"
+            />
+          </Label>
+          <Label>
+            Range to{" "}
+            <Input
+              type="datetime-local"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="h-9"
+            />
+          </Label>
+          <Button
+            variant="outline"
+            size="lg"
+            disabled={!timezone}
+            onClick={() => {
+              const start = deviceTime(from, timezone),
+                end = deviceTime(to, timezone);
+              if (start == null || end == null || start >= end)
+                setMessage(
+                  "Enter a valid start and later end in the device timezone. Ambiguous or skipped DST times are invalid.",
+                );
+              else {
+                // oxlint-disable-next-line react/exhaustive-deps
+                generation.current++;
+                onRange({ fromMs: start, toMs: end });
+                setMessage("");
+              }
+            }}
+          >
+            Load custom range
+          </Button>
+        </div>
+      </details>
+      {bookmarks.length > 0 && (
+        <div className="mt-2 flex flex-col gap-2" aria-label="Bookmarks">
+          <p className="text-sm font-medium">Bookmarks ({bookmarks.length})</p>
+          {bookmarks.map((b) => (
+            <div className="flex flex-wrap items-center gap-2" key={b.id}>
+              <Button variant="outline" size="lg" onClick={() => void open(b)}>
+                <BookmarkIcon />
+                {shortDateIn(timezone, Date.parse(b.at))} · {timeIn(timezone, b.at)} ·{" "}
+                {b.monitor == null ? "All displays" : `Display ${b.monitor + 1}`}
+              </Button>
+              <Label className="min-w-0 flex-1 basis-48">
+                <span className="sr-only">Saved note </span>
+                <Input
+                  value={b.note}
+                  maxLength={2000}
+                  placeholder="Add a note"
+                  onChange={(e) =>
+                    persist(
+                      bookmarks.map((item) =>
+                        item.id === b.id ? { ...item, note: e.target.value } : item,
+                      ),
+                    )
+                  }
+                  className="h-9 w-full"
+                />
+              </Label>
+              <Button
+                variant="ghost"
+                size="lg"
+                onClick={() => {
+                  // oxlint-disable-next-line react/exhaustive-deps
+                  generation.current++;
+                  persist(bookmarks.filter((item) => item.id !== b.id));
+                }}
+              >
+                Remove bookmark
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      {message && (
+        <p role="status" className="mt-2 text-sm text-muted-foreground">
+          {message}
+        </p>
+      )}
+      {link && (
+        <Label>
+          Moment link{" "}
+          <Input
+            className="recall-copy-link h-9"
+            readOnly
+            value={link}
+            onFocus={(e) => e.target.select()}
+          />
+        </Label>
+      )}
+    </section>
+  );
 }

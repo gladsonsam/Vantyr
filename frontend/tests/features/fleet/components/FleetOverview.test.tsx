@@ -1,22 +1,12 @@
-// @vitest-environment jsdom
+import { testMock as vi } from "@tests/support/mock";
 import type { ComponentProps } from "react";
 import { useEffect } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { Agent, AgentInfo, FleetSummaryResponse } from "@/api/types";
-import { api } from "@/api";
-import {
-  fleetPreferenceScope,
-  parseFleetPreferences,
-  useFleetPreferences,
-  useFleetPreferenceScope,
-} from "@/features/fleet/lib/fleetPreferences";
-import { fleetServerScope } from "@/hooks/useVerifiedUser";
-import { FleetOverview } from "@/features/fleet/components/FleetOverview";
-import { notifySessionExpired } from "@/api/sessionExpiry";
 
-vi.mock("@/api", () => ({
+await vi.mock("@/api", () => ({
   apiUrl: (path: string) => path,
   api: {
     fleetSummary: vi.fn(),
@@ -28,23 +18,52 @@ vi.mock("@/api", () => ({
     me: vi.fn(),
   },
 }));
-vi.mock("@/api/serverVersionStore", () => ({ useServerVersionPayload: () => null }));
-vi.mock("@/hooks/useMediaQuery", () => ({ useMediaQuery: () => false }));
+await vi.mock("@/api/serverVersionStore", () => ({ useServerVersionPayload: () => null }));
+await vi.mock("@/hooks/useMediaQuery", () => ({ useMediaQuery: () => false }));
+const { api } = await import("@/api");
+const {
+  fleetPreferenceScope,
+  parseFleetPreferences,
+  useFleetPreferences,
+  useFleetPreferenceScope,
+} = await import("@/features/fleet/lib/fleetPreferences");
+const { fleetServerScope } = await import("@/hooks/useVerifiedUser");
+const { FleetOverview } = await import("@/features/fleet/components/FleetOverview");
+const { notifySessionExpired } = await import("@/api/sessionExpiry");
 
 // jsdom has no PointerEvent; Base UI buttons/checkboxes construct one on click.
-if (typeof window !== "undefined" && typeof (window as unknown as { PointerEvent?: unknown }).PointerEvent === "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof (window as unknown as { PointerEvent?: unknown }).PointerEvent === "undefined"
+) {
   (window as unknown as { PointerEvent?: unknown }).PointerEvent = MouseEvent;
 }
 
 type FleetProps = ComponentProps<typeof FleetOverview>;
 
 const pc: Agent = {
-  id: "pc", name: "Office PC", online: false, last_seen: "2026-01-01", first_seen: "2026-01-01",
-  icon: null, agent_version: null, connected_at: null, last_connected_at: null, last_disconnected_at: null,
+  id: "pc",
+  name: "Office PC",
+  online: false,
+  last_seen: "2026-01-01",
+  first_seen: "2026-01-01",
+  icon: null,
+  agent_version: null,
+  connected_at: null,
+  last_connected_at: null,
+  last_disconnected_at: null,
 };
 const a: Agent = {
-  id: "11111111-1111-4111-8111-111111111111", name: "Alpha", online: true, last_seen: "2026-01-01",
-  first_seen: "2026-01-01", icon: null, agent_version: null, connected_at: null, last_connected_at: null, last_disconnected_at: null,
+  id: "11111111-1111-4111-8111-111111111111",
+  name: "Alpha",
+  online: true,
+  last_seen: "2026-01-01",
+  first_seen: "2026-01-01",
+  icon: null,
+  agent_version: null,
+  connected_at: null,
+  last_connected_at: null,
+  last_disconnected_at: null,
 };
 const b: Agent = { ...a, id: "22222222-2222-4222-8222-222222222222", name: "Beta", online: false };
 
@@ -74,7 +93,10 @@ function ScopedFleet({ agents, ...rest }: Partial<FleetProps> & { agents: Record
   const [preferences, updatePreferences] = useFleetPreferences(scope);
   useEffect(() => {
     if (preferences.favorites.some((id) => !agents[id])) {
-      updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.filter((id) => Boolean(agents[id])) }));
+      updatePreferences((previous) => ({
+        ...previous,
+        favorites: previous.favorites.filter((id) => Boolean(agents[id])),
+      }));
     }
   }, [agents, preferences.favorites, updatePreferences]);
   return (
@@ -110,11 +132,28 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.fleetSummary).mockImplementation(async (ids: readonly string[]) => ({
     agents: Object.fromEntries(
-      ids.map((id) => [id, { info: null, info_reported_at: null, last_window: null, internet_blocked: true, internet_block_source: "agent" as const, app_block_enabled_count: 0 }]),
+      ids.map((id) => [
+        id,
+        {
+          info: null,
+          info_reported_at: null,
+          last_window: null,
+          internet_blocked: true,
+          internet_block_source: "agent" as const,
+          app_block_enabled_count: 0,
+        },
+      ]),
     ),
     missing: [],
   }));
-  vi.mocked(api.me).mockResolvedValue({ id: "user-a", username: "alice", role: "admin", display_name: "", display_icon: null, csrf_token: "csrf" });
+  vi.mocked(api.me).mockResolvedValue({
+    id: "user-a",
+    username: "alice",
+    role: "admin",
+    display_name: "",
+    display_icon: null,
+    csrf_token: "csrf",
+  });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -136,7 +175,9 @@ async function renderFleet(props: FleetProps) {
 
 async function clickButton(label: string) {
   const button = [...document.querySelectorAll("button")].find(
-    (candidate) => (candidate.getAttribute("aria-label") || candidate.textContent?.trim()) === label && !candidate.disabled,
+    (candidate) =>
+      (candidate.getAttribute("aria-label") || candidate.textContent?.trim()) === label &&
+      !candidate.disabled,
   );
   expect(button, label).toBeDefined();
   await act(async () => {
@@ -157,14 +198,18 @@ async function clickTab(label: string) {
 }
 
 function selectedTab(): string | null {
-  const tab = [...document.querySelectorAll('[role="tab"]')].find((candidate) => candidate.getAttribute("aria-selected") === "true");
+  const tab = [...document.querySelectorAll('[role="tab"]')].find(
+    (candidate) => candidate.getAttribute("aria-selected") === "true",
+  );
   return tab?.textContent?.trim() ?? null;
 }
 
 async function clickMenuItem(label: string) {
-  const item = [...document.querySelectorAll('[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]')].find(
-    (candidate) => candidate.textContent?.trim() === label,
-  );
+  const item = [
+    ...document.querySelectorAll(
+      '[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]',
+    ),
+  ].find((candidate) => candidate.textContent?.trim() === label);
   expect(item, label).toBeDefined();
   await act(async () => {
     (item as HTMLElement).click();
@@ -175,7 +220,9 @@ async function clickMenuItem(label: string) {
 async function closeMenus() {
   await act(async () => {
     const menu = document.querySelector('[role="menu"]');
-    (menu ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    (menu ?? document.body).dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
   });
   await act(async () => {});
 }
@@ -220,7 +267,9 @@ async function applyView(name: string) {
 async function removeView(name: string) {
   await clickButton("Views");
   const sub = [...document.querySelectorAll('[role="menuitem"]')].find(
-    (candidate) => candidate.textContent?.trim() === "Remove a view" && candidate.getAttribute("aria-haspopup") === "menu",
+    (candidate) =>
+      candidate.textContent?.trim() === "Remove a view" &&
+      candidate.getAttribute("aria-haspopup") === "menu",
   );
   expect(sub, "Remove a view").toBeDefined();
   await act(async () => {
@@ -234,7 +283,9 @@ async function removeView(name: string) {
   const menus = [...document.querySelectorAll('[role="menu"]')];
   expect(menus.length).toBeGreaterThan(1);
   const subMenu = menus[menus.length - 1];
-  const item = [...subMenu.querySelectorAll('[role="menuitem"]')].find((candidate) => candidate.textContent?.trim() === name);
+  const item = [...subMenu.querySelectorAll('[role="menuitem"]')].find(
+    (candidate) => candidate.textContent?.trim() === name,
+  );
   expect(item, name).toBeDefined();
   await act(async () => {
     (item as HTMLElement).click();
@@ -258,7 +309,9 @@ function favorite(name: string) {
 }
 
 function favoriteOrder(): (string | null)[] {
-  return [...container.querySelectorAll('[aria-label^="Favorite "]')].map((button) => button.getAttribute("aria-label"));
+  return [...container.querySelectorAll('[aria-label^="Favorite "]')].map((button) =>
+    button.getAttribute("aria-label"),
+  );
 }
 
 describe("fleet removal", () => {
@@ -267,7 +320,12 @@ describe("fleet removal", () => {
       let reject!: (reason: Error) => void;
       const remove = vi
         .fn()
-        .mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail; }))
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((_resolve, fail) => {
+              reject = fail;
+            }),
+        )
         .mockResolvedValue(undefined);
       const props = makeProps({ controlledViewMode: mode, onDeleteAgents: remove });
       await renderFleet(props);
@@ -303,7 +361,9 @@ describe("fleet removal", () => {
     });
     await act(async () => {});
     await clickButton("List view");
-    const selectAll = container.querySelector<HTMLElement>('[aria-label="Select all visible devices"]')!;
+    const selectAll = container.querySelector<HTMLElement>(
+      '[aria-label="Select all visible devices"]',
+    )!;
     await act(async () => {
       selectAll.click();
     });
@@ -322,7 +382,10 @@ describe("fleet removal", () => {
     expect(favoriteOrder()).toEqual(["Favorite Alpha", "Favorite Beta"]);
     await setSort("Name", "Z–A");
     expect(favoriteOrder()).toEqual(["Favorite Beta", "Favorite Alpha"]);
-    expect(JSON.parse(localStorage.getItem("vantyr.fleet-sort.v1")!)).toEqual({ key: "name", direction: "desc" });
+    expect(JSON.parse(localStorage.getItem("vantyr.fleet-sort.v1")!)).toEqual({
+      key: "name",
+      direction: "desc",
+    });
     await clickButton("List view");
     expect(favoriteOrder()).toEqual(["Favorite Beta", "Favorite Alpha"]);
     await clickButton("Grid view");
@@ -331,7 +394,10 @@ describe("fleet removal", () => {
     root = createRoot(container);
     await renderFleet(makeProps({ agents: { [a.id]: a, [b.id]: b } }));
     expect(favoriteOrder()).toEqual(["Favorite Beta", "Favorite Alpha"]);
-    expect(JSON.parse(localStorage.getItem("vantyr.fleet-sort.v1")!)).toEqual({ key: "name", direction: "desc" });
+    expect(JSON.parse(localStorage.getItem("vantyr.fleet-sort.v1")!)).toEqual({
+      key: "name",
+      direction: "desc",
+    });
   });
 });
 
@@ -341,7 +407,11 @@ describe("fleet enrichment", () => {
       pc: {
         info: { hostname: "Stored host", current_user: "Stored user", uptime_secs: 120 },
         info_reported_at: "2026-01-01T00:00:00Z",
-        last_window: { app: "old.exe", title: "Historical window", reported_at: "2026-01-01T00:00:00Z" },
+        last_window: {
+          app: "old.exe",
+          title: "Historical window",
+          reported_at: "2026-01-01T00:00:00Z",
+        },
         internet_blocked: false,
         internet_block_source: null,
         app_block_enabled_count: 0,
@@ -352,7 +422,12 @@ describe("fleet enrichment", () => {
 
   it("enriches by fleet batch, keeps live events ahead of late history and does not refetch on live updates or search", async () => {
     let resolve!: (value: FleetSummaryResponse) => void;
-    vi.mocked(api.fleetSummary).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    vi.mocked(api.fleetSummary).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
     const props = makeProps();
     await renderFleet(props);
     await renderFleet({
@@ -369,7 +444,11 @@ describe("fleet enrichment", () => {
     // The new UI omits the negative policy line entirely instead of restating it;
     // app-rule counts must never appear.
     expect(container.textContent).not.toContain("Enabled app rules");
-    await renderFleet({ ...props, controlledQuery: "Office", liveStatus: { pc: { window: "Updated live window" } } });
+    await renderFleet({
+      ...props,
+      controlledQuery: "Office",
+      liveStatus: { pc: { window: "Updated live window" } },
+    });
     expect(container.textContent).toContain("Updated live window");
     expect(api.fleetSummary).toHaveBeenCalledTimes(1);
     expect(api.windows).not.toHaveBeenCalled();
@@ -378,27 +457,32 @@ describe("fleet enrichment", () => {
     expect(api.appBlockRulesList).not.toHaveBeenCalled();
   });
 
-  it.each(["grid", "table"] as const)("shows history and unknown policy truthfully in %s; omitted/error results never look like false/zero", async (mode) => {
-    vi.mocked(api.fleetSummary).mockResolvedValueOnce(stored);
-    await renderFleet(makeProps({ controlledViewMode: mode }));
-    expect(container.textContent).toContain("Historical window");
-    expect(container.querySelector('[title^="Last reported"]')).not.toBeNull();
-    vi.mocked(api.fleetSummary).mockResolvedValueOnce({ agents: {}, missing: ["pc"] });
-    await renderFleet(makeProps({ preferenceScope: "other-user", controlledViewMode: mode }));
-    expect(container.textContent).toContain("Device absent from fleet summary");
-    expect(container.textContent).not.toContain("Enabled app rules: 0");
-    expect(container.textContent).not.toContain("Historical window");
-    vi.mocked(api.fleetSummary).mockRejectedValueOnce(new Error("DB failed"));
-    await renderFleet(makeProps({ preferenceScope: "other-server", controlledViewMode: mode }));
-    expect(container.textContent).toContain("Policy configuration unavailable");
-    expect(container.textContent).not.toContain("Enabled app rules: 0");
-  });
+  it.each(["grid", "table"] as const)(
+    "shows history and unknown policy truthfully in %s; omitted/error results never look like false/zero",
+    async (mode) => {
+      vi.mocked(api.fleetSummary).mockResolvedValueOnce(stored);
+      await renderFleet(makeProps({ controlledViewMode: mode }));
+      expect(container.textContent).toContain("Historical window");
+      expect(container.querySelector('[title^="Last reported"]')).not.toBeNull();
+      vi.mocked(api.fleetSummary).mockResolvedValueOnce({ agents: {}, missing: ["pc"] });
+      await renderFleet(makeProps({ preferenceScope: "other-user", controlledViewMode: mode }));
+      expect(container.textContent).toContain("Device absent from fleet summary");
+      expect(container.textContent).not.toContain("Enabled app rules: 0");
+      expect(container.textContent).not.toContain("Historical window");
+      vi.mocked(api.fleetSummary).mockRejectedValueOnce(new Error("DB failed"));
+      await renderFleet(makeProps({ preferenceScope: "other-server", controlledViewMode: mode }));
+      expect(container.textContent).toContain("Policy configuration unavailable");
+      expect(container.textContent).not.toContain("Enabled app rules: 0");
+    },
+  );
 });
 
 describe("card selection without navigation", () => {
   it("toggles grid selection without opening the device", async () => {
     const onSelectAgent = vi.fn();
-    await renderFleet(makeProps({ onSelectAgent, onDeleteAgents: vi.fn().mockResolvedValue(undefined) }));
+    await renderFleet(
+      makeProps({ onSelectAgent, onDeleteAgents: vi.fn().mockResolvedValue(undefined) }),
+    );
     const checkbox = container.querySelector<HTMLElement>('[aria-label="Select Office PC"]')!;
     expect(checkbox).toBeTruthy();
     await act(async () => {
@@ -442,7 +526,9 @@ describe("browser-local fleet preferences", () => {
     it(`toggles UUID favorites in ${mode}, preserves sorting and reloads them`, async () => {
       const scope = pairScope();
       const onSelectAgent = vi.fn();
-      await renderFleet(basePair({ preferenceScope: scope, controlledViewMode: mode, onSelectAgent }));
+      await renderFleet(
+        basePair({ preferenceScope: scope, controlledViewMode: mode, onSelectAgent }),
+      );
       await setSort("Name", "Z–A");
       expect(favoriteOrder()).toEqual(["Favorite Beta", "Favorite Alpha"]);
       await clickButton("Favorite Alpha");
@@ -453,9 +539,14 @@ describe("browser-local fleet preferences", () => {
       expect(favoriteOrder()).toEqual(["Favorite Alpha"]);
       await act(async () => root.unmount());
       root = createRoot(container);
-      await renderFleet(basePair({ preferenceScope: scope, controlledViewMode: mode, onSelectAgent }));
+      await renderFleet(
+        basePair({ preferenceScope: scope, controlledViewMode: mode, onSelectAgent }),
+      );
       expect(favorite("Alpha")?.getAttribute("aria-pressed")).toBe("true");
-      expect(JSON.parse(localStorage.getItem("vantyr.fleet-sort.v1")!)).toEqual({ key: "name", direction: "desc" });
+      expect(JSON.parse(localStorage.getItem("vantyr.fleet-sort.v1")!)).toEqual({
+        key: "name",
+        direction: "desc",
+      });
       expect(favoriteOrder()).toEqual(["Favorite Beta", "Favorite Alpha"]);
       await clickButton("Favorites only");
       await clickButton("Favorite Alpha");
@@ -489,10 +580,16 @@ describe("browser-local fleet preferences", () => {
     root = createRoot(container);
     await renderFleet(basePair({ preferenceScope: scope, onSelectAgent }));
     await applyView("Offline favorites");
-    expect(document.querySelector<HTMLInputElement>('[aria-label="Search fleet devices"]')!.value).toBe("Beta");
+    expect(
+      document.querySelector<HTMLInputElement>('[aria-label="Search fleet devices"]')!.value,
+    ).toBe("Beta");
     expect(selectedTab()?.startsWith("Offline")).toBe(true);
-    expect(document.querySelector('[aria-label="List view"]')?.getAttribute("aria-pressed")).toBe("true");
-    expect(document.querySelector('[aria-label="Favorites only"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelector('[aria-label="List view"]')?.getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(
+      document.querySelector('[aria-label="Favorites only"]')?.getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(favorite("Beta")).not.toBeNull();
     expect(favorite("Alpha")).toBeNull();
     await removeView("Offline favorites");
@@ -527,7 +624,13 @@ describe("browser-local fleet preferences", () => {
     });
     await act(async () => {});
     const replacement = { ...b, id: "33333333-3333-4333-8333-333333333333" };
-    await renderFleet(basePair({ preferenceScope: scope, onDeleteAgents: remove, agents: { [a.id]: a, [replacement.id]: replacement } }));
+    await renderFleet(
+      basePair({
+        preferenceScope: scope,
+        onDeleteAgents: remove,
+        agents: { [a.id]: a, [replacement.id]: replacement },
+      }),
+    );
     expect(parseFleetPreferences(localStorage.getItem(scope)).favorites).toEqual([]);
     expect(favorite("Beta")?.getAttribute("aria-pressed")).toBe("false");
     expect(container.textContent).not.toContain("1 selected");
@@ -570,19 +673,42 @@ describe("browser-local fleet preferences", () => {
     await saveView("Alice only");
     expect(api.me).toHaveBeenCalledTimes(1);
     let resolve!: (user: Awaited<ReturnType<typeof api.me>>) => void;
-    vi.mocked(api.me).mockImplementation(() => new Promise((done) => { resolve = done; }));
+    vi.mocked(api.me).mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
     });
     expect(favorite("Alpha")?.getAttribute("aria-pressed")).toBe("true");
     expect(await viewListed("Alice only")).toBe(true);
-    await act(async () => resolve({ id: "user-a", username: "alice", role: "admin", display_name: "", display_icon: null, csrf_token: "csrf" }));
+    await act(async () =>
+      resolve({
+        id: "user-a",
+        username: "alice",
+        role: "admin",
+        display_name: "",
+        display_icon: null,
+        csrf_token: "csrf",
+      }),
+    );
     expect(favorite("Alpha")?.getAttribute("aria-pressed")).toBe("true");
     expect(await viewListed("Alice only")).toBe(true);
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
     });
-    await act(async () => resolve({ id: "user-b", username: "bob", role: "admin", display_name: "", display_icon: null, csrf_token: "csrf" }));
+    await act(async () =>
+      resolve({
+        id: "user-b",
+        username: "bob",
+        role: "admin",
+        display_name: "",
+        display_icon: null,
+        csrf_token: "csrf",
+      }),
+    );
     expect(favorite("Alpha")?.getAttribute("aria-pressed")).toBe("false");
     expect(await viewListed("Alice only")).toBe(false);
     await act(async () => {
@@ -610,7 +736,10 @@ describe("storage and server changes", () => {
     expect(favorite("Alpha")?.getAttribute("aria-pressed")).toBe("true");
     expect(await viewListed("Session view")).toBe(true);
     await renderFleet(
-      makeProps({ agents, preferenceScope: fleetPreferenceScope(fleetServerScope(), "different-storage-user") }),
+      makeProps({
+        agents,
+        preferenceScope: fleetPreferenceScope(fleetServerScope(), "different-storage-user"),
+      }),
     );
     expect(favorite("Alpha")?.getAttribute("aria-pressed")).toBe("false");
     expect(await viewListed("Session view")).toBe(false);
@@ -626,7 +755,10 @@ describe("storage and server changes", () => {
     await saveView("Server one");
     const scope = fleetPreferenceScope(fleetServerScope(), "user-a");
     await act(async () => {
-      localStorage.setItem("vantyr-server-settings", JSON.stringify({ serverOrigin: "https://other.example" }));
+      localStorage.setItem(
+        "vantyr-server-settings",
+        JSON.stringify({ serverOrigin: "https://other.example" }),
+      );
       window.dispatchEvent(new StorageEvent("storage", { key: "vantyr-server-settings" }));
     });
     await act(async () => {});

@@ -16,7 +16,10 @@ export function useRuleListView<T>(items: T[], haystack: (item: T) => string[]) 
   }, [items, query, haystack]);
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const activePage = Math.min(page, pages);
-  const displayed = useMemo(() => filtered.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE), [filtered, activePage]);
+  const displayed = useMemo(
+    () => filtered.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE),
+    [filtered, activePage],
+  );
 
   return {
     query,

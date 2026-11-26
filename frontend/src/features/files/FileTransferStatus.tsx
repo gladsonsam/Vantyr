@@ -48,9 +48,15 @@ export function FileBreadcrumbs({
             const isLast = idx === crumbs.length - 1;
             return (
               <li key={crumb.path} className="flex shrink-0 items-center gap-1">
-                {idx > 0 && <ChevronRight size={14} className="text-muted-foreground" aria-hidden="true" />}
+                {idx > 0 && (
+                  <ChevronRight size={14} className="text-muted-foreground" aria-hidden="true" />
+                )}
                 {isLast ? (
-                  <span aria-current="page" title={crumb.text} className="inline-flex min-h-7 items-center px-1.5 font-medium max-sm:min-h-9 text-foreground">
+                  <span
+                    aria-current="page"
+                    title={crumb.text}
+                    className="inline-flex min-h-7 items-center px-1.5 font-medium max-sm:min-h-9 text-foreground"
+                  >
                     {crumb.text}
                   </span>
                 ) : (
@@ -87,7 +93,14 @@ function Progress({ label, path, value }: { label: string; path: string; value: 
   const pct = Math.min(100, Math.max(0, Math.round(value)));
   const name = baseName(path) || path;
   return (
-    <div className="flex flex-col gap-1.5" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${label} ${name}`}>
+    <div
+      className="flex flex-col gap-1.5"
+      role="progressbar"
+      aria-valuenow={pct}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={`${label} ${name}`}
+    >
       <div className="flex items-baseline justify-between gap-3 text-[13px]">
         <span className="min-w-0 wrap-break-word">
           <span className="font-medium">{label}</span> <span title={path}>{name}</span>
@@ -95,7 +108,10 @@ function Progress({ label, path, value }: { label: string; path: string; value: 
         <span className="shrink-0 text-muted-foreground tabular-nums">{pct}%</span>
       </div>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${pct}%` }} />
+        <div
+          className="h-full rounded-full bg-primary transition-[width]"
+          style={{ width: `${pct}%` }}
+        />
       </div>
     </div>
   );
@@ -105,10 +121,19 @@ function ResultLine({ ok, text, onDismiss }: { ok: boolean; text: string; onDism
   return (
     <div
       role={ok ? "status" : "alert"}
-      className={cn("flex items-start justify-between gap-2 rounded-lg px-3 py-1.5 text-[13px]", ok ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive")}
+      className={cn(
+        "flex items-start justify-between gap-2 rounded-lg px-3 py-1.5 text-[13px]",
+        ok ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive",
+      )}
     >
       <span className="min-w-0 py-0.5 wrap-break-word">{text}</span>
-      <Button variant="ghost" size="icon-xs" className="-mr-1.5 shrink-0 max-sm:size-9 pointer-coarse:size-9" aria-label="Dismiss message" onClick={onDismiss}>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        className="-mr-1.5 shrink-0 max-sm:size-9 pointer-coarse:size-9"
+        aria-label="Dismiss message"
+        onClick={onDismiss}
+      >
         <X />
       </Button>
     </div>
@@ -141,8 +166,12 @@ export function FileTransferStatus({
     <div className="flex flex-col gap-2 px-3 pt-2 sm:px-4">
       {downloading && <Progress value={downloadProgress} label="Downloading" path={downloading} />}
       {uploading && <Progress value={uploadProgress} label="Uploading" path={uploading} />}
-      {uploadMessage && <ResultLine ok={!uploadFailed} text={uploadMessage} onDismiss={onDismissUploadMessage} />}
-      {fsMessage && <ResultLine ok={fsMessage.ok} text={fsMessage.text} onDismiss={onDismissFsMessage} />}
+      {uploadMessage && (
+        <ResultLine ok={!uploadFailed} text={uploadMessage} onDismiss={onDismissUploadMessage} />
+      )}
+      {fsMessage && (
+        <ResultLine ok={fsMessage.ok} text={fsMessage.text} onDismiss={onDismissFsMessage} />
+      )}
     </div>
   );
 }

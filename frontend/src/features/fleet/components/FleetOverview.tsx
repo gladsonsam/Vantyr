@@ -1,14 +1,6 @@
 import { EmptyState } from "@/components/common/EmptyState";
 import { useMemo, useState, type ComponentProps } from "react";
-import {
-  FolderPlus,
-  Plus,
-  SearchX,
-  ServerOff,
-  SquareTerminal,
-  Trash2,
-  X,
-} from "lucide-react";
+import { FolderPlus, Plus, SearchX, ServerOff, SquareTerminal, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import {
   AlertDialog,
@@ -26,10 +18,7 @@ import { Spinner } from "@vantyr/ui/components/spinner";
 import type { FleetStatusFilter } from "@/features/fleet/lib/fleetPreferences";
 import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import type { FleetRow } from "@/features/fleet/types";
-import {
-  useFleetTable,
-  type FleetTableProps,
-} from "@/features/fleet/hooks/useFleetTable";
+import { useFleetTable, type FleetTableProps } from "@/features/fleet/hooks/useFleetTable";
 import type { AgentActionHandlers, PowerAction } from "./AgentActionsMenu";
 import { FleetGridView } from "./FleetGridView";
 import { FleetTableView } from "./FleetTableView";
@@ -114,12 +103,7 @@ export function FleetOverview({ loadingAgents, onAddAgent, ...props }: Props) {
 }
 
 function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
-  const {
-    onBatchRestart,
-    onBatchShutdown,
-    canOperate = true,
-    onBulkAddToGroup,
-  } = props;
+  const { onBatchRestart, onBatchShutdown, canOperate = true, onBulkAddToGroup } = props;
   const fleet = useFleetTable(props);
   const {
     rows,
@@ -190,9 +174,7 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
   };
 
   const filtered = Boolean(
-    query.trim() ||
-    currentFilters.status !== "all" ||
-    currentFilters.favoritesOnly,
+    query.trim() || currentFilters.status !== "all" || currentFilters.favoritesOnly,
   );
 
   return (
@@ -258,16 +240,10 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
       />
 
       {bulkScriptIds && bulkScriptIds.length > 0 ? (
-        <BulkScriptModal
-          agentIds={bulkScriptIds}
-          onDismiss={() => setBulkScriptIds(null)}
-        />
+        <BulkScriptModal agentIds={bulkScriptIds} onDismiss={() => setBulkScriptIds(null)} />
       ) : null}
       {bulkGroupIds && bulkGroupIds.length > 0 ? (
-        <BulkAddToGroupModal
-          agentIds={bulkGroupIds}
-          onDismiss={() => setBulkGroupIds(null)}
-        />
+        <BulkAddToGroupModal agentIds={bulkGroupIds} onDismiss={() => setBulkGroupIds(null)} />
       ) : null}
 
       <FleetRemovalDialog fleet={fleet} />
@@ -281,8 +257,7 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
             <>
               <AlertDialogHeader>
                 <AlertDialogTitle>
-                  {POWER_COPY[powerConfirm.action].title}{" "}
-                  {powerConfirm.row.displayName}?
+                  {POWER_COPY[powerConfirm.action].title} {powerConfirm.row.displayName}?
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {POWER_COPY[powerConfirm.action].body}
@@ -323,30 +298,19 @@ function FleetSelectionBar({
   onRunScript: () => void;
   onGroup: () => void;
 }) {
-  const {
-    canDelete,
-    selectedIds,
-    filteredRows,
-    deleting,
-    setSelected,
-    requestDelete,
-  } = fleet;
+  const { canDelete, selectedIds, filteredRows, deleting, setSelected, requestDelete } = fleet;
   return (
     <>
       {canDelete && selectedIds.length > 0 && (
         <div className="pointer-events-none sticky bottom-4 z-20 flex justify-center">
           <div className="pointer-events-auto flex max-w-[calc(100vw-2rem)] flex-wrap items-center justify-center gap-1 rounded-xl bg-popover p-1.5 pl-3.5 text-sm shadow-2xl shadow-black/50 ring-1 ring-foreground/10 animate-in fade-in-0 slide-in-from-bottom-2">
-            <span className="mr-2 font-medium tabular-nums">
-              {selectedIds.length} selected
-            </span>
+            <span className="mr-2 font-medium tabular-nums">{selectedIds.length} selected</span>
             {selectedIds.length < filteredRows.length && (
               <Button
                 variant="ghost"
                 size="sm"
                 disabled={deleting}
-                onClick={() =>
-                  setSelected(new Set(filteredRows.map((row) => row.id)))
-                }
+                onClick={() => setSelected(new Set(filteredRows.map((row) => row.id)))}
               >
                 Select all {filteredRows.length}
               </Button>
@@ -360,22 +324,12 @@ function FleetSelectionBar({
               <X /> Clear
             </Button>
             {canOperate && (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={deleting}
-                onClick={onRunScript}
-              >
+              <Button variant="ghost" size="sm" disabled={deleting} onClick={onRunScript}>
                 <SquareTerminal /> Run script
               </Button>
             )}
             {allowGroup && (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={deleting}
-                onClick={onGroup}
-              >
+              <Button variant="ghost" size="sm" disabled={deleting} onClick={onGroup}>
                 <FolderPlus /> Add to group
               </Button>
             )}
@@ -394,11 +348,7 @@ function FleetSelectionBar({
   );
 }
 
-function FleetRemovalDialog({
-  fleet,
-}: {
-  fleet: ReturnType<typeof useFleetTable>;
-}) {
+function FleetRemovalDialog({ fleet }: { fleet: ReturnType<typeof useFleetTable> }) {
   const {
     deleteIds,
     deleting,
@@ -422,31 +372,22 @@ function FleetRemovalDialog({
           </AlertDialogTitle>
           <AlertDialogDescription render={<div />} className="grid gap-2">
             {(() => {
-              const onlineCount = removalIds.filter(
-                (id) => agents[id]?.online,
-              ).length;
+              const onlineCount = removalIds.filter((id) => agents[id]?.online).length;
               const names = removalIds
-                .map(
-                  (id) => rows.find((row) => row.id === id)?.displayName || id,
-                )
+                .map((id) => rows.find((row) => row.id === id)?.displayName || id)
                 .slice(0, 5);
               return (
                 <>
                   <p>
                     This permanently removes{" "}
-                    {removalIds.length === 1
-                      ? "this agent"
-                      : `these ${removalIds.length} agents`}{" "}
-                    from the server, including{" "}
-                    {removalIds.length === 1 ? "its" : "their"} telemetry
+                    {removalIds.length === 1 ? "this agent" : `these ${removalIds.length} agents`}{" "}
+                    from the server, including {removalIds.length === 1 ? "its" : "their"} telemetry
                     history.
                     {names.length > 0 && (
                       <>
                         {" "}
                         Affected:{" "}
-                        <strong className="text-foreground break-all">
-                          {names.join(", ")}
-                        </strong>
+                        <strong className="text-foreground break-all">{names.join(", ")}</strong>
                         {removalIds.length > names.length && (
                           <> and {removalIds.length - names.length} more</>
                         )}
@@ -456,14 +397,13 @@ function FleetRemovalDialog({
                   </p>
                   {onlineCount > 0 && (
                     <p>
-                      {onlineCount} of{" "}
-                      {removalIds.length === 1 ? "them is" : "them are"}{" "}
-                      currently online and will be disconnected.
+                      {onlineCount} of {removalIds.length === 1 ? "them is" : "them are"} currently
+                      online and will be disconnected.
                     </p>
                   )}
                   <p>
-                    Deleted agents stop reconnecting and show an error until
-                    they are re-enrolled. This cannot be undone.
+                    Deleted agents stop reconnecting and show an error until they are re-enrolled.
+                    This cannot be undone.
                   </p>
                 </>
               );
@@ -520,10 +460,7 @@ function createFleetActionHandlers({
   canDelete: boolean;
   deleting: boolean;
   requestDelete: (ids: string[]) => void;
-  setPowerConfirm: (confirmation: {
-    row: FleetRow;
-    action: "restart" | "shutdown";
-  }) => void;
+  setPowerConfirm: (confirmation: { row: FleetRow; action: "restart" | "shutdown" }) => void;
 }): AgentActionHandlers {
   const { onSelectAgent, onOpenScreen, onBatchWake, onBatchLock } = props;
   return {
@@ -563,9 +500,7 @@ function FleetRows({
         <EmptyState
           title="No devices match"
           description={
-            query.trim()
-              ? `Nothing matches “${query.trim()}”.`
-              : "No device matches these filters."
+            query.trim() ? `Nothing matches “${query.trim()}”.` : "No device matches these filters."
           }
           icon={
             <>

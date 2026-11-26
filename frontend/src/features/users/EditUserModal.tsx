@@ -37,18 +37,43 @@ export function EditUserModal({ user, isSelf, onDismiss, finalFocus, onSave }: E
   const [busy, setBusy] = useState(false);
   return (
     <Dialog open={Boolean(user)} onOpenChange={(open) => !open && !busy && onDismiss()}>
-      <DialogContent finalFocus={finalFocus} className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-lg">
+      <DialogContent
+        finalFocus={finalFocus}
+        className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-lg"
+      >
         <DialogHeader>
-          <DialogTitle className="break-words">{user ? `Edit ${userLabel(user)}` : "Edit user"}</DialogTitle>
-          <DialogDescription>Name, username and avatar. Changing the username changes how they sign in.</DialogDescription>
+          <DialogTitle className="break-words">
+            {user ? `Edit ${userLabel(user)}` : "Edit user"}
+          </DialogTitle>
+          <DialogDescription>
+            Name, username and avatar. Changing the username changes how they sign in.
+          </DialogDescription>
         </DialogHeader>
-        {user ? <EditUserForm key={user.id} user={user} isSelf={isSelf} onDismiss={onDismiss} onSave={onSave} onBusyChange={setBusy} /> : null}
+        {user ? (
+          <EditUserForm
+            key={user.id}
+            user={user}
+            isSelf={isSelf}
+            onDismiss={onDismiss}
+            onSave={onSave}
+            onBusyChange={setBusy}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   );
 }
 
-function EditUserForm({ user, isSelf, onDismiss, onSave, onBusyChange }: Omit<EditUserModalProps, "user"> & { user: DashboardUser; onBusyChange: (busy: boolean) => void }) {
+function EditUserForm({
+  user,
+  isSelf,
+  onDismiss,
+  onSave,
+  onBusyChange,
+}: Omit<EditUserModalProps, "user"> & {
+  user: DashboardUser;
+  onBusyChange: (busy: boolean) => void;
+}) {
   const form = useForm<ProfileValues>({
     resolver: zodResolver(profileSchema),
     mode: "onChange",
@@ -82,7 +107,9 @@ function EditUserForm({ user, isSelf, onDismiss, onSave, onBusyChange }: Omit<Ed
             displayIcon={values.display_icon || null}
             size={48}
           />
-          <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${ROLE_TEXT[user.role]}`}>
+          <span
+            className={`inline-flex items-center gap-1.5 text-sm font-medium ${ROLE_TEXT[user.role]}`}
+          >
             <RoleIcon className="size-3.5" aria-hidden /> {user.role}
             {isSelf && <span className="font-normal text-muted-foreground">· You</span>}
           </span>

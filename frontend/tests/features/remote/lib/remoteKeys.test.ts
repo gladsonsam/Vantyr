@@ -1,7 +1,15 @@
-import { describe, expect, it } from "vitest";
-import { buttonName, createWheelAccumulator, isModifierKey, keyDownAction } from "@/features/remote/lib/remoteKeys";
+import { describe, expect, it } from "bun:test";
+import {
+  buttonName,
+  createWheelAccumulator,
+  isModifierKey,
+  keyDownAction,
+} from "@/features/remote/lib/remoteKeys";
 
-const key = (k: string, mods: Partial<{ ctrlKey: boolean; altKey: boolean; metaKey: boolean }> = {}) => ({
+const key = (
+  k: string,
+  mods: Partial<{ ctrlKey: boolean; altKey: boolean; metaKey: boolean }> = {},
+) => ({
   key: k,
   ctrlKey: false,
   altKey: false,

@@ -1,27 +1,31 @@
-// @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { withQueryClient } from "@tests/support/queryClient";
+import { click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { act } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
-import { withQueryClient } from "@tests/support/queryClient";
-import { ApiError } from "@/api/client";
-import { AgentLogsTab } from "@/features/agent-detail/tabs/AgentLogsTab";
-import { ScriptsTab } from "@/features/agent-detail/tabs/ScriptsTab";
 
-const backend = vi.hoisted(() => ({
+const backend = (() => ({
   agentLogSources: vi.fn(),
   agentLogTail: vi.fn(),
   runAgentScript: vi.fn(),
   capabilities: vi.fn(),
-}));
-vi.mock("@/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/api")>()), api: backend }));
-vi.mock("@/features/logs/AuditTab", () => ({ AuditTab: () => <p>audit rows</p> }));
+}))();
+const originalModule0 = await import("@/api");
+await vi.mock("@/api", async () => ({ ...originalModule0, api: backend }));
+await vi.mock("@/features/logs/AuditTab", () => ({ AuditTab: () => <p>audit rows</p> }));
+
+const { ApiError } = await import("@/api/client");
+const { AgentLogsTab } = await import("@/features/agent-detail/tabs/AgentLogsTab");
+const { ScriptsTab } = await import("@/features/agent-detail/tabs/ScriptsTab");
 
 const LOG = "10:00:00 INFO started\n10:00:07 ERROR upload failed\n10:00:14 INFO done\n";
 const clipboard = { writeText: vi.fn() };
 
 beforeEach(() => {
-  backend.agentLogSources.mockReset().mockResolvedValue({ sources: [{ id: "agent", label: "Agent log", path: "C:\\Logs\\agent.log" }] });
+  backend.agentLogSources.mockReset().mockResolvedValue({
+    sources: [{ id: "agent", label: "Agent log", path: "C:\\Logs\\agent.log" }],
+  });
   backend.agentLogTail.mockReset().mockResolvedValue({ kind: "agent", text: LOG });
   backend.runAgentScript.mockReset();
   backend.capabilities.mockReset().mockResolvedValue({ remote_script: true });
@@ -33,8 +37,11 @@ afterEach(unmountForms);
 const text = () => document.body.textContent ?? "";
 const settle = () => act(async () => {});
 const button = (name: string) =>
-  Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.trim() === name || b.getAttribute("aria-label") === name) as HTMLButtonElement | undefined;
-const logBox = () => document.querySelector('textarea[aria-label="Device log output"]') as HTMLTextAreaElement;
+  Array.from(document.querySelectorAll("button")).find(
+    (b) => b.textContent?.trim() === name || b.getAttribute("aria-label") === name,
+  ) as HTMLButtonElement | undefined;
+const logBox = () =>
+  document.querySelector('textarea[aria-label="Device log output"]') as HTMLTextAreaElement;
 
 async function mount(node: React.ReactNode) {
   await mountForm(withQueryClient(<MemoryRouter>{node}</MemoryRouter>));
@@ -55,7 +62,9 @@ describe("AgentLogsTab", () => {
 
   it("filters lines, counts the matches, says when none match, and clears", async () => {
     await mount(<AgentLogsTab agentId="a1" />);
-    const input = document.querySelector('input[aria-label="Filter log lines"]') as HTMLInputElement;
+    const input = document.querySelector(
+      'input[aria-label="Filter log lines"]',
+    ) as HTMLInputElement;
     await typeInto(input, "error");
     expect(logBox().value).toBe("10:00:07 ERROR upload failed");
     expect(text()).toContain("1 of 3 lines");
@@ -68,7 +77,10 @@ describe("AgentLogsTab", () => {
 
   it("copies what is shown, and says so", async () => {
     await mount(<AgentLogsTab agentId="a1" />);
-    await typeInto(document.querySelector('input[aria-label="Filter log lines"]') as HTMLInputElement, "done");
+    await typeInto(
+      document.querySelector('input[aria-label="Filter log lines"]') as HTMLInputElement,
+      "done",
+    );
     await click(button("Copy")!);
     expect(clipboard.writeText).toHaveBeenCalledWith("10:00:14 INFO done");
     expect(text()).toContain("Copied");
@@ -77,10 +89,16 @@ describe("AgentLogsTab", () => {
   it("explains a failed load, keeps the source picker, and retries", async () => {
     backend.agentLogTail.mockRejectedValue(new ApiError("Log unreadable", 403));
     await mount(<AgentLogsTab agentId="a1" />);
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Couldn’t load the log (auto-refresh paused). Log unreadable");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t load the log (auto-refresh paused). Log unreadable",
+    );
     expect(logBox().placeholder).toBe("The log couldn’t be loaded.");
     backend.agentLogTail.mockResolvedValue({ kind: "agent", text: LOG });
-    await click(Array.from(document.querySelectorAll('[role="alert"] button')).find((b) => b.textContent === "Try again")!);
+    await click(
+      Array.from(document.querySelectorAll('[role="alert"] button')).find(
+        (b) => b.textContent === "Try again",
+      )!,
+    );
     await settle();
     expect(document.querySelector('[role="alert"]')).toBeNull();
     expect(logBox().value).toBe(LOG);
@@ -95,14 +113,19 @@ describe("AgentLogsTab", () => {
 
   it("switches to the audit log and back", async () => {
     await mount(<AgentLogsTab agentId="a1" />);
-    await click(Array.from(document.querySelectorAll('[role="tab"]')).find((t) => t.textContent === "Audit log")!);
+    await click(
+      Array.from(document.querySelectorAll('[role="tab"]')).find(
+        (t) => t.textContent === "Audit log",
+      )!,
+    );
     expect(text()).toContain("audit rows");
     expect(logBox()).toBeNull();
   });
 });
 
 describe("ScriptsTab", () => {
-  const typeScript = (value: string) => typeInto(document.querySelector('textarea[aria-label="Script"]') as HTMLTextAreaElement, value);
+  const typeScript = (value: string) =>
+    typeInto(document.querySelector('textarea[aria-label="Script"]') as HTMLTextAreaElement, value);
 
   it("does not run anything until Run script is pressed, and not an empty script", async () => {
     await mount(<ScriptsTab agentId="a1" dashboardRole="admin" />);
@@ -115,14 +138,24 @@ describe("ScriptsTab", () => {
 
   it("claims nothing until the device replies, then reports the result", async () => {
     let reply: (v: unknown) => void = () => {};
-    backend.runAgentScript.mockReturnValue(new Promise((resolve) => { reply = resolve; }));
+    backend.runAgentScript.mockReturnValue(
+      new Promise((resolve) => {
+        reply = resolve;
+      }),
+    );
     await mount(<ScriptsTab agentId="a1" dashboardRole="operator" />);
     await typeScript("Get-Date");
     await click(button("Run script")!);
-    expect(backend.runAgentScript).toHaveBeenCalledWith("a1", { shell: "powershell", script: "Get-Date", timeout_secs: 120 });
+    expect(backend.runAgentScript).toHaveBeenCalledWith("a1", {
+      shell: "powershell",
+      script: "Get-Date",
+      timeout_secs: 120,
+    });
     expect(text()).toContain("Waiting for the device to reply");
     expect(button("Running…")!.disabled).toBe(true);
-    expect((document.querySelector('textarea[aria-label="Script"]') as HTMLTextAreaElement).disabled).toBe(true);
+    expect(
+      (document.querySelector('textarea[aria-label="Script"]') as HTMLTextAreaElement).disabled,
+    ).toBe(true);
     expect(document.querySelector('[aria-label="Script result"]')).toBeNull();
 
     await act(async () => reply({ ok: true, exit_code: 0, stdout: "Monday\n", stderr: "" }));
@@ -134,7 +167,12 @@ describe("ScriptsTab", () => {
   });
 
   it("shows a failing run's exit code and errors separately from output, and can clear the result", async () => {
-    backend.runAgentScript.mockResolvedValue({ ok: false, exit_code: 2, stdout: "partial", stderr: "bad thing" });
+    backend.runAgentScript.mockResolvedValue({
+      ok: false,
+      exit_code: 2,
+      stdout: "partial",
+      stderr: "bad thing",
+    });
     await mount(<ScriptsTab agentId="a1" dashboardRole="admin" />);
     await typeScript("x");
     await click(button("Run script")!);
@@ -152,23 +190,37 @@ describe("ScriptsTab", () => {
     await typeScript("x");
     await click(button("Run script")!);
     await settle();
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("The script didn’t run.");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "The script didn’t run.",
+    );
     expect(document.querySelector('[aria-label="Script result"]')).toBeNull();
   });
 
   it("clears the script only on request, and starts on a shell the platform has", async () => {
-    await mount(<ScriptsTab agentId="a1" dashboardRole="admin" agentInfo={{ capabilities: { platform: "linux" } } as never} />);
-    expect(document.querySelector('textarea[aria-label="Script"]')!.getAttribute("placeholder")).toContain("uname");
+    await mount(
+      <ScriptsTab
+        agentId="a1"
+        dashboardRole="admin"
+        agentInfo={{ capabilities: { platform: "linux" } } as never}
+      />,
+    );
+    expect(
+      document.querySelector('textarea[aria-label="Script"]')!.getAttribute("placeholder"),
+    ).toContain("uname");
     expect(document.querySelector("#scripts-shell")!.textContent).toContain("Shell (sh)");
     await typeScript("ls");
     await click(button("Clear")!);
-    expect((document.querySelector('textarea[aria-label="Script"]') as HTMLTextAreaElement).value).toBe("");
+    expect(
+      (document.querySelector('textarea[aria-label="Script"]') as HTMLTextAreaElement).value,
+    ).toBe("");
   });
 
   it("is read-only for viewers and says why", async () => {
     await mount(<ScriptsTab agentId="a1" dashboardRole="viewer" />);
     expect(text()).toContain("Operators only.");
-    expect((document.querySelector('textarea[aria-label="Script"]') as HTMLTextAreaElement).disabled).toBe(true);
+    expect(
+      (document.querySelector('textarea[aria-label="Script"]') as HTMLTextAreaElement).disabled,
+    ).toBe(true);
     expect(button("Run script")!.disabled).toBe(true);
   });
 
@@ -181,7 +233,13 @@ describe("ScriptsTab", () => {
   });
 
   it("shows only the capability notice when the device cannot run scripts", async () => {
-    await mount(<ScriptsTab agentId="a1" dashboardRole="admin" agentInfo={{ capabilities: { script_execution: "unsupported" } } as never} />);
+    await mount(
+      <ScriptsTab
+        agentId="a1"
+        dashboardRole="admin"
+        agentInfo={{ capabilities: { script_execution: "unsupported" } } as never}
+      />,
+    );
     expect(text()).toContain("Scripts unavailable");
     expect(document.querySelector('textarea[aria-label="Script"]')).toBeNull();
   });

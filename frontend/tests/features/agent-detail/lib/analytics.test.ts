@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import {
   humanizeCategoryKey,
   categorySlices,
@@ -64,7 +64,13 @@ describe("toCustomGroups", () => {
     const groups = toCustomGroups({
       rows: [
         { id: 2, key: "work", label_en: "Work", hidden: false, ut1_keys: ["news"] },
-        { id: 1, key: "fun", label_en: "Fun", hidden: false, ut1_keys: undefined as unknown as string[] },
+        {
+          id: 1,
+          key: "fun",
+          label_en: "Fun",
+          hidden: false,
+          ut1_keys: undefined as unknown as string[],
+        },
         { id: 3, key: "old", label_en: "Old", hidden: true, ut1_keys: [] },
       ],
     });
@@ -83,7 +89,10 @@ describe("summarizeAnalytics", () => {
   it("totals time and visits and picks the leading site", () => {
     const summary = summarizeAnalytics(
       categories,
-      [{ hostname: "www.example.com", time_ms: 61_000, visit_count: 3 }, { hostname: "b.test", time_ms: 1, visit_count: 2 }],
+      [
+        { hostname: "www.example.com", time_ms: 61_000, visit_count: 3 },
+        { hostname: "b.test", time_ms: 1, visit_count: 2 },
+      ],
       [{ duration_ms: 1000 }, { duration_ms: 2000 }],
     );
     // Categories add up to more than the session feed, so the total follows them.
@@ -95,7 +104,11 @@ describe("summarizeAnalytics", () => {
   });
   it("has no top entries without rows or names", () => {
     expect(summarizeAnalytics([], [], [])).toEqual({ totalMs: 0, visitCount: 0, topSite: null });
-    const blank = summarizeAnalytics([{ category_key: "", category_label: "", time_ms: 1 }], [{ hostname: " ", time_ms: 1, visit_count: 1 }], []);
+    const blank = summarizeAnalytics(
+      [{ category_key: "", category_label: "", time_ms: 1 }],
+      [{ hostname: " ", time_ms: 1, visit_count: 1 }],
+      [],
+    );
     expect(blank.topSite).toBeNull();
   });
 });
@@ -109,13 +122,20 @@ describe("totalVisits", () => {
     expect(totalVisits(cats, [{ hostname: "x", time_ms: 1, visit_count: 975 }])).toBe(990);
   });
   it("does not undercount known site visits when category rows are also capped", () => {
-    expect(totalVisits(
-      [{ category_key: "a", category_label: "A", time_ms: 1, visit_count: 3 }],
-      [{ hostname: "x", time_ms: 1, visit_count: 8 }],
-    )).toBe(8);
+    expect(
+      totalVisits(
+        [{ category_key: "a", category_label: "A", time_ms: 1, visit_count: 3 }],
+        [{ hostname: "x", time_ms: 1, visit_count: 8 }],
+      ),
+    ).toBe(8);
   });
   it("falls back to the site rows when categories carry no counts", () => {
-    expect(totalVisits([{ category_key: "a", category_label: "A", time_ms: 1 }], [{ hostname: "x", time_ms: 1, visit_count: 4 }])).toBe(4);
+    expect(
+      totalVisits(
+        [{ category_key: "a", category_label: "A", time_ms: 1 }],
+        [{ hostname: "x", time_ms: 1, visit_count: 4 }],
+      ),
+    ).toBe(4);
     expect(totalVisits([], [])).toBe(0);
   });
 });

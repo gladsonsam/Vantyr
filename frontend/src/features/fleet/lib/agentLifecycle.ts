@@ -14,5 +14,11 @@ export function retainAgents<T>(items: Record<string, T>, ids: Set<string>): Rec
 export function disconnectedAgent(agent: Agent | undefined, timestamp?: string): Agent | undefined {
   if (!agent) return undefined;
   const disconnectedAt = timestamp || new Date().toISOString();
-  return { ...agent, online: false, connected_at: null, last_seen: disconnectedAt, last_disconnected_at: disconnectedAt };
+  return {
+    ...agent,
+    online: false,
+    connected_at: null,
+    last_seen: disconnectedAt,
+    last_disconnected_at: disconnectedAt,
+  };
 }

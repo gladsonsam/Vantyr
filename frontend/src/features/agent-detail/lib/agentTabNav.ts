@@ -50,7 +50,13 @@ type AgentTabIcon = LucideIcon;
  */
 export type AgentSectionId = "activity" | "monitoring" | "device" | "control" | "settings";
 
-export const AGENT_SECTION_ORDER: AgentSectionId[] = ["activity", "monitoring", "device", "control", "settings"];
+export const AGENT_SECTION_ORDER: AgentSectionId[] = [
+  "activity",
+  "monitoring",
+  "device",
+  "control",
+  "settings",
+];
 
 /** `live` is the first Activity tool: it jumps to the desktop, with the timeline underneath. */
 export const AGENT_SECTION_SUBTABS: Record<AgentSectionId, TabKey[]> = {
@@ -93,22 +99,111 @@ interface AgentTabDefinition {
 }
 
 export const AGENT_TAB_META: Record<TabKey, AgentTabDefinition> = {
-  live: { label: "Live desktop", hint: "Watch and control the screen", keywords: ["screen", "remote", "view", "control", "desktop"], icon: Monitor },
-  activity: { label: "Timeline", hint: "What happened, hour by hour", keywords: ["history", "sessions", "events", "feed"], icon: Activity },
-  recall: { label: "Recall", hint: "Replay what was on screen", keywords: ["screenshots", "recordings", "frames", "playback", "history"], icon: History },
-  analytics: { label: "Analytics", hint: "Browsing time and top sites", keywords: ["usage", "charts", "categories", "stats", "reports"], icon: BarChart3 },
-  urls: { label: "Websites", hint: "Pages visited, with categories", keywords: ["urls", "browsing", "history", "links", "sites", "chrome"], icon: Globe },
-  keys: { label: "Keystrokes", hint: "What was typed, by app", keywords: ["keys", "typing", "keyboard", "keylogger", "text"], icon: Keyboard },
-  windows: { label: "App windows", hint: "Which apps and windows were in use", keywords: ["apps", "programs", "focus", "titles"], icon: LayoutGrid },
-  alerts: { label: "Rule events", hint: "Alerts raised by rules", keywords: ["alerts", "events", "triggers", "notifications"], icon: Zap },
-  specs: { label: "Specs", hint: "Hardware, drives and network", keywords: ["hardware", "cpu", "memory", "ram", "disk", "drives", "network", "os", "system"], icon: Cpu },
-  software: { label: "Software", hint: "Installed apps", keywords: ["programs", "installed", "uninstall", "updates", "apps"], icon: Package },
-  files: { label: "Files", hint: "Browse and transfer files", keywords: ["folders", "download", "upload", "explorer", "browse"], icon: FolderOpen },
-  scripts: { label: "Run scripts", hint: "Run commands on the device", keywords: ["scripts", "powershell", "bash", "command", "automation", "run"], icon: Terminal },
-  control: { label: "Blocking", hint: "Block apps and network access", keywords: ["control", "block", "firewall", "internet", "overview", "restrict"], icon: ShieldBan },
-  terminal: { label: "Terminal", hint: "Open a shell on the device", keywords: ["shell", "console", "cmd", "powershell", "ssh"], icon: Terminal },
-  logs: { label: "Device logs", hint: "Log output from the agent", keywords: ["logs", "debug", "diagnostics", "troubleshoot", "errors"], icon: FileText },
-  settings: { label: "Settings", hint: "Modules, groups, updates and removal", keywords: ["modules", "permissions", "groups", "retention", "delete", "remove", "update", "icon"], icon: Settings },
+  live: {
+    label: "Live desktop",
+    hint: "Watch and control the screen",
+    keywords: ["screen", "remote", "view", "control", "desktop"],
+    icon: Monitor,
+  },
+  activity: {
+    label: "Timeline",
+    hint: "What happened, hour by hour",
+    keywords: ["history", "sessions", "events", "feed"],
+    icon: Activity,
+  },
+  recall: {
+    label: "Recall",
+    hint: "Replay what was on screen",
+    keywords: ["screenshots", "recordings", "frames", "playback", "history"],
+    icon: History,
+  },
+  analytics: {
+    label: "Analytics",
+    hint: "Browsing time and top sites",
+    keywords: ["usage", "charts", "categories", "stats", "reports"],
+    icon: BarChart3,
+  },
+  urls: {
+    label: "Websites",
+    hint: "Pages visited, with categories",
+    keywords: ["urls", "browsing", "history", "links", "sites", "chrome"],
+    icon: Globe,
+  },
+  keys: {
+    label: "Keystrokes",
+    hint: "What was typed, by app",
+    keywords: ["keys", "typing", "keyboard", "keylogger", "text"],
+    icon: Keyboard,
+  },
+  windows: {
+    label: "App windows",
+    hint: "Which apps and windows were in use",
+    keywords: ["apps", "programs", "focus", "titles"],
+    icon: LayoutGrid,
+  },
+  alerts: {
+    label: "Rule events",
+    hint: "Alerts raised by rules",
+    keywords: ["alerts", "events", "triggers", "notifications"],
+    icon: Zap,
+  },
+  specs: {
+    label: "Specs",
+    hint: "Hardware, drives and network",
+    keywords: ["hardware", "cpu", "memory", "ram", "disk", "drives", "network", "os", "system"],
+    icon: Cpu,
+  },
+  software: {
+    label: "Software",
+    hint: "Installed apps",
+    keywords: ["programs", "installed", "uninstall", "updates", "apps"],
+    icon: Package,
+  },
+  files: {
+    label: "Files",
+    hint: "Browse and transfer files",
+    keywords: ["folders", "download", "upload", "explorer", "browse"],
+    icon: FolderOpen,
+  },
+  scripts: {
+    label: "Run scripts",
+    hint: "Run commands on the device",
+    keywords: ["scripts", "powershell", "bash", "command", "automation", "run"],
+    icon: Terminal,
+  },
+  control: {
+    label: "Blocking",
+    hint: "Block apps and network access",
+    keywords: ["control", "block", "firewall", "internet", "overview", "restrict"],
+    icon: ShieldBan,
+  },
+  terminal: {
+    label: "Terminal",
+    hint: "Open a shell on the device",
+    keywords: ["shell", "console", "cmd", "powershell", "ssh"],
+    icon: Terminal,
+  },
+  logs: {
+    label: "Device logs",
+    hint: "Log output from the agent",
+    keywords: ["logs", "debug", "diagnostics", "troubleshoot", "errors"],
+    icon: FileText,
+  },
+  settings: {
+    label: "Settings",
+    hint: "Modules, groups, updates and removal",
+    keywords: [
+      "modules",
+      "permissions",
+      "groups",
+      "retention",
+      "delete",
+      "remove",
+      "update",
+      "icon",
+    ],
+    icon: Settings,
+  },
 };
 
 function wordStarts(text: string, token: string): boolean {
@@ -133,7 +228,8 @@ function tokenScore(tab: TabKey, token: string): number | null {
 /** Tools matching every word of `query`, best match first (catalog order breaks ties). Empty query → no filtering. */
 export function searchAgentTabs(query: string): TabKey[] {
   const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return AGENT_SECTION_ORDER.flatMap((section) => AGENT_SECTION_SUBTABS[section]);
+  if (tokens.length === 0)
+    return AGENT_SECTION_ORDER.flatMap((section) => AGENT_SECTION_SUBTABS[section]);
   const ranked: { tab: TabKey; score: number; order: number }[] = [];
   AGENT_SECTION_ORDER.flatMap((section) => AGENT_SECTION_SUBTABS[section]).forEach((tab, order) => {
     let score = 0;

@@ -76,7 +76,12 @@ function CaptureNotices({ form }: { form: CaptureForm }) {
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             <span>Couldn&apos;t refresh these settings, so they may be out of date.</span>
-            <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={query.isFetching}
+              onClick={() => void query.refetch()}
+            >
               Try again
             </Button>
           </AlertDescription>
@@ -97,7 +102,10 @@ function CaptureNotices({ form }: { form: CaptureForm }) {
 }
 
 function CaptureActions({ form, isAdmin }: { form: CaptureForm; isAdmin: boolean }) {
-  if (!isAdmin) return <p className="text-sm text-muted-foreground">Only admins can change capture settings.</p>;
+  if (!isAdmin)
+    return (
+      <p className="text-sm text-muted-foreground">Only admins can change capture settings.</p>
+    );
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button disabled={form.saving || !form.dirty} onClick={form.save}>
@@ -108,7 +116,9 @@ function CaptureActions({ form, isAdmin }: { form: CaptureForm; isAdmin: boolean
           Discard changes
         </Button>
       )}
-      {form.dirty && !form.saving && <span className="text-sm text-muted-foreground">Unsaved changes</span>}
+      {form.dirty && !form.saving && (
+        <span className="text-sm text-muted-foreground">Unsaved changes</span>
+      )}
     </div>
   );
 }
@@ -130,7 +140,11 @@ export function RecallCaptureSettings({ isAdmin }: { isAdmin: boolean }) {
   if (!settings || !saved) {
     return (
       <LoadFailedCard
-        message={query.error ? `Couldn't load capture settings. ${errorText(query.error)}` : "Capture settings are unavailable."}
+        message={
+          query.error
+            ? `Couldn't load capture settings. ${errorText(query.error)}`
+            : "Capture settings are unavailable."
+        }
         onRetry={() => void query.refetch()}
       />
     );
@@ -141,15 +155,24 @@ export function RecallCaptureSettings({ isAdmin }: { isAdmin: boolean }) {
       <CardHeader className="px-5 pt-5 pb-2">
         <CardTitle className="flex items-center gap-1.5">
           Screen history capture
-          <HelpTip>Defaults for every device&apos;s screen history. A device can override any of these from its own Settings tab.</HelpTip>
+          <HelpTip>
+            Defaults for every device&apos;s screen history. A device can override any of these from
+            its own Settings tab.
+          </HelpTip>
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-5 pb-5">
         <p className="text-sm text-muted-foreground">
-          {saved.enabled ? "Screens are recorded by default." : "Screens are not recorded by default."}
+          {saved.enabled
+            ? "Screens are recorded by default."
+            : "Screens are not recorded by default."}
         </p>
         <CaptureNotices form={form} />
-        <RecallSettingsFields value={settings} onChange={form.edit} disabled={!isAdmin || form.saving} />
+        <RecallSettingsFields
+          value={settings}
+          onChange={form.edit}
+          disabled={!isAdmin || form.saving}
+        />
         <CaptureActions form={form} isAdmin={isAdmin} />
       </CardContent>
     </Card>

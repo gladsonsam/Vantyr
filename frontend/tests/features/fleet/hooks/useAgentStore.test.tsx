@@ -1,16 +1,26 @@
-// @vitest-environment jsdom
+import { useLayoutEffect } from "react";
+import { testMock as vi } from "@tests/support/mock";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "bun:test";
 import type { Agent } from "@/api/types";
-import { useAgentStore } from "@/features/fleet/hooks/useAgentStore";
 
-vi.mock("@/features/fleet/lib/fleetSort", () => ({ useFleetSort: () => ["name"], sortFleet: (agents: Agent[]) => agents }));
+await vi.mock("@/features/fleet/lib/fleetSort", () => ({
+  useFleetSort: () => ["name"],
+  sortFleet: (agents: Agent[]) => agents,
+}));
+const { useAgentStore } = await import("@/features/fleet/hooks/useAgentStore");
 
 describe("useAgentStore lifecycle", () => {
   it("clears every cache and selection, and ignores late snapshots and telemetry after removal", async () => {
     let state!: ReturnType<typeof useAgentStore>;
-    function Harness() { state = useAgentStore(); return null; }
+    function Harness() {
+      const committedValue = useAgentStore();
+      useLayoutEffect(() => {
+        state = committedValue;
+      });
+      return null;
+    }
     const element = document.createElement("div");
     const root = createRoot(element);
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -42,7 +52,13 @@ describe("useAgentStore lifecycle", () => {
 
   it("an empty authoritative fleet clears stale caches", async () => {
     let state!: ReturnType<typeof useAgentStore>;
-    function Harness() { state = useAgentStore(); return null; }
+    function Harness() {
+      const committedValue = useAgentStore();
+      useLayoutEffect(() => {
+        state = committedValue;
+      });
+      return null;
+    }
     const root = createRoot(document.createElement("div"));
     await act(async () => root.render(<Harness />));
     await act(async () => {

@@ -12,9 +12,17 @@ import { api, errorText } from "@/api";
 import { moduleQueries } from "@/api/queries/modules";
 import { recallKeys, recallQueries } from "@/api/queries/recall";
 import { useServerDraft } from "@/hooks/useServerDraft";
-import { deviceCaptureState, sameRecallSettings, type CaptureTone } from "@/features/recall/lib/captureStatus";
+import {
+  deviceCaptureState,
+  sameRecallSettings,
+  type CaptureTone,
+} from "@/features/recall/lib/captureStatus";
 import { cn } from "@/lib/utils";
-import type { AgentRecallSettings as Layers, DeviceModuleStatus, RecallSettings } from "@/api/types";
+import type {
+  AgentRecallSettings as Layers,
+  DeviceModuleStatus,
+  RecallSettings,
+} from "@/api/types";
 
 type Mode = "inherit" | "custom";
 
@@ -30,12 +38,30 @@ const SENT = "A connected device is sent it now; others get it when they next co
  * "Custom" starts from what the agent is currently running, so switching
  * modes never changes behaviour on its own — only saving does.
  */
-export function AgentRecallSettings({ agentId, isAdmin, canOperate = true }: { agentId: string; isAdmin: boolean; canOperate?: boolean }) {
+export function AgentRecallSettings({
+  agentId,
+  isAdmin,
+  canOperate = true,
+}: {
+  agentId: string;
+  isAdmin: boolean;
+  canOperate?: boolean;
+}) {
   // Keyed by agent so a draft, message or error never carries over to another device.
-  return <AgentRecallForm key={agentId} agentId={agentId} isAdmin={isAdmin} canOperate={canOperate} />;
+  return (
+    <AgentRecallForm key={agentId} agentId={agentId} isAdmin={isAdmin} canOperate={canOperate} />
+  );
 }
 
-function AgentRecallForm({ agentId, isAdmin, canOperate }: { agentId: string; isAdmin: boolean; canOperate: boolean }) {
+function AgentRecallForm({
+  agentId,
+  isAdmin,
+  canOperate,
+}: {
+  agentId: string;
+  isAdmin: boolean;
+  canOperate: boolean;
+}) {
   const form = useAgentRecallSettingsForm(agentId, isAdmin);
   // The module report is operator-only; viewers never ask. A failed poll just means "unknown".
   const deviceQuery = useQuery({
@@ -56,7 +82,12 @@ function AgentRecallForm({ agentId, isAdmin, canOperate }: { agentId: string; is
     );
   }
   if (!form.layers) {
-    return <LoadFailedCard message={form.error ?? "Capture settings are unavailable."} onRetry={form.reload} />;
+    return (
+      <LoadFailedCard
+        message={form.error ?? "Capture settings are unavailable."}
+        onRetry={form.reload}
+      />
+    );
   }
 
   const { layers, mode, draft } = form;
@@ -88,10 +119,18 @@ function AgentRecallForm({ agentId, isAdmin, canOperate }: { agentId: string; is
             if (next) form.chooseMode(next);
           }}
         >
-          <ToggleGroupItem value="inherit" aria-label="Fleet defaults" className="rounded-md! px-2.5 aria-pressed:bg-background pointer-coarse:h-9">
+          <ToggleGroupItem
+            value="inherit"
+            aria-label="Fleet defaults"
+            className="rounded-md! px-2.5 aria-pressed:bg-background pointer-coarse:h-9"
+          >
             Fleet defaults
           </ToggleGroupItem>
-          <ToggleGroupItem value="custom" aria-label="Custom" className="rounded-md! px-2.5 aria-pressed:bg-background pointer-coarse:h-9">
+          <ToggleGroupItem
+            value="custom"
+            aria-label="Custom"
+            className="rounded-md! px-2.5 aria-pressed:bg-background pointer-coarse:h-9"
+          >
             Custom
           </ToggleGroupItem>
         </ToggleGroup>
@@ -117,14 +156,23 @@ const TONE: Record<CaptureTone, { Icon: typeof Info; className: string }> = {
 };
 
 /** What is saved (the request) above what the device itself reports (its permission), kept apart. */
-function CaptureSummary({ layers, status, canOperate }: { layers: Layers; status: DeviceModuleStatus | null; canOperate: boolean }) {
+function CaptureSummary({
+  layers,
+  status,
+  canOperate,
+}: {
+  layers: Layers;
+  status: DeviceModuleStatus | null;
+  canOperate: boolean;
+}) {
   const effective = layers.effective ?? layers.global;
   const device = deviceCaptureState(effective.enabled, status, canOperate);
   const { Icon, className } = TONE[device.tone];
   return (
     <div className="flex flex-col gap-1">
       <h3 className="text-base font-medium">
-        {effective.enabled ? "Saved: record this screen" : "Saved: do not record"} · {layers.override ? "custom for this device" : "fleet defaults"}
+        {effective.enabled ? "Saved: record this screen" : "Saved: do not record"} ·{" "}
+        {layers.override ? "custom for this device" : "fleet defaults"}
       </h3>
       <p className={cn("flex items-start gap-2", className)}>
         <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
@@ -168,7 +216,9 @@ function useAgentRecallSettingsForm(agentId: string, isAdmin: boolean) {
   // What is saved on the server, to tell what has been changed here.
   const savedMode: Mode = layers?.override ? "custom" : "inherit";
   const savedDraft = layers ? (layers.effective ?? layers.global) : null;
-  const dirty = Boolean(layers && draft && savedDraft) && (mode !== savedMode || (mode === "custom" && !sameRecallSettings(draft!, savedDraft!)));
+  const dirty =
+    Boolean(layers && draft && savedDraft) &&
+    (mode !== savedMode || (mode === "custom" && !sameRecallSettings(draft!, savedDraft!)));
 
   return {
     layers,
@@ -189,7 +239,10 @@ function useAgentRecallSettingsForm(agentId: string, isAdmin: boolean) {
     edit: (patch: Partial<RecallSettings>) => {
       setSaved(null);
       saveSettings.reset();
-      setForm((prev) => ({ ...prev, draft: prev.draft ? { ...prev.draft, ...patch } : prev.draft }));
+      setForm((prev) => ({
+        ...prev,
+        draft: prev.draft ? { ...prev.draft, ...patch } : prev.draft,
+      }));
     },
     discard: () => {
       setSaved(null);
@@ -206,7 +259,8 @@ function useAgentRecallSettingsForm(agentId: string, isAdmin: boolean) {
 type RecallForm = ReturnType<typeof useAgentRecallSettingsForm>;
 
 function CaptureSaveAction({ isAdmin, form }: { isAdmin: boolean; form: RecallForm }) {
-  if (!isAdmin) return <p className="text-muted-foreground">Only admins can change capture settings.</p>;
+  if (!isAdmin)
+    return <p className="text-muted-foreground">Only admins can change capture settings.</p>;
   const { mode, savedMode, dirty, saving } = form;
   // Say what saving does to the link with the fleet defaults only when that is about to change.
   const consequence =
@@ -220,7 +274,8 @@ function CaptureSaveAction({ isAdmin, form }: { isAdmin: boolean; form: RecallFo
       {consequence && <p className="text-muted-foreground">{consequence}</p>}
       <div className="flex flex-wrap gap-2">
         <Button onClick={form.save} disabled={saving || !dirty}>
-          {saving && <Spinner />} {saving ? "Saving…" : mode === "inherit" ? "Use fleet defaults" : "Save"}
+          {saving && <Spinner />}{" "}
+          {saving ? "Saving…" : mode === "inherit" ? "Use fleet defaults" : "Save"}
         </Button>
         {dirty && (
           <Button variant="outline" disabled={saving} onClick={form.discard}>

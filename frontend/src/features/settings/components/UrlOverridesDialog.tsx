@@ -12,7 +12,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@vantyr/ui/components/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@vantyr/ui/components/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@vantyr/ui/components/select";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { errorText } from "@/api/client";
 import {
@@ -32,7 +38,15 @@ const NO_OVERRIDES: UrlOverrideRow[] = [];
 const NO_CATEGORIES: { key: string; label?: string; enabled: boolean; description: string }[] = [];
 
 /** Manage the admin domain / URL-prefix category overrides. */
-export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; isAdmin: boolean; onClose: () => void }) {
+export function UrlOverridesDialog({
+  open,
+  isAdmin,
+  onClose,
+}: {
+  open: boolean;
+  isAdmin: boolean;
+  onClose: () => void;
+}) {
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -72,7 +86,12 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
     setActionError(null);
     setNotice(null);
     try {
-      await upsert.mutateAsync({ kind: values.kind, value: values.value, category_key: values.category_key, note: values.note });
+      await upsert.mutateAsync({
+        kind: values.kind,
+        value: values.value,
+        category_key: values.category_key,
+        note: values.note,
+      });
       setNotice(`Saved the override for ${values.value}.`);
       form.setValue("value", "", { shouldValidate: true });
       form.setValue("note", "");
@@ -82,7 +101,10 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
     }
   });
 
-  const categoriesQuery = useQuery({ ...urlCategoryQueries.categories(), enabled: open && isAdmin });
+  const categoriesQuery = useQuery({
+    ...urlCategoryQueries.categories(),
+    enabled: open && isAdmin,
+  });
   const categories = categoriesQuery.data?.categories ?? NO_CATEGORIES;
   const choices = categories.filter((c) => c.enabled);
 
@@ -105,7 +127,8 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
         <DialogHeader>
           <DialogTitle>URL category overrides</DialogTitle>
           <DialogDescription>
-            An override pins a domain, or every URL starting with a prefix, to a category. Overrides win over the downloaded lists and survive list updates.
+            An override pins a domain, or every URL starting with a prefix, to a category. Overrides
+            win over the downloaded lists and survive list updates.
           </DialogDescription>
         </DialogHeader>
 
@@ -118,9 +141,18 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
 
           <form onSubmit={addOverride} noValidate className="flex flex-col gap-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField control={control} name="kind" id="override-kind" label="Match" description="A domain override covers the whole host. A URL prefix covers only addresses that start with it.">
+              <FormField
+                control={control}
+                name="kind"
+                id="override-kind"
+                label="Match"
+                description="A domain override covers the whole host. A URL prefix covers only addresses that start with it."
+              >
                 {({ field, id }) => (
-                  <Select value={field.value} onValueChange={(value) => value && field.onChange(value as "domain" | "url")}>
+                  <Select
+                    value={field.value}
+                    onValueChange={(value) => value && field.onChange(value as "domain" | "url")}
+                  >
                     <SelectTrigger id={id} className="h-9 w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -131,11 +163,23 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
                   </Select>
                 )}
               </FormField>
-              <FormField control={control} name="category_key" id="override-category" label="Category" hideError>
+              <FormField
+                control={control}
+                name="category_key"
+                id="override-category"
+                label="Category"
+                hideError
+              >
                 {({ field, id }) => (
-                  <Select value={field.value} onValueChange={(value) => field.onChange(value ?? "")} disabled={choices.length === 0}>
+                  <Select
+                    value={field.value}
+                    onValueChange={(value) => field.onChange(value ?? "")}
+                    disabled={choices.length === 0}
+                  >
                     <SelectTrigger id={id} className="h-9 w-full">
-                      <SelectValue placeholder={categoriesQuery.isPending ? "Loading…" : "Choose a category"} />
+                      <SelectValue
+                        placeholder={categoriesQuery.isPending ? "Loading…" : "Choose a category"}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {choices.map((c) => (
@@ -166,22 +210,40 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
               spellCheck={false}
               hideError
             />
-            <InputField control={control} name="note" id="override-note" label="Note (optional)" className="h-9" />
+            <InputField
+              control={control}
+              name="note"
+              id="override-note"
+              label="Note (optional)"
+              className="h-9"
+            />
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" disabled={isSubmitting || !isValid}>
                 {isSubmitting && <Spinner />} Save override
               </Button>
-              <span className="text-sm text-muted-foreground">Saving a value that already has an override changes its category.</span>
+              <span className="text-sm text-muted-foreground">
+                Saving a value that already has an override changes its category.
+              </span>
             </div>
             {notice ? (
-              <p ref={noticeRef} tabIndex={-1} role="status" className="text-sm text-success outline-none">{notice}</p>
+              <p
+                ref={noticeRef}
+                tabIndex={-1}
+                role="status"
+                className="text-sm text-success outline-none"
+              >
+                {notice}
+              </p>
             ) : null}
           </form>
 
           <UrlOverrideList
             rows={rows}
             search={search}
-            onSearch={(value) => { setActionError(null); setSearch(value); }}
+            onSearch={(value) => {
+              setActionError(null);
+              setSearch(value);
+            }}
             loading={overridesQuery.isFetching}
             firstLoad={overridesQuery.isPending}
             loadError={overridesQuery.isError ? errorText(overridesQuery.error) : null}
@@ -204,17 +266,32 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
   );
 }
 
-function CategoryChoiceNotice({ failed, empty, onRetry }: { failed: boolean; empty: boolean; onRetry: () => void }) {
+function CategoryChoiceNotice({
+  failed,
+  empty,
+  onRetry,
+}: {
+  failed: boolean;
+  empty: boolean;
+  onRetry: () => void;
+}) {
   if (failed) {
     return (
       <p className="flex flex-wrap items-center gap-2 text-sm text-destructive">
         Couldn't load the categories, so none can be chosen.
-        <Button type="button" variant="outline" size="sm" onClick={onRetry}>Try again</Button>
+        <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+          Try again
+        </Button>
       </p>
     );
   }
   if (empty) {
-    return <p className="text-sm text-muted-foreground">There are no categories to choose from yet. Download the lists first, or turn categories on in Manage categories.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        There are no categories to choose from yet. Download the lists first, or turn categories on
+        in Manage categories.
+      </p>
+    );
   }
   return null;
 }

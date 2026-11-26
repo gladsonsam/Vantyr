@@ -22,19 +22,26 @@ interface LoginErrorPayload {
  * Lockout details (attempts left, retry delay) are kept so people know when to stop guessing.
  */
 export function loginFailure(err: unknown, codeSubmitted: boolean): LoginFailure {
-  if (!isApiError(err)) return { totpRequired: false, message: "Failed to connect to server. Please try again." };
+  if (!isApiError(err))
+    return { totpRequired: false, message: "Failed to connect to server. Please try again." };
 
   const payload = (err.payload ?? {}) as LoginErrorPayload;
   const base = payload.error ?? err.message ?? "Login failed";
   if (payload.totp_required) return { totpRequired: true, message: codeSubmitted ? base : null };
   if (err.status === 429 && typeof payload.retry_after_secs === "number") {
-    return { totpRequired: false, message: `${base} Retry in about ${Math.ceil(payload.retry_after_secs)}s.` };
+    return {
+      totpRequired: false,
+      message: `${base} Retry in about ${Math.ceil(payload.retry_after_secs)}s.`,
+    };
   }
   if (err.status === 401 && typeof payload.attempts_remaining === "number") {
     const n = payload.attempts_remaining;
     const max = payload.max_attempts_per_window;
     const limit = typeof max === "number" ? ` (limit: ${max} wrong passwords / 15 min)` : "";
-    return { totpRequired: false, message: `${base} ${n} attempt${n === 1 ? "" : "s"} remaining before lockout${limit}.` };
+    return {
+      totpRequired: false,
+      message: `${base} ${n} attempt${n === 1 ? "" : "s"} remaining before lockout${limit}.`,
+    };
   }
   return { totpRequired: false, message: base };
 }

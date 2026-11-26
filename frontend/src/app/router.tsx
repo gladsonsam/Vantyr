@@ -4,15 +4,35 @@ import { DashboardLayout } from "./DashboardLayout";
 import { useSession } from "@/app/providers/useSession";
 import { usePageHeader, type PageHeader } from "@/app/shell/usePageHeader";
 
-const OverviewPage = lazy(() => import("@/features/fleet/OverviewPage").then((m) => ({ default: m.OverviewPage })));
-const AgentDetailRoute = lazy(() => import("@/features/agent-detail/AgentDetailRoute").then((m) => ({ default: m.AgentDetailRoute })));
-const AccountSettingsPage = lazy(() => import("@/features/settings/AccountSettingsPage").then((m) => ({ default: m.AccountSettingsPage })));
-const SettingsPage = lazy(() => import("@/features/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })));
-const LogsPage = lazy(() => import("@/features/logs/LogsPage").then((m) => ({ default: m.LogsPage })));
-const RecallPage = lazy(() => import("@/features/recall/RecallPage").then((m) => ({ default: m.RecallPage })));
-const RulesPage = lazy(() => import("@/features/rules/RulesPage").then((m) => ({ default: m.RulesPage })));
-const GroupsPage = lazy(() => import("@/features/groups/GroupsPage").then((m) => ({ default: m.GroupsPage })));
-const UsersPage = lazy(() => import("@/features/users/UsersPage").then((m) => ({ default: m.UsersPage })));
+const OverviewPage = lazy(() =>
+  import("@/features/fleet/OverviewPage").then((m) => ({ default: m.OverviewPage })),
+);
+const AgentDetailRoute = lazy(() =>
+  import("@/features/agent-detail/AgentDetailRoute").then((m) => ({ default: m.AgentDetailRoute })),
+);
+const AccountSettingsPage = lazy(() =>
+  import("@/features/settings/AccountSettingsPage").then((m) => ({
+    default: m.AccountSettingsPage,
+  })),
+);
+const SettingsPage = lazy(() =>
+  import("@/features/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+);
+const LogsPage = lazy(() =>
+  import("@/features/logs/LogsPage").then((m) => ({ default: m.LogsPage })),
+);
+const RecallPage = lazy(() =>
+  import("@/features/recall/RecallPage").then((m) => ({ default: m.RecallPage })),
+);
+const RulesPage = lazy(() =>
+  import("@/features/rules/RulesPage").then((m) => ({ default: m.RulesPage })),
+);
+const GroupsPage = lazy(() =>
+  import("@/features/groups/GroupsPage").then((m) => ({ default: m.GroupsPage })),
+);
+const UsersPage = lazy(() =>
+  import("@/features/users/UsersPage").then((m) => ({ default: m.UsersPage })),
+);
 
 /** Sets the shell's title block, then renders the page. */
 function Page({ children, ...header }: PageHeader & { children: ReactNode }) {
@@ -63,7 +83,10 @@ export function AppRoutes() {
         <Route
           path="/logs"
           element={
-            <Page title="Audit log" description="Sign-ins, operator actions and API calls on this server.">
+            <Page
+              title="Audit log"
+              description="Sign-ins, operator actions and API calls on this server."
+            >
               <LogsPage />
             </Page>
           }
@@ -86,7 +109,10 @@ export function AppRoutes() {
           path="/rules"
           element={
             <AdminOnly>
-              <Page title="Rules" description="Alerts, app blocking, internet access and scheduled scripts across the fleet.">
+              <Page
+                title="Rules"
+                description="Alerts, app blocking, internet access and scheduled scripts across the fleet."
+              >
                 <RulesPage />
               </Page>
             </AdminOnly>
@@ -108,7 +134,10 @@ export function AppRoutes() {
         <Route
           path="/users"
           element={
-            <Page title="Users" description="Your profile, plus accounts, roles and sign-in links for administrators.">
+            <Page
+              title="Users"
+              description="Your profile, plus accounts, roles and sign-in links for administrators."
+            >
               <UsersPage />
             </Page>
           }

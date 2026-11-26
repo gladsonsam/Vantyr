@@ -17,6 +17,9 @@ export function createTestQueryClient(): QueryClient {
 }
 
 /** Wrap a test tree in a QueryClientProvider (a fresh client unless one is passed). */
-export function withQueryClient(node: ReactNode, client: QueryClient = createTestQueryClient()): ReactNode {
+export function withQueryClient(
+  node: ReactNode,
+  client: QueryClient = createTestQueryClient(),
+): ReactNode {
   return createElement(QueryClientProvider, { client }, node);
 }

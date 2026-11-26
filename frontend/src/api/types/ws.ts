@@ -50,7 +50,13 @@ export type WsEvent =
       event: "file_chunk";
       agent_id: string;
       /** On `is_error`, `data` carries the agent's error text instead of base64 bytes. */
-      data?: { path?: string; data?: string; chunk_index?: number; total_chunks?: number; is_error?: boolean };
+      data?: {
+        path?: string;
+        data?: string;
+        chunk_index?: number;
+        total_chunks?: number;
+        is_error?: boolean;
+      };
     }
   | {
       event: "file_upload_result";
@@ -60,7 +66,15 @@ export type WsEvent =
   | {
       event: "fs_op_result";
       agent_id: string;
-      data?: { request_id?: string; ok?: boolean; error?: string; op?: string; src?: string; dst?: string; recursive?: boolean };
+      data?: {
+        request_id?: string;
+        ok?: boolean;
+        error?: string;
+        op?: string;
+        src?: string;
+        dst?: string;
+        recursive?: boolean;
+      };
     }
   | {
       /** Reply to `control_acquire` / `control_heartbeat` / `control_release`, or a server-side revoke. */

@@ -51,25 +51,54 @@ interface AssignCategoryDialogProps {
 }
 
 /** Assign a (custom) category to a domain or URL prefix seen in an agent's browsing. */
-export function AssignCategoryDialog({ target, agentId, canAdmin, onClose }: AssignCategoryDialogProps) {
+export function AssignCategoryDialog({
+  target,
+  agentId,
+  canAdmin,
+  onClose,
+}: AssignCategoryDialogProps) {
   return (
-    <Dialog open={target !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog
+      open={target !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <DialogContent>
-        {target && <AssignCategoryForm target={target} agentId={agentId} canAdmin={canAdmin} onClose={onClose} />}
+        {target && (
+          <AssignCategoryForm
+            target={target}
+            agentId={agentId}
+            canAdmin={canAdmin}
+            onClose={onClose}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function AssignCategoryForm({ target, agentId, canAdmin, onClose }: Omit<AssignCategoryDialogProps, "target"> & { target: AssignTarget }) {
+function AssignCategoryForm({
+  target,
+  agentId,
+  canAdmin,
+  onClose,
+}: Omit<AssignCategoryDialogProps, "target"> & { target: AssignTarget }) {
   const queryClient = useQueryClient();
 
   // Category list for quick assignment UX (best-effort; assigning still works without it).
-  const categoryOptionsQuery = useQuery({ ...urlCategoryQueries.categories(), select: toCategoryOptions });
+  const categoryOptionsQuery = useQuery({
+    ...urlCategoryQueries.categories(),
+    select: toCategoryOptions,
+  });
   const categoryOptions = categoryOptionsQuery.data ?? NO_OPTIONS;
 
   // Fetched once, then refreshed only when categories change.
-  const customGroupsQuery = useQuery({ ...urlCategoryQueries.customCategories(), staleTime: Infinity, select: toCustomGroups });
+  const customGroupsQuery = useQuery({
+    ...urlCategoryQueries.customCategories(),
+    staleTime: Infinity,
+    select: toCustomGroups,
+  });
   const customGroups = customGroupsQuery.data ?? NO_GROUPS;
 
   const form = useForm<AssignCategoryValues>({
@@ -83,7 +112,8 @@ function AssignCategoryForm({ target, agentId, canAdmin, onClose }: Omit<AssignC
   const customOptions = customGroups.map((g) => ({ value: g.key, label: g.label }));
 
   const assign = useMutation({
-    mutationFn: (body: ReturnType<typeof toOverrideBody>) => api.urlCategorizationOverridesUpsert(body),
+    mutationFn: (body: ReturnType<typeof toOverrideBody>) =>
+      api.urlCategorizationOverridesUpsert(body),
     onSuccess: async () => {
       // Apply to recent sessions so the UI updates immediately.
       void api.urlCategorizationRecalcUrlSessions({ limit: 50_000 }).catch(() => {});
@@ -112,14 +142,22 @@ function AssignCategoryForm({ target, agentId, canAdmin, onClose }: Omit<AssignC
           <span className="text-muted-foreground">Match value</span>
           <span className="font-mono text-[13px] wrap-break-word">{target.value}</span>
         </div>
-        <FormField control={form.control} name="customKey" label="Category" id="assign-custom" hideError>
+        <FormField
+          control={form.control}
+          name="customKey"
+          label="Category"
+          id="assign-custom"
+          hideError
+        >
           {({ field }) => (
             <Select
               value={field.value}
               onValueChange={(v) => {
                 field.onChange(v || "");
                 // An underlying UT1 key keeps the override working with existing storage.
-                form.setValue("categoryKey", defaultCategoryKey(v || "", customGroups), { shouldValidate: true });
+                form.setValue("categoryKey", defaultCategoryKey(v || "", customGroups), {
+                  shouldValidate: true,
+                });
               }}
             >
               <SelectTrigger id="assign-custom" className="w-full">
@@ -135,11 +173,21 @@ function AssignCategoryForm({ target, agentId, canAdmin, onClose }: Omit<AssignC
             </Select>
           )}
         </FormField>
-        <CheckboxField control={form.control} name="specific" label="More specific" fieldClassName="pt-1" hideError />
+        <CheckboxField
+          control={form.control}
+          name="specific"
+          label="More specific"
+          fieldClassName="pt-1"
+          hideError
+        />
         {specific ? (
           <FormField control={form.control} name="categoryKey" label="UT1 category" hideError>
             {({ field }) => (
-              <Select value={field.value} disabled={!customKey} onValueChange={(v) => field.onChange(v || "")}>
+              <Select
+                value={field.value}
+                disabled={!customKey}
+                onValueChange={(v) => field.onChange(v || "")}
+              >
                 <SelectTrigger aria-label="UT1 category" className="w-full">
                   <SelectValue placeholder="Select a UT1 category" />
                 </SelectTrigger>
@@ -159,11 +207,16 @@ function AssignCategoryForm({ target, agentId, canAdmin, onClose }: Omit<AssignC
             No custom categories. Add one in Settings.
           </p>
         ) : null}
-        <TextareaField control={form.control} name="note" id="assign-note" label="Note (optional)" rows={2} hideError />
+        <TextareaField
+          control={form.control}
+          name="note"
+          id="assign-note"
+          label="Note (optional)"
+          rows={2}
+          hideError
+        />
         {target.kind === "domain" && target.url ? (
-          <p className="text-[13px] text-muted-foreground">
-            Use a URL prefix to match one path.
-          </p>
+          <p className="text-[13px] text-muted-foreground">Use a URL prefix to match one path.</p>
         ) : null}
       </div>
       <DialogFooter>

@@ -118,8 +118,12 @@ function deriveAppDisplayName(window: WindowEvent): string {
   // Microsoft Office: normalize corrupt/concatenated "Microsoft OfficeWINWORD. EXE" style labels
   // and prefer friendly names like "Microsoft Word".
   {
-    const officePretty = prettyAppLabel({ exeName: window.exe_name, appDisplay: window.app_display });
-    if (officePretty && officePretty !== meta && officePretty !== window.exe_name) return officePretty;
+    const officePretty = prettyAppLabel({
+      exeName: window.exe_name,
+      appDisplay: window.app_display,
+    });
+    if (officePretty && officePretty !== meta && officePretty !== window.exe_name)
+      return officePretty;
   }
 
   // UWP/packaged apps often run under a host process like ApplicationFrameHost.
@@ -235,8 +239,7 @@ function redistributeUrlsToBrowserSessions(
       const startMs = s.startTime.getTime();
       const endMs = s.endTime.getTime();
       // Distance = 0 if inside the interval, otherwise gap to nearest edge.
-      const dist =
-        urlMs < startMs ? startMs - urlMs : urlMs > endMs ? urlMs - endMs : 0;
+      const dist = urlMs < startMs ? startMs - urlMs : urlMs > endMs ? urlMs - endMs : 0;
       if (dist < nearestDist) {
         nearestDist = dist;
         nearest = s;
@@ -266,9 +269,7 @@ export function aggregateSessions({
   const sortedWindows = [...windows]
     .filter((w) => !isBlankWindowEvent(w))
     .filter((w) => !isTaskSwitchingNoiseEvent(w))
-    .sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-  );
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
   for (const window of sortedWindows) {
     const windowTime = new Date(window.timestamp);
@@ -276,8 +277,7 @@ export function aggregateSessions({
     const shouldStartNew =
       !currentSession ||
       currentSession.appName !== window.exe_name ||
-      (windowTime.getTime() - currentSession.endTime.getTime()) / 1000 >
-        gapThresholdSeconds;
+      (windowTime.getTime() - currentSession.endTime.getTime()) / 1000 > gapThresholdSeconds;
 
     if (shouldStartNew) {
       if (currentSession) {
@@ -425,14 +425,11 @@ export function aggregateSessions({
       );
     });
 
-    session.keystrokeCount = session.keystrokes.reduce(
-      (sum, ks) => sum + ks.keys.length,
-      0
-    );
+    session.keystrokeCount = session.keystrokes.reduce((sum, ks) => sum + ks.keys.length, 0);
 
     session.duration = Math.max(
       0,
-      Math.floor((session.endTime.getTime() - session.startTime.getTime()) / 1000)
+      Math.floor((session.endTime.getTime() - session.startTime.getTime()) / 1000),
     );
 
     session.hasKeystrokes = session.keystrokes.length > 0;

@@ -84,10 +84,18 @@ export function AgentDetailTabContent(props: AgentDetailTabContentProps) {
       return <SpecsTab agentId={agent.id} cachedInfo={resolvedInfo} agentOnline={agent.online} />;
     case "software":
       return (
-        <SoftwareTab agentId={agent.id} agentInfo={resolvedInfo} dashboardRole={dashboardRole} onNotifyInfo={onNotifyInfo} onNotifyError={onNotifyError} />
+        <SoftwareTab
+          agentId={agent.id}
+          agentInfo={resolvedInfo}
+          dashboardRole={dashboardRole}
+          onNotifyInfo={onNotifyInfo}
+          onNotifyError={onNotifyError}
+        />
       );
     case "scripts":
-      return <ScriptsTab agentId={agent.id} agentInfo={resolvedInfo} dashboardRole={dashboardRole} />;
+      return (
+        <ScriptsTab agentId={agent.id} agentInfo={resolvedInfo} dashboardRole={dashboardRole} />
+      );
     case "keys":
       return <KeysTab agentId={agent.id} agentInfo={resolvedInfo} />;
     case "windows":
@@ -97,11 +105,11 @@ export function AgentDetailTabContent(props: AgentDetailTabContentProps) {
     case "analytics":
       return <AnalyticsTab agentId={agent.id} dashboardRole={dashboardRole} />;
     case "alerts":
-      return (
-        <EventsTab agentId={agent.id} onViewTimeline={onViewTimelineFromAlerts} />
-      );
+      return <EventsTab agentId={agent.id} onViewTimeline={onViewTimelineFromAlerts} />;
     case "files":
-      return <FilesTab agentId={agent.id} sendWsMessage={sendWsMessage} dashboardRole={dashboardRole} />;
+      return (
+        <FilesTab agentId={agent.id} sendWsMessage={sendWsMessage} dashboardRole={dashboardRole} />
+      );
     case "logs":
       return <AgentLogsTab agentId={agent.id} />;
     default:
@@ -109,7 +117,16 @@ export function AgentDetailTabContent(props: AgentDetailTabContentProps) {
   }
 }
 
-function AgentManagementTabs({ tab, agent, dashboardRole, sendWsMessage, isAdmin, onOpenAgentGroups, onDeleteAgent, resolvedInfo }: AgentDetailTabContentProps) {
+function AgentManagementTabs({
+  tab,
+  agent,
+  dashboardRole,
+  sendWsMessage,
+  isAdmin,
+  onOpenAgentGroups,
+  onDeleteAgent,
+  resolvedInfo,
+}: AgentDetailTabContentProps) {
   switch (tab) {
     case "control":
       return (
@@ -123,7 +140,14 @@ function AgentManagementTabs({ tab, agent, dashboardRole, sendWsMessage, isAdmin
         />
       );
     case "terminal":
-      return <TerminalTab agentId={agent.id} agentOnline={agent.online} agentInfo={resolvedInfo} dashboardRole={dashboardRole} />;
+      return (
+        <TerminalTab
+          agentId={agent.id}
+          agentOnline={agent.online}
+          agentInfo={resolvedInfo}
+          dashboardRole={dashboardRole}
+        />
+      );
     case "settings":
       return (
         <AgentSettingsTab

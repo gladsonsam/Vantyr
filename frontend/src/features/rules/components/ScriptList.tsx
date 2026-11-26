@@ -9,7 +9,18 @@ import { ScriptLastRun } from "./ScriptLastRun";
 export type ScriptAction = "run" | "history" | "edit" | "delete";
 
 /** One row per scheduled script: whether it is on, where it runs, when it fires and how the last run went. */
-export function ScriptList({ scripts, groups, agentsById, lastRuns, runsFailed, timezone, switchesDisabled, runDisabled, onToggle, onAction }: {
+export function ScriptList({
+  scripts,
+  groups,
+  agentsById,
+  lastRuns,
+  runsFailed,
+  timezone,
+  switchesDisabled,
+  runDisabled,
+  onToggle,
+  onAction,
+}: {
   scripts: ScheduledScript[];
   groups: AgentGroup[];
   agentsById: Record<string, Agent>;
@@ -41,7 +52,9 @@ export function ScriptList({ scripts, groups, agentsById, lastRuns, runsFailed, 
             state={!r.enabled && "Off, won’t run on its schedule"}
             facts={
               <>
-                <RuleFact icon={Users} title={scopes.join(", ")}>{scopes.join(", ")}</RuleFact>
+                <RuleFact icon={Users} title={scopes.join(", ")}>
+                  {scopes.join(", ")}
+                </RuleFact>
                 <RuleFact icon={CalendarClock} title={when.join(", ")}>
                   {when.join(", ")}
                   {r.schedules.length > 0 && ` · ${timezone ?? "server time"}`}
@@ -53,16 +66,36 @@ export function ScriptList({ scripts, groups, agentsById, lastRuns, runsFailed, 
             }
             actions={
               <>
-                <Button variant="outline" className="pointer-coarse:h-9" disabled={runDisabled} aria-label={`Run ${title} now`} onClick={() => onAction(r, "run")}>
+                <Button
+                  variant="outline"
+                  className="pointer-coarse:h-9"
+                  disabled={runDisabled}
+                  aria-label={`Run ${title} now`}
+                  onClick={() => onAction(r, "run")}
+                >
                   <Play /> Run now
                 </Button>
-                <Button variant="ghost" className="pointer-coarse:h-9" aria-label={`Run history for ${title}`} onClick={() => onAction(r, "history")}>
+                <Button
+                  variant="ghost"
+                  className="pointer-coarse:h-9"
+                  aria-label={`Run history for ${title}`}
+                  onClick={() => onAction(r, "history")}
+                >
                   <History /> Run history
                 </Button>
-                <Button variant="ghost" className="pointer-coarse:h-9" aria-label={`Edit ${title}`} onClick={() => onAction(r, "edit")}>
+                <Button
+                  variant="ghost"
+                  className="pointer-coarse:h-9"
+                  aria-label={`Edit ${title}`}
+                  onClick={() => onAction(r, "edit")}
+                >
                   <Pencil /> Edit
                 </Button>
-                <RuleDeleteMenu title={title} deleteLabel="Delete script…" onDelete={() => onAction(r, "delete")} />
+                <RuleDeleteMenu
+                  title={title}
+                  deleteLabel="Delete script…"
+                  onDelete={() => onAction(r, "delete")}
+                />
               </>
             }
           />

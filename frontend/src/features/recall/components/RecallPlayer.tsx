@@ -8,39 +8,17 @@ import {
   useState,
   type RefObject,
 } from "react";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Maximize,
-  Pause,
-  Play,
-  TextSelect,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Maximize, Pause, Play, TextSelect } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { HelpTip } from "@/components/common/HelpTip";
 import { Spinner } from "@vantyr/ui/components/spinner";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@vantyr/ui/components/toggle-group";
+import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
 import { api } from "@/api";
-import type {
-  ActivityPoint,
-  HistoryMonitor,
-  OcrWord,
-  ScreenFrame,
-} from "@/api/types";
+import type { ActivityPoint, HistoryMonitor, OcrWord, ScreenFrame } from "@/api/types";
 import { RecallFilmstrip } from "./RecallFilmstrip";
-import {
-  advancePlayhead,
-  frameIndexAt,
-} from "@/features/recall/lib/recallPlayback";
+import { advancePlayhead, frameIndexAt } from "@/features/recall/lib/recallPlayback";
 import { RecallScrubber } from "./RecallScrubber";
-import {
-  formatDuration,
-  shortDateIn,
-  timeWithSecondsIn,
-} from "@/features/recall/lib/recallFormat";
+import { formatDuration, shortDateIn, timeWithSecondsIn } from "@/features/recall/lib/recallFormat";
 
 /**
  * Playback speeds as *time compression*, not as frame cadence.
@@ -115,27 +93,15 @@ export function RecallPlayer({
   const [showText, setShowText] = useState(false);
   const stageRef = useRef<HTMLDivElement | null>(null);
 
-  const rate = useMemo(
-    () => SPEEDS.find((s) => s.id === speedId)?.rate ?? 300,
-    [speedId],
-  );
+  const rate = useMemo(() => SPEEDS.find((s) => s.id === speedId)?.rate ?? 300, [speedId]);
 
   /** Frame timestamps, cached: every seek and every playback tick binary-searches them. */
-  const times = useMemo(
-    () => frames.map((f) => new Date(f.captured_at).getTime()),
-    [frames],
-  );
+  const times = useMemo(() => frames.map((f) => new Date(f.captured_at).getTime()), [frames]);
 
   const indexAt = useCallback((ms: number) => frameIndexAt(times, ms), [times]);
 
-  const index = selectedPlaybackIndex(
-    frames,
-    selectedFrameId,
-    playheadMs,
-    indexAt,
-  );
-  const current: ScreenFrame | undefined =
-    index >= 0 ? frames[index] : undefined;
+  const index = selectedPlaybackIndex(frames, selectedFrameId, playheadMs, indexAt);
+  const current: ScreenFrame | undefined = index >= 0 ? frames[index] : undefined;
 
   const blobUrl = useMemo(
     () => (current ? api.historyBlobUrl(agentId, current.id) : null),
@@ -169,10 +135,7 @@ export function RecallPlayer({
       if (times.length === 0) return;
       setPlaying(false);
       const i = indexAt(playheadMs);
-      const next = Math.min(
-        times.length - 1,
-        Math.max(0, (i < 0 ? 0 : i) + delta),
-      );
+      const next = Math.min(times.length - 1, Math.max(0, (i < 0 ? 0 : i) + delta));
       onSeek(times[next]);
     },
     [times, indexAt, playheadMs, onSeek],
@@ -294,7 +257,6 @@ export function RecallPlayer({
             timezone={timezone}
           />
         </div>
-
       </div>
     </div>
   );
@@ -332,123 +294,115 @@ function PlayerControls({
   onFullscreen,
 }: PlayerControlsProps) {
   return (
-  <div className="mb-2 flex flex-wrap items-center gap-2">
-    <Button
-      onClick={onTogglePlay}
-      disabled={disabled}
-      aria-label={playing ? "Pause (space)" : "Play (space)"}
-      className="min-w-24"
-    >
-      {playing ? <Pause /> : <Play />}
-      {playing ? "Pause" : "Play"}
-    </Button>
-    <div className="flex items-center gap-1">
+    <div className="mb-2 flex flex-wrap items-center gap-2">
       <Button
-        variant="outline"
-        size="icon"
-        className="size-9"
-        onClick={() => onStep(-1)}
+        onClick={onTogglePlay}
         disabled={disabled}
-        aria-label="Previous frame"
-        title="Previous capture (←)"
+        aria-label={playing ? "Pause (space)" : "Play (space)"}
+        className="min-w-24"
       >
-        <ChevronLeft />
+        {playing ? <Pause /> : <Play />}
+        {playing ? "Pause" : "Play"}
       </Button>
-      <Button
-        variant="outline"
-        size="icon"
-        className="size-9"
-        onClick={() => onStep(1)}
-        disabled={disabled}
-        aria-label="Next frame"
-        title="Next capture (→)"
-      >
-        <ChevronRight />
-      </Button>
-    </div>
-    <ToggleGroup
-      size="sm"
-      spacing={0}
-      className="rounded-lg bg-muted/70 p-0.5"
-      aria-label="Playback speed"
-      value={[speedId]}
-      onValueChange={(value) => {
-        if (value[0]) onSpeedChange(value[0]);
-      }}
-    >
-      {SPEEDS.map((s) => (
-        <ToggleGroupItem
-          key={s.id}
-          value={s.id}
-          aria-label={s.label}
-          title={s.label}
-          className="rounded-md! px-2.5 font-mono aria-pressed:bg-background"
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-9"
+          onClick={() => onStep(-1)}
+          disabled={disabled}
+          aria-label="Previous frame"
+          title="Previous capture (←)"
         >
-          {s.text}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
-    {monitors.length > 1 && (
+          <ChevronLeft />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-9"
+          onClick={() => onStep(1)}
+          disabled={disabled}
+          aria-label="Next frame"
+          title="Next capture (→)"
+        >
+          <ChevronRight />
+        </Button>
+      </div>
       <ToggleGroup
         size="sm"
         spacing={0}
-        className="max-w-full flex-wrap rounded-lg bg-muted/70 p-0.5"
-        aria-label="Display"
-        value={[monitorId]}
+        className="rounded-lg bg-muted/70 p-0.5"
+        aria-label="Playback speed"
+        value={[speedId]}
         onValueChange={(value) => {
-          if (value[0] != null) onMonitorChange(Number(value[0]));
+          if (value[0]) onSpeedChange(value[0]);
         }}
       >
-        {monitors.map((m) => (
+        {SPEEDS.map((s) => (
           <ToggleGroupItem
-            key={m.monitor}
-            value={String(m.monitor)}
-            aria-label={`Display ${m.monitor + 1}`}
-            className="rounded-md! px-2.5 aria-pressed:bg-background"
+            key={s.id}
+            value={s.id}
+            aria-label={s.label}
+            title={s.label}
+            className="rounded-md! px-2.5 font-mono aria-pressed:bg-background"
           >
-            Display {m.monitor + 1}
+            {s.text}
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
-    )}
-    <div className="ml-auto flex items-center gap-1">
-      <Button
-        variant="outline"
-        className="h-9"
-        onClick={onToggleText}
-        disabled={!canSelectText}
-        aria-label={
-          showText
-            ? "Hide selectable text (t)"
-            : "Select text on this frame (t)"
-        }
-        title={
-          canSelectText
-            ? "Select text on this capture"
-            : "No text was read from this capture"
-        }
-      >
-        <TextSelect />
-        <span className="max-sm:sr-only">
-          {showText ? "Done" : "Select text"}
-        </span>
-      </Button>
-      <Button
-        variant="outline"
-        size="icon"
-        className="size-9"
-        onClick={onFullscreen}
-        aria-label="Fullscreen (f)"
-        title="Fullscreen (f)"
-      >
-        <Maximize />
-      </Button>
-      <HelpTip label="Keyboard shortcuts">
-        Space play/pause · ←/→ previous/next capture · J/L back/forward 1
-        minute · F fullscreen · T select text
-      </HelpTip>
+      {monitors.length > 1 && (
+        <ToggleGroup
+          size="sm"
+          spacing={0}
+          className="max-w-full flex-wrap rounded-lg bg-muted/70 p-0.5"
+          aria-label="Display"
+          value={[monitorId]}
+          onValueChange={(value) => {
+            if (value[0] != null) onMonitorChange(Number(value[0]));
+          }}
+        >
+          {monitors.map((m) => (
+            <ToggleGroupItem
+              key={m.monitor}
+              value={String(m.monitor)}
+              aria-label={`Display ${m.monitor + 1}`}
+              className="rounded-md! px-2.5 aria-pressed:bg-background"
+            >
+              Display {m.monitor + 1}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      )}
+      <div className="ml-auto flex items-center gap-1">
+        <Button
+          variant="outline"
+          className="h-9"
+          onClick={onToggleText}
+          disabled={!canSelectText}
+          aria-label={showText ? "Hide selectable text (t)" : "Select text on this frame (t)"}
+          title={
+            canSelectText ? "Select text on this capture" : "No text was read from this capture"
+          }
+        >
+          <TextSelect />
+          <span className="max-sm:sr-only">{showText ? "Done" : "Select text"}</span>
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-9"
+          onClick={onFullscreen}
+          aria-label="Fullscreen (f)"
+          title="Fullscreen (f)"
+        >
+          <Maximize />
+        </Button>
+        <HelpTip label="Keyboard shortcuts">
+          Space play/pause · ←/→ previous/next capture · J/L back/forward 1 minute · F fullscreen ·
+          T select text
+        </HelpTip>
+      </div>
     </div>
-  </div>
   );
 }
 
@@ -750,8 +704,7 @@ function PlaybackClock({
             Playhead {timeWithSecondsIn(timezone, playheadMs)}
             {playheadMs - Date.parse(current!.captured_at) > MIN_HOLD_MS &&
               ` · last capture ${formatDuration((playheadMs - Date.parse(current!.captured_at)) / 1000)} earlier`}
-            {playheadMs < Date.parse(current!.captured_at) &&
-              " · first capture is later"}
+            {playheadMs < Date.parse(current!.captured_at) && " · first capture is later"}
           </div>
         </div>
       )}
@@ -768,10 +721,11 @@ function useDecodeAhead({
   monitor,
   fromMs,
   toMs,
-}: Pick<
-  RecallPlayerProps,
-  "agentId" | "frames" | "monitor" | "fromMs" | "toMs"
-> & { index: number; playing: boolean; rate: number }) {
+}: Pick<RecallPlayerProps, "agentId" | "frames" | "monitor" | "fromMs" | "toMs"> & {
+  index: number;
+  playing: boolean;
+  rate: number;
+}) {
   // ── Decode-ahead ────────────────────────────────────────────────────────────
   // Each frame is a separate HTTP fetch, so at speed playback outruns the network
   // and stutters. Warm the browser cache for the frames just ahead of the playhead;
@@ -805,10 +759,7 @@ function useFrameTextWords({
   loading,
   playing,
   showText,
-}: Pick<
-  PlayerStageProps,
-  "agentId" | "current" | "loading" | "playing" | "showText"
->) {
+}: Pick<PlayerStageProps, "agentId" | "current" | "loading" | "playing" | "showText">) {
   const [words, setWords] = useState<OcrWord[]>([]);
   // ── Selectable text overlay ─────────────────────────────────────────────────
   // Word boxes for the frame on screen. Fetched per frame rather than with the range
@@ -858,9 +809,7 @@ function selectedPlaybackIndex(
     selectedFrameId == null
       ? -1
       : frames.findIndex(
-          (frame) =>
-            frame.id === selectedFrameId &&
-            Date.parse(frame.captured_at) === playheadMs,
+          (frame) => frame.id === selectedFrameId && Date.parse(frame.captured_at) === playheadMs,
         );
   return selected >= 0 ? selected : indexAt(playheadMs);
 }

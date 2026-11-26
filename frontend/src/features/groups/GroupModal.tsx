@@ -30,13 +30,20 @@ export function GroupModal({ visible, onDismiss, group, onSave }: GroupModalProp
   return (
     <Dialog open={visible} onOpenChange={(open) => !open && !busy && onDismiss()}>
       <DialogContent className="sm:max-w-md">
-        {visible && <GroupForm group={group} onDismiss={onDismiss} onSave={onSave} onBusyChange={setBusy} />}
+        {visible && (
+          <GroupForm group={group} onDismiss={onDismiss} onSave={onSave} onBusyChange={setBusy} />
+        )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function GroupForm({ group, onDismiss, onSave, onBusyChange }: Omit<GroupModalProps, "visible"> & { onBusyChange: (busy: boolean) => void }) {
+function GroupForm({
+  group,
+  onDismiss,
+  onSave,
+  onBusyChange,
+}: Omit<GroupModalProps, "visible"> & { onBusyChange: (busy: boolean) => void }) {
   const form = useForm<GroupValues>({
     resolver: zodResolver(groupSchema),
     mode: "onChange",

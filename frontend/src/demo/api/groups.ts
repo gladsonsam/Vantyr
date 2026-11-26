@@ -11,7 +11,9 @@ export function demoGroupsApi(): Partial<ApiClient> {
     agentGroupsUpdate: async () => ({ ok: true }),
     agentGroupsDelete: async () => ({ ok: true }),
     agentGroupMembers: async () => ({ agent_ids: demoAgents.slice(0, 3).map((a) => a.id) }),
-    agentGroupMembersAdd: async (body) => ({ added: asStringArray(asRecord(body).agent_ids).length }),
+    agentGroupMembersAdd: async (body) => ({
+      added: asStringArray(asRecord(body).agent_ids).length,
+    }),
     agentGroupMemberRemove: async () => ({ ok: true }),
   };
 }

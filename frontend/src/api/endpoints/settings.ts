@@ -1,4 +1,9 @@
-import type { LocalUiPasswordAgentState, LocalUiPasswordGlobalState, RetentionPolicy, StorageUsage } from "@/api/types";
+import type {
+  LocalUiPasswordAgentState,
+  LocalUiPasswordGlobalState,
+  RetentionPolicy,
+  StorageUsage,
+} from "@/api/types";
 import { get, putJson, postEmpty, delJson } from "@/api/client";
 import { publishServerVersion, type SettingsVersionPayload } from "@/api/serverVersionStore";
 
@@ -33,29 +38,22 @@ export const settingsEndpoints = {
 
   localUiPasswordGlobalPut: (body: {
     password: string | null;
-  }): Promise<LocalUiPasswordGlobalState> =>
-    putJson("/settings/local-ui-password", body),
+  }): Promise<LocalUiPasswordGlobalState> => putJson("/settings/local-ui-password", body),
 
-  localUiPasswordAgentGet: (
-    id: string,
-  ): Promise<LocalUiPasswordAgentState> =>
+  localUiPasswordAgentGet: (id: string): Promise<LocalUiPasswordAgentState> =>
     get(`/agents/${id}/local-ui-password`),
 
   localUiPasswordAgentPut: (
     id: string,
     body: { password: string | null },
-  ): Promise<LocalUiPasswordAgentState> =>
-    putJson(`/agents/${id}/local-ui-password`, body),
+  ): Promise<LocalUiPasswordAgentState> => putJson(`/agents/${id}/local-ui-password`, body),
 
-  localUiPasswordAgentDelete: (
-    id: string,
-  ): Promise<LocalUiPasswordAgentState> =>
+  localUiPasswordAgentDelete: (id: string): Promise<LocalUiPasswordAgentState> =>
     delJson(`/agents/${id}/local-ui-password`),
 
   // ── Agent auto-update policy (pushed to Windows agents) ────────────────────
 
-  agentAutoUpdateGlobalGet: (): Promise<{ enabled: boolean }> =>
-    get("/settings/agent-auto-update"),
+  agentAutoUpdateGlobalGet: (): Promise<{ enabled: boolean }> => get("/settings/agent-auto-update"),
 
   agentAutoUpdateGlobalPut: (body: { enabled: boolean }): Promise<{ enabled: boolean }> =>
     putJson("/settings/agent-auto-update", body),
@@ -76,8 +74,7 @@ export const settingsEndpoints = {
   ): Promise<{ global: { enabled: boolean }; override: { enabled: boolean } | null }> =>
     delJson(`/agents/${id}/auto-update`),
 
-  agentUpdateNow: (id: string): Promise<{ ok: boolean }> =>
-    postEmpty(`/agents/${id}/update-now`),
+  agentUpdateNow: (id: string): Promise<{ ok: boolean }> => postEmpty(`/agents/${id}/update-now`),
 
   settingsVersionGet: async (opts?: { nocache?: boolean }): Promise<SettingsVersionPayload> => {
     const qs = opts?.nocache ? "?nocache=true" : "";

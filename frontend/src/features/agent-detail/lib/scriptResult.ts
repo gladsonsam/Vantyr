@@ -22,7 +22,11 @@ export function describeScriptResult(result: Record<string, unknown>): ScriptOut
     return { ...base, tone: "failed", headline: `Failed · exit code ${exit}` };
   }
   if (result.ok === true) {
-    return { ...base, tone: "ok", headline: exit === null ? "Finished" : `Finished · exit code ${exit}` };
+    return {
+      ...base,
+      tone: "ok",
+      headline: exit === null ? "Finished" : `Finished · exit code ${exit}`,
+    };
   }
   return { ...base, tone: "error", headline: "Didn’t finish" };
 }

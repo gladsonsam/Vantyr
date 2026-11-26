@@ -11,7 +11,13 @@ import {
   DialogTitle,
 } from "@vantyr/ui/components/dialog";
 import { Field, FieldLabel } from "@vantyr/ui/components/field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@vantyr/ui/components/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@vantyr/ui/components/select";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { api } from "@/api";
 import { groupKeys, groupQueries } from "@/api/queries/groups";
@@ -29,14 +35,17 @@ export function BulkAddToGroupModal({
   const loadErr = groupsQuery.error ? String(groupsQuery.error) : null;
   const [groupId, setGroupId] = useState<string>("");
   const addToGroup = useMutation({
-    mutationFn: (targetGroupId: string) => api.agentGroupMembersAdd(targetGroupId, { agent_ids: agentIds }),
+    mutationFn: (targetGroupId: string) =>
+      api.agentGroupMembersAdd(targetGroupId, { agent_ids: agentIds }),
     onSuccess: () => {
       onDismiss();
       void queryClient.invalidateQueries({ queryKey: groupKeys.all });
     },
   });
   const busy = addToGroup.isPending;
-  const actionErr = addToGroup.error ? String((addToGroup.error as Error)?.message ?? addToGroup.error) : null;
+  const actionErr = addToGroup.error
+    ? String((addToGroup.error as Error)?.message ?? addToGroup.error)
+    : null;
 
   const options = useMemo(
     () => (groups ?? []).map((g) => ({ label: g.name, value: g.id })),
@@ -70,7 +79,11 @@ export function BulkAddToGroupModal({
           )}
           <Field>
             <FieldLabel htmlFor="bulk-group">Group</FieldLabel>
-            <Select value={groupId} onValueChange={(next) => setGroupId(typeof next === "string" ? next : "")} disabled={groups === null || options.length === 0}>
+            <Select
+              value={groupId}
+              onValueChange={(next) => setGroupId(typeof next === "string" ? next : "")}
+              disabled={groups === null || options.length === 0}
+            >
               <SelectTrigger id="bulk-group" className="w-full">
                 <SelectValue placeholder="Choose a group" />
               </SelectTrigger>
@@ -83,7 +96,10 @@ export function BulkAddToGroupModal({
               </SelectContent>
             </Select>
             {groups !== null && options.length === 0 && (
-              <p className="text-sm text-muted-foreground">No groups yet — open Agent groups from the overview or the Groups page to create one.</p>
+              <p className="text-sm text-muted-foreground">
+                No groups yet — open Agent groups from the overview or the Groups page to create
+                one.
+              </p>
             )}
           </Field>
         </div>

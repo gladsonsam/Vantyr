@@ -41,7 +41,8 @@ export function deleteConsequence(rule: AppBlockRule): string {
   const name = rule.name || rule.exe_pattern;
   const kind = resolvedScopeKind(rule);
   if (kind === "all") return `“${name}” will stop blocking on every device, not just this one.`;
-  if (kind === "group") return `“${name}” will stop blocking on every device in its group, not just this one.`;
+  if (kind === "group")
+    return `“${name}” will stop blocking on every device in its group, not just this one.`;
   return `“${name}” will stop being blocked on this device.`;
 }
 

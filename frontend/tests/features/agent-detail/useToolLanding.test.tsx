@@ -1,7 +1,7 @@
-// @vitest-environment jsdom
+import { testMock as vi } from "@tests/support/mock";
 import { act, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import { shouldLandOnArrival } from "@/features/agent-detail/lib/toolLanding";
 import { useToolLanding } from "@/features/agent-detail/useToolLanding";
@@ -15,7 +15,12 @@ interface HarnessProps {
 
 const changeTab = vi.fn();
 
-function Harness({ tab, agentId = "a1", scrollRequested = false, hasMoment = false }: HarnessProps) {
+function Harness({
+  tab,
+  agentId = "a1",
+  scrollRequested = false,
+  hasMoment = false,
+}: HarnessProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const land = useToolLanding({ rootRef, agentId, activeTab: tab, scrollRequested, hasMoment });
   return (
@@ -48,8 +53,12 @@ function stubGeometry() {
       writes.push(value);
     },
   });
-  Object.defineProperty(host.querySelector(".agent-detail-section-tabs")!, "offsetHeight", { configurable: true, value: 50 });
-  host.querySelector("[data-agent-tool-content]")!.getBoundingClientRect = () => ({ top: contentOffset - top }) as DOMRect;
+  Object.defineProperty(host.querySelector(".agent-detail-section-tabs")!, "offsetHeight", {
+    configurable: true,
+    value: 50,
+  });
+  host.querySelector("[data-agent-tool-content]")!.getBoundingClientRect = () =>
+    ({ top: contentOffset - top }) as DOMRect;
   scroller.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
 }
 
@@ -64,7 +73,9 @@ async function render(props: HarnessProps) {
 }
 
 beforeEach(() => {
-  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  (
+    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.useFakeTimers();
   writes = [];
   contentOffset = 500;
@@ -106,7 +117,9 @@ describe("shouldLandOnArrival", () => {
   });
   it("lands on the Timeline only when asked, and never over a moment the Timeline scrolls to", () => {
     expect(shouldLandOnArrival({ ...base, tab: "activity", scrollRequested: true })).toBe(true);
-    expect(shouldLandOnArrival({ ...base, tab: "activity", scrollRequested: true, hasMoment: true })).toBe(false);
+    expect(
+      shouldLandOnArrival({ ...base, tab: "activity", scrollRequested: true, hasMoment: true }),
+    ).toBe(false);
   });
   it("goes back to the desktop on a later arrival at Live desktop", () => {
     expect(shouldLandOnArrival({ ...base, tab: "live", firstArrival: false })).toBe(true);

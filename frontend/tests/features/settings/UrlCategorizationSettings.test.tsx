@@ -1,19 +1,28 @@
-// @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
 import { buttonByText, click, mountForm, unmountForms } from "@tests/support/formDom";
-import { UrlCategorizationSettings } from "@/features/settings/UrlCategorizationSettings";
-import { useUrlCategorization, type UrlCategorizationStatus } from "@/features/settings/hooks/useUrlCategorization";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({
+import type { UrlCategorizationStatus } from "@/features/settings/hooks/useUrlCategorization";
+
+const api = (() => ({
   urlCategorizationStatusGet: vi.fn(),
   urlCategorizationSettingsPut: vi.fn(),
   urlCategorizationUpdateNow: vi.fn(),
-}));
-vi.mock("@/api", () => ({ api }));
+}))();
+await vi.mock("@/api", () => ({ api }));
+
+const { UrlCategorizationSettings } = await import("@/features/settings/UrlCategorizationSettings");
+const { useUrlCategorization } = await import("@/features/settings/hooks/useUrlCategorization");
 
 const ready: UrlCategorizationStatus = {
-  settings: { enabled: true, auto_update: true, source_url: "https://example.com/list.tar.gz", last_update_at: "2026-01-02T03:04:05Z", last_update_error: null },
+  settings: {
+    enabled: true,
+    auto_update: true,
+    source_url: "https://example.com/list.tar.gz",
+    last_update_at: "2026-01-02T03:04:05Z",
+    last_update_error: null,
+  },
   active_release: { sha256: "abc123def456" },
   counts: { categories: 84, domains: 138000, urls: 42000 },
   job: null,
@@ -23,7 +32,8 @@ function Harness({ isAdmin = true }: { isAdmin?: boolean }) {
   const urlCat = useUrlCategorization(isAdmin);
   return <UrlCategorizationSettings isAdmin={isAdmin} urlCat={urlCat} />;
 }
-const render = (isAdmin = true) => mountForm(withQueryClient(<Harness isAdmin={isAdmin} />, createTestQueryClient()));
+const render = (isAdmin = true) =>
+  mountForm(withQueryClient(<Harness isAdmin={isAdmin} />, createTestQueryClient()));
 const text = () => document.body.textContent ?? "";
 const buttons = () => [...document.querySelectorAll("button")].map((b) => b.textContent?.trim());
 const switches = () => [...document.querySelectorAll('[role="switch"]')] as HTMLElement[];
@@ -64,7 +74,10 @@ describe("URL categorization settings", () => {
   });
 
   it("says a failed update failed, keeping the last good time", async () => {
-    api.urlCategorizationStatusGet.mockResolvedValue({ ...ready, settings: { ...ready.settings, last_update_error: "tls handshake failed" } });
+    api.urlCategorizationStatusGet.mockResolvedValue({
+      ...ready,
+      settings: { ...ready.settings, last_update_error: "tls handshake failed" },
+    });
     await render();
     expect(text()).toContain("The last list update failed.");
     expect(text()).toContain("tls handshake failed");
@@ -82,7 +95,10 @@ describe("URL categorization settings", () => {
     expect(text()).toContain("Turn on categorization to download lists and manage overrides.");
     expect(buttonByText("Download lists now").disabled).toBe(true);
     expect(buttonByText("Manage overrides").disabled).toBe(true);
-    expect(switches()[1].getAttribute("aria-disabled") === "true" || switches()[1].hasAttribute("data-disabled")).toBe(true);
+    expect(
+      switches()[1].getAttribute("aria-disabled") === "true" ||
+        switches()[1].hasAttribute("data-disabled"),
+    ).toBe(true);
   });
 
   it("sends only the toggled setting with the rest as saved", async () => {
@@ -108,12 +124,21 @@ describe("URL categorization settings", () => {
   it("shows progress while a download runs and blocks a second download", async () => {
     api.urlCategorizationStatusGet.mockResolvedValue({
       ...ready,
-      job: { state: "downloading", started_at: null, updated_at: "", bytes_total: 4 * 1024 * 1024, bytes_done: 1024 * 1024, message: null },
+      job: {
+        state: "downloading",
+        started_at: null,
+        updated_at: "",
+        bytes_total: 4 * 1024 * 1024,
+        bytes_done: 1024 * 1024,
+        message: null,
+      },
     });
     await render();
     expect(text()).toContain("Downloading the lists…");
     expect(text()).toContain("1 of 4 MB");
-    expect(document.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("25");
+    expect(document.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe(
+      "25",
+    );
     expect(buttonByText("Download lists now").disabled).toBe(true);
   });
 
@@ -125,7 +150,9 @@ describe("URL categorization settings", () => {
     expect(text()).toContain("Download requested.");
     api.urlCategorizationStatusGet.mockRejectedValue(new Error("offline"));
     await click(document.querySelector<HTMLButtonElement>('button[aria-label="Refresh status"]')!);
-    expect(text()).toContain("Couldn't refresh the status. What's shown may be out of date. offline");
+    expect(text()).toContain(
+      "Couldn't refresh the status. What's shown may be out of date. offline",
+    );
     expect(text()).toContain("84 categories");
     expect(buttons()).toContain("Try again");
   });

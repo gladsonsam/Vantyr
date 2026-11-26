@@ -1,11 +1,34 @@
-import { describe, expect, it } from "vitest";
-import { urlCatJobProgress, urlCatJobRunning, type UrlCategorizationStatus } from "@/features/settings/hooks/useUrlCategorization";
+import { describe, expect, it } from "bun:test";
+import {
+  urlCatJobProgress,
+  urlCatJobRunning,
+  type UrlCategorizationStatus,
+} from "@/features/settings/hooks/useUrlCategorization";
 
-const status = (job: Partial<NonNullable<UrlCategorizationStatus["job"]>> | null): UrlCategorizationStatus => ({
-  settings: { enabled: true, auto_update: true, source_url: "https://x", last_update_at: null, last_update_error: null },
+const status = (
+  job: Partial<NonNullable<UrlCategorizationStatus["job"]>> | null,
+): UrlCategorizationStatus => ({
+  settings: {
+    enabled: true,
+    auto_update: true,
+    source_url: "https://x",
+    last_update_at: null,
+    last_update_error: null,
+  },
   active_release: { sha256: null },
   counts: { categories: 0, domains: 0, urls: 0 },
-  job: job === null ? null : { state: "idle", started_at: null, updated_at: "", bytes_total: null, bytes_done: 0, message: null, ...job },
+  job:
+    job === null
+      ? null
+      : {
+          state: "idle",
+          started_at: null,
+          updated_at: "",
+          bytes_total: null,
+          bytes_done: 0,
+          message: null,
+          ...job,
+        },
 });
 
 describe("urlCatJobRunning", () => {

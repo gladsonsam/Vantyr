@@ -10,7 +10,11 @@ const LEASE_MESSAGES = ["control_acquire", "control_heartbeat", "control_release
  * Demo mode has no server: this stands in for the viewer WebSocket, announcing the fake fleet,
  * drifting its live status, and answering remote-control lease commands locally.
  */
-export const useDemoViewerConnection: ViewerConnection = ({ onMessage, onStatusChange, enabled = true }: ViewerConnectionOptions) => {
+export const useDemoViewerConnection: ViewerConnection = ({
+  onMessage,
+  onStatusChange,
+  enabled = true,
+}: ViewerConnectionOptions) => {
   const leases = useRef(new Map<string, string>());
   const msgCbRef = useRef(onMessage);
   const statusCbRef = useRef(onStatusChange);
@@ -30,24 +34,48 @@ export const useDemoViewerConnection: ViewerConnection = ({ onMessage, onStatusC
   const [demoFs] = useState(createDemoFileSystem);
   useEffect(() => () => demoFs.dispose(), [demoFs]);
 
-  const send = useCallback((data: unknown) => {
-    const message = data as Record<string, unknown>;
-    if (message.type === "control" && message.cmd && typeof message.cmd === "object") {
-      const id = String(message.agent_id);
-      if (demoAgents.some((agent) => agent.id === id && agent.online)) demoFs.handle(emitDemoEvent, id, message.cmd as DemoFsCommand);
-      return;
-    }
-    if (!LEASE_MESSAGES.includes(String(message.type))) return;
-    const id = String(message.agent_id), current = leases.current.get(id);
-    const matching = current === message.lease_token;
-    let token = current;
-    let status: "granted" | "released" | "denied" = "denied";
-    if (message.type === "control_acquire" && demoAgents.some(agent => agent.id === id && agent.online)) { token = current ?? crypto.randomUUID(); leases.current.set(id, token); status = "granted"; }
-    if (message.type === "control_heartbeat" && current && matching) status = "granted";
-    if (message.type === "control_release" && current && matching) { leases.current.delete(id); status = "released"; }
-    const event: WsEvent = { event: "control_lease", agent_id: id, request_id: typeof message.request_id === "string" ? message.request_id : undefined, status, ...(status === "granted" ? {lease_token: token, expires_in_ms: 15000} : {}), ...(status === "denied" ? {error: "Demo device is offline or the control session ended"} : {}) };
-    queueMicrotask(() => msgCbRef.current(event));
-  }, [demoFs, emitDemoEvent]);
+  const send = useCallback(
+    (data: unknown) => {
+      const message = data as Record<string, unknown>;
+      if (message.type === "control" && message.cmd && typeof message.cmd === "object") {
+        const id = String(message.agent_id);
+        if (demoAgents.some((agent) => agent.id === id && agent.online))
+          demoFs.handle(emitDemoEvent, id, message.cmd as DemoFsCommand);
+        return;
+      }
+      if (!LEASE_MESSAGES.includes(String(message.type))) return;
+      const id = String(message.agent_id),
+        current = leases.current.get(id);
+      const matching = current === message.lease_token;
+      let token = current;
+      let status: "granted" | "released" | "denied" = "denied";
+      if (
+        message.type === "control_acquire" &&
+        demoAgents.some((agent) => agent.id === id && agent.online)
+      ) {
+        token = current ?? crypto.randomUUID();
+        leases.current.set(id, token);
+        status = "granted";
+      }
+      if (message.type === "control_heartbeat" && current && matching) status = "granted";
+      if (message.type === "control_release" && current && matching) {
+        leases.current.delete(id);
+        status = "released";
+      }
+      const event: WsEvent = {
+        event: "control_lease",
+        agent_id: id,
+        request_id: typeof message.request_id === "string" ? message.request_id : undefined,
+        status,
+        ...(status === "granted" ? { lease_token: token, expires_in_ms: 15000 } : {}),
+        ...(status === "denied"
+          ? { error: "Demo device is offline or the control session ended" }
+          : {}),
+      };
+      queueMicrotask(() => msgCbRef.current(event));
+    },
+    [demoFs, emitDemoEvent],
+  );
 
   useEffect(() => {
     if (!enabled) {
@@ -96,7 +124,11 @@ export const useDemoViewerConnection: ViewerConnection = ({ onMessage, onStatusC
         title: status.window,
         app: status.app,
       });
-      emit(tick % 5 === 0 ? { event: "afk", agent_id: agent.id, idle_secs: 180 } : { event: "active", agent_id: agent.id });
+      emit(
+        tick % 5 === 0
+          ? { event: "afk", agent_id: agent.id, idle_secs: 180 }
+          : { event: "active", agent_id: agent.id },
+      );
     }, 8_000);
 
     return () => {

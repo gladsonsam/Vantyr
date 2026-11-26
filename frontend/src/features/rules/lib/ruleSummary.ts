@@ -1,4 +1,10 @@
-import type { Agent, AgentGroup, AlertRuleScope, AppBlockRule, ScheduledScriptSchedule } from "@/api/types";
+import type {
+  Agent,
+  AgentGroup,
+  AlertRuleScope,
+  AppBlockRule,
+  ScheduledScriptSchedule,
+} from "@/api/types";
 import { scopeLabels } from "./alertRuleSummary";
 import { DAY_OPTIONS, minuteToTime } from "../rulesUtils";
 import { joinOvernight, type ScheduleWindow } from "./scheduleRows";
@@ -11,7 +17,11 @@ export function ruleScopeLabels(
   groups: AgentGroup[],
   agentsById: Record<string, Agent>,
 ): string[] {
-  const cleaned = (scopes ?? []).map((s) => ({ kind: s.kind, group_id: s.group_id ?? undefined, agent_id: s.agent_id ?? undefined }));
+  const cleaned = (scopes ?? []).map((s) => ({
+    kind: s.kind,
+    group_id: s.group_id ?? undefined,
+    agent_id: s.agent_id ?? undefined,
+  }));
   return scopeLabels(cleaned as AlertRuleScope[], groups, agentsById);
 }
 
@@ -19,7 +29,11 @@ export function ruleScopeLabels(
  * Scope labels of an app block rule. The list endpoint returns every scope row; a rule loaded for one
  * agent only carries a summarised `scope_kind`.
  */
-export function appBlockScopeLabels(rule: AppBlockRule, groups: AgentGroup[], agentsById: Record<string, Agent>): string[] {
+export function appBlockScopeLabels(
+  rule: AppBlockRule,
+  groups: AgentGroup[],
+  agentsById: Record<string, Agent>,
+): string[] {
   if (!rule.scopes || rule.scopes.length === 0) {
     const kind = rule.scope_kind ?? "agent";
     return [kind === "all" ? "All devices" : kind === "group" ? "A group" : "This device"];
@@ -40,11 +54,16 @@ function dayList(days: number[]): string {
   const runs: number[][] = [];
   for (const d of order) {
     const last = runs[runs.length - 1];
-    if (last && WEEK_ORDER.indexOf(last[last.length - 1]) + 1 === WEEK_ORDER.indexOf(d)) last.push(d);
+    if (last && WEEK_ORDER.indexOf(last[last.length - 1]) + 1 === WEEK_ORDER.indexOf(d))
+      last.push(d);
     else runs.push([d]);
   }
   return runs
-    .map((r) => (r.length >= 3 ? `${DAY_SHORT[r[0]]}–${DAY_SHORT[r[r.length - 1]]}` : r.map((d) => DAY_SHORT[d]).join(", ")))
+    .map((r) =>
+      r.length >= 3
+        ? `${DAY_SHORT[r[0]]}–${DAY_SHORT[r[r.length - 1]]}`
+        : r.map((d) => DAY_SHORT[d]).join(", "),
+    )
     .join(", ");
 }
 
@@ -62,7 +81,9 @@ export function scheduleLabels(schedules: ScheduleWindow[] | undefined | null): 
       const key = timeRange(s.start, s.end);
       sameDay.set(key, [...(sameDay.get(key) ?? []), s.day]);
     } else {
-      overnight.push(`${DAY_SHORT[s.day]} ${minuteToTime(s.start)} → ${DAY_SHORT[s.endDay]} ${minuteToTime(s.end)}`);
+      overnight.push(
+        `${DAY_SHORT[s.day]} ${minuteToTime(s.start)} → ${DAY_SHORT[s.endDay]} ${minuteToTime(s.end)}`,
+      );
     }
   }
   return [...[...sameDay].map(([range, days]) => `${dayList(days)} ${range}`), ...overnight];
@@ -77,16 +98,23 @@ export function scheduleCaption(schedules: ScheduleWindow[] | undefined | null):
 export function enabledCount(items: { enabled: boolean }[], noun: string): string {
   const on = items.filter((i) => i.enabled).length;
   const word = items.length === 1 ? noun : `${noun}s`;
-  return on === items.length ? `${items.length} ${word} · all on` : `${items.length} ${word} · ${on} on`;
+  return on === items.length
+    ? `${items.length} ${word} · all on`
+    : `${items.length} ${word} · ${on} on`;
 }
 
 /** When a script fires, one label per schedule ("Every day at 03:00", "Mondays at 02:00", "Every hour at :15"). */
-export function scriptScheduleLabels(schedules: ScheduledScriptSchedule[] | undefined | null): string[] {
+export function scriptScheduleLabels(
+  schedules: ScheduledScriptSchedule[] | undefined | null,
+): string[] {
   if (!schedules || schedules.length === 0) return ["Never (run now only)"];
   return schedules.map((s) => {
     if (s.frequency === "hourly") return `Every hour at :${String(s.fire_minute).padStart(2, "0")}`;
     if (s.frequency === "daily") return `Every day at ${minuteToTime(s.fire_minute)}`;
-    const day = s.day_of_week != null ? DAY_OPTIONS.find((o) => o.value === String(s.day_of_week))?.label : undefined;
+    const day =
+      s.day_of_week != null
+        ? DAY_OPTIONS.find((o) => o.value === String(s.day_of_week))?.label
+        : undefined;
     return `${day ? `${day}s` : "Weekly"} at ${minuteToTime(s.fire_minute)}`;
   });
 }
@@ -146,7 +174,10 @@ export function runCountsSummary(counts: Record<string, number>): { text: string
   const total = keys.reduce((n, k) => n + counts[k], 0);
   if (keys.length === 1) {
     const only = runStatus(keys[0]);
-    return { text: total === 1 ? only.label : `${only.label} on ${total} devices`, tone: only.tone };
+    return {
+      text: total === 1 ? only.label : `${only.label} on ${total} devices`,
+      tone: only.tone,
+    };
   }
   const text = keys.map((k) => `${counts[k]} ${WORD[k] ?? k}`).join(", ");
   return { text, tone: runStatus(keys[0]).tone };

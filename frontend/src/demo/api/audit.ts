@@ -17,21 +17,71 @@ function demoAuditRows(): DemoAuditRow[] {
   const devices = ["win11dev", "build-srv-02", "mbp-design", "reception-pc", "lab-laptop-07"];
   const templates: Omit<DemoAuditRow, "id" | "ts" | "agent_id">[] = [
     { actor: "auth", client_ip: "203.0.113.24", action: "login", status: "ok", detail: {} },
-    { actor: "admin", client_ip: "10.0.3.5", action: "view_windows", status: "ok", detail: { limit: 50, offset: 0 } },
-    { actor: "admin", client_ip: "10.0.3.5", action: "run_script", status: "ok", detail: { shell: "powershell", timeout_secs: 60, script: "Get-Service | Where-Object Status -eq Running" } },
-    { actor: "admin", client_ip: "10.0.3.5", action: "view_agent_logs", status: "ok", detail: { kind: "agent", max_kb: 64 } },
-    { actor: "operator", client_ip: "10.0.3.9", action: "update_internet_policy", status: "ok", detail: { blocked: true, reason: "Exam in progress" } },
-    { actor: "auth", client_ip: "198.51.100.77", action: "login", status: "rejected", detail: { reason: "too many attempts", retry_after_secs: 300 } },
+    {
+      actor: "admin",
+      client_ip: "10.0.3.5",
+      action: "view_windows",
+      status: "ok",
+      detail: { limit: 50, offset: 0 },
+    },
+    {
+      actor: "admin",
+      client_ip: "10.0.3.5",
+      action: "run_script",
+      status: "ok",
+      detail: {
+        shell: "powershell",
+        timeout_secs: 60,
+        script: "Get-Service | Where-Object Status -eq Running",
+      },
+    },
+    {
+      actor: "admin",
+      client_ip: "10.0.3.5",
+      action: "view_agent_logs",
+      status: "ok",
+      detail: { kind: "agent", max_kb: 64 },
+    },
+    {
+      actor: "operator",
+      client_ip: "10.0.3.9",
+      action: "update_internet_policy",
+      status: "ok",
+      detail: { blocked: true, reason: "Exam in progress" },
+    },
+    {
+      actor: "auth",
+      client_ip: "198.51.100.77",
+      action: "login",
+      status: "rejected",
+      detail: { reason: "too many attempts", retry_after_secs: 300 },
+    },
     {
       actor: "admin",
       client_ip: "10.0.3.5",
       action: "run_command",
       status: "error",
-      detail: { cmd_type: "ListDir", path: "C:\\Users\\Public\\Documents\\Quarterly reports\\2026\\Q3\\drafts", error: '{"code":"module_not_authorized","message":"module not authorized"}' },
+      detail: {
+        cmd_type: "ListDir",
+        path: "C:\\Users\\Public\\Documents\\Quarterly reports\\2026\\Q3\\drafts",
+        error: '{"code":"module_not_authorized","message":"module not authorized"}',
+      },
     },
-    { actor: "operator", client_ip: null, action: "toggle_app_block_rule", status: "ok", detail: { rule_id: 4, enabled: false } },
+    {
+      actor: "operator",
+      client_ip: null,
+      action: "toggle_app_block_rule",
+      status: "ok",
+      detail: { rule_id: 4, enabled: false },
+    },
     { actor: "admin", client_ip: "10.0.3.5", action: "view_urls", status: "ok", detail: {} },
-    { actor: "admin", client_ip: "10.0.3.5", action: "power_action", status: "error", detail: { action: "restart", error: "device offline" } },
+    {
+      actor: "admin",
+      client_ip: "10.0.3.5",
+      action: "power_action",
+      status: "error",
+      detail: { action: "restart", error: "device offline" },
+    },
   ];
   return Array.from({ length: 140 }, (_, i) => {
     const template = templates[(i * 7 + (i % 3)) % templates.length];
@@ -45,7 +95,9 @@ export function demoAuditApi(): Partial<ApiClient> {
   return {
     audit: async (params) => {
       const rows = demoAuditRows().filter(
-        (row) => (!params?.agent_id || row.agent_id === params.agent_id) && (!params?.status || row.status === params.status),
+        (row) =>
+          (!params?.agent_id || row.agent_id === params.agent_id) &&
+          (!params?.status || row.status === params.status),
       );
       return { rows: rows.slice(0, params?.limit ?? 500) };
     },

@@ -1,7 +1,12 @@
 import type { ComponentType, ReactNode } from "react";
 import { MoreHorizontal, Trash2 } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@vantyr/ui/components/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@vantyr/ui/components/dropdown-menu";
 import { Switch } from "@/components/common/SettingsSwitch";
 
 /** The list of rule rows inside a card; each row is a `RuleRow`. */
@@ -10,7 +15,15 @@ export function RuleList({ label, children }: { label: string; children: ReactNo
 }
 
 /** One small fact about a rule: an icon, then text that may be long and wraps instead of being cut off. */
-export function RuleFact({ icon: Icon, title, children }: { icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>; title?: string; children: ReactNode }) {
+export function RuleFact({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  title?: string;
+  children: ReactNode;
+}) {
   return (
     <span className="inline-flex min-w-0 items-start gap-1.5" title={title}>
       <Icon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
@@ -23,7 +36,17 @@ export function RuleFact({ icon: Icon, title, children }: { icon: ComponentType<
  * One rule: its on/off switch, a title, a line saying what it is, a line of facts (where it applies, when),
  * and its actions. The switch shows what the server last confirmed, never a hopeful guess.
  */
-export function RuleRow({ enabled, switchLabel, switchDisabled, onToggle, title, lead, state, facts, actions }: {
+export function RuleRow({
+  enabled,
+  switchLabel,
+  switchDisabled,
+  onToggle,
+  title,
+  lead,
+  state,
+  facts,
+  actions,
+}: {
   enabled: boolean;
   switchLabel: string;
   switchDisabled: boolean;
@@ -54,19 +77,40 @@ export function RuleRow({ enabled, switchLabel, switchDisabled, onToggle, title,
               {state && <span className="font-medium text-foreground">{state}</span>}
             </p>
           )}
-          <p className="mt-1.5 flex flex-wrap items-start gap-x-4 gap-y-1 text-xs text-muted-foreground">{facts}</p>
+          <p className="mt-1.5 flex flex-wrap items-start gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {facts}
+          </p>
         </div>
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 pl-[3.25rem] sm:pl-0">{actions}</div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 pl-[3.25rem] sm:pl-0">
+        {actions}
+      </div>
     </li>
   );
 }
 
 /** The "…" menu at the end of a row: the one action that deserves a second look, deleting. */
-export function RuleDeleteMenu({ title, deleteLabel, onDelete }: { title: string; deleteLabel: string; onDelete: () => void }) {
+export function RuleDeleteMenu({
+  title,
+  deleteLabel,
+  onDelete,
+}: {
+  title: string;
+  deleteLabel: string;
+  onDelete: () => void;
+}) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="pointer-coarse:size-9" aria-label={`More actions for ${title}`} />}>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            className="pointer-coarse:size-9"
+            aria-label={`More actions for ${title}`}
+          />
+        }
+      >
         <MoreHorizontal />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

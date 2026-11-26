@@ -6,7 +6,11 @@ import { Button } from "@vantyr/ui/components/button";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { InputField } from "@/components/common/form/fields";
 import { cn } from "@/lib/utils";
-import { encodeUserLucideIcon, parseUserLucideIcon, resizeImageFileToJpegDataUrl } from "./userAvatar";
+import {
+  encodeUserLucideIcon,
+  parseUserLucideIcon,
+  resizeImageFileToJpegDataUrl,
+} from "./userAvatar";
 import { PROFILE_LUCIDE_ICONS, PROFILE_LUCIDE_NAMES } from "./profileIcons";
 import { DialogError } from "./UserDialogParts";
 import { messageOr } from "./messageOr";
@@ -62,7 +66,16 @@ export function UserAvatarFields({ control, usernameHint, disabled }: UserAvatar
           autoComplete="off"
           description="Shown in the top bar and user lists instead of the username. Optional."
         />
-        <InputField control={control} name="username" id="avatar-username" label="Username" className="h-9" disabled={disabled} autoComplete="off" description={usernameHint} />
+        <InputField
+          control={control}
+          name="username"
+          id="avatar-username"
+          label="Username"
+          className="h-9"
+          disabled={disabled}
+          autoComplete="off"
+          description={usernameHint}
+        />
       </div>
       <div role="group" aria-labelledby={labelId} className="flex flex-col gap-3">
         <span id={labelId} className="text-sm font-medium">
@@ -78,17 +91,33 @@ export function UserAvatarFields({ control, usernameHint, disabled }: UserAvatar
           onChange={(ev) => void onPhotoChange(ev)}
         />
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="sm" disabled={disabled || photoBusy} onClick={() => fileRef.current?.click()}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled || photoBusy}
+            onClick={() => fileRef.current?.click()}
+          >
             {photoBusy ? <Spinner /> : <Upload />} Import photo
           </Button>
           {icon.trim() !== "" && (
-            <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => setIcon("")}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={disabled}
+              onClick={() => setIcon("")}
+            >
               Clear avatar
             </Button>
           )}
         </div>
         <DialogError prefix="Photo not used" message={photoError} />
-        <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8 md:grid-cols-10" role="group" aria-label="Avatar icons">
+        <div
+          className="grid grid-cols-6 gap-1.5 sm:grid-cols-8 md:grid-cols-10"
+          role="group"
+          aria-label="Avatar icons"
+        >
           {PROFILE_LUCIDE_NAMES.map((name) => {
             const Cmp = PROFILE_LUCIDE_ICONS[name];
             if (!Cmp) return null;
