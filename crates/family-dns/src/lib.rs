@@ -68,8 +68,8 @@ pub use server::{
     DnsServer, DnsStatus, DurableOptions, MaterialOutcome, ReloadError, ReloadOutcome,
 };
 pub use subscription::{
-    AppliedStatus, FormatValidator, RuntimeDiagnostics, SourceStatus, SubscriptionError,
-    SubscriptionHandle, SubscriptionRuntime, DEFAULT_TICK,
+    single_source_config, AppliedStatus, FormatValidator, RuntimeDiagnostics, SourceStatus,
+    SubscriptionError, SubscriptionHandle, SubscriptionRuntime, DEFAULT_TICK,
 };
 // Re-exported so callers can use the same injectable pre/post-rename seam that
 // the worker itself uses for durability tests.

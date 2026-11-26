@@ -31,7 +31,7 @@ use serde_json::{json, Value};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
-use vantyr_network_subscriptions::config::{Limits, QueryPolicy, SourceMetadata};
+use vantyr_network_subscriptions::config::SourceMetadata;
 use vantyr_network_subscriptions::fetcher::Fetcher;
 use vantyr_network_subscriptions::transport::{HttpTransport, ReqwestTransport};
 
@@ -449,6 +449,55 @@ async fn harness_with_poll(
     harness_with_timing(st, list_base, list_ca, mgmt_base, ca_pem, poll_secs, 60_000).await
 }
 
+/// The injected seam differs from production in exactly two ways: the loopback
+/// resolver and a unique local CA. The transport, source config/bounds and the
+/// CACHE LAYOUT are otherwise identical — this factory honours the `root` it is
+/// given, so staged caches hold real `<id>.json` snapshots just like production.
+fn loopback_factory(
+    list_ca: String,
+) -> impl Fn(
+    &family_dns::SubscriptionSourceSpec,
+    &Path,
+    Option<&str>,
+) -> Result<
+    Fetcher<family_dns::FormatValidator>,
+    vantyr_network_subscriptions::error::Error,
+> + Send
+       + Sync
+       + 'static {
+    move |spec, root, _ca| {
+        let cfg = family_dns::single_source_config(spec);
+        let limits = cfg.limits.clone();
+        let url = reqwest::Url::parse(&spec.url).map_err(|e| {
+            vantyr_network_subscriptions::error::Error::InvalidConfig(e.to_string())
+        })?;
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), url.port().unwrap_or(443));
+        let cert = reqwest::Certificate::from_pem(list_ca.as_bytes()).map_err(|e| {
+            vantyr_network_subscriptions::error::Error::InvalidConfig(e.to_string())
+        })?;
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .dns_resolver(Arc::new(LoopbackResolver(addr)) as Arc<dyn Resolve>)
+            .tls_certs_merge([cert])
+            .build()
+            .map_err(|e| {
+                vantyr_network_subscriptions::error::Error::InvalidConfig(e.to_string())
+            })?;
+        let transport = Arc::new(ReqwestTransport::from_client(
+            client,
+            limits.max_header_bytes,
+            limits.request_timeout(),
+        )) as Arc<dyn HttpTransport>;
+        Fetcher::with_transport(
+            root.to_path_buf(),
+            &cfg,
+            family_dns::FormatValidator::new(spec.format),
+            transport,
+        )
+    }
+}
+
 fn build_runtime(st: &Fixture, list_ca: &str, tick_ms: u64) -> Arc<SubscriptionRuntime> {
     let settings = SubscriptionSettings {
         cache_path: st.cache.to_string_lossy().into_owned(),
@@ -459,57 +508,7 @@ fn build_runtime(st: &Fixture, list_ca: &str, tick_ms: u64) -> Arc<SubscriptionR
         SubscriptionRuntime::new(&settings, None)
             .unwrap()
             .with_tick(Duration::from_millis(tick_ms))
-            .with_fetcher_factory({
-                let list_ca = list_ca.to_owned();
-                let cache = st.cache.clone();
-                move |spec, _root, _ca| {
-                    let limits = Limits::default();
-                    let url = reqwest::Url::parse(&spec.url).map_err(|e| {
-                        vantyr_network_subscriptions::error::Error::InvalidConfig(e.to_string())
-                    })?;
-                    let addr =
-                        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), url.port().unwrap_or(443));
-                    let cert = reqwest::Certificate::from_pem(list_ca.as_bytes()).map_err(|e| {
-                        vantyr_network_subscriptions::error::Error::InvalidConfig(e.to_string())
-                    })?;
-                    let client = reqwest::Client::builder()
-                        .no_proxy()
-                        .redirect(reqwest::redirect::Policy::none())
-                        .dns_resolver(Arc::new(LoopbackResolver(addr)) as Arc<dyn Resolve>)
-                        .tls_certs_merge([cert])
-                        .build()
-                        .map_err(|e| {
-                            vantyr_network_subscriptions::error::Error::InvalidConfig(e.to_string())
-                        })?;
-                    let cfg = vantyr_network_subscriptions::config::SubscriptionConfig {
-                        sources: vec![vantyr_network_subscriptions::config::SubscriptionSource {
-                            id: spec.id.clone(),
-                            url: spec.url.clone(),
-                            enabled: spec.enabled,
-                            interval_secs: spec.interval_secs,
-                            max_stale_secs: spec.max_stale_secs,
-                            metadata: SourceMetadata {
-                                title: spec.metadata.title.clone(),
-                                publisher: spec.metadata.publisher.clone(),
-                                license: spec.metadata.license.clone(),
-                            },
-                        }],
-                        limits: limits.clone(),
-                        query_policy: QueryPolicy::Reject,
-                    };
-                    let transport = Arc::new(ReqwestTransport::from_client(
-                        client,
-                        limits.max_header_bytes,
-                        limits.request_timeout(),
-                    )) as Arc<dyn HttpTransport>;
-                    Fetcher::with_transport(
-                        cache.clone(),
-                        &cfg,
-                        family_dns::FormatValidator::new(spec.format),
-                        transport,
-                    )
-                }
-            }),
+            .with_fetcher_factory(loopback_factory(list_ca.to_owned())),
     )
 }
 
@@ -561,57 +560,7 @@ async fn harness_with_timing(
         SubscriptionRuntime::new(&settings, None)
             .unwrap()
             .with_tick(Duration::from_millis(tick_ms))
-            .with_fetcher_factory({
-                let list_ca = list_ca.to_owned();
-                let cache = st.cache.clone();
-                move |spec, _root, _ca| {
-                    let limits = Limits::default();
-                    let url = reqwest::Url::parse(&spec.url).map_err(|e| {
-                        vantyr_network_subscriptions::error::Error::InvalidConfig(e.to_string())
-                    })?;
-                    let addr =
-                        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), url.port().unwrap_or(443));
-                    let cert = reqwest::Certificate::from_pem(list_ca.as_bytes()).map_err(|e| {
-                        vantyr_network_subscriptions::error::Error::InvalidConfig(e.to_string())
-                    })?;
-                    let client = reqwest::Client::builder()
-                        .no_proxy()
-                        .redirect(reqwest::redirect::Policy::none())
-                        .dns_resolver(Arc::new(LoopbackResolver(addr)) as Arc<dyn Resolve>)
-                        .tls_certs_merge([cert])
-                        .build()
-                        .map_err(|e| {
-                            vantyr_network_subscriptions::error::Error::InvalidConfig(e.to_string())
-                        })?;
-                    let cfg = vantyr_network_subscriptions::config::SubscriptionConfig {
-                        sources: vec![vantyr_network_subscriptions::config::SubscriptionSource {
-                            id: spec.id.clone(),
-                            url: spec.url.clone(),
-                            enabled: spec.enabled,
-                            interval_secs: spec.interval_secs,
-                            max_stale_secs: spec.max_stale_secs,
-                            metadata: SourceMetadata {
-                                title: spec.metadata.title.clone(),
-                                publisher: spec.metadata.publisher.clone(),
-                                license: spec.metadata.license.clone(),
-                            },
-                        }],
-                        limits: limits.clone(),
-                        query_policy: QueryPolicy::Reject,
-                    };
-                    let transport = Arc::new(ReqwestTransport::from_client(
-                        client,
-                        limits.max_header_bytes,
-                        limits.request_timeout(),
-                    )) as Arc<dyn HttpTransport>;
-                    Fetcher::with_transport(
-                        cache.clone(),
-                        &cfg,
-                        family_dns::FormatValidator::new(spec.format),
-                        transport,
-                    )
-                }
-            }),
+            .with_fetcher_factory(loopback_factory(list_ca.to_owned())),
     );
 
     let options = ManagementOptions::load(&st.options).unwrap();
@@ -1418,7 +1367,6 @@ async fn status_report_is_scoped_and_never_attributes_an_unapplied_url() {
     h.server
         .reload(&fs::read(&st.config).unwrap(), Utc::now())
         .unwrap();
-    h.sync().await;
     let extras: Vec<_> = (0..40)
         .map(|index| family_dns::SubscriptionSourceSpec {
             id: format!("extra-{index}"),
@@ -1434,8 +1382,35 @@ async fn status_report_is_scoped_and_never_attributes_an_unapplied_url() {
             },
         })
         .collect();
+    // Fidelity: install the 40 unrelated entries BEFORE the sync that emits
+    // the report we inspect. Inspecting a report made before installation only
+    // proves the old report was scoped, not the current worker state.
     h.runtime.install_managed(&extras).unwrap();
-    let report = reports(&control).pop().unwrap();
+    let before_count = control
+        .0
+        .lock()
+        .unwrap()
+        .status_count
+        .load(Ordering::SeqCst);
+    let previous_id = reports(&control).last().map(|report| report.report_id);
+    h.sync().await;
+    assert_eq!(
+        control
+            .0
+            .lock()
+            .unwrap()
+            .status_count
+            .load(Ordering::SeqCst),
+        before_count + 1,
+        "no fresh report after installing the extra entries"
+    );
+    let all = reports(&control);
+    let report = all.last().unwrap().clone();
+    assert!(previous_id.is_none() || Some(report.report_id) != previous_id);
+    assert!(
+        report.sources.len() <= 32,
+        "report exceeded the server bound"
+    );
     assert_eq!(
         report.sources.len(),
         2,
@@ -1446,6 +1421,14 @@ async fn status_report_is_scoped_and_never_attributes_an_unapplied_url() {
         .iter()
         .all(|source| source.id.starts_with("remote-list")));
     assert!(report.sources[0].downloaded_sha256.is_some());
+    // Wire admission: round-trip through the exact strict server DTO mirror
+    // (deny_unknown_fields + the server's 32-source/32-ack shape).
+    let wire = serde_json::to_vec(&report).unwrap();
+    let admitted: WorkerStatusBody = serde_json::from_slice(&wire).unwrap();
+    assert_eq!(admitted.report_id, report.report_id);
+    assert_eq!(admitted.config_version, report.config_version);
+    assert!(admitted.sources.len() <= 32 && admitted.refresh_ack.len() <= 32);
+    assert_ne!(admitted.report_id, Uuid::nil());
 
     // Same source id, different URL that cannot apply: no old-hash attribution.
     let mut changed = desired("https://localhost:1/dead", true);
@@ -1453,8 +1436,24 @@ async fn status_report_is_scoped_and_never_attributes_an_unapplied_url() {
     second_changed.id = "remote-list-b".to_owned();
     changed.sources.push(second_changed);
     set_desired(&control, 2, &changed);
+    let before_count = control
+        .0
+        .lock()
+        .unwrap()
+        .status_count
+        .load(Ordering::SeqCst);
     h.sync().await;
-    let report = reports(&control).pop().unwrap();
+    assert_eq!(
+        control
+            .0
+            .lock()
+            .unwrap()
+            .status_count
+            .load(Ordering::SeqCst),
+        before_count + 1
+    );
+    let report = reports(&control).last().unwrap().clone();
+    assert!(report.sources.len() <= 32);
     assert_eq!(report.sources.len(), 2);
     assert_eq!(report.applied.as_ref().unwrap().config_version, 1);
     assert_eq!(report.sources[0].downloaded_sha256, None);
@@ -1465,15 +1464,46 @@ async fn status_report_is_scoped_and_never_attributes_an_unapplied_url() {
     h.stop().await;
 }
 
+fn marker_text(instance: &str, pid: u32, digest: &str) -> String {
+    format!("v1\n{instance}\n{pid}\n{digest}\n")
+}
+
 #[tokio::test]
-async fn staging_cleanup_only_reclaims_worker_owned_inactive_directories() {
+async fn staging_cleanup_only_reclaims_proven_owned_inactive_directories() {
     let st = fixture("cache-cleanup");
+    let digest = "a".repeat(64);
     let old = st.cache.join("staging-old");
+    let live_same_process = st.cache.join("staging-live-same-process");
+    let pointer_target = st.cache.join("staging-active-pointer");
     let foreign = st.cache.join("staging-foreign");
     let local_file = st.cache.join("local-cache.json");
-    fs::create_dir_all(&old).unwrap();
-    fs::create_dir_all(&foreign).unwrap();
-    fs::write(old.join(".vantyr-managed-cache"), "v1\n999999\n").unwrap();
+    for dir in [&old, &live_same_process, &pointer_target, &foreign] {
+        fs::create_dir_all(dir).unwrap();
+    }
+    // Dead predecessor, ours to reclaim.
+    fs::write(
+        old.join(".vantyr-managed-cache"),
+        marker_text("dead-instance", 999_999, &digest),
+    )
+    .unwrap();
+    // Another live instance in THIS process: never reclaimed.
+    fs::write(
+        live_same_process.join(".vantyr-managed-cache"),
+        marker_text("other-runtime-instance", std::process::id(), &digest),
+    )
+    .unwrap();
+    // Named by the authoritative locator: active even with a dead marker pid.
+    fs::write(
+        pointer_target.join(".vantyr-managed-cache"),
+        marker_text("dead-instance-two", 999_998, &digest),
+    )
+    .unwrap();
+    fs::write(
+        st.cache.join(".vantyr-managed-active"),
+        format!("v1\nstaging-active-pointer\n{digest}\n"),
+    )
+    .unwrap();
+    // Unmarked, local cache file and symlink are never guessed at.
     fs::write(foreign.join("data.json"), "operator data").unwrap();
     fs::write(&local_file, "local").unwrap();
     let outside = st.dir.join("outside");
@@ -1481,20 +1511,50 @@ async fn staging_cleanup_only_reclaims_worker_owned_inactive_directories() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(&outside, st.cache.join("staging-link")).unwrap();
 
+    #[cfg(unix)]
+    let live_child = std::process::Command::new("sleep").arg("30").spawn().ok();
+    #[cfg(unix)]
+    if let Some(child) = &live_child {
+        let live_other_pid = st.cache.join("staging-live-other-pid");
+        fs::create_dir_all(&live_other_pid).unwrap();
+        fs::write(
+            live_other_pid.join(".vantyr-managed-cache"),
+            marker_text("other-process", child.id(), &digest),
+        )
+        .unwrap();
+    }
+
     let runtime = build_runtime(&st, "unused", 60_000);
     let staged = runtime.stage_managed(&[]).unwrap();
     assert!(
         !old.exists(),
         "owned inactive staging dir was not reclaimed"
     );
+    assert!(
+        live_same_process.exists(),
+        "live other instance in this process was deleted"
+    );
+    assert!(pointer_target.exists(), "active locator target was deleted");
     assert!(foreign.exists(), "unmarked directory was removed");
     assert!(local_file.exists(), "local cache file was removed");
     assert!(
         st.cache.join("staging-link").exists(),
         "symlink was followed/removed"
     );
+    #[cfg(unix)]
+    if live_child.is_some() {
+        assert!(
+            st.cache.join("staging-live-other-pid").exists(),
+            "live other process cache was deleted"
+        );
+    }
     drop(staged);
     runtime.shutdown().await;
+    #[cfg(unix)]
+    if let Some(mut child) = live_child {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
 }
 
 #[tokio::test]
@@ -1507,6 +1567,7 @@ async fn corrupt_cache_restart_binds_and_recovers_after_manual_retry() {
     let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
     h.sync().await;
     let original = h.server.status();
+    let original_applied = h.server.management_state().unwrap();
     h.stop().await;
 
     let active_file = fs::read_dir(&st.cache)
@@ -1525,6 +1586,7 @@ async fn corrupt_cache_restart_binds_and_recovers_after_manual_retry() {
         .find(|path| path.extension().is_some_and(|ext| ext == "json"))
         .expect("activated managed cache");
     fs::write(&active_file, b"{corrupt").unwrap();
+    let hits_before_restart = lists.hits.load(Ordering::SeqCst);
     let runtime = build_runtime(&st, &list_ca, 100);
     let options = ManagementOptions::load(&st.options).unwrap();
     let client = Arc::new(ManagementClient::new(&options).unwrap());
@@ -1543,6 +1605,10 @@ async fn corrupt_cache_restart_binds_and_recovers_after_manual_retry() {
         .unwrap(),
     );
     assert_eq!(server.status(), original);
+    assert!(
+        lists.hits.load(Ordering::SeqCst) == hits_before_restart,
+        "restart downloaded before binding the applied bundle"
+    );
     assert!(blocked(&server, "managed.block.test.", false).await);
     let (sources, _) = runtime.status();
     assert_eq!(sources[0].download, "quarantined");
@@ -1565,6 +1631,10 @@ async fn corrupt_cache_restart_binds_and_recovers_after_manual_retry() {
         }
     }
     let hits = lists.hits.load(Ordering::SeqCst);
+    // The origin content changes while the cache is repaired. The ONLY trigger
+    // is the ordinary coordinator/manual path: production never calls the
+    // rehydrate helper, so recovery must come from `sync_once` alone.
+    *lists.body.lock().unwrap() = b"changed.block.test\n".to_vec();
     control.0.lock().unwrap().pending = vec![json!({
         "source_id":"remote-list","refresh_seq":5,"config_version":1,
         "expires_at":"2027-01-01T00:00:00Z"
@@ -1574,24 +1644,243 @@ async fn corrupt_cache_restart_binds_and_recovers_after_manual_retry() {
         client,
         Some(runtime.clone()),
     ));
-    // Reconcile after the operator repaired the cache (no network here).
-    let spec = family_dns::SubscriptionSourceSpec {
-        id: "remote-list".to_owned(),
-        url: format!("{list}/list"),
+    worker.sync_once(&server).await;
+    assert!(
+        lists.hits.load(Ordering::SeqCst) > hits,
+        "repaired quarantined source never contacted the origin"
+    );
+    assert_eq!(server.management_state().unwrap().receipts.len(), 1);
+    let mut recovered = false;
+    for _ in 0..60 {
+        if blocked(&server, "changed.block.test.", false).await
+            && blocked(&server, "changed.block.test.", true).await
+        {
+            recovered = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(recovered, "changed answer never applied over UDP and TCP");
+    assert_eq!(
+        server.management_state().unwrap().applied_at,
+        original_applied.applied_at,
+        "recovery must not freshen the original management applied age"
+    );
+    worker.shutdown().await;
+    server.stop_shared().await;
+}
+
+#[tokio::test]
+async fn restart_preserves_exact_active_cache_view_and_serves_offline() {
+    let st = fixture("restart-cache-view");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    set_desired(&control, 1, &desired(&format!("{list}/list"), true));
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    h.sync().await;
+    let (before_all, _) = h.runtime.status();
+    assert_eq!(before_all.len(), 1);
+    let before = before_all[0].clone();
+    assert!(before.bytes > 0, "no bytes cached before restart");
+    assert!(before.content_version.is_some(), "no hash before restart");
+    let hits = lists.hits.load(Ordering::SeqCst);
+    h.stop().await;
+
+    // Fresh runtime, durable bundle intact, control plane not polled.
+    let runtime = build_runtime(&st, &list_ca, 60_000);
+    let server = Arc::new(
+        DnsServer::start_durable_with_subscriptions(
+            DurableOptions {
+                state_path: st.state.clone(),
+                worker_id: WORKER.to_owned(),
+                config_path: Some(st.config.clone()),
+                now: Utc::now(),
+                hooks: None,
+            },
+            Some(runtime.clone()),
+        )
+        .await
+        .unwrap(),
+    );
+    assert_eq!(
+        lists.hits.load(Ordering::SeqCst),
+        hits,
+        "restart downloaded before binding the applied bundle"
+    );
+    let (after_all, _) = runtime.status();
+    assert_eq!(after_all.len(), 1);
+    let after = after_all[0].clone();
+    assert_eq!(after.id, before.id);
+    assert_eq!(after.download, before.download);
+    assert_eq!(
+        after.bytes, before.bytes,
+        "restarted fetcher lost cached bytes"
+    );
+    assert_eq!(
+        after.content_version, before.content_version,
+        "restarted fetcher lost the applied hash"
+    );
+    assert_eq!(
+        after.fetched_at, before.fetched_at,
+        "fetched_at was freshened"
+    );
+    assert_eq!(
+        after.content_changed_at, before.content_changed_at,
+        "content time was freshened"
+    );
+    assert_eq!(after.rule_count, before.rule_count);
+    assert!(blocked(&server, "managed.block.test.", false).await);
+
+    // The production-faithful layout keeps the snapshot inside the active
+    // staging cache named by the authoritative locator.
+    let locator = fs::read_to_string(st.cache.join(".vantyr-managed-active")).unwrap();
+    let name = locator.lines().nth(1).unwrap();
+    let snapshot = st.cache.join(name).join("remote-list.json");
+    assert!(snapshot.exists(), "active cache snapshot is missing");
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&fs::read(&snapshot).unwrap()).unwrap();
+    assert_eq!(
+        persisted["sha256"].as_str().unwrap(),
+        after.content_version.unwrap()
+    );
+    server.stop_shared().await;
+}
+
+#[tokio::test]
+async fn two_instances_same_process_shared_root_keep_each_others_active_cache() {
+    let st = fixture("two-runtimes");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    set_desired(&control, 1, &desired(&format!("{list}/list"), true));
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    h.sync().await;
+    let locator = fs::read_to_string(st.cache.join(".vantyr-managed-active")).unwrap();
+    let name = locator.lines().nth(1).unwrap().to_owned();
+    let active = st.cache.join(&name);
+    let snapshot = active.join("remote-list.json");
+    assert!(snapshot.exists(), "no activated managed cache");
+    let bytes = fs::read(&snapshot).unwrap();
+
+    // Independent runtime B shares the same root and pid. Staging runs its
+    // reclaim pass; A's ACTIVE cache must survive untouched.
+    let runtime_b = build_runtime(&st, &list_ca, 60_000);
+    let staged_b = runtime_b.stage_managed(&[]).unwrap();
+    assert!(
+        active.exists(),
+        "B reclaimed A's active cache in this process"
+    );
+    assert_eq!(
+        fs::read(&snapshot).unwrap(),
+        bytes,
+        "A's cache was modified"
+    );
+    drop(staged_b);
+    runtime_b.shutdown().await;
+    assert!(active.exists());
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn reclaim_only_old_inactive_owned_cache_after_a_valid_switch() {
+    let st = fixture("reclaim-after-switch");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    set_desired(&control, 1, &desired(&format!("{list}/list"), true));
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    h.sync().await;
+    let first = fs::read_to_string(st.cache.join(".vantyr-managed-active"))
+        .unwrap()
+        .lines()
+        .nth(1)
+        .unwrap()
+        .to_owned();
+    let first_dir = st.cache.join(&first);
+    assert!(first_dir.exists(), "v1 active cache is missing");
+
+    // A second, valid config publishes a NEW candidate and switches the
+    // locator to it. Only then is the old cache inactive and reclaimable.
+    let mut second_config = desired(&format!("{list}/list"), true);
+    second_config.sources[0].interval_secs = Some(600);
+    set_desired(&control, 2, &second_config);
+    h.sync().await;
+    assert_eq!(
+        h.server.management_state().unwrap().config_version,
+        2,
+        "second config was not applied"
+    );
+    let second = fs::read_to_string(st.cache.join(".vantyr-managed-active"))
+        .unwrap()
+        .lines()
+        .nth(1)
+        .unwrap()
+        .to_owned();
+    assert_ne!(
+        first, second,
+        "valid switch did not move the active pointer"
+    );
+    assert!(st.cache.join(&second).exists());
+    assert!(
+        first_dir.exists(),
+        "old cache was reclaimed before the switch was durable"
+    );
+    let staged = h.runtime.stage_managed(&[]).unwrap();
+    assert!(
+        !first_dir.exists(),
+        "old inactive owned cache was never reclaimed"
+    );
+    assert!(
+        st.cache.join(&second).exists(),
+        "valid switch target was reclaimed"
+    );
+    drop(staged);
+    h.stop().await;
+}
+
+#[test]
+fn single_source_config_matches_stage_a_stale_bound_without_network() {
+    let base = family_dns::SubscriptionSourceSpec {
+        id: "operator-list".to_owned(),
+        url: "https://example.test/hosts.txt".to_owned(),
         format: ListFormatSpec::Hosts,
         enabled: true,
-        interval_secs: Some(300),
-        max_stale_secs: Some(3600),
+        interval_secs: None,
+        max_stale_secs: None,
         metadata: SourceMetadata {
             title: "Operator list".to_owned(),
             publisher: "Operator".to_owned(),
             license: "asserted".to_owned(),
         },
     };
-    runtime.rehydrate_managed(&[spec]);
-    worker.sync_once(&server).await;
-    assert!(lists.hits.load(Ordering::SeqCst) > hits);
-    assert_eq!(server.management_state().unwrap().receipts.len(), 1);
-    worker.shutdown().await;
-    server.stop_shared().await;
+    let default_cfg = family_dns::single_source_config(&base);
+    assert_eq!(default_cfg.limits.max_stale_secs, 3 * 24 * 60 * 60);
+    default_cfg.validate().unwrap();
+
+    // Stage A accepts 7 days; the production factory must not reject it by
+    // validating against the library's 3-day default. No socket is opened.
+    let legal = family_dns::SubscriptionSourceSpec {
+        max_stale_secs: Some(7 * 24 * 60 * 60),
+        ..base.clone()
+    };
+    let cfg = family_dns::single_source_config(&legal);
+    assert_eq!(cfg.limits.max_stale_secs, 7 * 24 * 60 * 60);
+    cfg.validate().unwrap();
+    let st = fixture("bounds-parity");
+    Fetcher::new(
+        &st.cache,
+        &cfg,
+        family_dns::FormatValidator::new(legal.format),
+    )
+    .unwrap();
+
+    // One second beyond the hard library bound is rejected, never clipped.
+    let illegal = family_dns::SubscriptionSourceSpec {
+        max_stale_secs: Some(7 * 24 * 60 * 60 + 1),
+        ..base
+    };
+    assert!(family_dns::single_source_config(&illegal)
+        .validate()
+        .is_err());
 }
