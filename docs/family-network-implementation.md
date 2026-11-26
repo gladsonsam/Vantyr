@@ -548,3 +548,13 @@ No substantive UI or Supabase changes were made in this step.
   Retained enrollment/binding references block deletion even when ended/revoked;
   gateway re-enable never revives a revoked gateway or credential. Exact accepted
   routes, DTOs, permission rules and limitations have been sent to the frontend.
+- Dashboard DNS management is in progress as a separate control-plane slice:
+  versioned desired list/service settings, scoped outbound worker retrieval,
+  bounded download/local-apply reports and per-gateway refresh acknowledgments.
+  Policy history and its publication age remain independent. The worker consumer
+  and end-to-end acceptance are required before dashboard controls are presented
+  as functional. Existing cache/rate/retention and coverage placeholders remain
+  pending; accepting list configuration does not implement those capabilities.
+- Verified encrypted upstreams (DoT/DoH) are in progress separately from encrypted
+  inbound listeners. Literal bootstrap addresses, normal certificate verification,
+  bounded explicit CA material and no implicit plaintext fallback are required.
