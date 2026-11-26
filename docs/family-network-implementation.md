@@ -395,9 +395,13 @@ No substantive UI or Supabase changes were made in this step.
   Temporary plaintext buffer erasure and recovered certificate/key metadata
   consistency remain explicit hardening limitations. Client trust setup and
   live inspection are separate, unfinished capabilities.
-- Next integration: persist and reload one complete validated DNS configuration
-  and policy bundle atomically, preserving revision and policy age across a
-  restart. Do not couple independently written configuration and policy files.
+- Accepted: one complete validated DNS configuration and policy bundle is
+  persisted atomically and reloaded as a whole snapshot, preserving revision
+  and policy age across restart. Independent review passed 34 DNS tests,
+  23 runtime tests and six malformed-state/timestamp probes. Invalid payloads
+  are checked before identity access; config/policy divergence and publication
+  times beyond 60 seconds of clock skew are rejected. Container-lab coverage of
+  durable recovery and reload is the next integration increment.
 - BYOD enrollment and reversible client setup follow the responsibility
   boundaries in [network-onboarding.md](network-onboarding.md). Router DHCP
   stays outside Vantyr. Frontend implementation is managed independently.
