@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { advancePlayhead, frameIndexAt } from "@/features/recall/lib/recallPlayback";
 
 /** 10:00:00 UTC, as a readable base for frame times. */

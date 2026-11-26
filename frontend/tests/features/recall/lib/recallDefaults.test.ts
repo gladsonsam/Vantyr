@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { describeEmptyRange, latestRecordedDay, pickDefaultAgentId } from "@/features/recall/lib/recallDefaults";
+import { describe, expect, it } from "bun:test";
+import {
+  describeEmptyRange,
+  latestRecordedDay,
+  pickDefaultAgentId,
+} from "@/features/recall/lib/recallDefaults";
 
-const day = (d: string, frame_count = 5) => ({ day: d, frame_count, first_ts: null, last_ts: null }) as never;
+const day = (d: string, frame_count = 5) =>
+  ({ day: d, frame_count, first_ts: null, last_ts: null }) as never;
 
 describe("pickDefaultAgentId", () => {
   it("prefers online, then most recently seen", () => {

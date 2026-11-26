@@ -14,7 +14,8 @@ export const settingsKeys = {
   releaseCheck: () => [...settingsKeys.all, "version", "release-check"] as const,
   agentRetention: (agentId: string) => [...agentKeys.agent(agentId), "retention"] as const,
   agentAutoUpdate: (agentId: string) => [...agentKeys.agent(agentId), "auto-update"] as const,
-  agentLocalUiPassword: (agentId: string) => [...agentKeys.agent(agentId), "local-ui-password"] as const,
+  agentLocalUiPassword: (agentId: string) =>
+    [...agentKeys.agent(agentId), "local-ui-password"] as const,
 };
 
 export const settingsQueries = {

@@ -22,7 +22,11 @@ function toAgentMap(agents: Agent[]): Record<string, Agent> {
 }
 
 // Concurrency-limited fanout so we don't spam the server on large fleets.
-async function withConcurrency<T>(items: string[], limit: number, fn: (id: string) => Promise<T>): Promise<void> {
+async function withConcurrency<T>(
+  items: string[],
+  limit: number,
+  fn: (id: string) => Promise<T>,
+): Promise<void> {
   let i = 0;
   const runners = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
     while (true) {
@@ -67,14 +71,17 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
   } = useAgentStore();
 
   const queryClient = useQueryClient();
-  const handleAgentRemoved = useCallback((id: string) => {
-    removeAgent(id);
-    if (location.pathname === `/agents/${id}` || location.pathname.startsWith(`/agents/${id}/`)) {
-      navigate("/", { replace: true });
-    }
-    // Nothing will show this agent again; drop its cached server state.
-    queryClient.removeQueries({ queryKey: agentKeys.agent(id) });
-  }, [removeAgent, location.pathname, navigate, queryClient]);
+  const handleAgentRemoved = useCallback(
+    (id: string) => {
+      removeAgent(id);
+      if (location.pathname === `/agents/${id}` || location.pathname.startsWith(`/agents/${id}/`)) {
+        navigate("/", { replace: true });
+      }
+      // Nothing will show this agent again; drop its cached server state.
+      queryClient.removeQueries({ queryKey: agentKeys.agent(id) });
+    },
+    [removeAgent, location.pathname, navigate, queryClient],
+  );
 
   useEffect(() => onAgentRemoved(handleAgentRemoved), [handleAgentRemoved]);
 
@@ -188,9 +195,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
         case "agent_disconnected":
           if (event.agent_id) {
             // No-op when the agent isn't known; otherwise flip online off in-place.
-            updateAgent(event.agent_id, (prev) =>
-              disconnectedAgent(prev, event.disconnected_at),
-            );
+            updateAgent(event.agent_id, (prev) => disconnectedAgent(prev, event.disconnected_at));
           }
           break;
 
@@ -213,7 +218,8 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
 
         case "afk":
           if (event.agent_id) {
-            const idleSecs = typeof event.idle_secs === "number" && event.idle_secs >= 0 ? event.idle_secs : 0;
+            const idleSecs =
+              typeof event.idle_secs === "number" && event.idle_secs >= 0 ? event.idle_secs : 0;
             updateAgentLiveStatus(event.agent_id, {
               activity: "afk",
               idleSecs,
@@ -240,8 +246,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
 
         case "alert_rule_match": {
           const aid = event.agent_id;
-          const agentLabel =
-            (aid && agents[aid]?.name) || event.agent_name || aid || "Agent";
+          const agentLabel = (aid && agents[aid]?.name) || event.agent_name || aid || "Agent";
           const ruleLabel = event.rule_name || `Rule #${event.rule_id ?? "?"}`;
           const snippet = event.snippet ? ` — ${event.snippet}` : "";
           warning("Alert rule matched", `${ruleLabel} · ${agentLabel}${snippet}`);
@@ -249,7 +254,17 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [agents, handleAgentRemoved, setAllAgents, setWsInitReceived, updateAgent, updateAgentInfo, updateAgentLiveStatus, warning, wsBus],
+    [
+      agents,
+      handleAgentRemoved,
+      setAllAgents,
+      setWsInitReceived,
+      updateAgent,
+      updateAgentInfo,
+      updateAgentLiveStatus,
+      warning,
+      wsBus,
+    ],
   );
   const { send } = useConnection({
     enabled: wsEnabled,
@@ -268,7 +283,9 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
         const res = await api.agentsOverview();
         const nextAgents = Array.isArray(res?.agents) ? res.agents : [];
         setAllAgents(toAgentMap(nextAgents));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     };
     const id = window.setInterval(poll, 30_000);
     return () => window.clearInterval(id);
@@ -287,7 +304,17 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
       send,
       refresh,
     }),
-    [agents, liveStatus, agentInfo, agentInfoReceivedAtMs, wsInitReceived, authenticated, setSelectedAgentId, send, refresh],
+    [
+      agents,
+      liveStatus,
+      agentInfo,
+      agentInfoReceivedAtMs,
+      wsInitReceived,
+      authenticated,
+      setSelectedAgentId,
+      send,
+      refresh,
+    ],
   );
 
   return (

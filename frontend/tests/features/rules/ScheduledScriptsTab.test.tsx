@@ -1,12 +1,12 @@
-// @vitest-environment jsdom
-import { act } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { click } from "@tests/support/formDom";
 import { createTabHarness } from "@tests/support/ruleTab";
-import { ScheduledScriptsTab } from "@/features/rules/ScheduledScriptsTab";
+import { click } from "@tests/support/formDom";
+import { testMock as vi } from "@tests/support/mock";
+import { act } from "react";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+
 import type { Agent, AgentGroup, ScheduledScript, ScheduledScriptEvent } from "@/api/types";
 
-const api = vi.hoisted(() => ({
+const api = (() => ({
   scheduledScriptsList: vi.fn(),
   scheduledScriptsCreate: vi.fn(async () => ({ id: 9 })),
   scheduledScriptsUpdate: vi.fn(async () => ({ ok: true })),
@@ -15,20 +15,54 @@ const api = vi.hoisted(() => ({
   scheduledScriptEventsAll: vi.fn(),
   scheduledScriptEventsForScript: vi.fn(),
   capabilities: vi.fn(async () => ({ remote_script: true, scheduler_timezone: "Australia/Perth" })),
+}))();
+await vi.mock("@/api", () => ({
+  api,
+  errorText: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+  apiUrl: (p: string) => p,
 }));
-vi.mock("@/api", () => ({ api, errorText: (e: unknown) => (e instanceof Error ? e.message : String(e)), apiUrl: (p: string) => p }));
+
+const { ScheduledScriptsTab } = await import("@/features/rules/ScheduledScriptsTab");
 
 const script = (id: number, patch: Partial<ScheduledScript> = {}): ScheduledScript => ({
-  id, name: `Script ${id}`, shell: "powershell", script: "dir", timeout_secs: 60, enabled: true, created_at: "", updated_at: "",
-  scopes: [{ kind: "all", group_id: null, agent_id: null }], schedules: [{ frequency: "daily", day_of_week: null, fire_minute: 180 }], ...patch,
+  id,
+  name: `Script ${id}`,
+  shell: "powershell",
+  script: "dir",
+  timeout_secs: 60,
+  enabled: true,
+  created_at: "",
+  updated_at: "",
+  scopes: [{ kind: "all", group_id: null, agent_id: null }],
+  schedules: [{ frequency: "daily", day_of_week: null, fire_minute: 180 }],
+  ...patch,
 });
 const scripts: ScheduledScript[] = [
   script(1, { name: "Collect diagnostics" }),
-  script(2, { name: "Clear temp", shell: "cmd", scopes: [{ kind: "group", group_id: "g1", agent_id: null }], schedules: [{ frequency: "weekly", day_of_week: 1, fire_minute: 120 }, { frequency: "hourly", day_of_week: null, fire_minute: 5 }] }),
+  script(2, {
+    name: "Clear temp",
+    shell: "cmd",
+    scopes: [{ kind: "group", group_id: "g1", agent_id: null }],
+    schedules: [
+      { frequency: "weekly", day_of_week: 1, fire_minute: 120 },
+      { frequency: "hourly", day_of_week: null, fire_minute: 5 },
+    ],
+  }),
   script(3, { name: "Spooler", enabled: false }),
 ];
-const ev = (script_id: number, agent: string, status: string, time: string, output: string | null = null): ScheduledScriptEvent => ({
-  script_id, agent_id: agent, agent_name: agent.toUpperCase(), status, expected_fire_time: time, output,
+const ev = (
+  script_id: number,
+  agent: string,
+  status: string,
+  time: string,
+  output: string | null = null,
+): ScheduledScriptEvent => ({
+  script_id,
+  agent_id: agent,
+  agent_name: agent.toUpperCase(),
+  status,
+  expected_fire_time: time,
+  output,
 });
 const feed = [
   ev(1, "a", "success", "2026-11-01T03:00:00Z"),
@@ -109,7 +143,9 @@ describe("ScheduledScriptsTab switch", () => {
     await render();
     await click(t.switchOf(items()[0]));
     expect(api.scheduledScriptsUpdate).toHaveBeenCalledWith(1, { enabled: false });
-    expect(t.host.querySelector('[role="alert"]')?.textContent).toContain("Couldn’t turn off “Collect diagnostics”: Forbidden");
+    expect(t.host.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t turn off “Collect diagnostics”: Forbidden",
+    );
     expect(t.switchOf(items()[0]).getAttribute("aria-checked")).toBe("true");
   });
 });
@@ -131,7 +167,9 @@ describe("ScheduledScriptsTab run now", () => {
     expect(api.scheduledScriptsTrigger).toHaveBeenCalledWith(2);
     expect(t.dialog()).toBeNull();
     const notice = t.host.querySelector('p[role="status"]')?.textContent ?? "";
-    expect(notice).toContain("Sent “Clear temp” to its 3 devices. Offline devices skip it; results appear in Run history.");
+    expect(notice).toContain(
+      "Sent “Clear temp” to its 3 devices. Offline devices skip it; results appear in Run history.",
+    );
     expect(notice).not.toMatch(/ran|executed/i);
   });
 
@@ -141,7 +179,9 @@ describe("ScheduledScriptsTab run now", () => {
     await click(t.btn("Run Spooler now")!);
     await click(t.btn("Run now", t.dialog()!)!);
     expect(t.dialog()).toBeNull();
-    expect(t.host.querySelector('[role="alert"]')?.textContent).toContain("Couldn’t run “Spooler”: No agents in scope");
+    expect(t.host.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t run “Spooler”: No agents in scope",
+    );
   });
 });
 
@@ -172,7 +212,9 @@ describe("ScheduledScriptsTab run history", () => {
 
   it("collapses long output behind Show all output", async () => {
     const long = Array.from({ length: 12 }, (_, i) => `line ${i}`).join("\n");
-    api.scheduledScriptEventsForScript.mockResolvedValue({ rows: [ev(1, "a", "success", "2026-11-01T03:00:00Z", long)] });
+    api.scheduledScriptEventsForScript.mockResolvedValue({
+      rows: [ev(1, "a", "success", "2026-11-01T03:00:00Z", long)],
+    });
     await render();
     await click(t.btn("Run history for Collect diagnostics")!);
     await act(async () => {});
@@ -183,11 +225,15 @@ describe("ScheduledScriptsTab run history", () => {
   });
 
   it("says when the runs could not be loaded instead of 'no runs yet', and retries", async () => {
-    api.scheduledScriptEventsForScript.mockRejectedValueOnce(new Error("timeout")).mockResolvedValue({ rows: [] });
+    api.scheduledScriptEventsForScript
+      .mockRejectedValueOnce(new Error("timeout"))
+      .mockResolvedValue({ rows: [] });
     await render();
     await click(t.btn("Run history for Collect diagnostics")!);
     await act(async () => {});
-    expect(t.dialog()?.querySelector('[role="alert"]')?.textContent).toContain("Couldn’t load this script’s runs: timeout");
+    expect(t.dialog()?.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t load this script’s runs: timeout",
+    );
     expect(t.dialog()?.textContent).not.toContain("No runs yet");
     await click(t.btn("Try again", t.dialog()!)!);
     await act(async () => {});
@@ -224,13 +270,24 @@ describe("ScheduledScriptsTab delete, edit and create", () => {
     await render();
     await click(t.btn("Edit Collect diagnostics")!);
     expect(t.dialog()?.querySelector("h2")?.textContent).toBe("Edit script · Collect diagnostics");
-    expect(document.querySelector<HTMLInputElement>("#script-name")!.value).toBe("Collect diagnostics");
+    expect(document.querySelector<HTMLInputElement>("#script-name")!.value).toBe(
+      "Collect diagnostics",
+    );
     await click(t.btn("Save changes", t.dialog()!)!);
-    expect(t.dialog()?.querySelector('[role="alert"]')?.textContent).toBe("Couldn’t save the script: script exceeds maximum size");
+    expect(t.dialog()?.querySelector('[role="alert"]')?.textContent).toBe(
+      "Couldn’t save the script: script exceeds maximum size",
+    );
     expect(t.host.querySelector('[role="alert"]')).toBeNull();
     await click(t.btn("Save changes", t.dialog()!)!);
     await act(async () => {});
-    expect(api.scheduledScriptsUpdate).toHaveBeenLastCalledWith(1, expect.objectContaining({ name: "Collect diagnostics", timeout_secs: 60, schedules: [{ frequency: "daily", fire_minute: 180, day_of_week: undefined }] }));
+    expect(api.scheduledScriptsUpdate).toHaveBeenLastCalledWith(
+      1,
+      expect.objectContaining({
+        name: "Collect diagnostics",
+        timeout_secs: 60,
+        schedules: [{ frequency: "daily", fire_minute: 180, day_of_week: undefined }],
+      }),
+    );
     expect(t.dialog()).toBeNull();
     expect(t.host.textContent).toContain("Saved “Collect diagnostics”.");
   });

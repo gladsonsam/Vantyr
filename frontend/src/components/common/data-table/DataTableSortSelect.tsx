@@ -1,5 +1,11 @@
 import type { RowData } from "@tanstack/react-table";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@vantyr/ui/components/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@vantyr/ui/components/select";
 import { cn } from "@/lib/utils";
 import type { DataTableInstance } from "./useDataTable";
 
@@ -34,7 +40,14 @@ export function DataTableSortSelect<TData extends RowData>({
         if (choice) table.setSorting([{ id: choice.id, desc: choice.desc }]);
       }}
     >
-      <SelectTrigger size="sm" aria-label="Sort order" className={cn("min-w-0 data-[size=sm]:max-sm:h-9 data-[size=sm]:pointer-coarse:h-9", className)}>
+      <SelectTrigger
+        size="sm"
+        aria-label="Sort order"
+        className={cn(
+          "min-w-0 data-[size=sm]:max-sm:h-9 data-[size=sm]:pointer-coarse:h-9",
+          className,
+        )}
+      >
         <SelectValue placeholder="Sort" />
       </SelectTrigger>
       <SelectContent alignItemWithTrigger={false} className="min-w-44">

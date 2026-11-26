@@ -51,7 +51,9 @@ export function NamePromptDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          {description ? <DialogDescription className="wrap-break-word">{description}</DialogDescription> : null}
+          {description ? (
+            <DialogDescription className="wrap-break-word">{description}</DialogDescription>
+          ) : null}
         </DialogHeader>
         <form
           className="flex flex-col gap-4"
@@ -63,7 +65,14 @@ export function NamePromptDialog({
             onSubmit(value.trim());
           }}
         >
-          <Input aria-label={label} value={value} onChange={(e) => setValue(e.target.value)} placeholder={placeholder} autoComplete="off" spellCheck={false} />
+          <Input
+            aria-label={label}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={placeholder}
+            autoComplete="off"
+            spellCheck={false}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel

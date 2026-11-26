@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import {
   addGroup,
   assignCategoryGroup,
@@ -26,7 +26,11 @@ const server = {
       { key: "news", label: "News", description: "", enabled: true },
     ],
   },
-  groups: { rows: [{ id: 7, key: "fun", label_en: "Fun", hidden: false, ut1_keys: ["games", "social_networks"] }] },
+  groups: {
+    rows: [
+      { id: 7, key: "fun", label_en: "Fun", hidden: false, ut1_keys: ["games", "social_networks"] },
+    ],
+  },
 };
 
 describe("toDraft", () => {
@@ -37,7 +41,9 @@ describe("toDraft", () => {
       ["games", "Gaming", 7, false],
       ["news", "News", null, false],
     ]);
-    expect(draft.groups).toEqual([{ id: 7, key: "fun", label: "Fun", hidden: false, isNew: false, deleted: false }]);
+    expect(draft.groups).toEqual([
+      { id: 7, key: "fun", label: "Fun", hidden: false, isNew: false, deleted: false },
+    ]);
   });
 
   it("copes with missing lists", () => {
@@ -57,7 +63,10 @@ describe("editing", () => {
 
   it("marks a patched category dirty without touching the others", () => {
     const next = patchCategory(draft, "news", { enabled: false });
-    expect(next.ut1Cats.find((c) => c.key === "news")).toMatchObject({ enabled: false, dirty: true });
+    expect(next.ut1Cats.find((c) => c.key === "news")).toMatchObject({
+      enabled: false,
+      dirty: true,
+    });
     expect(next.ut1Cats.filter((c) => c.dirty)).toHaveLength(1);
     expect(draft.ut1Cats.every((c) => !c.dirty)).toBe(true);
   });
@@ -68,7 +77,14 @@ describe("editing", () => {
 
   it("adds a new group keyed from its label, ignoring blank labels", () => {
     const next = addGroup(draft, " Study ");
-    expect(next.groups[1]).toEqual({ id: null, key: "study", label: "Study", hidden: false, isNew: true, deleted: false });
+    expect(next.groups[1]).toEqual({
+      id: null,
+      key: "study",
+      label: "Study",
+      hidden: false,
+      isNew: true,
+      deleted: false,
+    });
     expect(addGroup(draft, "   ")).toBe(draft);
     expect(addGroup(draft, "!!!")).toBe(draft);
     expect(addGroup(draft, "Study", " custom_key ").groups[1].key).toBe("custom_key");
@@ -82,7 +98,10 @@ describe("editing", () => {
   it("marks a saved group deleted and unassigns its categories", () => {
     const next = removeGroup(draft, 0);
     expect(next.groups[0].deleted).toBe(true);
-    expect(next.ut1Cats.filter((c) => c.groupId === null && c.dirty).map((c) => c.key)).toEqual(["social_networks", "games"]);
+    expect(next.ut1Cats.filter((c) => c.groupId === null && c.dirty).map((c) => c.key)).toEqual([
+      "social_networks",
+      "games",
+    ]);
   });
 
   it("assigns and clears a category's group from the select value", () => {
@@ -110,7 +129,10 @@ describe("selectors", () => {
   });
 
   it("shows no group for a category whose group was deleted", () => {
-    const deleted: CategoryDraft = { ...draft, groups: patchGroup(draft, 0, { deleted: true }).groups };
+    const deleted: CategoryDraft = {
+      ...draft,
+      groups: patchGroup(draft, 0, { deleted: true }).groups,
+    };
     expect(groupSelectValue(draft.ut1Cats[0], groupSelectOptions(draft.groups))).toBe("7");
     expect(groupSelectValue(draft.ut1Cats[0], groupSelectOptions(deleted.groups))).toBe(NO_GROUP);
   });
@@ -137,7 +159,12 @@ describe("buildSavePlan", () => {
     draft = addGroup(draft, "Study");
     const plan = buildSavePlan(draft);
     expect(plan.categories).toHaveLength(3);
-    expect(plan.categories[1]).toEqual({ key: "games", enabled: false, label: "Gaming", description: "Play" });
+    expect(plan.categories[1]).toEqual({
+      key: "games",
+      enabled: false,
+      label: "Gaming",
+      description: "Play",
+    });
     expect(plan.groupOps).toEqual([
       { type: "update", id: 7, key: "fun", label_en: "Fun!", hidden: false },
       { type: "create", key: "study", label_en: "Study", hidden: false },
@@ -165,7 +192,9 @@ describe("group edits and names", () => {
     const renamed = patchGroup(draft, 0, { label: "Fun and games" });
     expect(renamed.groups[0].dirty).toBe(true);
     expect(pendingChanges(renamed)).toEqual({ dirtyCount: 0, groupChanges: 1, hasChanges: true });
-    expect(buildSavePlan(renamed).groupOps).toEqual([{ type: "update", id: 7, key: "fun", label_en: "Fun and games", hidden: false }]);
+    expect(buildSavePlan(renamed).groupOps).toEqual([
+      { type: "update", id: 7, key: "fun", label_en: "Fun and games", hidden: false },
+    ]);
   });
 
   it("counts a new group once even when it is edited", () => {

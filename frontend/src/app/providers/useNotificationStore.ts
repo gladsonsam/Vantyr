@@ -41,7 +41,7 @@ export function useNotificationStore() {
         autoDismiss?: boolean;
         autoDismissTimeout?: number;
         action?: React.ReactNode;
-      }
+      },
     ) => {
       const id = `notification-${++notificationIdCounter}`;
       const notification: NotificationItem = {
@@ -67,7 +67,7 @@ export function useNotificationStore() {
 
       return id;
     },
-    [removeNotification]
+    [removeNotification],
   );
 
   const clearAll = useCallback(() => {
@@ -89,28 +89,28 @@ export function useNotificationStore() {
     (header: string, content?: string, options?: Parameters<typeof addNotification>[3]) => {
       return addNotification("success", header, content, options);
     },
-    [addNotification]
+    [addNotification],
   );
 
   const error = useCallback(
     (header: string, content?: string, options?: Parameters<typeof addNotification>[3]) => {
       return addNotification("error", header, content, options);
     },
-    [addNotification]
+    [addNotification],
   );
 
   const warning = useCallback(
     (header: string, content?: string, options?: Parameters<typeof addNotification>[3]) => {
       return addNotification("warning", header, content, options);
     },
-    [addNotification]
+    [addNotification],
   );
 
   const info = useCallback(
     (header: string, content?: string, options?: Parameters<typeof addNotification>[3]) => {
       return addNotification("info", header, content, options);
     },
-    [addNotification]
+    [addNotification],
   );
 
   return {

@@ -1,28 +1,51 @@
-// @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { buttonByText, click, mountForm, unmountForms } from "@tests/support/formDom";
 import { PairingCodeList, type EnrollmentToken } from "@/features/enrollment/PairingCodeList";
 
 const NOW = Date.parse("2026-03-01T12:00:00Z");
 const hours = (h: number) => new Date(NOW + h * 3_600_000).toISOString();
 const token = (over: Partial<EnrollmentToken>): EnrollmentToken => ({
-  id: "t1", uses_remaining: 1, created_at: hours(-1), expires_at: hours(3), note: "Front desk", used_count: 0, last_used_at: null, ...over,
+  id: "t1",
+  uses_remaining: 1,
+  created_at: hours(-1),
+  expires_at: hours(3),
+  note: "Front desk",
+  used_count: 0,
+  last_used_at: null,
+  ...over,
 });
 
 const onRefresh = vi.fn(async () => {});
 const onRevoke = vi.fn(async () => {});
 const onRevokeAll = vi.fn(async () => {});
-const onListUses = vi.fn(async () => [{ used_at: hours(-0.5), agent_name: "LAPTOP-7", agent_id: "agent-123" }]);
+const onListUses = vi.fn(async () => [
+  { used_at: hours(-0.5), agent_name: "LAPTOP-7", agent_id: "agent-123" },
+]);
 const onClearError = vi.fn();
 
-function render(tokens: EnrollmentToken[], props: Partial<Parameters<typeof PairingCodeList>[0]> = {}) {
+function render(
+  tokens: EnrollmentToken[],
+  props: Partial<Parameters<typeof PairingCodeList>[0]> = {},
+) {
   return mountForm(
-    <PairingCodeList tokens={tokens} loading={false} error={null} listedAt={NOW} onRefresh={onRefresh} onRevoke={onRevoke}
-      onRevokeAll={onRevokeAll} onListUses={onListUses} onClearError={onClearError} {...props} />,
+    <PairingCodeList
+      tokens={tokens}
+      loading={false}
+      error={null}
+      listedAt={NOW}
+      onRefresh={onRefresh}
+      onRevoke={onRevoke}
+      onRevokeAll={onRevokeAll}
+      onListUses={onListUses}
+      onClearError={onClearError}
+      {...props}
+    />,
   );
 }
 const text = () => document.body.textContent ?? "";
-const byAria = (label: string) => document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+const byAria = (label: string) =>
+  document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(unmountForms);
@@ -47,7 +70,10 @@ describe("PairingCodeList", () => {
   });
 
   it("gives Revoke only to codes with uses left, each named for its code", async () => {
-    await render([token({ id: "a" }), token({ id: "c", note: "Spent", uses_remaining: 0, used_count: 1 })]);
+    await render([
+      token({ id: "a" }),
+      token({ id: "c", note: "Spent", uses_remaining: 0, used_count: 1 }),
+    ]);
     expect(byAria("Revoke Front desk")).not.toBeNull();
     expect(byAria("Revoke Spent")).toBeNull();
   });
@@ -107,7 +133,11 @@ describe("PairingCodeList", () => {
   });
 
   it("counts the codes Revoke all would stop", async () => {
-    await render([token({ id: "a" }), token({ id: "b", uses_remaining: 3 }), token({ id: "c", uses_remaining: 0 })]);
+    await render([
+      token({ id: "a" }),
+      token({ id: "b", uses_remaining: 3 }),
+      token({ id: "c", uses_remaining: 0 }),
+    ]);
     await click(buttonByText("Revoke all"));
     expect(text()).toContain("Revoke 2 pairing codes?");
     await click(buttonByText("Cancel"));
@@ -116,6 +146,8 @@ describe("PairingCodeList", () => {
 
   it("hides Revoke all when nothing can be revoked", async () => {
     await render([token({ uses_remaining: 0, used_count: 1 })]);
-    expect([...document.querySelectorAll("button")].map((b) => b.textContent?.trim())).not.toContain("Revoke all");
+    expect(
+      [...document.querySelectorAll("button")].map((b) => b.textContent?.trim()),
+    ).not.toContain("Revoke all");
   });
 });

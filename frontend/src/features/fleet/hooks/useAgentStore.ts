@@ -17,10 +17,7 @@ export function useAgentStore() {
   // Accepts a full agent or a functional updater so callers can merge over the latest state
   // (rather than a stale render snapshot). An updater returning `undefined` is a no-op.
   const updateAgent = useCallback(
-    (
-      id: string,
-      update: Agent | ((prev: Agent | undefined) => Agent | undefined),
-    ) => {
+    (id: string, update: Agent | ((prev: Agent | undefined) => Agent | undefined)) => {
       if (removedIds.current.has(id)) return;
       setAgents((prev) => {
         const next = typeof update === "function" ? update(prev[id]) : update;
@@ -32,13 +29,10 @@ export function useAgentStore() {
   );
 
   // Merge a partial patch onto the latest snapshot so bursty events don't clobber each other.
-  const updateAgentLiveStatus = useCallback(
-    (id: string, patch: Partial<AgentLiveStatus>) => {
-      if (removedIds.current.has(id)) return;
-      setLiveStatus((prev) => ({ ...prev, [id]: mergeLiveStatus(prev[id], patch) }));
-    },
-    [],
-  );
+  const updateAgentLiveStatus = useCallback((id: string, patch: Partial<AgentLiveStatus>) => {
+    if (removedIds.current.has(id)) return;
+    setLiveStatus((prev) => ({ ...prev, [id]: mergeLiveStatus(prev[id], patch) }));
+  }, []);
 
   const updateAgentInfo = useCallback((id: string, info: AgentInfo | null) => {
     if (removedIds.current.has(id)) return;
@@ -49,7 +43,7 @@ export function useAgentStore() {
   const removeAgent = useCallback((id: string) => {
     // Late HTTP snapshots and telemetry must not resurrect a deleted UUID.
     removedIds.current.add(id);
-    setSelectedAgentId((prev) => prev === id ? null : prev);
+    setSelectedAgentId((prev) => (prev === id ? null : prev));
     setAgents((prev) => withoutAgent(prev, id));
     setLiveStatus((prev) => withoutAgent(prev, id));
     setAgentInfo((prev) => withoutAgent(prev, id));
@@ -57,29 +51,22 @@ export function useAgentStore() {
   }, []);
 
   const setAllAgents = useCallback((newAgents: Record<string, Agent>) => {
-    const next = Object.fromEntries(Object.entries(newAgents).filter(([id]) => !removedIds.current.has(id)));
+    const next = Object.fromEntries(
+      Object.entries(newAgents).filter(([id]) => !removedIds.current.has(id)),
+    );
     const ids = new Set(Object.keys(next));
     setAgents(next);
     setLiveStatus((prev) => retainAgents(prev, ids));
     setAgentInfo((prev) => retainAgents(prev, ids));
     setAgentInfoReceivedAtMs((prev) => retainAgents(prev, ids));
-    setSelectedAgentId((prev) => prev && ids.has(prev) ? prev : null);
+    setSelectedAgentId((prev) => (prev && ids.has(prev) ? prev : null));
   }, []);
 
-  const getAgent = useCallback(
-    (id: string) => agents[id] || null,
-    [agents]
-  );
+  const getAgent = useCallback((id: string) => agents[id] || null, [agents]);
 
-  const getAgentLiveStatus = useCallback(
-    (id: string) => liveStatus[id] || null,
-    [liveStatus]
-  );
+  const getAgentLiveStatus = useCallback((id: string) => liveStatus[id] || null, [liveStatus]);
 
-  const getAgentInfo = useCallback(
-    (id: string) => agentInfo[id] || null,
-    [agentInfo]
-  );
+  const getAgentInfo = useCallback((id: string) => agentInfo[id] || null, [agentInfo]);
 
   const selectedAgent = selectedAgentId ? agents[selectedAgentId] : null;
 

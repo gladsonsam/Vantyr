@@ -75,7 +75,10 @@ function parseLooseSemverParts(v: string | null | undefined): number[] | null {
   return nums;
 }
 
-function compareLooseSemver(a: string | null | undefined, b: string | null | undefined): number | null {
+function compareLooseSemver(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): number | null {
   const aa = parseLooseSemverParts(a);
   const bb = parseLooseSemverParts(b);
   if (!aa || !bb) return null;
@@ -89,7 +92,10 @@ function compareLooseSemver(a: string | null | undefined, b: string | null | und
   return 0;
 }
 
-function isPotentiallyRegressing(oldV: string | null | undefined, newV: string | null | undefined): boolean {
+function isPotentiallyRegressing(
+  oldV: string | null | undefined,
+  newV: string | null | undefined,
+): boolean {
   // Only guard when both sides look like semver-ish versions.
   const cmp = compareLooseSemver(oldV, newV);
   if (cmp == null) return false;

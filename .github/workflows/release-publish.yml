@@ -9,8 +9,8 @@ on:
     types: [published]
 
 permissions:
-  contents: read    # read the release marker asset
-  packages: write   # retag the Docker image in GHCR
+  contents: read # read the release marker asset
+  packages: write # retag the Docker image in GHCR
 
 concurrency:
   group: release-publish

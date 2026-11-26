@@ -14,7 +14,9 @@ export function ScriptLastRun({ run, failed }: { run: LastRun | undefined; faile
     <span>
       <span className={`font-medium ${RUN_TONE_CLASS[tone]}`}>{text}</span>
       {" · "}
-      <time dateTime={run.time} className="tabular-nums">{fmtDateTime(run.time)}</time>
+      <time dateTime={run.time} className="tabular-nums">
+        {fmtDateTime(run.time)}
+      </time>
     </span>
   );
 }

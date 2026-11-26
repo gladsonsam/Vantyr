@@ -1,23 +1,36 @@
-// @vitest-environment jsdom
+import { click } from "@tests/support/formDom";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
-import { click } from "@tests/support/formDom";
-import { EventsGlobalTab } from "@/features/rules/EventsGlobalTab";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({
+const api = (() => ({
   alertRuleEventsAll: vi.fn(),
   appBlockEventsAll: vi.fn(),
   scheduledScriptEventsAll: vi.fn(),
   agentSessionsAll: vi.fn(),
+}))();
+await vi.mock("@/api", () => ({
+  api,
+  errorText: (e: unknown) => String(e),
+  apiUrl: (p: string) => p,
 }));
-vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e), apiUrl: (p: string) => p }));
+
+const { EventsGlobalTab } = await import("@/features/rules/EventsGlobalTab");
 
 const alertRow = (id: number, patch: Record<string, unknown> = {}) => ({
-  id, agent_id: "a1", agent_name: "Alpha", rule_name: "Social media", channel: "url", snippet: "facebook.com/profile",
-  has_screenshot: false, screenshot_requested: false, created_at: `2026-11-01T10:0${id}:00Z`, ...patch,
+  id,
+  agent_id: "a1",
+  agent_name: "Alpha",
+  rule_name: "Social media",
+  channel: "url",
+  snippet: "facebook.com/profile",
+  has_screenshot: false,
+  screenshot_requested: false,
+  created_at: `2026-11-01T10:0${id}:00Z`,
+  ...patch,
 });
 
 let host: HTMLDivElement;
@@ -28,12 +41,49 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  api.alertRuleEventsAll.mockResolvedValue({ rows: [alertRow(1, { has_screenshot: true, screenshot_requested: true }), alertRow(2, { screenshot_requested: true })] });
-  api.appBlockEventsAll.mockResolvedValue({ rows: [{ id: 3, agent_id: "a2", agent_name: "Bravo", rule_name: null, exe_name: "steam.exe", killed_at: "2026-11-01T10:05:00Z" }] });
-  api.scheduledScriptEventsAll.mockResolvedValue({
-    rows: [{ script_id: 4, agent_id: "a1", agent_name: "Alpha", rule_name: "Disk report", is_manual: true, status: "failed", output: "line one\nline two", expected_fire_time: "2026-11-01T10:06:00Z" }],
+  api.alertRuleEventsAll.mockResolvedValue({
+    rows: [
+      alertRow(1, { has_screenshot: true, screenshot_requested: true }),
+      alertRow(2, { screenshot_requested: true }),
+    ],
   });
-  api.agentSessionsAll.mockResolvedValue({ rows: [{ id: 5, agent_id: "a2", agent_name: "Bravo", connected_at: "2026-11-01T09:00:00Z", disconnected_at: "2026-11-01T09:30:00Z" }] });
+  api.appBlockEventsAll.mockResolvedValue({
+    rows: [
+      {
+        id: 3,
+        agent_id: "a2",
+        agent_name: "Bravo",
+        rule_name: null,
+        exe_name: "steam.exe",
+        killed_at: "2026-11-01T10:05:00Z",
+      },
+    ],
+  });
+  api.scheduledScriptEventsAll.mockResolvedValue({
+    rows: [
+      {
+        script_id: 4,
+        agent_id: "a1",
+        agent_name: "Alpha",
+        rule_name: "Disk report",
+        is_manual: true,
+        status: "failed",
+        output: "line one\nline two",
+        expected_fire_time: "2026-11-01T10:06:00Z",
+      },
+    ],
+  });
+  api.agentSessionsAll.mockResolvedValue({
+    rows: [
+      {
+        id: 5,
+        agent_id: "a2",
+        agent_name: "Bravo",
+        connected_at: "2026-11-01T09:00:00Z",
+        disconnected_at: "2026-11-01T09:30:00Z",
+      },
+    ],
+  });
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -43,10 +93,22 @@ afterEach(async () => {
 });
 
 async function render() {
-  await act(async () => root.render(withQueryClient(<MemoryRouter><EventsGlobalTab /></MemoryRouter>, createTestQueryClient())));
+  await act(async () =>
+    root.render(
+      withQueryClient(
+        <MemoryRouter>
+          <EventsGlobalTab />
+        </MemoryRouter>,
+        createTestQueryClient(),
+      ),
+    ),
+  );
 }
 const items = () => [...host.querySelectorAll('ul[aria-label="Events, newest first"] > li')];
-const tab = (label: string) => [...host.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent?.startsWith(label))!;
+const tab = (label: string) =>
+  [...host.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) =>
+    t.textContent?.startsWith(label),
+  )!;
 
 describe("EventsGlobalTab", () => {
   it("merges every feed newest first, each row naming its kind, agent, time and what happened", async () => {
@@ -71,7 +133,9 @@ describe("EventsGlobalTab", () => {
     // Newest first: the second alert (no screenshot captured although requested) comes first.
     expect(alerts[0].textContent).toContain("No screenshot");
     expect(alerts[1].querySelector('button[aria-label^="View screenshot"]')).not.toBeNull();
-    expect(alerts[1].querySelector("a")?.getAttribute("href")).toBe("/agents/a1?tab=activity&at=2026-11-01T10%3A01%3A00Z");
+    expect(alerts[1].querySelector("a")?.getAttribute("href")).toBe(
+      "/agents/a1?tab=activity&at=2026-11-01T10%3A01%3A00Z",
+    );
     expect(alerts[0].textContent).not.toContain("View screenshot");
   });
 
@@ -90,7 +154,9 @@ describe("EventsGlobalTab", () => {
   it("shows long script output in two lines with the rest one click away", async () => {
     await render();
     const script = items()[0];
-    const toggle = [...script.querySelectorAll("button")].find((b) => b.textContent === "Show more")!;
+    const toggle = [...script.querySelectorAll("button")].find(
+      (b) => b.textContent === "Show more",
+    )!;
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     await click(toggle);
     expect(toggle.textContent).toBe("Show less");
@@ -98,7 +164,9 @@ describe("EventsGlobalTab", () => {
   });
 
   it("says which feeds failed and that the list is incomplete, rather than quietly omitting them", async () => {
-    api.scheduledScriptEventsAll.mockRejectedValueOnce(new Error("500")).mockResolvedValue({ rows: [] });
+    api.scheduledScriptEventsAll
+      .mockRejectedValueOnce(new Error("500"))
+      .mockResolvedValue({ rows: [] });
     await render();
     const alert = host.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain("Couldn’t load scripts.");
@@ -110,16 +178,28 @@ describe("EventsGlobalTab", () => {
   });
 
   it("does not claim there are no events when every feed failed", async () => {
-    for (const f of [api.alertRuleEventsAll, api.appBlockEventsAll, api.scheduledScriptEventsAll, api.agentSessionsAll]) f.mockRejectedValue(new Error("down"));
+    for (const f of [
+      api.alertRuleEventsAll,
+      api.appBlockEventsAll,
+      api.scheduledScriptEventsAll,
+      api.agentSessionsAll,
+    ])
+      f.mockRejectedValue(new Error("down"));
     await render();
     expect(host.querySelector('[role="alert"]')?.textContent).toContain("No events are shown.");
     expect(host.textContent).not.toContain("No events yet");
   });
 
   it("says when each feed was cut at its newest rows", async () => {
-    api.alertRuleEventsAll.mockResolvedValue({ rows: Array.from({ length: 500 }, (_, i) => alertRow(i + 1, { created_at: "2026-11-01T10:00:00Z" })) });
+    api.alertRuleEventsAll.mockResolvedValue({
+      rows: Array.from({ length: 500 }, (_, i) =>
+        alertRow(i + 1, { created_at: "2026-11-01T10:00:00Z" }),
+      ),
+    });
     await render();
-    expect(host.querySelector('[role="status"]')?.textContent).toContain("older events may not be shown");
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "older events may not be shown",
+    );
     expect(tab("Alerts").textContent).toBe("Alerts500+");
   });
 });

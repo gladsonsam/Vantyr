@@ -65,7 +65,14 @@ function RetentionRow({
       <div className="flex min-h-6 items-center justify-between gap-2">
         <Label htmlFor={id}>{label}</Label>
         {value.trim() !== "" && !disabled && (
-          <Button type="button" variant="ghost" size="xs" className="pointer-coarse:h-9" aria-label={`Use the default for ${label}`} onClick={() => onChange("")}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="pointer-coarse:h-9"
+            aria-label={`Use the default for ${label}`}
+            onClick={() => onChange("")}
+          >
             Use default
           </Button>
         )}
@@ -84,7 +91,10 @@ function RetentionRow({
         />
         <span className="shrink-0 text-muted-foreground">days</span>
       </div>
-      <p id={hintId} className={error ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
+      <p
+        id={hintId}
+        className={error ? "text-xs text-destructive" : "text-xs text-muted-foreground"}
+      >
         {error ?? describeRetentionField(value, globalDays)}
       </p>
     </div>
@@ -96,7 +106,12 @@ function useRetentionForm(agentId: string, isAdmin: boolean) {
   const query = useQuery(settingsQueries.agentRetention(agentId));
 
   // Override fields are edited locally; every fresh server copy (load or save) re-seeds them.
-  const [fields, setFields] = useServerDraft(query.data, query.dataUpdatedAt, toRetentionFields, NO_RETENTION_FIELDS);
+  const [fields, setFields] = useServerDraft(
+    query.data,
+    query.dataUpdatedAt,
+    toRetentionFields,
+    NO_RETENTION_FIELDS,
+  );
   const saved = query.data ? toRetentionFields(query.data) : NO_RETENTION_FIELDS;
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -210,14 +225,20 @@ export function AgentRetentionCard({ agentId, isAdmin }: { agentId: string; isAd
 
   const { global, override } = query.data;
   const overridden = override ? KINDS.filter(({ key }) => override[key] !== null).length : 0;
-  const summary = overridden === 0 ? "Using the default retention" : `${overridden} of ${KINDS.length} set for this device`;
+  const summary =
+    overridden === 0
+      ? "Using the default retention"
+      : `${overridden} of ${KINDS.length} set for this device`;
 
   return (
     <Card className="gap-0 py-0">
       <CardContent className="flex flex-col gap-5 p-5 text-sm">
         <div className="flex flex-col gap-0.5">
           <h3 className="text-base font-medium">{summary}</h3>
-          <p className="text-muted-foreground">Data older than the limit is deleted automatically. Leave a box empty to use the default; 0 keeps it forever.</p>
+          <p className="text-muted-foreground">
+            Data older than the limit is deleted automatically. Leave a box empty to use the
+            default; 0 keeps it forever.
+          </p>
         </div>
 
         {error && (

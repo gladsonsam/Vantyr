@@ -1,33 +1,61 @@
-// @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  buttonByText,
+  byLabel,
+  click,
+  fieldErrors,
+  mountForm,
+  typeInto,
+  unmountForms,
+} from "@tests/support/formDom";
 import { withQueryClient } from "@tests/support/queryClient";
-import { buttonByText, byLabel, click, fieldErrors, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
-import type { UrlCategorizationStatus } from "@/features/settings/hooks/useUrlCategorization";
-import { UrlOverridesDialog } from "@/features/settings/components/UrlOverridesDialog";
-import { UrlSourceForm } from "@/features/settings/components/UrlSourceForm";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, describe, expect, it } from "bun:test";
 
-const override = { id: 1, kind: "domain" as const, value: "github.com", category_key: "games", category_label: "Games", note: "Work tool", created_at: "2026-01-02T03:04:05Z" };
-const api = vi.hoisted(() => ({
+import type { UrlCategorizationStatus } from "@/features/settings/hooks/useUrlCategorization";
+
+const override = {
+  id: 1,
+  kind: "domain" as const,
+  value: "github.com",
+  category_key: "games",
+  category_label: "Games",
+  note: "Work tool",
+  created_at: "2026-01-02T03:04:05Z",
+};
+const api = (() => ({
   urlCategorizationOverridesList: vi.fn(async () => ({ rows: [] as unknown[] })),
-  urlCategorizationCategoriesGet: vi.fn(async () => ({ categories: [{ key: "games", label: "Games", enabled: true, description: "" }] })),
+  urlCategorizationCategoriesGet: vi.fn(async () => ({
+    categories: [{ key: "games", label: "Games", enabled: true, description: "" }],
+  })),
   urlCategorizationOverridesDelete: vi.fn(async () => ({})),
   urlCategorizationRecalcUrlVisits: vi.fn(async () => ({ enqueued: 500 })),
   urlCategorizationRecalcUrlSessions: vi.fn(async () => ({ updated: 1 })),
-}));
-vi.mock("@/api", () => ({ api }));
+}))();
+await vi.mock("@/api", () => ({ api }));
+
+const { UrlOverridesDialog } = await import("@/features/settings/components/UrlOverridesDialog");
+const { UrlSourceForm } = await import("@/features/settings/components/UrlSourceForm");
 
 afterEach(() => {
   unmountForms();
   vi.resetAllMocks();
   api.urlCategorizationOverridesList.mockResolvedValue({ rows: [] });
-  api.urlCategorizationCategoriesGet.mockResolvedValue({ categories: [{ key: "games", label: "Games", enabled: true, description: "" }] });
+  api.urlCategorizationCategoriesGet.mockResolvedValue({
+    categories: [{ key: "games", label: "Games", enabled: true, description: "" }],
+  });
   api.urlCategorizationOverridesDelete.mockResolvedValue({});
   api.urlCategorizationRecalcUrlVisits.mockResolvedValue({ enqueued: 500 });
   api.urlCategorizationRecalcUrlSessions.mockResolvedValue({ updated: 1 });
 });
 
 const status: UrlCategorizationStatus = {
-  settings: { enabled: true, auto_update: true, source_url: "https://example.com/list.tar.gz", last_update_at: null, last_update_error: null },
+  settings: {
+    enabled: true,
+    auto_update: true,
+    source_url: "https://example.com/list.tar.gz",
+    last_update_at: null,
+    last_update_error: null,
+  },
   active_release: { sha256: null },
   counts: { categories: 0, domains: 0, urls: 0 },
   job: null,
@@ -95,7 +123,10 @@ describe("UrlOverridesDialog", () => {
     await mountForm(withQueryClient(<UrlOverridesDialog open isAdmin onClose={vi.fn()} />));
     expect(text()).toContain("github.com");
     expect(text()).toContain("Domain → Games · Work tool");
-    const remove = () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove override for github.com"]')!;
+    const remove = () =>
+      document.querySelector<HTMLButtonElement>(
+        'button[aria-label="Remove override for github.com"]',
+      )!;
     await click(remove());
     expect(api.urlCategorizationOverridesDelete).not.toHaveBeenCalled();
     expect(text()).toContain("Pages that match it go back to the category from the lists.");

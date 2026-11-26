@@ -1,5 +1,5 @@
-// @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, describe, expect, it } from "bun:test";
 import { click, mountForm, unmountForms } from "@tests/support/formDom";
 import { IDLE_APP } from "@/features/activity/appColor";
 import type { Session } from "@/features/activity/sessionAggregator";
@@ -37,7 +37,15 @@ const alertEvent = {
 };
 
 const mount = (s: Session) =>
-  mountForm(<SessionRow session={s} highlighted={false} focused={false} onOpenScreenshot={vi.fn()} onFilterApp={vi.fn()} />);
+  mountForm(
+    <SessionRow
+      session={s}
+      highlighted={false}
+      focused={false}
+      onOpenScreenshot={vi.fn()}
+      onFilterApp={vi.fn()}
+    />,
+  );
 
 describe("SessionRow", () => {
   it("does not repeat a window title that only restates the app name", async () => {
@@ -57,7 +65,14 @@ describe("SessionRow", () => {
   });
 
   it("opens an idle stretch that holds an alert so the evidence is reachable", async () => {
-    await mount(session({ appName: IDLE_APP, appDisplayName: "Idle", windowTitle: "", alertEvents: [alertEvent] }));
+    await mount(
+      session({
+        appName: IDLE_APP,
+        appDisplayName: "Idle",
+        windowTitle: "",
+        alertEvents: [alertEvent],
+      }),
+    );
     const heading = document.querySelector('[role="button"]') as HTMLElement;
     expect(heading.getAttribute("aria-expanded")).toBe("false");
     await click(heading);

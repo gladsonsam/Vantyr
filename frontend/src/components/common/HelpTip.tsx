@@ -7,7 +7,15 @@ import { cn } from "@/lib/utils";
  * A small (?) next to a title or label that holds the explanation, so screens show labels and
  * values instead of paragraphs. Opens on hover on desktop and on tap on touch screens.
  */
-export function HelpTip({ children, label = "More info", className }: { children: ReactNode; label?: string; className?: string }) {
+export function HelpTip({
+  children,
+  label = "More info",
+  className,
+}: {
+  children: ReactNode;
+  label?: string;
+  className?: string;
+}) {
   return (
     <Popover>
       <PopoverTrigger
@@ -26,7 +34,10 @@ export function HelpTip({ children, label = "More info", className }: { children
       >
         <CircleHelp className="size-3.5" />
       </PopoverTrigger>
-      <PopoverContent side="top" className="w-72 text-xs leading-relaxed font-normal text-muted-foreground">
+      <PopoverContent
+        side="top"
+        className="w-72 text-xs leading-relaxed font-normal text-muted-foreground"
+      >
         {children}
       </PopoverContent>
     </Popover>

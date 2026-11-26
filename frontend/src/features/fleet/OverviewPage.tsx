@@ -11,7 +11,10 @@ import { FleetOverview } from "@/features/fleet/components/FleetOverview";
 import { PendingApprovalsCard } from "@/features/enrollment/PendingApprovalsCard";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { useFleetPreferenceScope, useFleetPreferences } from "@/features/fleet/lib/fleetPreferences";
+import {
+  useFleetPreferenceScope,
+  useFleetPreferences,
+} from "@/features/fleet/lib/fleetPreferences";
 import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import { useAgents } from "@/app/providers/useAgents";
 import { useSession } from "@/app/providers/useSession";
@@ -23,7 +26,8 @@ const NO_CLAIMS: PendingAgentClaim[] = [];
 export function OverviewPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useSession();
-  const { agents, liveStatus, agentInfo, agentInfoReceivedAtMs, initialized, refresh } = useAgents();
+  const { agents, liveStatus, agentInfo, agentInfoReceivedAtMs, initialized, refresh } =
+    useAgents();
   const fleetActions = useFleetActions();
   const loadingAgents = !initialized;
   const [addAgentOpen, setAddAgentOpen] = useState(false);
@@ -31,14 +35,19 @@ export function OverviewPage() {
   const queryClient = useQueryClient();
   const isAdmin = currentUser?.role === "admin";
   const claimsQuery = useQuery({ ...enrollmentQueries.claims(), enabled: isAdmin });
-  const enrollClaims: PendingAgentClaim[] = claimsQuery.isError ? NO_CLAIMS : claimsQuery.data?.claims ?? NO_CLAIMS;
+  const enrollClaims: PendingAgentClaim[] = claimsQuery.isError
+    ? NO_CLAIMS
+    : (claimsQuery.data?.claims ?? NO_CLAIMS);
   const enrollClaimsLoading = claimsQuery.isFetching;
   const preferenceScope = useFleetPreferenceScope();
   const [preferences, updatePreferences] = useFleetPreferences(preferenceScope);
   // Drop favorites for devices that no longer exist.
   useEffect(() => {
     if (!loadingAgents && preferences.favorites.some((id) => !agents[id])) {
-      updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.filter((id) => Boolean(agents[id])) }));
+      updatePreferences((previous) => ({
+        ...previous,
+        favorites: previous.favorites.filter((id) => Boolean(agents[id])),
+      }));
     }
   }, [agents, loadingAgents, preferences.favorites, updatePreferences]);
   const canOperate = currentUser?.role !== "viewer";
@@ -115,7 +124,13 @@ export function OverviewPage() {
         onBatchShutdown={fleetActions.shutdown}
         canOperate={canOperate}
         onAddAgent={isAdmin ? () => setAddAgentOpen(true) : undefined}
-        onDeleteAgents={isAdmin ? async (ids) => { await api.deleteAgents(ids); } : undefined}
+        onDeleteAgents={
+          isAdmin
+            ? async (ids) => {
+                await api.deleteAgents(ids);
+              }
+            : undefined
+        }
       />
       <AddAgentModal visible={addAgentOpen} onDismiss={() => setAddAgentOpen(false)} />
     </>

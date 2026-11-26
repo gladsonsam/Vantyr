@@ -1,22 +1,61 @@
-// @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buttonByText, click, mountForm, unmountForms } from "@tests/support/formDom";
-import { SystemAboutSettings } from "@/features/settings/SystemAboutSettings";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-vi.mock("@/api", () => ({ errorText: (e: unknown) => String(e instanceof Error ? e.message : e) }));
+await vi.mock("@/api", () => ({
+  errorText: (e: unknown) => String(e instanceof Error ? e.message : e),
+}));
+
+const { SystemAboutSettings } = await import("@/features/settings/SystemAboutSettings");
 
 type Props = Parameters<typeof SystemAboutSettings>[0];
 const NOW = new Date("2026-11-26T03:10:00").getTime();
-const payload = { server_version: "0.2.8", latest_server_release: "0.2.9", server_update_available: true, latest_agent_version: "0.2.9", releases_url: "https://example.com/releases" };
-const usage = { database_bytes: 3 * 1024 * 1024, public_tables_bytes: 2 * 1024 * 1024, other_bytes: 1024 * 1024, tables: [{ name: "window_events", bytes: 2048 }] };
+const payload = {
+  server_version: "0.2.8",
+  latest_server_release: "0.2.9",
+  server_update_available: true,
+  latest_agent_version: "0.2.9",
+  releases_url: "https://example.com/releases",
+};
+const usage = {
+  database_bytes: 3 * 1024 * 1024,
+  public_tables_bytes: 2 * 1024 * 1024,
+  other_bytes: 1024 * 1024,
+  tables: [{ name: "window_events", bytes: 2048 }],
+};
 
 const onReload = vi.fn();
-const props = (over: Partial<{ [K in keyof Props]: Partial<Props[K]> }> = {}, isAdmin = true): Props => ({
-  isAdmin,
-  storage: { data: usage, error: null, loading: false, updatedAt: NOW, onReload, ...over.storage },
-  version: { data: payload, error: null, loading: false, updatedAt: NOW, onReload, ...over.version },
-  autoUpdate: { data: { enabled: true }, error: null, loading: false, onReload, onSave: vi.fn(async () => undefined), ...over.autoUpdate },
-} as Props);
+const props = (
+  over: Partial<{ [K in keyof Props]: Partial<Props[K]> }> = {},
+  isAdmin = true,
+): Props =>
+  ({
+    isAdmin,
+    storage: {
+      data: usage,
+      error: null,
+      loading: false,
+      updatedAt: NOW,
+      onReload,
+      ...over.storage,
+    },
+    version: {
+      data: payload,
+      error: null,
+      loading: false,
+      updatedAt: NOW,
+      onReload,
+      ...over.version,
+    },
+    autoUpdate: {
+      data: { enabled: true },
+      error: null,
+      loading: false,
+      onReload,
+      onSave: vi.fn(async () => undefined),
+      ...over.autoUpdate,
+    },
+  }) as Props;
 const render = (p: Props) => mountForm(<SystemAboutSettings {...p} />);
 const text = () => document.body.textContent ?? "";
 
@@ -34,12 +73,22 @@ describe("server version", () => {
   });
 
   it("only says Up to date from a successful answer that names a latest release", async () => {
-    await render(props({ version: { data: { ...payload, server_version: "0.2.9", server_update_available: false } } }));
+    await render(
+      props({
+        version: { data: { ...payload, server_version: "0.2.9", server_update_available: false } },
+      }),
+    );
     expect(text()).toContain("Up to date");
   });
 
   it("does not say Up to date when GitHub gave no latest release", async () => {
-    await render(props({ version: { data: { ...payload, latest_server_release: null, server_update_available: false } } }));
+    await render(
+      props({
+        version: {
+          data: { ...payload, latest_server_release: null, server_update_available: false },
+        },
+      }),
+    );
     expect(text()).toContain("Latest release unknown");
     expect(text()).not.toContain("Up to date");
   });
@@ -54,7 +103,14 @@ describe("server version", () => {
   });
 
   it("keeps an earlier result labelled with when it was checked when a re-check fails", async () => {
-    await render(props({ version: { data: { ...payload, server_update_available: false, latest_server_release: "0.2.8" }, error: "no network" } }));
+    await render(
+      props({
+        version: {
+          data: { ...payload, server_update_available: false, latest_server_release: "0.2.8" },
+          error: "no network",
+        },
+      }),
+    );
     expect(text()).toContain("Couldn't check GitHub just now. Showing the result from");
     expect(text()).toContain("checked");
   });
@@ -103,7 +159,9 @@ describe("agent auto-update default", () => {
   it("is read-only for non-admins", async () => {
     await render(props({}, false));
     const toggle = document.querySelector<HTMLButtonElement>('[role="switch"]')!;
-    expect(toggle.hasAttribute("disabled") || toggle.getAttribute("aria-disabled") === "true").toBe(true);
+    expect(toggle.hasAttribute("disabled") || toggle.getAttribute("aria-disabled") === "true").toBe(
+      true,
+    );
     expect(text()).toContain("Only admins can change this default.");
   });
 });

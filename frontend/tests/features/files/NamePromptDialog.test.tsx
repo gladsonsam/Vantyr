@@ -1,6 +1,7 @@
+import { testMock as vi } from "@tests/support/mock";
 import { act, useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it } from "bun:test";
 import { NamePromptDialog } from "@/features/files/NamePromptDialog";
 
 let root: Root;
@@ -27,7 +28,9 @@ function Harness({ initialValue }: { initialValue: string }) {
 }
 
 beforeEach(() => {
-  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  (
+    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
   onSubmit.mockClear();
   host = document.createElement("div");
   document.body.append(host);
@@ -40,7 +43,8 @@ afterEach(() => {
 });
 
 const input = () => document.querySelector<HTMLInputElement>('input[aria-label="New name"]')!;
-const submit = () => [...document.querySelectorAll("button")].find((b) => b.textContent === "Rename")!;
+const submit = () =>
+  [...document.querySelectorAll("button")].find((b) => b.textContent === "Rename")!;
 
 function type(value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;

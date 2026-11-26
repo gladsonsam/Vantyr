@@ -16,14 +16,21 @@ interface AgentCandidate {
 export function pickDefaultAgentId(agents: readonly AgentCandidate[]): string | null {
   let best: AgentCandidate | null = null;
   for (const a of agents) {
-    if (!best || Number(a.online) > Number(best.online) || (a.online === best.online && Date.parse(a.last_seen) > Date.parse(best.last_seen))) best = a;
+    if (
+      !best ||
+      Number(a.online) > Number(best.online) ||
+      (a.online === best.online && Date.parse(a.last_seen) > Date.parse(best.last_seen))
+    )
+      best = a;
   }
   return best?.id ?? null;
 }
 
 /** Recorded days (frames present, not in the future), oldest first. */
 export function recordedDays(days: readonly HistoryDay[], today: string): HistoryDay[] {
-  return days.filter((d) => d.frame_count > 0 && d.day <= today).sort((a, b) => a.day.localeCompare(b.day));
+  return days
+    .filter((d) => d.frame_count > 0 && d.day <= today)
+    .sort((a, b) => a.day.localeCompare(b.day));
 }
 
 /** The most recent recorded day, or null when the agent has no coverage. */
@@ -45,12 +52,15 @@ interface EmptyRangeInput {
 export function describeEmptyRange({ online, days, day, today }: EmptyRangeInput): string {
   const covered = days ? recordedDays(days, today) : null;
   const offline = online === false ? " The device is offline." : "";
-  if (covered && covered.length === 0) return `No recordings are retained for this device.${offline}`;
+  if (covered && covered.length === 0)
+    return `No recordings are retained for this device.${offline}`;
   if (covered) {
     const earliest = covered[0].day;
     const latest = covered[covered.length - 1].day;
-    if (covered.some((d) => d.day === day)) return "No frames in this range or display. Try another display or the full day.";
-    if (day < earliest) return `${day} is before the earliest retained recording (${earliest}); it has likely expired.`;
+    if (covered.some((d) => d.day === day))
+      return "No frames in this range or display. Try another display or the full day.";
+    if (day < earliest)
+      return `${day} is before the earliest retained recording (${earliest}); it has likely expired.`;
     if (day > latest) {
       return online === false
         ? `The device is offline; nothing has been recorded since ${latest}.`

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import {
   AGENT_SECTION_ORDER,
   AGENT_SECTION_SUBTABS,
@@ -13,7 +13,8 @@ describe("agent tool catalog", () => {
   it("places every tab key in exactly one group so none can be stranded", () => {
     const placed = AGENT_SECTION_ORDER.flatMap((section) => AGENT_SECTION_SUBTABS[section]);
     expect([...placed].sort()).toEqual([...TAB_KEYS].sort());
-    for (const key of TAB_KEYS) expect(AGENT_SECTION_SUBTABS[agentSectionFromTabKey(key)]).toContain(key);
+    for (const key of TAB_KEYS)
+      expect(AGENT_SECTION_SUBTABS[agentSectionFromTabKey(key)]).toContain(key);
   });
 
   it("gives each tool a distinct label and a hint for the switcher", () => {
@@ -65,7 +66,12 @@ describe("agent tool catalog", () => {
     });
 
     it("matches a group name to its tools", () => {
-      expect(searchAgentTabs("monitoring").slice(0, 4).sort()).toEqual(["alerts", "keys", "urls", "windows"]);
+      expect(searchAgentTabs("monitoring").slice(0, 4).sort()).toEqual([
+        "alerts",
+        "keys",
+        "urls",
+        "windows",
+      ]);
     });
   });
 });

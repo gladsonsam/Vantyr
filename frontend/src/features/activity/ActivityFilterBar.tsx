@@ -33,15 +33,26 @@ export function ActivityFilterBar({
   onRefresh?: () => void;
   onJumpRangeChange: (value: ActivityDateValue) => void;
 }) {
-  const { searchQuery, setSearchQuery, alertsOnly, setAlertsOnly, appFilterExe, setAppFilterExe, jumpRangeValue } =
-    filters;
+  const {
+    searchQuery,
+    setSearchQuery,
+    alertsOnly,
+    setAlertsOnly,
+    appFilterExe,
+    setAppFilterExe,
+    jumpRangeValue,
+  } = filters;
   const [datesOpen, setDatesOpen] = useState(false);
   const bounds = resolveDateRangeToDayBounds(jumpRangeValue);
   const activePreset = presetKeyForValue(jumpRangeValue);
   const rangeLabel = dateRangeLabel(jumpRangeValue);
 
   const setRange = (start: string, end: string) =>
-    onJumpRangeChange({ type: "absolute", startDate: start <= end ? start : end, endDate: start <= end ? end : start });
+    onJumpRangeChange({
+      type: "absolute",
+      startDate: start <= end ? start : end,
+      endDate: start <= end ? end : start,
+    });
   const pickPreset = (key: string) => {
     const preset = DATE_PRESETS.find((p) => p.key === key);
     if (!preset) return;
@@ -149,10 +160,34 @@ export function ActivityFilterBar({
       </div>
       {filters.isFiltered && (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted-foreground">
-          {jumpRangeValue && <FilterChip label={rangeLabel} remove="Remove date filter" onRemove={() => onJumpRangeChange(null)} />}
-          {alertsOnly && <FilterChip label="Alerts only" remove="Remove alerts filter" onRemove={() => setAlertsOnly(false)} />}
-          {appFilterExe && <FilterChip label={appFilterExe} remove="Remove app filter" onRemove={() => setAppFilterExe(null)} />}
-          {searchQuery.trim() && <FilterChip label={`“${searchQuery.trim()}”`} remove="Clear search" onRemove={() => setSearchQuery("")} />}
+          {jumpRangeValue && (
+            <FilterChip
+              label={rangeLabel}
+              remove="Remove date filter"
+              onRemove={() => onJumpRangeChange(null)}
+            />
+          )}
+          {alertsOnly && (
+            <FilterChip
+              label="Alerts only"
+              remove="Remove alerts filter"
+              onRemove={() => setAlertsOnly(false)}
+            />
+          )}
+          {appFilterExe && (
+            <FilterChip
+              label={appFilterExe}
+              remove="Remove app filter"
+              onRemove={() => setAppFilterExe(null)}
+            />
+          )}
+          {searchQuery.trim() && (
+            <FilterChip
+              label={`“${searchQuery.trim()}”`}
+              remove="Clear search"
+              onRemove={() => setSearchQuery("")}
+            />
+          )}
           <span className="tabular-nums">{summary}</span>
           <Button variant="link" className="h-auto p-0 text-xs" onClick={filters.clearFilters}>
             Clear all
@@ -163,9 +198,24 @@ export function ActivityFilterBar({
   );
 }
 
-function FilterChip({ label, remove, onRemove }: { label: string; remove: string; onRemove: () => void }) {
+function FilterChip({
+  label,
+  remove,
+  onRemove,
+}: {
+  label: string;
+  remove: string;
+  onRemove: () => void;
+}) {
   return (
-    <Button variant="secondary" size="xs" className="max-w-56 max-sm:h-8" onClick={onRemove} aria-label={`${remove}: ${label}`} title={remove}>
+    <Button
+      variant="secondary"
+      size="xs"
+      className="max-w-56 max-sm:h-8"
+      onClick={onRemove}
+      aria-label={`${remove}: ${label}`}
+      title={remove}
+    >
       <span className="truncate">{label}</span>
       <X />
     </Button>

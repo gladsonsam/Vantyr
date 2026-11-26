@@ -31,13 +31,22 @@ export function AgentDetailActions({
   onAction,
 }: AgentDetailActionsProps) {
   if (isViewer) return null;
-  const powerPending = pendingAction === "lock-host" || pendingAction === "restart-host" || pendingAction === "shutdown-host";
+  const powerPending =
+    pendingAction === "lock-host" ||
+    pendingAction === "restart-host" ||
+    pendingAction === "shutdown-host";
   return (
     <div className="order-3 flex shrink-0 items-center gap-2">
       {agent.online ? (
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="outline" disabled={!systemControlAvailable} aria-label="Power actions" />}
+            render={
+              <Button
+                variant="outline"
+                disabled={!systemControlAvailable}
+                aria-label="Power actions"
+              />
+            }
           >
             {powerPending ? <Spinner /> : <Power />}
             <span className="hidden sm:inline">Power</span>
@@ -57,7 +66,12 @@ export function AgentDetailActions({
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
-        <Button variant="outline" disabled={pendingAction === "wake-lan"} onClick={() => onAction("wake-lan")} aria-label="Wake">
+        <Button
+          variant="outline"
+          disabled={pendingAction === "wake-lan"}
+          onClick={() => onAction("wake-lan")}
+          aria-label="Wake"
+        >
           {pendingAction === "wake-lan" ? <Spinner /> : <Power />}
           <span className="hidden sm:inline">Wake</span>
         </Button>

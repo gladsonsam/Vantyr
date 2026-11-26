@@ -1,7 +1,22 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, matchPath, useLocation, useNavigate } from "react-router-dom";
-import { Boxes, ChevronsUpDown, PanelLeftClose, History, LogOut, MonitorSmartphone, ScrollText, Search, Settings2, ShieldCheck, UserCog, Users, X, type LucideIcon } from "lucide-react";
+import {
+  Boxes,
+  ChevronsUpDown,
+  PanelLeftClose,
+  History,
+  LogOut,
+  MonitorSmartphone,
+  ScrollText,
+  Search,
+  Settings2,
+  ShieldCheck,
+  UserCog,
+  Users,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import {
   DropdownMenu,
@@ -31,7 +46,12 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@vantyr/ui/components/sidebar";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@vantyr/ui/components/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@vantyr/ui/components/tooltip";
 import { cn } from "@/lib/utils";
 import { VI } from "@/components/common/Icons";
 import { HelpTip } from "@/components/common/HelpTip";
@@ -90,7 +110,8 @@ export function PageActions({ children }: { children: ReactNode }) {
   return slot ? createPortal(children, slot) : null;
 }
 
-const MOD_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
+const MOD_KEY =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
 
 /** ⌘K launcher; shrinks to an icon button when the sidebar is collapsed. */
 function SidebarSearch({ onOpen }: { onOpen: () => void }) {
@@ -99,7 +120,11 @@ function SidebarSearch({ onOpen }: { onOpen: () => void }) {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton tooltip="Search" onClick={onOpen} aria-label="Search devices and pages">
+          <SidebarMenuButton
+            tooltip="Search"
+            onClick={onOpen}
+            aria-label="Search devices and pages"
+          >
             <Search />
           </SidebarMenuButton>
         </SidebarMenuItem>
@@ -153,9 +178,14 @@ function SidebarBrand() {
   }
   return (
     <div className="flex h-10 items-center gap-2.5 pl-2">
-      <Link to="/" className="flex min-w-0 items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring">
+      <Link
+        to="/"
+        className="flex min-w-0 items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+      >
         {logo}
-        <span className="truncate font-heading text-[15px] font-semibold tracking-tight">Vantyr</span>
+        <span className="truncate font-heading text-[15px] font-semibold tracking-tight">
+          Vantyr
+        </span>
       </Link>
       {!isMobile && (
         <Tooltip>
@@ -181,33 +211,54 @@ function SidebarBrand() {
   );
 }
 
-function ShellNotifications({ notifications, onDismissNotification }: Pick<AppShellProps, "notifications" | "onDismissNotification">) {
-  return <>{notifications.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  {notifications.map((n) => (
-                    <div key={n.id} className="flex flex-wrap items-center gap-3 rounded-lg bg-card px-3 py-2 text-sm">
-                      <span className={cn("size-2 shrink-0 rounded-full", NOTIFICATION_DOT[n.type ?? "info"] ?? "bg-info")} />
-                      <div className="min-w-0 flex-1">
-                        <span className="font-medium">{n.header}</span>
-                        {n.content && <span className="text-muted-foreground"> · {n.content}</span>}
-                      </div>
-                      {n.action}
-                      {n.dismissible !== false && (
-                        <Button variant="ghost" size="xs" onClick={() => onDismissNotification(n.id)}>
-                          {n.dismissLabel || (
-                            <>
-                              <X /> Dismiss
-                            </>
-                          )}
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}</>;
+function ShellNotifications({
+  notifications,
+  onDismissNotification,
+}: Pick<AppShellProps, "notifications" | "onDismissNotification">) {
+  return (
+    <>
+      {notifications.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {notifications.map((n) => (
+            <div
+              key={n.id}
+              className="flex flex-wrap items-center gap-3 rounded-lg bg-card px-3 py-2 text-sm"
+            >
+              <span
+                className={cn(
+                  "size-2 shrink-0 rounded-full",
+                  NOTIFICATION_DOT[n.type ?? "info"] ?? "bg-info",
+                )}
+              />
+              <div className="min-w-0 flex-1">
+                <span className="font-medium">{n.header}</span>
+                {n.content && <span className="text-muted-foreground"> · {n.content}</span>}
+              </div>
+              {n.action}
+              {n.dismissible !== false && (
+                <Button variant="ghost" size="xs" onClick={() => onDismissNotification(n.id)}>
+                  {n.dismissLabel || (
+                    <>
+                      <X /> Dismiss
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
 }
 
-function navigationSections(currentUser: AppShellProps["currentUser"], agents: NonNullable<AppShellProps["agents"]>, onOpenNotifications: AppShellProps["onOpenNotifications"], onOpenActivityLog: AppShellProps["onOpenActivityLog"], onOpenUsers: AppShellProps["onOpenUsers"]): NavSection[] {
+function navigationSections(
+  currentUser: AppShellProps["currentUser"],
+  agents: NonNullable<AppShellProps["agents"]>,
+  onOpenNotifications: AppShellProps["onOpenNotifications"],
+  onOpenActivityLog: AppShellProps["onOpenActivityLog"],
+  onOpenUsers: AppShellProps["onOpenUsers"],
+): NavSection[] {
   const isAdmin = currentUser?.role === "admin";
   const onlineCount = agents.filter((agent) => agent.online).length;
   // Add pages here; empty sections are dropped, so role-gated items just disappear.
@@ -215,9 +266,16 @@ function navigationSections(currentUser: AppShellProps["currentUser"], agents: N
     {
       label: "Fleet",
       items: [
-        { label: "Agents", path: "/", icon: MonitorSmartphone, badge: agents.length ? `${onlineCount} online` : undefined },
+        {
+          label: "Agents",
+          path: "/",
+          icon: MonitorSmartphone,
+          badge: agents.length ? `${onlineCount} online` : undefined,
+        },
         ...(isAdmin ? [{ label: "Groups", path: "/groups", icon: Boxes }] : []),
-        ...(currentUser && currentUser.role !== "viewer" ? [{ label: "Recall", path: "/recall", icon: History }] : []),
+        ...(currentUser && currentUser.role !== "viewer"
+          ? [{ label: "Recall", path: "/recall", icon: History }]
+          : []),
       ],
     },
     {
@@ -282,10 +340,20 @@ export function AppShell({
     }
   };
 
-  const sections = navigationSections(currentUser, agents, onOpenNotifications, onOpenActivityLog, onOpenUsers);
+  const sections = navigationSections(
+    currentUser,
+    agents,
+    onOpenNotifications,
+    onOpenActivityLog,
+    onOpenUsers,
+  );
   const isActive = (path: string) => (path === "/" ? pathname === "/" : pathname.startsWith(path));
   const commandPages: CommandPage[] = sections.flatMap((section) =>
-    section.items.map((item) => ({ label: item.label, icon: item.icon, onSelect: () => navigate(item.path) })),
+    section.items.map((item) => ({
+      label: item.label,
+      icon: item.icon,
+      onSelect: () => navigate(item.path),
+    })),
   );
   commandPages.push({ label: "Account settings", icon: UserCog, onSelect: onShowPreferences });
   // Inside a device the palette also lists that device's tools, using the tool switcher's names.
@@ -298,17 +366,26 @@ export function AppShell({
           id: tab,
           ...AGENT_TAB_META[tab],
           // scroll=activity brings the tool bar to the top, as the Agents list's Activity button does.
-          onSelect: () => navigate(`/agents/${openAgentId}?tab=${tab}${tab === "live" ? "" : "&scroll=activity"}`),
+          onSelect: () =>
+            navigate(
+              `/agents/${openAgentId}?tab=${tab}${tab === "live" ? "" : "&scroll=activity"}`,
+            ),
         })),
       }
     : undefined;
   const [actionsSlot, setActionsSlot] = useState<HTMLDivElement | null>(null);
 
-  const userLabel = currentUser ? currentUser.display_name?.trim() || currentUser.username : "Account";
+  const userLabel = currentUser
+    ? currentUser.display_name?.trim() || currentUser.username
+    : "Account";
 
   return (
     <TooltipProvider delay={300}>
-      <SidebarProvider open={tablet ? tabletOpen : open} onOpenChange={changeOpen} className="h-svh min-h-0 overflow-hidden font-sans antialiased">
+      <SidebarProvider
+        open={tablet ? tabletOpen : open}
+        onOpenChange={changeOpen}
+        className="h-svh min-h-0 overflow-hidden font-sans antialiased"
+      >
         <Sidebar collapsible="icon" variant="inset">
           <SidebarHeader className="gap-3 p-3 group-data-[collapsible=icon]:px-2">
             <SidebarBrand />
@@ -323,12 +400,18 @@ export function AppShell({
                   <SidebarMenu>
                     {section.items.map((item) => (
                       <SidebarMenuItem key={item.path}>
-                        <SidebarMenuButton isActive={isActive(item.path)} tooltip={item.label} render={<Link to={item.path} />}>
+                        <SidebarMenuButton
+                          isActive={isActive(item.path)}
+                          tooltip={item.label}
+                          render={<Link to={item.path} />}
+                        >
                           <item.icon />
                           <span>{item.label}</span>
                         </SidebarMenuButton>
                         {item.badge && (
-                          <SidebarMenuBadge className="font-mono text-[11px] text-sidebar-foreground/55 tabular-nums">{item.badge}</SidebarMenuBadge>
+                          <SidebarMenuBadge className="font-mono text-[11px] text-sidebar-foreground/55 tabular-nums">
+                            {item.badge}
+                          </SidebarMenuBadge>
                         )}
                       </SidebarMenuItem>
                     ))}
@@ -343,7 +426,13 @@ export function AppShell({
               <SidebarMenuItem>
                 <DropdownMenu>
                   <DropdownMenuTrigger
-                    render={<SidebarMenuButton size="lg" aria-label="Account options" className="data-popup-open:bg-sidebar-accent" />}
+                    render={
+                      <SidebarMenuButton
+                        size="lg"
+                        aria-label="Account options"
+                        className="data-popup-open:bg-sidebar-accent"
+                      />
+                    }
                   >
                     <DashboardUserAvatar
                       username={currentUser?.username ?? "account"}
@@ -353,14 +442,24 @@ export function AppShell({
                     />
                     <div className="grid flex-1 text-left text-sm leading-tight">
                       <span className="truncate font-medium">{userLabel}</span>
-                      <span className="truncate text-xs text-sidebar-foreground/60 capitalize">{currentUser?.role ?? "user"}</span>
+                      <span className="truncate text-xs text-sidebar-foreground/60 capitalize">
+                        {currentUser?.role ?? "user"}
+                      </span>
                     </div>
                     <ChevronsUpDown className="ml-auto" />
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent side={phone ? "top" : "right"} align="end" sideOffset={8} className="w-56">
+                  <DropdownMenuContent
+                    side={phone ? "top" : "right"}
+                    align="end"
+                    sideOffset={8}
+                    className="w-56"
+                  >
                     <DropdownMenuGroup>
                       <DropdownMenuLabel>
-                        Signed in as <span className="text-foreground">{currentUser?.username ?? "unknown"}</span>
+                        Signed in as{" "}
+                        <span className="text-foreground">
+                          {currentUser?.username ?? "unknown"}
+                        </span>
                       </DropdownMenuLabel>
                       <DropdownMenuItem onClick={onShowPreferences}>
                         <UserCog /> Account settings
@@ -383,30 +482,53 @@ export function AppShell({
             // Phones only: desktop navigates and searches from the sidebar.
             <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border/60 px-3 md:hidden">
               <SidebarTrigger />
-              <Link to="/" className="flex min-w-0 flex-1 items-center gap-2 font-heading font-semibold tracking-tight">
+              <Link
+                to="/"
+                className="flex min-w-0 flex-1 items-center gap-2 font-heading font-semibold tracking-tight"
+              >
                 <VI.logo aria-hidden="true" className="size-5 text-primary" />
                 Vantyr
               </Link>
-              <Button variant="ghost" size="icon-sm" onClick={() => setCommandOpen(true)} aria-label="Search devices and pages">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setCommandOpen(true)}
+                aria-label="Search devices and pages"
+              >
                 <Search />
               </Button>
             </header>
           )}
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className={cn("flex w-full flex-col gap-8", !hideTopBar && "px-5 pt-6 pb-24 md:px-10 md:py-10")}>
-              <ShellNotifications notifications={notifications} onDismissNotification={onDismissNotification} />
+            <div
+              className={cn(
+                "flex w-full flex-col gap-8",
+                !hideTopBar && "px-5 pt-6 pb-24 md:px-10 md:py-10",
+              )}
+            >
+              <ShellNotifications
+                notifications={notifications}
+                onDismissNotification={onDismissNotification}
+              />
 
               {!hideTopBar && (
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-2">
-                    <h1 className="font-heading text-2xl font-semibold tracking-tight md:text-3xl">{title}</h1>
+                    <h1 className="font-heading text-2xl font-semibold tracking-tight md:text-3xl">
+                      {title}
+                    </h1>
                     {description && <HelpTip label={`About ${title}`}>{description}</HelpTip>}
                   </div>
-                  <div ref={setActionsSlot} className="flex shrink-0 flex-wrap items-center gap-2 empty:hidden" />
+                  <div
+                    ref={setActionsSlot}
+                    className="flex shrink-0 flex-wrap items-center gap-2 empty:hidden"
+                  />
                 </div>
               )}
-              <PageActionsContext.Provider value={actionsSlot}>{children}</PageActionsContext.Provider>
+              <PageActionsContext.Provider value={actionsSlot}>
+                {children}
+              </PageActionsContext.Provider>
             </div>
           </div>
         </SidebarInset>
@@ -428,7 +550,10 @@ export function AppShell({
 export function LoadContent({ label = "Loading…" }: { label?: string }) {
   return (
     <div className="flex h-full min-h-[300px] w-full flex-col items-center justify-center gap-4 text-muted-foreground">
-      <span className="size-8 animate-spin rounded-full border-[3px] border-muted border-t-primary" aria-hidden="true" />
+      <span
+        className="size-8 animate-spin rounded-full border-[3px] border-muted border-t-primary"
+        aria-hidden="true"
+      />
       <div className="text-[13px] font-medium tracking-wide">{label}</div>
     </div>
   );

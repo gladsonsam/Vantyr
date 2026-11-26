@@ -1,9 +1,22 @@
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@vantyr/ui/components/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@vantyr/ui/components/dialog";
 import { Spinner } from "@vantyr/ui/components/spinner";
-import { CheckboxField, InputField, NumberField, SelectField, ToggleGroupField } from "@/components/common/form/fields";
+import {
+  CheckboxField,
+  InputField,
+  NumberField,
+  SelectField,
+  ToggleGroupField,
+} from "@/components/common/form/fields";
 import { FormField } from "@/components/common/form/FormField";
 import type { Agent, AgentGroup, AlertRule } from "@/api/types";
 import {
@@ -55,29 +68,66 @@ interface AlertRuleDialogProps {
 }
 
 const PATTERN_HELP: Record<string, { placeholder: string; help: string }> = {
-  url: { placeholder: "e.g. youtube.com", help: "Checked against every web address the agent visits." },
-  url_category: { placeholder: "e.g. adult", help: "The category name a visited site was filed under." },
+  url: {
+    placeholder: "e.g. youtube.com",
+    help: "Checked against every web address the agent visits.",
+  },
+  url_category: {
+    placeholder: "e.g. adult",
+    help: "The category name a visited site was filed under.",
+  },
   keys: { placeholder: "e.g. password", help: "Checked against what is typed on the agent." },
 };
 
 /** Create/edit dialog for one alert rule. It cannot be dismissed while the save is in flight. */
-export function AlertRuleDialog({ target, groups, agents, saving, error, onSave, onClose }: AlertRuleDialogProps) {
+export function AlertRuleDialog({
+  target,
+  groups,
+  agents,
+  saving,
+  error,
+  onSave,
+  onClose,
+}: AlertRuleDialogProps) {
   return (
-    <Dialog open={target !== null} onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
+    <Dialog
+      open={target !== null}
+      onOpenChange={(open) => {
+        if (!open && !saving) onClose();
+      }}
+    >
       <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{target?.mode === "edit" ? "Edit alert rule" : "New alert rule"}</DialogTitle>
+          <DialogTitle>
+            {target?.mode === "edit" ? "Edit alert rule" : "New alert rule"}
+          </DialogTitle>
           <DialogDescription>Raises an alert when an agent in its scope matches.</DialogDescription>
         </DialogHeader>
         {target && (
-          <AlertRuleFormBody target={target} groups={groups} agents={agents} saving={saving} error={error} onSave={onSave} onClose={onClose} />
+          <AlertRuleFormBody
+            target={target}
+            groups={groups}
+            agents={agents}
+            saving={saving}
+            error={error}
+            onSave={onSave}
+            onClose={onClose}
+          />
         )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function AlertRuleFormBody({ target, groups, agents, saving, error, onSave, onClose }: Omit<AlertRuleDialogProps, "target"> & { target: NonNullable<AlertRuleDialogTarget> }) {
+function AlertRuleFormBody({
+  target,
+  groups,
+  agents,
+  saving,
+  error,
+  onSave,
+  onClose,
+}: Omit<AlertRuleDialogProps, "target"> & { target: NonNullable<AlertRuleDialogTarget> }) {
   const form = useForm<AlertRuleForm>({
     resolver: zodResolver(alertRuleSchema),
     defaultValues: target.mode === "edit" ? alertRuleToForm(target.rule) : defaultAlertRuleForm(),
@@ -95,8 +145,22 @@ function AlertRuleFormBody({ target, groups, agents, saving, error, onSave, onCl
     <form onSubmit={submit} noValidate className="contents">
       <fieldset disabled={saving} className="m-0 grid min-w-0 gap-5 border-0 p-0">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <InputField control={control} name="name" id="alert-rule-name" label="Name (optional)" className="h-9" placeholder="e.g. High CPU" />
-          <SelectField control={control} name="channel" id="alert-rule-channel" label="Channel" ariaLabel="Channel" options={CHANNEL_OPTIONS} />
+          <InputField
+            control={control}
+            name="name"
+            id="alert-rule-name"
+            label="Name (optional)"
+            className="h-9"
+            placeholder="e.g. High CPU"
+          />
+          <SelectField
+            control={control}
+            name="channel"
+            id="alert-rule-channel"
+            label="Channel"
+            ariaLabel="Channel"
+            options={CHANNEL_OPTIONS}
+          />
         </div>
 
         {!isMonitoringChannel(channel) && (
@@ -111,7 +175,13 @@ function AlertRuleFormBody({ target, groups, agents, saving, error, onSave, onCl
               description={`${pattern.help} ${matchMode === "regex" ? "Rust regular-expression syntax." : "Plain text found anywhere in it."}`}
             />
             <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-              <ToggleGroupField control={control} name="match_mode" label="Match mode" ariaLabel="Match mode" options={MATCH_OPTIONS} />
+              <ToggleGroupField
+                control={control}
+                name="match_mode"
+                label="Match mode"
+                ariaLabel="Match mode"
+                options={MATCH_OPTIONS}
+              />
               <CheckboxField control={control} name="case_insensitive" label="Case insensitive" />
             </div>
           </div>
@@ -119,8 +189,20 @@ function AlertRuleFormBody({ target, groups, agents, saving, error, onSave, onCl
 
         {channel === "resource" && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <SelectField control={control} name="metric" label="Metric" ariaLabel="Metric" options={METRIC_OPTIONS} />
-            <ToggleGroupField control={control} name="comparator" label="Condition" ariaLabel="Condition" options={COMPARATOR_OPTIONS} />
+            <SelectField
+              control={control}
+              name="metric"
+              label="Metric"
+              ariaLabel="Metric"
+              options={METRIC_OPTIONS}
+            />
+            <ToggleGroupField
+              control={control}
+              name="comparator"
+              label="Condition"
+              ariaLabel="Condition"
+              options={COMPARATOR_OPTIONS}
+            />
             <NumberField
               control={control}
               name="threshold"
@@ -145,8 +227,20 @@ function AlertRuleFormBody({ target, groups, agents, saving, error, onSave, onCl
           />
         )}
 
-        <FormField control={control} name="scopes" label="Applies to" description="Which agents this rule monitors. Add more rows to cover several groups or agents.">
-          {({ field }) => <ScopeRowsEditor rows={field.value} onChange={field.onChange} groups={groups} agents={agents} />}
+        <FormField
+          control={control}
+          name="scopes"
+          label="Applies to"
+          description="Which agents this rule monitors. Add more rows to cover several groups or agents."
+        >
+          {({ field }) => (
+            <ScopeRowsEditor
+              rows={field.value}
+              onChange={field.onChange}
+              groups={groups}
+              agents={agents}
+            />
+          )}
         </FormField>
 
         <div className="grid gap-4 sm:grid-cols-[minmax(0,12rem)_1fr] sm:items-end">
@@ -160,13 +254,22 @@ function AlertRuleFormBody({ target, groups, agents, saving, error, onSave, onCl
             description="Minimum seconds between repeated alerts for the same agent. 0 alerts on every match."
           />
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3 pb-1.5">
-            {channel !== "agent_offline" && <CheckboxField control={control} name="take_screenshot" label="Take screenshot on trigger" />}
+            {channel !== "agent_offline" && (
+              <CheckboxField
+                control={control}
+                name="take_screenshot"
+                label="Take screenshot on trigger"
+              />
+            )}
             <CheckboxField control={control} name="enabled" label="Enabled" />
           </div>
         </div>
       </fieldset>
       {error && (
-        <div role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm break-words text-destructive">
+        <div
+          role="alert"
+          className="rounded-lg bg-destructive/10 px-3 py-2 text-sm break-words text-destructive"
+        >
           Couldn’t save the rule: {error}
         </div>
       )}

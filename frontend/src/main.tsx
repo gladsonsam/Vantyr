@@ -16,7 +16,7 @@ createRoot(document.getElementById("root")!).render(
         <App />
       </BrowserRouter>
     </ErrorBoundary>
-  </StrictMode>
+  </StrictMode>,
 );
 
 // Register the PWA service worker (installable app + Web Push). No-ops where

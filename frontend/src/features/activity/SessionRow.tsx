@@ -10,11 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AppIcon } from "@/components/common/AppIcon";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@vantyr/ui/components/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@vantyr/ui/components/tooltip";
 import { cn } from "@/lib/utils";
 import type { ActivityUrlStateV1 } from "./activityUrl";
 import { appColor, IDLE_APP } from "./appColor";
@@ -75,18 +71,10 @@ function SessionCounts({ session }: { session: Session }) {
   return (
     <>
       {session.hasKeystrokes && (
-        <MetaCount
-          icon={Keyboard}
-          count={session.keystrokeCount}
-          label="Keystrokes"
-        />
+        <MetaCount icon={Keyboard} count={session.keystrokeCount} label="Keystrokes" />
       )}
       {session.hasUrls && (
-        <MetaCount
-          icon={Globe}
-          count={session.urls.length}
-          label="URLs visited"
-        />
+        <MetaCount icon={Globe} count={session.urls.length} label="URLs visited" />
       )}
       {alertCount > 0 && (
         <MetaCount
@@ -133,17 +121,9 @@ function SessionIdentity({
             <span className="text-[13px] text-muted-foreground">Idle</span>
           </>
         ) : isLockScreenApp(session.appName) ? (
-          <Lock
-            size={14}
-            className="shrink-0 text-muted-foreground"
-            aria-hidden
-          />
+          <Lock size={14} className="shrink-0 text-muted-foreground" aria-hidden />
         ) : session.agentId ? (
-          <AppIcon
-            agentId={session.agentId}
-            exeName={session.appName}
-            size={16}
-          />
+          <AppIcon agentId={session.agentId} exeName={session.appName} size={16} />
         ) : null}
         {!idle && (
           <button
@@ -159,10 +139,7 @@ function SessionIdentity({
           </button>
         )}
         {!idle && title && (
-          <span
-            title={title}
-            className="min-w-0 truncate text-[13px] text-muted-foreground"
-          >
+          <span title={title} className="min-w-0 truncate text-[13px] text-muted-foreground">
             {title}
           </span>
         )}
@@ -177,9 +154,7 @@ function SessionIdentity({
       )}
       <div className="flex items-center gap-3 text-[11.5px] text-muted-foreground empty:hidden sm:hidden">
         {session.duration > 0 && (
-          <span className="tabular-nums">
-            {formatDuration(session.duration)}
-          </span>
+          <span className="tabular-nums">{formatDuration(session.duration)}</span>
         )}
         <SessionCounts session={session} />
       </div>
@@ -240,10 +215,7 @@ function SessionHeading({
   onToggle,
   onFilterApp,
   typed,
-}: Pick<
-  SessionRowProps,
-  "session" | "highlighted" | "showUser" | "onFilterApp"
-> & {
+}: Pick<SessionRowProps, "session" | "highlighted" | "showUser" | "onFilterApp"> & {
   open: boolean;
   canExpand: boolean;
   onToggle: () => void;
@@ -272,11 +244,7 @@ function SessionHeading({
       <span className="mt-0.5 w-11 shrink-0 text-right text-[12.5px] font-semibold text-muted-foreground tabular-nums sm:w-14">
         {fmtTime(session.startTime)}
       </span>
-      <SessionIdentity
-        session={session}
-        typed={typed}
-        onFilterApp={onFilterApp}
-      />
+      <SessionIdentity session={session} typed={typed} onFilterApp={onFilterApp} />
       <DesktopSessionMeta
         session={session}
         highlighted={highlighted}
@@ -325,15 +293,12 @@ function TypedBatches({
   showAll: boolean;
   onToggle: () => void;
 }) {
-  const visible = showAll
-    ? session.keystrokes
-    : session.keystrokes.slice(0, KEYSTROKE_PREVIEW);
+  const visible = showAll ? session.keystrokes : session.keystrokes.slice(0, KEYSTROKE_PREVIEW);
   const hidden = session.keystrokes.length - KEYSTROKE_PREVIEW;
   return (
     <div className="flex flex-col gap-2">
       <SectionLabel>
-        Typed · {session.keystrokes.length}{" "}
-        {session.keystrokes.length === 1 ? "batch" : "batches"}
+        Typed · {session.keystrokes.length} {session.keystrokes.length === 1 ? "batch" : "batches"}
       </SectionLabel>
       <div className="flex flex-col gap-1.5">
         {visible.map((batch) => (
@@ -366,15 +331,20 @@ function SessionDetails({
   onOpenScreenshot,
   agentId,
   onActivityDeepLink,
-}: Pick<
-  SessionRowProps,
-  "session" | "onOpenScreenshot" | "agentId" | "onActivityDeepLink"
-> & { timeline: MergedActivityRow[]; showAll: boolean; onToggle: () => void }) {
+}: Pick<SessionRowProps, "session" | "onOpenScreenshot" | "agentId" | "onActivityDeepLink"> & {
+  timeline: MergedActivityRow[];
+  showAll: boolean;
+  onToggle: () => void;
+}) {
   return (
     <div className="flex flex-col gap-5 border-t border-border/60 py-4 pr-4 pl-4 sm:pl-[84px]">
       <p className="tabular-nums text-[12px] text-muted-foreground">
         {session.endTime.getTime() - session.startTime.getTime() < 1000
-          ? session.startTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+          ? session.startTime.toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            })
           : formatTimeRange(session.startTime, session.endTime)}
         {sameName(session) ? "" : ` · ${session.appName}`}
       </p>
@@ -419,10 +389,7 @@ export function SessionRow({
     setPrevForceOpen(forceOpen);
     if (forceOpen) setOpen(true);
   }
-  const timeline = useMemo(
-    () => buildMergedActivityTimeline(session),
-    [session],
-  );
+  const timeline = useMemo(() => buildMergedActivityTimeline(session), [session]);
   const typed = useMemo(() => typedPreview(session), [session]);
   const canExpand = timeline.length > 0 || session.hasKeystrokes;
   // Quiet idle gaps stay one slim line; an idle stretch that holds alerts opens like any session.
@@ -480,9 +447,5 @@ export function SessionRow({
   );
 }
 function SectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <p className="m-0 text-xs font-medium text-muted-foreground">
-      {children}
-    </p>
-  );
+  return <p className="m-0 text-xs font-medium text-muted-foreground">{children}</p>;
 }

@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7.1.0
         with:
-          python-version: '3.15'
+          python-version: "3.15"
       - name: Validate recovery request and source run
         run: |
           set -euo pipefail

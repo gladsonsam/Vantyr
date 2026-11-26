@@ -4,7 +4,11 @@ import { isoHoursAgo, isoMinutesAgo } from "@/demo/data";
 /** Fake agent enrollment endpoints. */
 export function demoEnrollmentApi(): Partial<ApiClient> {
   return {
-    getAgentSetupHints: async () => ({ mdns: "advertising", agent_wss_url: "wss://demo.vantyr.local/ws/agent", mdns_port: 5353 }),
+    getAgentSetupHints: async () => ({
+      mdns: "advertising",
+      agent_wss_url: "wss://demo.vantyr.local/ws/agent",
+      mdns_port: 5353,
+    }),
     createAgentEnrollmentToken: async (body) => ({
       id: "demo-token",
       enrollment_token: "123456",
@@ -14,7 +18,17 @@ export function demoEnrollmentApi(): Partial<ApiClient> {
       bound_agent_id: body.bound_agent_id,
     }),
     listAgentEnrollmentTokens: async () => ({
-      tokens: [{ id: "demo-token", uses_remaining: 1, created_at: isoHoursAgo(1), expires_at: isoHoursAgo(-24), note: "Demo enrollment", used_count: 0, last_used_at: null }],
+      tokens: [
+        {
+          id: "demo-token",
+          uses_remaining: 1,
+          created_at: isoHoursAgo(1),
+          expires_at: isoHoursAgo(-24),
+          note: "Demo enrollment",
+          used_count: 0,
+          last_used_at: null,
+        },
+      ],
     }),
     revokeAgentEnrollmentToken: async () => ({ ok: true }),
     revokeAllAgentEnrollmentTokens: async () => ({ ok: true, revoked: 1 }),

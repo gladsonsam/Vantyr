@@ -14,16 +14,26 @@ function adminCount(users: DashboardUser[]): number {
  * Why a role change can't be made, or null when it can. The server refuses to demote the last admin as
  * well; saying so here keeps the choice from being offered and then failing.
  */
-export function roleChangeBlock(user: DashboardUser, role: DashboardRole, users: DashboardUser[]): string | null {
+export function roleChangeBlock(
+  user: DashboardUser,
+  role: DashboardRole,
+  users: DashboardUser[],
+): string | null {
   if (user.role === role) return "Already has this role.";
-  if (user.role === "admin" && adminCount(users) <= 1) return "The only admin. Make someone else an admin first.";
+  if (user.role === "admin" && adminCount(users) <= 1)
+    return "The only admin. Make someone else an admin first.";
   return null;
 }
 
 /** Why a user can't be deleted, or null when they can (the server enforces both rules too). */
-export function deleteBlock(user: DashboardUser, users: DashboardUser[], meId: string | null): string | null {
+export function deleteBlock(
+  user: DashboardUser,
+  users: DashboardUser[],
+  meId: string | null,
+): string | null {
   if (user.id === meId) return "You can't delete your own account.";
-  if (user.role === "admin" && adminCount(users) <= 1) return "The only admin. Make someone else an admin first.";
+  if (user.role === "admin" && adminCount(users) <= 1)
+    return "The only admin. Make someone else an admin first.";
   return null;
 }
 
@@ -51,11 +61,18 @@ export function directorySummary(users: DashboardUser[]): string {
 export function createdOn(createdAt: string): { short: string; full: string } | null {
   const date = new Date(createdAt);
   if (Number.isNaN(date.getTime())) return null;
-  return { short: date.toLocaleDateString(undefined, { dateStyle: "medium" }), full: date.toLocaleString() };
+  return {
+    short: date.toLocaleDateString(undefined, { dateStyle: "medium" }),
+    full: date.toLocaleString(),
+  };
 }
 
 /** What a role change does, for the confirmation: the new access and that the person is signed out. */
-export function roleChangeConsequence(user: DashboardUser, role: DashboardRole, isSelf: boolean): string[] {
+export function roleChangeConsequence(
+  user: DashboardUser,
+  role: DashboardRole,
+  isSelf: boolean,
+): string[] {
   const description = ROLE_OPTIONS.find((o) => o.value === role)?.description ?? "";
   const lines = [description];
   lines.push(

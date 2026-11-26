@@ -1,5 +1,5 @@
-// @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, describe, expect, it } from "bun:test";
 import { buttonByText, click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
 import { ActivityFilterBar } from "@/features/activity/ActivityFilterBar";
 import { absoluteRangeForPresetDays } from "@/features/activity/activityDateRange";
@@ -29,7 +29,13 @@ const byLabel = (label: string) => document.querySelector<HTMLElement>(`[aria-la
 
 async function mountBar(filters: ActivityFilters, onJumpRangeChange = vi.fn()) {
   await mountForm(
-    <ActivityFilterBar filters={filters} summary="3 of 9 sessions" loading={false} onRefresh={vi.fn()} onJumpRangeChange={onJumpRangeChange} />,
+    <ActivityFilterBar
+      filters={filters}
+      summary="3 of 9 sessions"
+      loading={false}
+      onRefresh={vi.fn()}
+      onJumpRangeChange={onJumpRangeChange}
+    />,
   );
   return onJumpRangeChange;
 }
@@ -80,6 +86,10 @@ describe("ActivityFilterBar", () => {
     await click(byLabel("Dates: All days")!);
     await click(buttonByText("Last 7 days"));
     const expected = absoluteRangeForPresetDays(7);
-    expect(onJumpRangeChange).toHaveBeenCalledWith({ type: "absolute", startDate: expected.start, endDate: expected.end });
+    expect(onJumpRangeChange).toHaveBeenCalledWith({
+      type: "absolute",
+      startDate: expected.start,
+      endDate: expected.end,
+    });
   });
 });

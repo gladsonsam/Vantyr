@@ -1,32 +1,47 @@
-// @vitest-environment jsdom
+import { useLayoutEffect } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "bun:test";
 import { useServerForm } from "@/hooks/useServerForm";
 
 const schema = z.object({ name: z.string() });
 type Values = z.infer<typeof schema>;
 
 const roots: Root[] = [];
-afterEach(() => { for (const root of roots.splice(0)) act(() => root.unmount()); });
+afterEach(() => {
+  for (const root of roots.splice(0)) act(() => root.unmount());
+});
 
 async function setup(initial: { data?: { name: string }; version: number }) {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   let form!: UseFormReturn<Values>;
   function Probe({ data, version }: { data?: { name: string }; version: number }) {
-    form = useServerForm<Values, { name: string }>({
-      resolver: zodResolver(schema), data, version, toValues: (d) => ({ name: d.name }), initial: { name: "" },
+    const committedValue = useServerForm<Values, { name: string }>({
+      resolver: zodResolver(schema),
+      data,
+      version,
+      toValues: (d) => ({ name: d.name }),
+      initial: { name: "" },
+    });
+    useLayoutEffect(() => {
+      form = committedValue;
     });
     return null;
   }
   const root = createRoot(document.createElement("div"));
   roots.push(root);
-  const render = (props: { data?: { name: string }; version: number }) => act(async () => root.render(<Probe {...props} />));
+  const render = (props: { data?: { name: string }; version: number }) =>
+    act(async () => root.render(<Probe {...props} />));
   await render(initial);
-  return { render, get form() { return form; } };
+  return {
+    render,
+    get form() {
+      return form;
+    },
+  };
 }
 
 describe("useServerForm", () => {

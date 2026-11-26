@@ -1,4 +1,16 @@
-import type { AlertRule, AlertRuleEvent, AlertRuleRow, AlertRuleTriggeredEvent, AppBlockEvent, AppBlockRule, InternetBlockRule, ScheduledScript, ScheduledScriptEvent, ScheduledScriptSchedule, ScheduledScriptScope } from "@/api/types";
+import type {
+  AlertRule,
+  AlertRuleEvent,
+  AlertRuleRow,
+  AlertRuleTriggeredEvent,
+  AppBlockEvent,
+  AppBlockRule,
+  InternetBlockRule,
+  ScheduledScript,
+  ScheduledScriptEvent,
+  ScheduledScriptSchedule,
+  ScheduledScriptScope,
+} from "@/api/types";
 import { get, putJson, postEmpty, postJsonRes, delJson, limitOffsetQuery } from "@/api/client";
 
 export const rulesEndpoints = {
@@ -24,9 +36,11 @@ export const rulesEndpoints = {
 
   internetBlockRulesUpdate: (
     id: number,
-    body: { enabled: boolean; schedules?: { day_of_week: number; start_minute: number; end_minute: number }[] },
-  ): Promise<{ ok: boolean }> =>
-    putJson(`/internet-block-rules/${id}`, body),
+    body: {
+      enabled: boolean;
+      schedules?: { day_of_week: number; start_minute: number; end_minute: number }[];
+    },
+  ): Promise<{ ok: boolean }> => putJson(`/internet-block-rules/${id}`, body),
 
   internetBlockRulesDelete: (id: number): Promise<{ ok: boolean }> =>
     delJson(`/internet-block-rules/${id}`),
@@ -68,8 +82,7 @@ export const rulesEndpoints = {
     },
   ): Promise<{ ok: boolean }> => putJson(`/alert-rules/${id}`, body),
 
-  alertRulesDelete: (id: number): Promise<{ ok: boolean }> =>
-    delJson(`/alert-rules/${id}`),
+  alertRulesDelete: (id: number): Promise<{ ok: boolean }> => delJson(`/alert-rules/${id}`),
 
   // ── App block rules ────────────────────────────────────────────────────────
 
@@ -98,13 +111,11 @@ export const rulesEndpoints = {
     },
   ): Promise<{ ok: boolean }> => putJson(`/app-block-rules/${id}`, body),
 
-  appBlockRulesDelete: (id: number): Promise<{ ok: boolean }> =>
-    delJson(`/app-block-rules/${id}`),
+  appBlockRulesDelete: (id: number): Promise<{ ok: boolean }> => delJson(`/app-block-rules/${id}`),
 
   // ── Scheduled Scripts ───────────────────────────────────────────────────────
 
-  scheduledScriptsList: (): Promise<{ scripts: ScheduledScript[] }> =>
-    get("/scheduled-scripts"),
+  scheduledScriptsList: (): Promise<{ scripts: ScheduledScript[] }> => get("/scheduled-scripts"),
 
   scheduledScriptsCreate: (body: {
     name: string;
@@ -134,9 +145,9 @@ export const rulesEndpoints = {
   scheduledScriptsTrigger: (id: number): Promise<{ ok: boolean; agent_count: number }> =>
     postEmpty(`/scheduled-scripts/${id}/trigger`),
 
-  scheduledScriptEventsAll: (
-    params?: { limit?: number },
-  ): Promise<{ rows: ScheduledScriptEvent[] }> =>
+  scheduledScriptEventsAll: (params?: {
+    limit?: number;
+  }): Promise<{ rows: ScheduledScriptEvent[] }> =>
     get(`/scheduled-script-events${limitOffsetQuery(params)}`),
 
   scheduledScriptEventsForScript: (
@@ -148,8 +159,7 @@ export const rulesEndpoints = {
   agentKnownExes: (agentId: string): Promise<{ exes: string[] }> =>
     get(`/agents/${agentId}/known-exes`),
 
-  appBlockProtectedExes: (): Promise<{ protected: string[] }> =>
-    get("/app-block-rules/protected"),
+  appBlockProtectedExes: (): Promise<{ protected: string[] }> => get("/app-block-rules/protected"),
 
   appBlockEventsForAgent: (
     agentId: string,
@@ -163,12 +173,14 @@ export const rulesEndpoints = {
   ): Promise<{ rows: AppBlockEvent[] }> =>
     get(`/app-block-rules/${ruleId}/events${limitOffsetQuery(params)}`),
 
-  appBlockEventsAll: (
-    params?: { limit?: number; offset?: number },
-  ): Promise<{ rows: AppBlockEvent[] }> =>
-    get(`/app-block-events${limitOffsetQuery(params)}`),
+  appBlockEventsAll: (params?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<{ rows: AppBlockEvent[] }> => get(`/app-block-events${limitOffsetQuery(params)}`),
 
-  agentEffectiveRules: (agentId: string): Promise<{
+  agentEffectiveRules: (
+    agentId: string,
+  ): Promise<{
     alert_rules: AlertRuleRow[];
     app_block_rules: AppBlockRule[];
     internet_blocked: boolean;
@@ -195,9 +207,10 @@ export const rulesEndpoints = {
     return get(`/agents/${agentId}/alert-rule-events?${q.toString()}`);
   },
 
-  alertRuleEventsAll: (
-    params?: { limit?: number; offset?: number },
-  ): Promise<{ rows: AlertRuleTriggeredEvent[] }> => {
+  alertRuleEventsAll: (params?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<{ rows: AlertRuleTriggeredEvent[] }> => {
     const q = new URLSearchParams();
     q.set("limit", String(params?.limit ?? 500));
     q.set("offset", String(params?.offset ?? 0));

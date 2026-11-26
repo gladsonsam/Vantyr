@@ -40,12 +40,23 @@ export function ActivityCell({ row, className }: { row: FleetRow; className?: st
       <div className="min-w-0">
         {empty ? (
           <>
-            <div className="truncate text-[13px] text-muted-foreground">{row.online ? "Nothing reported yet" : "No recent activity"}</div>
+            <div className="truncate text-[13px] text-muted-foreground">
+              {row.online ? "Nothing reported yet" : "No recent activity"}
+            </div>
           </>
         ) : (
           <>
-            <div className={cn("truncate text-[13px] font-medium", !row.online && "text-muted-foreground")}>{app}</div>
-            <div className="truncate text-xs text-muted-foreground">{hasValue(title) ? title : "No window title"}</div>
+            <div
+              className={cn(
+                "truncate text-[13px] font-medium",
+                !row.online && "text-muted-foreground",
+              )}
+            >
+              {app}
+            </div>
+            <div className="truncate text-xs text-muted-foreground">
+              {hasValue(title) ? title : "No window title"}
+            </div>
           </>
         )}
       </div>

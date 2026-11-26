@@ -15,7 +15,12 @@ interface GroupRuleDialogProps {
 }
 
 /** "New alert rule for this group": the rule form prefilled to target the group, saved through the rules API. A failed save is reported inside the form. */
-export function GroupRuleDialog({ group, agentOptions, groupOptions, onDismiss }: GroupRuleDialogProps) {
+export function GroupRuleDialog({
+  group,
+  agentOptions,
+  groupOptions,
+  onDismiss,
+}: GroupRuleDialogProps) {
   const queryClient = useQueryClient();
   const createRule = useMutation({
     mutationFn: (body: Parameters<typeof api.alertRulesCreate>[0]) => api.alertRulesCreate(body),

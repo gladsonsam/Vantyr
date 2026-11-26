@@ -8,7 +8,12 @@ type CopyState = "idle" | "copied" | "failed";
  * A value you can copy with one press: the text itself is the button, a copy icon says so, and the
  * result (copied / couldn't copy) is announced and shown next to it.
  */
-export function CopyValue({ text, label, mono = false, className }: {
+export function CopyValue({
+  text,
+  label,
+  mono = false,
+  className,
+}: {
   text: string;
   /** What is being copied, for the accessible name ("MAC address"). */
   label?: string;
@@ -17,7 +22,12 @@ export function CopyValue({ text, label, mono = false, className }: {
 }) {
   const [state, setState] = useState<CopyState>("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
 
   const copy = async () => {
     const ok = await copyToClipboard(text);
@@ -42,10 +52,16 @@ export function CopyValue({ text, label, mono = false, className }: {
         {state === "copied" ? (
           <Check className="mt-0.5 size-3.5 shrink-0 text-success" aria-hidden="true" />
         ) : (
-          <Copy className="mt-0.5 size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/copy:opacity-100 group-focus-visible/copy:opacity-100 pointer-coarse:opacity-100" aria-hidden="true" />
+          <Copy
+            className="mt-0.5 size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/copy:opacity-100 group-focus-visible/copy:opacity-100 pointer-coarse:opacity-100"
+            aria-hidden="true"
+          />
         )}
       </button>
-      <span role="status" className={cn("mt-1 text-xs", state === "failed" ? "text-destructive" : "sr-only")}>
+      <span
+        role="status"
+        className={cn("mt-1 text-xs", state === "failed" ? "text-destructive" : "sr-only")}
+      >
         {state === "copied" ? "Copied" : state === "failed" ? "Couldn’t copy" : ""}
       </span>
     </span>

@@ -67,4 +67,3 @@ export function buildViewerWsUrl(): string {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   return `${proto}://${location.host}${wsPath}`;
 }
-

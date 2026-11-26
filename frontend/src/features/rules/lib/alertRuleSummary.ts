@@ -28,7 +28,8 @@ export function ruleMatchSummary(r: AlertRule): string {
 }
 
 /** The name a rule is listed under: its own name, or what it matches when it has none. */
-export const ruleTitle = (r: AlertRule): string => r.name.trim() || ruleMatchSummary(r) || channelLabel(r.channel);
+export const ruleTitle = (r: AlertRule): string =>
+  r.name.trim() || ruleMatchSummary(r) || channelLabel(r.channel);
 
 /** "30 s", "5 min", "2 h": the largest whole unit a duration divides into. */
 export function fmtSeconds(secs: number): string {
@@ -75,5 +76,7 @@ export function scopeLabels(
 export function ruleCountSummary(rules: AlertRule[]): string {
   const on = rules.filter((r) => r.enabled).length;
   const noun = rules.length === 1 ? "rule" : "rules";
-  return on === rules.length ? `${rules.length} ${noun} · all on` : `${rules.length} ${noun} · ${on} on`;
+  return on === rules.length
+    ? `${rules.length} ${noun} · all on`
+    : `${rules.length} ${noun} · ${on} on`;
 }

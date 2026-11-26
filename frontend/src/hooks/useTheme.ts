@@ -12,9 +12,7 @@ const THEME_STORAGE_KEY = "theme";
 
 function getSystemTheme(): Mode {
   if (typeof window === "undefined") return Mode.Light;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? Mode.Dark
-    : Mode.Light;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? Mode.Dark : Mode.Light;
 }
 
 function getStoredTheme(): ThemeMode {
@@ -41,7 +39,13 @@ export function useTheme() {
     () => false,
   );
   const effectiveMode =
-    themeMode === "system" ? (systemDark ? Mode.Dark : Mode.Light) : themeMode === "dark" ? Mode.Dark : Mode.Light;
+    themeMode === "system"
+      ? systemDark
+        ? Mode.Dark
+        : Mode.Light
+      : themeMode === "dark"
+        ? Mode.Dark
+        : Mode.Light;
 
   useEffect(() => {
     // Drives the `.dark` token block in index.css.

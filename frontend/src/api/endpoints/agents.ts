@@ -1,5 +1,25 @@
-import type { ActivityEvent, Agent, AgentInfo, AgentMetricsResponse, AgentSoftwareRow, FleetSummaryResponse, KeySession, UrlTopRow, UrlVisit, WindowEvent, WindowTopRow } from "@/api/types";
-import { get, requestJson, putJson, postEmpty, postJsonRes, csrfHeaders, type PageParams } from "@/api/client";
+import type {
+  ActivityEvent,
+  Agent,
+  AgentInfo,
+  AgentMetricsResponse,
+  AgentSoftwareRow,
+  FleetSummaryResponse,
+  KeySession,
+  UrlTopRow,
+  UrlVisit,
+  WindowEvent,
+  WindowTopRow,
+} from "@/api/types";
+import {
+  get,
+  requestJson,
+  putJson,
+  postEmpty,
+  postJsonRes,
+  csrfHeaders,
+  type PageParams,
+} from "@/api/client";
 import { notifyAgentRemoved } from "@/api/agentEvents";
 
 export const agentsEndpoints = {
@@ -11,15 +31,24 @@ export const agentsEndpoints = {
   /** One bounded fleet batch. Callers split larger fleets; detail APIs stay independent. */
   fleetSummary: (ids: readonly string[], signal?: AbortSignal): Promise<FleetSummaryResponse> => {
     const unique = [...new Set(ids)];
-    if (!unique.length || unique.length > 100 || unique.some(id => !id || id.includes(",")) || unique.join(",").length > 8192) return Promise.reject(new Error("Fleet summary requires 1–100 agent IDs"));
+    if (
+      !unique.length ||
+      unique.length > 100 ||
+      unique.some((id) => !id || id.includes(",")) ||
+      unique.join(",").length > 8192
+    )
+      return Promise.reject(new Error("Fleet summary requires 1–100 agent IDs"));
     const query = new URLSearchParams({ ids: unique.join(",") });
-    return requestJson(`/agents/fleet-summary?${query}`, { method: "GET", signal }, { includePathInHttpError: true });
+    return requestJson(
+      `/agents/fleet-summary?${query}`,
+      { method: "GET", signal },
+      { includePathInHttpError: true },
+    );
   },
 
   // ── Agent UI metadata ─────────────────────────────────────────────────────
 
-  agentIconGet: (id: string): Promise<{ icon: string | null }> =>
-    get(`/agents/${id}/icon`),
+  agentIconGet: (id: string): Promise<{ icon: string | null }> => get(`/agents/${id}/icon`),
 
   agentIconPut: (id: string, icon: string | null): Promise<{ icon: string | null }> =>
     putJson(`/agents/${id}/icon`, { icon }),
@@ -33,13 +62,9 @@ export const agentsEndpoints = {
   keys: (
     id: string,
     { limit = 100, offset = 0 }: PageParams = {},
-  ): Promise<{ rows: KeySession[] }> =>
-    get(`/agents/${id}/keys?limit=${limit}&offset=${offset}`),
+  ): Promise<{ rows: KeySession[] }> => get(`/agents/${id}/keys?limit=${limit}&offset=${offset}`),
 
-  urls: (
-    id: string,
-    { limit = 100, offset = 0 }: PageParams = {},
-  ): Promise<{ rows: UrlVisit[] }> =>
+  urls: (id: string, { limit = 100, offset = 0 }: PageParams = {}): Promise<{ rows: UrlVisit[] }> =>
     get(`/agents/${id}/urls?limit=${limit}&offset=${offset}`),
 
   activity: (
@@ -48,15 +73,10 @@ export const agentsEndpoints = {
   ): Promise<{ rows: ActivityEvent[] }> =>
     get(`/agents/${id}/activity?limit=${limit}&offset=${offset}`),
 
-  agentInfo: (id: string): Promise<{ info: AgentInfo | null }> =>
-    get(`/agents/${id}/info`),
+  agentInfo: (id: string): Promise<{ info: AgentInfo | null }> => get(`/agents/${id}/info`),
 
   /** Resource health history (CPU/mem/disk) for an agent over a time range. */
-  agentMetrics: (
-    id: string,
-    fromIso?: string,
-    toIso?: string,
-  ): Promise<AgentMetricsResponse> => {
+  agentMetrics: (id: string, fromIso?: string, toIso?: string): Promise<AgentMetricsResponse> => {
     const params = new URLSearchParams();
     if (fromIso) params.set("from", fromIso);
     if (toIso) params.set("to", toIso);
@@ -110,10 +130,13 @@ export const agentsEndpoints = {
 
   /** Admin: delete agents (forgets them). */
   deleteAgents: (agentIds: string[]): Promise<{ ok: boolean; deleted: number }> =>
-    postJsonRes<{ ok: boolean; deleted: number }>("/agents/delete", { agent_ids: agentIds }).then((result) => {
-      if (result.ok && result.deleted === new Set(agentIds).size) agentIds.forEach(notifyAgentRemoved);
-      return result;
-    }),
+    postJsonRes<{ ok: boolean; deleted: number }>("/agents/delete", { agent_ids: agentIds }).then(
+      (result) => {
+        if (result.ok && result.deleted === new Set(agentIds).size)
+          agentIds.forEach(notifyAgentRemoved);
+        return result;
+      },
+    ),
 
   agentSoftware: (
     id: string,
@@ -184,6 +207,5 @@ export const agentsEndpoints = {
     shell: string;
     script: string;
     timeout_secs?: number;
-  }): Promise<{ results: Record<string, unknown>[] }> =>
-    postJsonRes("/agents/bulk-script", body),
+  }): Promise<{ results: Record<string, unknown>[] }> => postJsonRes("/agents/bulk-script", body),
 };

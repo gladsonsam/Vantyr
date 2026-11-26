@@ -30,8 +30,7 @@ export const usersEndpoints = {
     display_icon: string | null;
   }> => postJsonRes(`/users/${id}/profile`, body),
 
-  userDelete: (id: string): Promise<{ ok: boolean }> =>
-    postEmpty(`/users/${id}/delete`),
+  userDelete: (id: string): Promise<{ ok: boolean }> => postEmpty(`/users/${id}/delete`),
 
   userIdentities: (id: string): Promise<{ identities: DashboardIdentity[] }> =>
     get(`/users/${id}/identities`),

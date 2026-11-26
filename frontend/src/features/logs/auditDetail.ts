@@ -30,7 +30,9 @@ function tryParseObject(text: string): Record<string, unknown> | null {
   if (!t.startsWith("{")) return null;
   try {
     const parsed: unknown = JSON.parse(t);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
   } catch {
     return null;
   }
@@ -55,9 +57,12 @@ function formatValue(key: string, value: unknown): string {
 export function formatAuditDetail(action: string, detail: unknown): AuditDetailView {
   if (typeof detail === "string") {
     const text = detail.trim();
-    return text ? { pairs: [{ label: "Detail", value: text }], full: text } : { pairs: [], full: null };
+    return text
+      ? { pairs: [{ label: "Detail", value: text }], full: text }
+      : { pairs: [], full: null };
   }
-  if (!detail || typeof detail !== "object" || Array.isArray(detail)) return { pairs: [], full: null };
+  if (!detail || typeof detail !== "object" || Array.isArray(detail))
+    return { pairs: [], full: null };
 
   const record = detail as Record<string, unknown>;
   const keys = Object.keys(record);
@@ -71,7 +76,10 @@ export function formatAuditDetail(action: string, detail: unknown): AuditDetailV
     if (record.max_kb) pairs.push({ label: "Max KB", value: String(record.max_kb) });
     return { pairs, full };
   }
-  return { pairs: keys.map((k) => ({ label: labelFor(k), value: formatValue(k, record[k]) })), full };
+  return {
+    pairs: keys.map((k) => ({ label: labelFor(k), value: formatValue(k, record[k]) })),
+    full,
+  };
 }
 
 const ACTION_NAMES: Record<string, string> = {

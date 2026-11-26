@@ -13,7 +13,14 @@ import {
 } from "@vantyr/ui/components/alert-dialog";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@vantyr/ui/components/dialog";
 import { Field, FieldLabel } from "@vantyr/ui/components/field";
 import { Input } from "@vantyr/ui/components/input";
 import { Spinner } from "@vantyr/ui/components/spinner";
@@ -76,7 +83,13 @@ interface Props {
   onReject: (claim: PendingAgentClaim) => void | Promise<void>;
 }
 
-export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApprove, onReject }: Props) {
+export function PendingApprovalsCard({
+  claims,
+  loading = false,
+  onRefresh,
+  onApprove,
+  onReject,
+}: Props) {
   const pending = useMemo(() => claims.filter((claim) => claim.status === "pending"), [claims]);
   const [approveClaim, setApproveClaim] = useState<PendingAgentClaim | null>(null);
   const [rejectClaim, setRejectClaim] = useState<PendingAgentClaim | null>(null);
@@ -127,7 +140,10 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
         )}
         <CardContent className="divide-y divide-foreground/[0.05] px-0 py-0.5">
           {pending.map((claim) => (
-            <div key={claim.id} className="flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3 sm:px-5">
+            <div
+              key={claim.id}
+              className="flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3 sm:px-5"
+            >
               {single && (
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-warning/15 text-warning">
                   <ShieldQuestion className="size-4" aria-hidden="true" />
@@ -139,11 +155,15 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
                 <div className="truncate text-xs text-muted-foreground">
                   {[
                     single ? "Wants to join" : null,
-                    claim.hostname && claim.hostname !== claim.requested_name ? claim.hostname : null,
+                    claim.hostname && claim.hostname !== claim.requested_name
+                      ? claim.hostname
+                      : null,
                     claim.client_ip,
                     claim.agent_version ? `v${claim.agent_version.replace(/^v/i, "")}` : null,
                     formatRelativeTime(claim.created_at),
-                  ].filter(Boolean).join(" · ")}
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -157,10 +177,17 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
                 >
                   <Check /> Approve
                 </Button>
-                <Button size="sm" variant="outline" aria-label={`Reject ${claim.requested_name}`} onClick={() => setRejectClaim(claim)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  aria-label={`Reject ${claim.requested_name}`}
+                  onClick={() => setRejectClaim(claim)}
+                >
                   <X /> Reject
                 </Button>
-                {single && onRefresh && <RefreshButton onClick={() => void onRefresh()} loading={loading} />}
+                {single && onRefresh && (
+                  <RefreshButton onClick={() => void onRefresh()} loading={loading} />
+                )}
               </div>
             </div>
           ))}
@@ -174,18 +201,29 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
             onSubmit={(event) => {
               event.preventDefault();
               if (!approveClaim) return;
-              void run(() => onApprove(approveClaim, agentName.trim() || approveClaim.requested_name), () => setApproveClaim(null));
+              void run(
+                () => onApprove(approveClaim, agentName.trim() || approveClaim.requested_name),
+                () => setApproveClaim(null),
+              );
             }}
           >
             <DialogHeader>
               <DialogTitle>Approve device</DialogTitle>
-              <DialogDescription>Once approved it starts reporting to Vantyr. Check that the host and address below are the device you are setting up.</DialogDescription>
+              <DialogDescription>
+                Once approved it starts reporting to Vantyr. Check that the host and address below
+                are the device you are setting up.
+              </DialogDescription>
             </DialogHeader>
             {approveClaim && (
               <>
                 <Field>
                   <FieldLabel htmlFor="approve-agent-name">Device name</FieldLabel>
-                  <Input id="approve-agent-name" autoFocus value={agentName} onChange={(event) => setAgentName(event.target.value)} />
+                  <Input
+                    id="approve-agent-name"
+                    autoFocus
+                    value={agentName}
+                    onChange={(event) => setAgentName(event.target.value)}
+                  />
                 </Field>
                 <div className="rounded-lg bg-muted/50 p-3">
                   <ClaimMeta claim={approveClaim} />
@@ -212,9 +250,13 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
       <AlertDialog open={rejectClaim !== null} onOpenChange={(open) => !open && close()}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Reject {rejectClaim?.requested_name ?? "this device"}?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Reject {rejectClaim?.requested_name ?? "this device"}?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {rejectClaim ? [rejectClaim.hostname, rejectClaim.client_ip].filter(Boolean).join(" · ") : null}
+              {rejectClaim
+                ? [rejectClaim.hostname, rejectClaim.client_ip].filter(Boolean).join(" · ")
+                : null}
               {rejectClaim && (rejectClaim.hostname || rejectClaim.client_ip) ? ". " : ""}
               The agent will need to request access again before it can connect.
             </AlertDialogDescription>
@@ -229,7 +271,13 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
             <AlertDialogAction
               variant="destructive"
               disabled={busy}
-              onClick={() => rejectClaim && void run(() => onReject(rejectClaim), () => setRejectClaim(null))}
+              onClick={() =>
+                rejectClaim &&
+                void run(
+                  () => onReject(rejectClaim),
+                  () => setRejectClaim(null),
+                )
+              }
             >
               {busy && <Spinner />} Reject
             </AlertDialogAction>

@@ -8,7 +8,14 @@ import { RuleDeleteMenu, RuleFact, RuleList, RuleRow } from "./RuleListRow";
 export type InternetRuleAction = "schedule" | "delete";
 
 /** One row per internet block rule: whether it is on, who it blocks and when. */
-export function InternetRuleList({ rules, groups, agentsById, switchesDisabled, onToggle, onAction }: {
+export function InternetRuleList({
+  rules,
+  groups,
+  agentsById,
+  switchesDisabled,
+  onToggle,
+  onAction,
+}: {
   rules: InternetBlockRule[];
   groups: AgentGroup[];
   agentsById: Record<string, Agent>;
@@ -34,7 +41,9 @@ export function InternetRuleList({ rules, groups, agentsById, switchesDisabled, 
             state={!r.enabled && "Off, not blocking"}
             facts={
               <>
-                <RuleFact icon={Users} title={scopes.join(", ")}>Blocks {scopes.join(", ")}</RuleFact>
+                <RuleFact icon={Users} title={scopes.join(", ")}>
+                  Blocks {scopes.join(", ")}
+                </RuleFact>
                 <RuleFact icon={Clock}>
                   {when.join(", ")}
                   {scheduled && " · device time"}
@@ -43,10 +52,19 @@ export function InternetRuleList({ rules, groups, agentsById, switchesDisabled, 
             }
             actions={
               <>
-                <Button variant="outline" className="pointer-coarse:h-9" aria-label={`Edit schedule of ${title}`} onClick={() => onAction(r, "schedule")}>
+                <Button
+                  variant="outline"
+                  className="pointer-coarse:h-9"
+                  aria-label={`Edit schedule of ${title}`}
+                  onClick={() => onAction(r, "schedule")}
+                >
                   <CalendarClock /> Edit schedule
                 </Button>
-                <RuleDeleteMenu title={title} deleteLabel="Delete rule…" onDelete={() => onAction(r, "delete")} />
+                <RuleDeleteMenu
+                  title={title}
+                  deleteLabel="Delete rule…"
+                  onDelete={() => onAction(r, "delete")}
+                />
               </>
             }
           />

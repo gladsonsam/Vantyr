@@ -11,7 +11,13 @@ import {
   DialogTitle,
 } from "@vantyr/ui/components/dialog";
 import { Field, FieldLabel } from "@vantyr/ui/components/field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@vantyr/ui/components/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@vantyr/ui/components/select";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { Textarea } from "@vantyr/ui/components/textarea";
 import { api } from "@/api";
@@ -25,17 +31,26 @@ interface BulkScriptModalProps {
 export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
   const capabilitiesQuery = useQuery(settingsQueries.capabilities());
   // `null` while unknown; a failed check counts as "not allowed".
-  const remoteOk = capabilitiesQuery.isError ? false : capabilitiesQuery.data?.remote_script ?? null;
+  const remoteOk = capabilitiesQuery.isError
+    ? false
+    : (capabilitiesQuery.data?.remote_script ?? null);
   const [shell, setShell] = useState("powershell");
   const [script, setScript] = useState("");
   const queryClient = useQueryClient();
   const runScript = useMutation({
-    mutationFn: (body: { agent_ids: string[]; shell: string; script: string; timeout_secs: number }) => api.bulkAgentScript(body),
+    mutationFn: (body: {
+      agent_ids: string[];
+      shell: string;
+      script: string;
+      timeout_secs: number;
+    }) => api.bulkAgentScript(body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["agents"] }),
   });
   const running = runScript.isPending;
   const err = runScript.error ? String(runScript.error) : null;
-  const results: Record<string, unknown>[] | null = runScript.data ? runScript.data.results ?? [] : null;
+  const results: Record<string, unknown>[] | null = runScript.data
+    ? (runScript.data.results ?? [])
+    : null;
 
   const run = () => {
     runScript.mutate({
@@ -51,7 +66,10 @@ export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Run script on selected agents</DialogTitle>
-          <DialogDescription>Runs once on {agentIds.length} {agentIds.length === 1 ? "device" : "devices"}, 2 minute limit.</DialogDescription>
+          <DialogDescription>
+            Runs once on {agentIds.length} {agentIds.length === 1 ? "device" : "devices"}, 2 minute
+            limit.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
           {remoteOk === false && (
@@ -69,7 +87,12 @@ export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
           )}
           <Field>
             <FieldLabel htmlFor="bulk-shell">Shell</FieldLabel>
-            <Select value={shell} onValueChange={(next) => { if (typeof next === "string") setShell(next); }}>
+            <Select
+              value={shell}
+              onValueChange={(next) => {
+                if (typeof next === "string") setShell(next);
+              }}
+            >
               <SelectTrigger id="bulk-shell" className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -102,7 +125,10 @@ export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
           <Button variant="outline" onClick={onDismiss}>
             Close
           </Button>
-          <Button disabled={remoteOk === false || agentIds.length === 0 || running || !script.trim()} onClick={() => void run()}>
+          <Button
+            disabled={remoteOk === false || agentIds.length === 0 || running || !script.trim()}
+            onClick={() => void run()}
+          >
             {running && <Spinner />} Run on {agentIds.length} agent(s)
           </Button>
         </DialogFooter>

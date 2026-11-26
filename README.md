@@ -11,22 +11,22 @@ https://github.com/user-attachments/assets/1cfe297f-fa9a-4012-9892-e356ce8574c8
 
 <br />
 
-**A lightweight, self-hosted monitoring system built with Rust and React.** A Windows agent streams real-time telemetry to the server, which feeds a live web dashboard with screen streaming, window/URL tracking, and activity history.
+**A self-hosted monitoring and remote desktop system built with Rust and React.** Windows and Linux agents feed a web dashboard with live desktops, activity history and searchable screen captures. Features depend on the device platform and permissions.
 
 > [!WARNING]
 > Intended for **experimentation, not production**. The monitoring, remote-control, and keystroke features have privacy and security implications, and the code has had no professional security review. Use at your own risk.
 
 ## Features
 
-- **Activity timeline**: A browsable history of foreground apps/windows with durations.
-- **Live screen viewer**: Demand-driven MJPEG screen streaming
-- **Remote control**: Send mouse and keyboard commands from the dashboard to the agent.
+- **Activity history**: App and website timelines, analytics, and Recall screen history with text search.
+- **Live desktop**: H.264 streaming with MJPEG fallback and desktop audio on Windows.
+- **Remote control**: Mouse, keyboard, clipboard, files, terminal and scripts, subject to device permissions.
 - **Telemetry capture**: Window focus, URLs, AFK/active transitions and keystroke capture.
 
 ## Quick start (Docker)
 
 ```bash
-cp .env.example .env
+cp .env.example .env  # Set POSTGRES_PASSWORD and ADMIN_PASSWORD before starting.
 docker compose up -d
 ```
 
@@ -39,21 +39,21 @@ docker compose up -d
 | `agent/` | Tauri 2 desktop agent (Windows, headless on Linux) and its settings UI in `agent/ui-src`. Architecture: [`agent/docs/ARCHITECTURE.md`](agent/docs/ARCHITECTURE.md). |
 | `frontend/` | React dashboard. Source layout: [`frontend/src/README.md`](frontend/src/README.md). |
 | `packages/ui/` | `@vantyr/ui`: shadcn/ui components shared by the dashboard and the agent settings UI. See [`packages/ui/README.md`](packages/ui/README.md). |
-| `packages/eslint-config/` | `@vantyr/eslint-config`: the ESLint base config shared by the JS packages. |
+| `packages/oxlint-config/` | Oxlint base and React Compiler rules shared by the JavaScript workspaces. |
 
 `server/` and `protocol/` form the root Cargo workspace; `agent/` is built separately and depends on `protocol/` by path.
 
-The JavaScript side is an npm workspace: `frontend/`, `agent/ui-src/` and `packages/*` share one root `package-lock.json`. Run `npm ci` once at the repository root, then use `npm run <script> -w frontend` (or `-w agent/ui-src`, `-w packages/ui`).
+The JavaScript side is an npm workspace: `frontend/`, `agent/ui-src/` and `packages/ui/` share one root `package-lock.json`. Run `npm ci` at the repository root. Oxlint handles linting; pinned Bun runs tests and formatting through `npm test`, `npm run format` and `npm run format:check`.
 
 ## Development
 
-The [`justfile`](justfile) mirrors CI, so the same checks run locally (`just` lists every recipe):
+The [`justfile`](justfile) provides common local checks and dev servers (`just` lists every recipe):
 
 ```bash
 just db-up                 # throwaway Postgres for the server tests; prints the DATABASE_URL to export
-just check                 # everything CI runs: server, sqlx cache, frontend, agent UI, agent
+just check                 # server, sqlx cache, dashboard, agent UI and host agent checks
 just server                # or one part: fmt, clippy and tests for server/ + protocol/
-just frontend              # dashboard lint, tests, build, demo build
+just frontend              # Oxlint, Bun tests, production and demo builds
 just dev                   # dashboard dev server (`just demo` runs it with mock data)
 just sqlx-prepare          # regenerate server/.sqlx after changing a sqlx::query!
 ```
@@ -66,4 +66,4 @@ The agent checks (`just agent`) need the Linux desktop packages listed in the `j
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

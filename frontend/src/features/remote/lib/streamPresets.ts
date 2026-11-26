@@ -6,17 +6,25 @@ export type StreamPreset = "saver" | "balanced" | "sharp" | "ultra";
 export const STREAM_PRESET_STORAGE_KEY = "vantyr.dashboard.screenStreamPreset";
 
 export const STREAM_PRESET_TUNING: Record<StreamPreset, MjpegStreamTuning> = {
-  saver:    { jpegQ: 28, intervalMs: 500 },
+  saver: { jpegQ: 28, intervalMs: 500 },
   balanced: { jpegQ: 40, intervalMs: 200 },
-  sharp:    { jpegQ: 62, intervalMs: 80  },
-  ultra:    { jpegQ: 75, intervalMs: 33  },
+  sharp: { jpegQ: 62, intervalMs: 80 },
+  ultra: { jpegQ: 75, intervalMs: 33 },
 };
 
-export const STREAM_PRESET_OPTIONS: Array<{ label: string; description: string; value: StreamPreset }> = [
-  { label: "Bandwidth saver", description: "Lower bandwidth for slow connections.", value: "saver" },
-  { label: "Balanced",        description: "Everyday desktop work.",                       value: "balanced" },
-  { label: "Sharp",           description: "Clearer text and finer detail.",               value: "sharp" },
-  { label: "Ultra", description: "Smoothest motion; higher CPU and network use.",     value: "ultra" },
+export const STREAM_PRESET_OPTIONS: Array<{
+  label: string;
+  description: string;
+  value: StreamPreset;
+}> = [
+  {
+    label: "Bandwidth saver",
+    description: "Lower bandwidth for slow connections.",
+    value: "saver",
+  },
+  { label: "Balanced", description: "Everyday desktop work.", value: "balanced" },
+  { label: "Sharp", description: "Clearer text and finer detail.", value: "sharp" },
+  { label: "Ultra", description: "Smoothest motion; higher CPU and network use.", value: "ultra" },
 ];
 
 /** The viewer's last stream quality (per browser), `balanced` when unset or unreadable. */

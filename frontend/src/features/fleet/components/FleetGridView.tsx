@@ -3,7 +3,13 @@ import { Button } from "@vantyr/ui/components/button";
 import { Card } from "@vantyr/ui/components/card";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
 import { cn } from "@/lib/utils";
-import { formatLastSeen, formatUptime, hasValue, normalizeVersion, lastReportedTooltip } from "@/features/fleet/lib/fleetUtils";
+import {
+  formatLastSeen,
+  formatUptime,
+  hasValue,
+  normalizeVersion,
+  lastReportedTooltip,
+} from "@/features/fleet/lib/fleetUtils";
 import { AgentActionsMenu } from "./AgentActionsMenu";
 import { ActivityCell } from "./ActivityCell";
 import { FavoriteToggle } from "./FavoriteToggle";
@@ -11,7 +17,14 @@ import { PolicyBadges } from "./PolicyBadges";
 import { DeviceIcon, OsMark } from "./FleetStatus";
 import type { FleetViewProps } from "./FleetTableView";
 
-export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, latestAgentVersion, handlers }: FleetViewProps) {
+export function FleetGridView({
+  rows,
+  favoriteIds,
+  onToggleFavorite,
+  selection,
+  latestAgentVersion,
+  handlers,
+}: FleetViewProps) {
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 min-[87.5rem]:grid-cols-3 min-[120rem]:grid-cols-4">
       {rows.map((row) => {
@@ -28,10 +41,19 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
               <DeviceIcon row={row} showStatus />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className={cn("truncate text-[15px] font-semibold", !row.online && "text-muted-foreground")}>{row.displayName}</span>
+                  <span
+                    className={cn(
+                      "truncate text-[15px] font-semibold",
+                      !row.online && "text-muted-foreground",
+                    )}
+                  >
+                    {row.displayName}
+                  </span>
                   <OsMark row={row} />
                 </div>
-                <div className="mt-0.5 truncate text-xs text-muted-foreground">{hasValue(row.user) ? row.user : "No user"}</div>
+                <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {hasValue(row.user) ? row.user : "No user"}
+                </div>
               </div>
               <div className="-mr-2 flex items-center" onClick={(event) => event.stopPropagation()}>
                 <FavoriteToggle
@@ -58,22 +80,37 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
             </div>
 
             <p className="hidden flex-wrap items-center gap-x-2 gap-y-0.5 bg-black/10 px-5 pt-0.5 pb-3 text-xs text-muted-foreground tabular-nums sm:flex">
-              <span title={stored}>{row.online ? `Up ${formatUptime(row.effectiveUptimeSecs)}` : `Seen ${formatLastSeen(row.last_seen)}`}</span>
+              <span title={stored}>
+                {row.online
+                  ? `Up ${formatUptime(row.effectiveUptimeSecs)}`
+                  : `Seen ${formatLastSeen(row.last_seen)}`}
+              </span>
               {hasValue(row.ip) && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span className="font-mono text-foreground/80" title="IP address">{row.ip}</span>
+                  <span className="font-mono text-foreground/80" title="IP address">
+                    {row.ip}
+                  </span>
                 </>
               )}
               {row.version && (
                 <>
                   <span aria-hidden="true">·</span>
                   <span
-                    className={cn("inline-flex items-center gap-1 font-mono whitespace-nowrap", row.updateNeeded ? "text-warning" : "text-foreground/80")}
-                    title={row.updateNeeded ? `Update to v${normalizeVersion(latestAgentVersion)} available` : "Agent version"}
+                    className={cn(
+                      "inline-flex items-center gap-1 font-mono whitespace-nowrap",
+                      row.updateNeeded ? "text-warning" : "text-foreground/80",
+                    )}
+                    title={
+                      row.updateNeeded
+                        ? `Update to v${normalizeVersion(latestAgentVersion)} available`
+                        : "Agent version"
+                    }
                   >
                     v{normalizeVersion(row.version)}
-                    {row.updateNeeded && <ArrowUpCircle className="size-3.5" aria-label="Update available" />}
+                    {row.updateNeeded && (
+                      <ArrowUpCircle className="size-3.5" aria-label="Update available" />
+                    )}
                   </span>
                 </>
               )}
@@ -83,11 +120,23 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
               <PolicyBadges row={row} />
             </div>
 
-            <div className="mt-auto flex items-center gap-1 border-t border-border/60 bg-black/20 px-2 py-1.5 sm:px-3 sm:py-2" onClick={(event) => event.stopPropagation()}>
-              <Button variant="ghost" className="flex-1 font-medium text-foreground" disabled={!row.online} onClick={() => handlers.onLive(row)}>
+            <div
+              className="mt-auto flex items-center gap-1 border-t border-border/60 bg-black/20 px-2 py-1.5 sm:px-3 sm:py-2"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <Button
+                variant="ghost"
+                className="flex-1 font-medium text-foreground"
+                disabled={!row.online}
+                onClick={() => handlers.onLive(row)}
+              >
                 <MonitorPlay /> Live
               </Button>
-              <Button variant="ghost" className="flex-1 text-muted-foreground hover:text-foreground" onClick={() => handlers.onActivity(row)}>
+              <Button
+                variant="ghost"
+                className="flex-1 text-muted-foreground hover:text-foreground"
+                onClick={() => handlers.onActivity(row)}
+              >
                 <Activity /> Activity
               </Button>
               <AgentActionsMenu row={row} handlers={handlers} />

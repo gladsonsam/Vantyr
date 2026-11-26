@@ -38,25 +38,46 @@ export const urlCategoriesEndpoints = {
 
   urlCategorizationCategoriesPut: (body: {
     categories: { key: string; enabled: boolean; label?: string; description?: string }[];
-  }): Promise<{ categories: { key: string; label: string; enabled: boolean; description: string }[] }> =>
-    putJson("/settings/url-categorization/categories", body),
+  }): Promise<{
+    categories: { key: string; label: string; enabled: boolean; description: string }[];
+  }> => putJson("/settings/url-categorization/categories", body),
 
-  urlCategorizationOverridesList: (
-    { q = "", limit = 200, offset = 0 }: { q?: string; limit?: number; offset?: number } = {},
-  ): Promise<{ rows: { id: number; kind: "domain" | "url"; value: string; category_key: string; category_label: string; note: string; created_at: string }[] }> =>
-    get(`/settings/url-categorization/overrides?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`),
+  urlCategorizationOverridesList: ({
+    q = "",
+    limit = 200,
+    offset = 0,
+  }: { q?: string; limit?: number; offset?: number } = {}): Promise<{
+    rows: {
+      id: number;
+      kind: "domain" | "url";
+      value: string;
+      category_key: string;
+      category_label: string;
+      note: string;
+      created_at: string;
+    }[];
+  }> =>
+    get(
+      `/settings/url-categorization/overrides?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`,
+    ),
 
-  urlCategorizationOverridesUpsert: (body: { kind: "domain" | "url"; value: string; category_key: string; note?: string }): Promise<unknown> =>
-    postJsonRes("/settings/url-categorization/overrides", body),
+  urlCategorizationOverridesUpsert: (body: {
+    kind: "domain" | "url";
+    value: string;
+    category_key: string;
+    note?: string;
+  }): Promise<unknown> => postJsonRes("/settings/url-categorization/overrides", body),
 
   urlCategorizationOverridesDelete: (kind: "domain" | "url", id: number): Promise<unknown> =>
     delJson(`/settings/url-categorization/overrides?kind=${encodeURIComponent(kind)}&id=${id}`),
 
-  urlCategorizationRecalcUrlVisits: ({ limit = 50_000 }: { limit?: number } = {}): Promise<{ enqueued: number }> =>
-    postEmpty(`/settings/url-categorization/recalc/url-visits?limit=${limit}`),
+  urlCategorizationRecalcUrlVisits: ({ limit = 50_000 }: { limit?: number } = {}): Promise<{
+    enqueued: number;
+  }> => postEmpty(`/settings/url-categorization/recalc/url-visits?limit=${limit}`),
 
-  urlCategorizationRecalcUrlSessions: ({ limit = 50_000 }: { limit?: number } = {}): Promise<{ updated: number }> =>
-    postEmpty(`/settings/url-categorization/recalc/url-sessions?limit=${limit}`),
+  urlCategorizationRecalcUrlSessions: ({ limit = 50_000 }: { limit?: number } = {}): Promise<{
+    updated: number;
+  }> => postEmpty(`/settings/url-categorization/recalc/url-sessions?limit=${limit}`),
 
   agentUrlCategoryStats: (
     id: string,
@@ -92,12 +113,14 @@ export const urlCategoriesEndpoints = {
     description_en?: string;
     display_order?: number;
     hidden?: boolean;
-  }): Promise<{ id: number }> => postJsonRes("/settings/url-categorization/custom-categories", body),
+  }): Promise<{ id: number }> =>
+    postJsonRes("/settings/url-categorization/custom-categories", body),
 
   urlCustomCategoriesUpdate: (
     id: number,
     body: { label_en?: string; description_en?: string; display_order?: number; hidden?: boolean },
-  ): Promise<{ ok: boolean }> => putJson(`/settings/url-categorization/custom-categories/${id}`, body),
+  ): Promise<{ ok: boolean }> =>
+    putJson(`/settings/url-categorization/custom-categories/${id}`, body),
 
   urlCustomCategoriesDelete: (id: number): Promise<{ ok: boolean }> =>
     delJson(`/settings/url-categorization/custom-categories/${id}`),

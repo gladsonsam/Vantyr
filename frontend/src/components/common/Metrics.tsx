@@ -13,9 +13,7 @@ export function Dot({ color, size = 8, halo = false }: DotProps) {
         borderRadius: "50%",
         background: color,
         flexShrink: 0,
-        boxShadow: halo
-          ? `0 0 0 3px color-mix(in srgb, ${color} 18%, transparent)`
-          : "none",
+        boxShadow: halo ? `0 0 0 3px color-mix(in srgb, ${color} 18%, transparent)` : "none",
       }}
     />
   );

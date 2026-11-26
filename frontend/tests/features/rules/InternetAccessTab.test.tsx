@@ -1,27 +1,43 @@
-// @vitest-environment jsdom
-import { act } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { click } from "@tests/support/formDom";
 import { createTabHarness } from "@tests/support/ruleTab";
-import { InternetAccessTab } from "@/features/rules/InternetAccessTab";
+import { click } from "@tests/support/formDom";
+import { testMock as vi } from "@tests/support/mock";
+import { act } from "react";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+
 import type { Agent, AgentGroup, InternetBlockRule } from "@/api/types";
 
-const api = vi.hoisted(() => ({
+const api = (() => ({
   internetBlockRulesList: vi.fn(),
   internetBlockRulesCreate: vi.fn(async () => ({ id: 9 })),
   internetBlockRulesUpdate: vi.fn(async () => ({ ok: true })),
   internetBlockRulesDelete: vi.fn(async () => ({ ok: true })),
+}))();
+await vi.mock("@/api", () => ({
+  api,
+  errorText: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+  apiUrl: (p: string) => p,
 }));
-vi.mock("@/api", () => ({ api, errorText: (e: unknown) => (e instanceof Error ? e.message : String(e)), apiUrl: (p: string) => p }));
+
+const { InternetAccessTab } = await import("@/features/rules/InternetAccessTab");
 
 const rule = (id: number, patch: Partial<InternetBlockRule> = {}): InternetBlockRule => ({
-  id, name: `Rule ${id}`, enabled: true, created_at: "2026-10-01T00:00:00Z", scopes: [{ kind: "all" }], schedules: [], ...patch,
+  id,
+  name: `Rule ${id}`,
+  enabled: true,
+  created_at: "2026-10-01T00:00:00Z",
+  scopes: [{ kind: "all" }],
+  schedules: [],
+  ...patch,
 });
 const rules: InternetBlockRule[] = [
   rule(1, { name: "Always off" }),
   rule(2, {
-    name: "School nights", scopes: [{ kind: "group", group_id: "g1" }],
-    schedules: [{ day_of_week: 0, start_minute: 21 * 60, end_minute: 1440 }, { day_of_week: 1, start_minute: 0, end_minute: 7 * 60 }],
+    name: "School nights",
+    scopes: [{ kind: "group", group_id: "g1" }],
+    schedules: [
+      { day_of_week: 0, start_minute: 21 * 60, end_minute: 1440 },
+      { day_of_week: 1, start_minute: 0, end_minute: 7 * 60 },
+    ],
   }),
   rule(3, { name: "", enabled: false, scopes: [{ kind: "agent", agent_id: "a1" }] }),
   rule(4, { name: "Paused always", enabled: false }),
@@ -81,7 +97,9 @@ describe("InternetAccessTab switch", () => {
     await render();
     await click(t.switchOf(items()[0]));
     expect(api.internetBlockRulesUpdate).toHaveBeenCalledWith(1, { enabled: false });
-    expect(t.host.querySelector('[role="alert"]')?.textContent).toContain("Couldn’t turn off “Always off”: Forbidden");
+    expect(t.host.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t turn off “Always off”: Forbidden",
+    );
     expect(t.switchOf(items()[0]).getAttribute("aria-checked")).toBe("true");
   });
 
@@ -105,7 +123,15 @@ describe("InternetAccessTab switch", () => {
 
   it("switches on a scheduled rule without asking, since it only blocks in its hours", async () => {
     await render();
-    api.internetBlockRulesList.mockResolvedValue({ rules: [rule(5, { name: "Nights", enabled: false, schedules: [{ day_of_week: 1, start_minute: 0, end_minute: 60 }] })] });
+    api.internetBlockRulesList.mockResolvedValue({
+      rules: [
+        rule(5, {
+          name: "Nights",
+          enabled: false,
+          schedules: [{ day_of_week: 1, start_minute: 0, end_minute: 60 }],
+        }),
+      ],
+    });
     await t.render(<InternetAccessTab key="2" groups={groups} agents={agents} />);
     await click(t.switchOf(items()[0]));
     expect(t.dialog()).toBeNull();
@@ -118,7 +144,9 @@ describe("InternetAccessTab switch", () => {
     await click(t.switchOf(items()[3]));
     await click(t.btn("Block internet", t.dialog()!)!);
     expect(t.dialog()).toBeNull();
-    expect(t.host.querySelector('[role="alert"]')?.textContent).toContain("Couldn’t turn on “Paused always”: Forbidden");
+    expect(t.host.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t turn on “Paused always”: Forbidden",
+    );
   });
 });
 
@@ -164,7 +192,9 @@ describe("InternetAccessTab schedule and create", () => {
     await render();
     await click(t.btn("Edit schedule of School nights")!);
     await click(t.btn("Save schedule", t.dialog()!)!);
-    expect(t.dialog()?.querySelector('[role="alert"]')?.textContent).toBe("Couldn’t save the schedule: Forbidden");
+    expect(t.dialog()?.querySelector('[role="alert"]')?.textContent).toBe(
+      "Couldn’t save the schedule: Forbidden",
+    );
     expect(t.host.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -173,10 +203,16 @@ describe("InternetAccessTab schedule and create", () => {
     await render();
     await click(t.btn("New rule", t.host)!);
     await click(t.btn("Create rule", t.dialog()!)!);
-    expect(t.dialog()?.querySelector('[role="alert"]')?.textContent).toBe("Couldn’t create the rule: Too many rules");
+    expect(t.dialog()?.querySelector('[role="alert"]')?.textContent).toBe(
+      "Couldn’t create the rule: Too many rules",
+    );
     await click(t.btn("Create rule", t.dialog()!)!);
     await act(async () => {});
-    expect(api.internetBlockRulesCreate).toHaveBeenLastCalledWith(expect.objectContaining({ scopes: [{ kind: "all", group_id: undefined, agent_id: undefined }] }));
+    expect(api.internetBlockRulesCreate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        scopes: [{ kind: "all", group_id: undefined, agent_id: undefined }],
+      }),
+    );
     expect(t.dialog()).toBeNull();
     expect(t.host.textContent).toContain("Added “Internet block”.");
   });

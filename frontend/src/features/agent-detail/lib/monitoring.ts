@@ -33,7 +33,12 @@ export function categoryOf(category: string | null | undefined): string | undefi
  * "12 visits", "500 most recent visits" (the list is capped, so a total would be a lie) and, while a
  * search narrows it, "8 of 500 most recent visits".
  */
-export function listCountLabel({ shown, loaded, limit, noun }: {
+export function listCountLabel({
+  shown,
+  loaded,
+  limit,
+  noun,
+}: {
   shown: number;
   loaded: number;
   limit: number;
@@ -41,12 +46,17 @@ export function listCountLabel({ shown, loaded, limit, noun }: {
 }): string {
   const capped = loaded >= limit;
   const word = loaded === 1 ? noun.one : noun.many;
-  const base = capped ? `${loaded.toLocaleString()} most recent ${word}` : `${loaded.toLocaleString()} ${word}`;
+  const base = capped
+    ? `${loaded.toLocaleString()} most recent ${word}`
+    : `${loaded.toLocaleString()} ${word}`;
   return shown === loaded ? base : `${shown.toLocaleString()} of ${base}`;
 }
 
 /** Does `title` only restate the application it belongs to ("Notepad" in Notepad)? */
-export function titleRestatesApp(title: string | null | undefined, ...appNames: Array<string | null | undefined>): boolean {
+export function titleRestatesApp(
+  title: string | null | undefined,
+  ...appNames: Array<string | null | undefined>
+): boolean {
   const value = (title ?? "").trim().toLowerCase();
   if (!value || value === "—") return true;
   return appNames.some((name) => {

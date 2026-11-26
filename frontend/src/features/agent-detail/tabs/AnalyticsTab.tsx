@@ -2,7 +2,14 @@ import { api } from "@/api";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@vantyr/ui/components/table";
 import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
 import { X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -39,10 +46,21 @@ const LEGEND_PREVIEW = 5;
 const OTHER_COLOR = "var(--muted-foreground)";
 
 type SiteRows = Awaited<ReturnType<typeof api.agentAnalyticsUrlSites>>["rows"];
-type AssignHandler = (kind: "domain" | "url", value: string, hostname: string, url?: string | null) => void;
+type AssignHandler = (
+  kind: "domain" | "url",
+  value: string,
+  hostname: string,
+  url?: string | null,
+) => void;
 type LastSeen = (timestamp: string | number | undefined) => string;
 
-export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: string; dashboardRole?: DashboardRole | null }) {
+export function AnalyticsTab({
+  agentId,
+  dashboardRole = null,
+}: {
+  agentId: string;
+  dashboardRole?: DashboardRole | null;
+}) {
   const canAdmin = isAdminRole(dashboardRole);
   const [range, setRange] = useState<RangeKey>("7d");
   const [selectedCategoryKey, setSelectedCategoryKey] = useState<string | null>(null);
@@ -65,7 +83,9 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
         <CardContent className="flex flex-col gap-5">
           {data.failed && <LoadFailed onRetry={data.refresh} />}
           {data.nothingYet ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">No browsing in this range.</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No browsing in this range.
+            </p>
           ) : (
             <>
               <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
@@ -78,7 +98,9 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                 otherMs={data.otherMs}
                 totalMs={data.totalMs}
                 selectedKey={selectedCategoryKey}
-                onSelect={(key) => setSelectedCategoryKey((current) => (current === key ? null : key))}
+                onSelect={(key) =>
+                  setSelectedCategoryKey((current) => (current === key ? null : key))
+                }
                 lastSeen={data.lastSeen}
               />
             </>
@@ -86,7 +108,12 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
         </CardContent>
       </Card>
 
-      <AssignCategoryDialog target={assignTarget} agentId={agentId} canAdmin={canAdmin} onClose={() => setAssignTarget(null)} />
+      <AssignCategoryDialog
+        target={assignTarget}
+        agentId={agentId}
+        canAdmin={canAdmin}
+        onClose={() => setAssignTarget(null)}
+      />
 
       {!data.nothingYet && (
         <TopSites
@@ -104,16 +131,31 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
 }
 
 /** Loads the three analytics feeds for the range and derives everything the tab shows from them. */
-function useBrowsingAnalytics(agentId: string, range: RangeKey, selectedCategoryKey: string | null) {
+function useBrowsingAnalytics(
+  agentId: string,
+  range: RangeKey,
+  selectedCategoryKey: string | null,
+) {
   const queryClient = useQueryClient();
   // While the range or category filter changes, keep showing this agent's previous rows (never
   // another agent's) until the new window arrives.
-  const keepAgentRows = <T,>(previous: T | undefined, previousQuery?: { queryKey: readonly unknown[] }) =>
-    previousQuery?.queryKey[1] === agentId ? previous : undefined;
-  const categoriesQuery = useQuery({ ...analyticsQueries.categories(agentId, range), placeholderData: keepAgentRows });
-  const sitesQuery = useQuery({ ...analyticsQueries.sites(agentId, range, selectedCategoryKey), placeholderData: keepAgentRows });
+  const keepAgentRows = <T,>(
+    previous: T | undefined,
+    previousQuery?: { queryKey: readonly unknown[] },
+  ) => (previousQuery?.queryKey[1] === agentId ? previous : undefined);
+  const categoriesQuery = useQuery({
+    ...analyticsQueries.categories(agentId, range),
+    placeholderData: keepAgentRows,
+  });
+  const sitesQuery = useQuery({
+    ...analyticsQueries.sites(agentId, range, selectedCategoryKey),
+    placeholderData: keepAgentRows,
+  });
   // Sessions are fetched only so the total is accurate when the category rows lag or are capped.
-  const sessionsQuery = useQuery({ ...analyticsQueries.sessions(agentId, range), placeholderData: keepAgentRows });
+  const sessionsQuery = useQuery({
+    ...analyticsQueries.sessions(agentId, range),
+    placeholderData: keepAgentRows,
+  });
   const categories = categoriesQuery.data?.rows ?? NO_ROWS;
   const sites = sitesQuery.data?.rows ?? NO_ROWS;
   const sessions = sessionsQuery.data?.rows ?? NO_ROWS;
@@ -126,11 +168,18 @@ function useBrowsingAnalytics(agentId: string, range: RangeKey, selectedCategory
     const date = parseTimestamp(ts);
     return date ? fmtFromNow(date, openedAt) : "—";
   };
-  const { totalMs } = useMemo(() => summarizeAnalytics(categories, sites, sessions), [categories, sites, sessions]);
+  const { totalMs } = useMemo(
+    () => summarizeAnalytics(categories, sites, sessions),
+    [categories, sites, sessions],
+  );
   const visits = useMemo(() => totalVisits(categories, sites), [categories, sites]);
-  const { slices, otherMs } = useMemo(() => categorySlices(categories, totalMs), [categories, totalMs]);
+  const { slices, otherMs } = useMemo(
+    () => categorySlices(categories, totalMs),
+    [categories, totalMs],
+  );
   const activeCategoryLabel = selectedCategoryKey
-    ? (categories.find((c) => c.category_key === selectedCategoryKey)?.category_label ?? selectedCategoryKey)
+    ? (categories.find((c) => c.category_key === selectedCategoryKey)?.category_label ??
+      selectedCategoryKey)
     : null;
 
   return {
@@ -144,12 +193,19 @@ function useBrowsingAnalytics(agentId: string, range: RangeKey, selectedCategory
     lastSeen,
     activeCategoryLabel,
     failed: categoriesQuery.isError || sitesQuery.isError || sessionsQuery.isError,
-    nothingYet: !loading && !sitesLoading && totalMs === 0 && categories.length === 0 && !selectedCategoryKey,
+    nothingYet:
+      !loading && !sitesLoading && totalMs === 0 && categories.length === 0 && !selectedCategoryKey,
     refresh: () => void queryClient.invalidateQueries({ queryKey: analyticsKeys.agent(agentId) }),
   };
 }
 
-function RangeToggle({ range, onChange }: { range: RangeKey; onChange: (range: RangeKey) => void }) {
+function RangeToggle({
+  range,
+  onChange,
+}: {
+  range: RangeKey;
+  onChange: (range: RangeKey) => void;
+}) {
   return (
     <ToggleGroup
       size="sm"
@@ -161,7 +217,13 @@ function RangeToggle({ range, onChange }: { range: RangeKey; onChange: (range: R
       }}
     >
       {RANGE_OPTIONS.map((o) => (
-        <ToggleGroupItem key={o.id} value={o.id} aria-label={o.label} title={o.label} className="min-w-10 max-sm:h-9">
+        <ToggleGroupItem
+          key={o.id}
+          value={o.id}
+          aria-label={o.label}
+          title={o.label}
+          className="min-w-10 max-sm:h-9"
+        >
           {o.text}
         </ToggleGroupItem>
       ))}
@@ -180,7 +242,10 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function LoadFailed({ onRetry }: { onRetry: () => void }) {
   return (
-    <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+    <div
+      role="alert"
+      className="flex flex-wrap items-center gap-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+    >
       <span>Couldn’t load all browsing data.</span>
       <Button variant="outline" size="sm" onClick={onRetry}>
         Try again
@@ -215,11 +280,28 @@ function CategoryShare({
         {slices.map((slice) => (
           <div
             key={slice.key || slice.label}
-            style={{ flexGrow: slice.share, flexBasis: 0, minWidth: 3, background: colorFor(slice.key || slice.label) }}
-            className={cn("transition-opacity", selectedKey && selectedKey !== slice.key && "opacity-25")}
+            style={{
+              flexGrow: slice.share,
+              flexBasis: 0,
+              minWidth: 3,
+              background: colorFor(slice.key || slice.label),
+            }}
+            className={cn(
+              "transition-opacity",
+              selectedKey && selectedKey !== slice.key && "opacity-25",
+            )}
           />
         ))}
-        {showOther && <div style={{ flexGrow: otherMs / Math.max(totalMs, 1), flexBasis: 0, background: OTHER_COLOR }} className="opacity-25" />}
+        {showOther && (
+          <div
+            style={{
+              flexGrow: otherMs / Math.max(totalMs, 1),
+              flexBasis: 0,
+              background: OTHER_COLOR,
+            }}
+            className="opacity-25"
+          />
+        )}
       </div>
       <div className="flex flex-wrap gap-x-1 gap-y-1">
         {legend.map((slice) => {
@@ -245,7 +327,11 @@ function CategoryShare({
                 selectedKey && !active && "opacity-60",
               )}
             >
-              <span className="size-2.5 shrink-0 rounded-[3px]" style={{ background: colorFor(slice.key || slice.label) }} aria-hidden />
+              <span
+                className="size-2.5 shrink-0 rounded-[3px]"
+                style={{ background: colorFor(slice.key || slice.label) }}
+                aria-hidden
+              />
               <span className="font-medium">{slice.label}</span>
               <span className="tabular-nums text-xs text-muted-foreground">
                 {msToHuman(slice.timeMs)} · {formatShare(slice.share)}
@@ -255,13 +341,23 @@ function CategoryShare({
         })}
         {showOther && (
           <span className="inline-flex min-h-8 items-center gap-2 px-2 text-[13px] text-muted-foreground">
-            <span className="size-2.5 shrink-0 rounded-[3px] opacity-40" style={{ background: OTHER_COLOR }} aria-hidden />
+            <span
+              className="size-2.5 shrink-0 rounded-[3px] opacity-40"
+              style={{ background: OTHER_COLOR }}
+              aria-hidden
+            />
             Other
             <span className="tabular-nums text-xs">{msToHuman(otherMs)}</span>
           </span>
         )}
         {slices.length > LEGEND_PREVIEW && (
-          <Button variant="ghost" size="sm" className="self-center" aria-expanded={showAll} onClick={() => setShowAll((v) => !v)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-center"
+            aria-expanded={showAll}
+            onClick={() => setShowAll((v) => !v)}
+          >
             {showAll ? "Show fewer" : `+${slices.length - LEGEND_PREVIEW} more`}
           </Button>
         )}
@@ -297,7 +393,12 @@ function TopSites({
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
         <CardTitle>Top sites</CardTitle>
         {activeCategoryLabel ? (
-          <Button variant="secondary" size="sm" onClick={onClearCategory} aria-label={`Remove category filter: ${activeCategoryLabel}`}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onClearCategory}
+            aria-label={`Remove category filter: ${activeCategoryLabel}`}
+          >
             {activeCategoryLabel}
             <X />
           </Button>
@@ -326,12 +427,21 @@ function TopSites({
             ) : sites.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={5}>
-                  <div className="px-4 py-10 text-center text-sm text-muted-foreground">No sites in this range.</div>
+                  <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    No sites in this range.
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
               sites.map((r) => (
-                <SiteRow key={r.hostname} row={r} maxMs={maxMs} canAdmin={canAdmin} onAssign={onAssign} lastSeen={lastSeen} />
+                <SiteRow
+                  key={r.hostname}
+                  row={r}
+                  maxMs={maxMs}
+                  canAdmin={canAdmin}
+                  onAssign={onAssign}
+                  lastSeen={lastSeen}
+                />
               ))
             )}
           </TableBody>
@@ -382,7 +492,10 @@ function SiteRow({
           <div aria-hidden className="h-1 overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full"
-              style={{ width: `${maxMs > 0 ? Math.max((timeMs / maxMs) * 100, 2) : 0}%`, background: colorFor(row.category_key || "") }}
+              style={{
+                width: `${maxMs > 0 ? Math.max((timeMs / maxMs) * 100, 2) : 0}%`,
+                background: colorFor(row.category_key || ""),
+              }}
             />
           </div>
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground sm:hidden">
@@ -395,7 +508,10 @@ function SiteRow({
       <TableCell className="text-sm text-muted-foreground max-sm:hidden">{category}</TableCell>
       <TableCell className="whitespace-nowrap tabular-nums">{msToHuman(timeMs)}</TableCell>
       <TableCell className="tabular-nums">{String(row.visit_count ?? 0)}</TableCell>
-      <TableCell className="whitespace-nowrap text-xs text-muted-foreground max-sm:hidden" title={fmtDateTime(row.last_ts)}>
+      <TableCell
+        className="whitespace-nowrap text-xs text-muted-foreground max-sm:hidden"
+        title={fmtDateTime(row.last_ts)}
+      >
         {lastSeen(row.last_ts)}
       </TableCell>
     </TableRow>

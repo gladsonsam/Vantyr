@@ -2,7 +2,12 @@ import { useState } from "react";
 import { Search, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@vantyr/ui/components/input-group";
 import { Spinner } from "@vantyr/ui/components/spinner";
 
 export type UrlOverrideRow = {
@@ -22,7 +27,18 @@ const KIND_LABEL = { domain: "Domain", url: "URL prefix" } as const;
 const rowKey = (row: UrlOverrideRow) => `${row.kind}-${row.id}`;
 
 /** The saved overrides: search, count, and one row each with an in-row delete confirmation. */
-export function UrlOverrideList({ rows, search, onSearch, loading, firstLoad, loadError, hasRows, onRetry, onDelete, deleting }: {
+export function UrlOverrideList({
+  rows,
+  search,
+  onSearch,
+  loading,
+  firstLoad,
+  loadError,
+  hasRows,
+  onRetry,
+  onDelete,
+  deleting,
+}: {
   rows: UrlOverrideRow[];
   search: string;
   onSearch: (value: string) => void;
@@ -43,7 +59,9 @@ export function UrlOverrideList({ rows, search, onSearch, loading, firstLoad, lo
   return (
     <section aria-labelledby="override-list-heading" className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
-        <h3 id="override-list-heading" className="font-heading text-base font-medium">Saved overrides</h3>
+        <h3 id="override-list-heading" className="font-heading text-base font-medium">
+          Saved overrides
+        </h3>
         {loading && !firstLoad ? <Spinner aria-label="Updating" /> : null}
       </div>
       <InputGroup className="h-9">
@@ -69,7 +87,9 @@ export function UrlOverrideList({ rows, search, onSearch, loading, firstLoad, lo
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             <span>Couldn't refresh. These are the overrides from the last load.</span>
-            <Button variant="outline" size="sm" onClick={onRetry}>Try again</Button>
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              Try again
+            </Button>
           </AlertDescription>
         </Alert>
       ) : null}
@@ -90,7 +110,18 @@ export function UrlOverrideList({ rows, search, onSearch, loading, firstLoad, lo
   );
 }
 
-function ListBody({ rows, search, firstLoad, failedEmpty, loadError, onRetry, confirming, setConfirming, onDelete, deleting }: {
+function ListBody({
+  rows,
+  search,
+  firstLoad,
+  failedEmpty,
+  loadError,
+  onRetry,
+  confirming,
+  setConfirming,
+  onDelete,
+  deleting,
+}: {
   rows: UrlOverrideRow[];
   search: string;
   firstLoad: boolean;
@@ -105,12 +136,16 @@ function ListBody({ rows, search, firstLoad, failedEmpty, loadError, onRetry, co
   return (
     <>
       {firstLoad ? (
-        <p className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Spinner /> Loading overrides…</p>
+        <p className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+          <Spinner /> Loading overrides…
+        </p>
       ) : failedEmpty ? (
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             <span>Couldn't load the overrides. {loadError}</span>
-            <Button variant="outline" size="sm" onClick={onRetry}>Try again</Button>
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              Try again
+            </Button>
           </AlertDescription>
         </Alert>
       ) : rows.length === 0 ? (
@@ -118,19 +153,34 @@ function ListBody({ rows, search, firstLoad, failedEmpty, loadError, onRetry, co
           {search ? `No overrides match “${search}”.` : "No overrides yet. Add one above."}
         </p>
       ) : (
-        <OverrideRows rows={rows} search={search} confirming={confirming} setConfirming={setConfirming} onDelete={onDelete} deleting={deleting} />
+        <OverrideRows
+          rows={rows}
+          search={search}
+          confirming={confirming}
+          setConfirming={setConfirming}
+          onDelete={onDelete}
+          deleting={deleting}
+        />
       )}
     </>
   );
 }
 
 function overrideCount(count: number, search: string): string {
-  if (count >= OVERRIDE_LIMIT) return `Showing the first ${OVERRIDE_LIMIT}. Search to narrow the list.`;
+  if (count >= OVERRIDE_LIMIT)
+    return `Showing the first ${OVERRIDE_LIMIT}. Search to narrow the list.`;
   const noun = count === 1 ? "override" : "overrides";
   return search ? `${count} ${noun} match “${search}”` : `${count} ${noun}`;
 }
 
-function OverrideRows({ rows, search, confirming, setConfirming, onDelete, deleting }: {
+function OverrideRows({
+  rows,
+  search,
+  confirming,
+  setConfirming,
+  onDelete,
+  deleting,
+}: {
   rows: UrlOverrideRow[];
   search: string;
   confirming: string | null;
@@ -150,7 +200,10 @@ function OverrideRows({ rows, search, confirming, setConfirming, onDelete, delet
             deleting={deleting}
             onAsk={() => setConfirming(rowKey(row))}
             onKeep={() => setConfirming(null)}
-            onRemove={async () => { await onDelete(row); setConfirming(null); }}
+            onRemove={async () => {
+              await onDelete(row);
+              setConfirming(null);
+            }}
           />
         ))}
       </ul>
@@ -158,7 +211,14 @@ function OverrideRows({ rows, search, confirming, setConfirming, onDelete, delet
   );
 }
 
-function OverrideRow({ row, confirming, deleting, onAsk, onKeep, onRemove }: {
+function OverrideRow({
+  row,
+  confirming,
+  deleting,
+  onAsk,
+  onKeep,
+  onRemove,
+}: {
   row: UrlOverrideRow;
   confirming: boolean;
   deleting: boolean;
@@ -174,20 +234,36 @@ function OverrideRow({ row, confirming, deleting, onAsk, onKeep, onRemove }: {
           {KIND_LABEL[row.kind]} → {row.category_label || row.category_key}
           {row.note ? ` · ${row.note}` : ""}
         </div>
-        <div className="text-xs text-muted-foreground">Added {new Date(row.created_at).toLocaleString()}</div>
+        <div className="text-xs text-muted-foreground">
+          Added {new Date(row.created_at).toLocaleString()}
+        </div>
       </div>
       {confirming ? (
         <div className="flex w-full flex-col gap-2 rounded-lg bg-muted/50 p-3 sm:w-auto sm:max-w-xs">
-          <p className="text-sm">Remove this override? Pages that match it go back to the category from the lists.</p>
+          <p className="text-sm">
+            Remove this override? Pages that match it go back to the category from the lists.
+          </p>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="destructive" disabled={deleting} onClick={() => void onRemove()}>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => void onRemove()}
+            >
               {deleting && <Spinner />} Remove override
             </Button>
-            <Button size="sm" variant="outline" disabled={deleting} onClick={onKeep}>Keep</Button>
+            <Button size="sm" variant="outline" disabled={deleting} onClick={onKeep}>
+              Keep
+            </Button>
           </div>
         </div>
       ) : (
-        <Button variant="ghost" size="sm" aria-label={`Remove override for ${row.value}`} onClick={onAsk}>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`Remove override for ${row.value}`}
+          onClick={onAsk}
+        >
           <Trash2 /> Remove
         </Button>
       )}

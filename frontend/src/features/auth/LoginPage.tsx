@@ -36,7 +36,9 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   // cookie — no click needed after a session expiry. Derived during render so
   // the redirect notice shows on the same commit the config arrives.
   const ssoRedirecting =
-    authConfig?.oidc_enabled === true && authConfig.oidc_auto_login === true && canAutoRedirectToSso();
+    authConfig?.oidc_enabled === true &&
+    authConfig.oidc_auto_login === true &&
+    canAutoRedirectToSso();
 
   useEffect(() => {
     if (ssoRedirecting) redirectToSso();
@@ -84,7 +86,10 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     return (
       <AuthLayout>
         <div className="flex flex-col gap-4">
-          <p role="status" className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <p
+            role="status"
+            className="flex items-center justify-center gap-2 text-sm text-muted-foreground"
+          >
             <Spinner /> Redirecting to single sign-on…
           </p>
           <Button variant="outline" size="lg" onClick={goToSso}>
@@ -171,18 +176,32 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             <Button
               type="submit"
               size="lg"
-              disabled={loading || !username.trim() || !password.trim() || (totpRequired && !totpCode.trim())}
+              disabled={
+                loading ||
+                !username.trim() ||
+                !password.trim() ||
+                (totpRequired && !totpCode.trim())
+              }
             >
               {loading && <Spinner />} {loading ? "Signing in…" : "Sign in"}
             </Button>
             {oidcEnabled && (
               <>
-                <div role="presentation" className="flex items-center gap-3 text-xs text-muted-foreground">
+                <div
+                  role="presentation"
+                  className="flex items-center gap-3 text-xs text-muted-foreground"
+                >
                   <Separator className="flex-1" />
                   or
                   <Separator className="flex-1" />
                 </div>
-                <Button type="button" variant="outline" size="lg" onClick={goToSso} disabled={loading}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  onClick={goToSso}
+                  disabled={loading}
+                >
                   Sign in with Authentik
                 </Button>
               </>

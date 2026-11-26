@@ -1,5 +1,5 @@
-// @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, describe, expect, it } from "bun:test";
 import { useRef, useState } from "react";
 import { click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
 import { DeleteFilesDialog } from "@/features/files/FileDialogs";
@@ -13,9 +13,16 @@ import type { FileItem } from "@/features/files/useAgentFs";
 afterEach(unmountForms);
 
 const text = () => document.body.textContent ?? "";
-const byLabel = (label: string) => document.querySelector(`[aria-label="${label}"]`) as HTMLElement | null;
-const button = (name: string) => Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.trim() === name) as HTMLButtonElement;
-const names = () => Array.from(document.querySelectorAll("tbody tr")).map((r) => r.querySelector("td:nth-child(2)")?.textContent?.trim());
+const byLabel = (label: string) =>
+  document.querySelector(`[aria-label="${label}"]`) as HTMLElement | null;
+const button = (name: string) =>
+  Array.from(document.querySelectorAll("button")).find(
+    (b) => b.textContent?.trim() === name,
+  ) as HTMLButtonElement;
+const names = () =>
+  Array.from(document.querySelectorAll("tbody tr")).map((r) =>
+    r.querySelector("td:nth-child(2)")?.textContent?.trim(),
+  );
 
 const ITEMS: FileItem[] = [
   { name: "zeta.txt", is_dir: false, size: 10 },
@@ -62,7 +69,10 @@ describe("FileTable", () => {
     expect(selectedNames()?.split(",").sort()).toEqual(["Projects", "alpha.log", "zeta.txt"]);
     await click(byLabel("Select all files in this folder")!);
     expect(selectedNames()).toBe("");
-    await typeInto(document.querySelector('input[aria-label="Search files and folders"]') as HTMLInputElement, "alpha");
+    await typeInto(
+      document.querySelector('input[aria-label="Search files and folders"]') as HTMLInputElement,
+      "alpha",
+    );
     expect(text()).toContain("1 of 3 items");
     await click(byLabel("Select all files in this folder")!);
     expect(selectedNames()).toBe("alpha.log");
@@ -81,7 +91,10 @@ describe("FileTable", () => {
     expect(text()).toContain("This folder is empty. Upload files or create a new folder.");
     unmountForms();
     await mountForm(<Table />);
-    await typeInto(document.querySelector('input[aria-label="Search files and folders"]') as HTMLInputElement, "nothing");
+    await typeInto(
+      document.querySelector('input[aria-label="Search files and folders"]') as HTMLInputElement,
+      "nothing",
+    );
     expect(text()).toContain("No files or folders match “nothing”.");
   });
 
@@ -95,12 +108,28 @@ describe("FileTable", () => {
 
 describe("FileSelectionBar", () => {
   function Bar({ count = 2, disabled = false }) {
-    const selected: FileItem[] = Array.from({ length: count }, (_, i) => ({ name: `f${i}`, is_dir: false, size: 1 }));
+    const selected: FileItem[] = Array.from({ length: count }, (_, i) => ({
+      name: `f${i}`,
+      is_dir: false,
+      size: 1,
+    }));
     const handlers = createFileActionHandlers({
-      selected, selectedItem: selected[0] ?? null, selectedPath: "C:\\x\\f0", selectedPaths: selected.map((s) => `C:\\x\\${s.name}`),
-      oneSelected: count === 1, oneFileSelected: count === 1, clipboard: null, canUpload: true, downloading: null,
-      fs: { download: vi.fn(), openPreview: vi.fn() }, setFsMessage: vi.fn(), setClipboard: vi.fn(), setPrompt: vi.fn(), setDeleteOpen: vi.fn(),
-      copyText: vi.fn(), paste: vi.fn(),
+      selected,
+      selectedItem: selected[0] ?? null,
+      selectedPath: "C:\\x\\f0",
+      selectedPaths: selected.map((s) => `C:\\x\\${s.name}`),
+      oneSelected: count === 1,
+      oneFileSelected: count === 1,
+      clipboard: null,
+      canUpload: true,
+      downloading: null,
+      fs: { download: vi.fn(), openPreview: vi.fn() },
+      setFsMessage: vi.fn(),
+      setClipboard: vi.fn(),
+      setPrompt: vi.fn(),
+      setDeleteOpen: vi.fn(),
+      copyText: vi.fn(),
+      paste: vi.fn(),
     });
     return (
       <>
@@ -118,7 +147,9 @@ describe("FileSelectionBar", () => {
 
   it("names what is selected and leaves delete reachable", async () => {
     await mountForm(<Bar count={2} />);
-    expect(document.querySelector('[role="toolbar"]')?.getAttribute("aria-label")).toBe("Actions for selected items");
+    expect(document.querySelector('[role="toolbar"]')?.getAttribute("aria-label")).toBe(
+      "Actions for selected items",
+    );
     expect(text()).toContain("2 selected");
     expect(button("Delete").disabled).toBe(false);
     expect(button("Download").disabled).toBe(true);
@@ -134,28 +165,58 @@ describe("FileSelectionBar", () => {
 
   it("locks every action while a transfer or operation runs", async () => {
     await mountForm(<Bar count={1} disabled />);
-    for (const name of ["Download", "Rename", "Delete", "More"]) expect(button(name).disabled).toBe(true);
+    for (const name of ["Download", "Rename", "Delete", "More"])
+      expect(button(name).disabled).toBe(true);
   });
 });
 
 describe("file action guards", () => {
   const base = {
-    selected: [] as FileItem[], selectedItem: null, selectedPath: null, selectedPaths: [] as string[], oneSelected: false, oneFileSelected: false,
-    clipboard: null, canUpload: true, downloading: null, fs: { download: vi.fn(), openPreview: vi.fn() }, setFsMessage: vi.fn(),
-    setClipboard: vi.fn(), setPrompt: vi.fn(), setDeleteOpen: vi.fn(), copyText: vi.fn(), paste: vi.fn(),
+    selected: [] as FileItem[],
+    selectedItem: null,
+    selectedPath: null,
+    selectedPaths: [] as string[],
+    oneSelected: false,
+    oneFileSelected: false,
+    clipboard: null,
+    canUpload: true,
+    downloading: null,
+    fs: { download: vi.fn(), openPreview: vi.fn() },
+    setFsMessage: vi.fn(),
+    setClipboard: vi.fn(),
+    setPrompt: vi.fn(),
+    setDeleteOpen: vi.fn(),
+    copyText: vi.fn(),
+    paste: vi.fn(),
   };
   it("does not offer to copy folders (the device copies files only) but still allows cut and delete", () => {
-    const withFolder = createFileActionHandlers({ ...base, selected: [{ name: "d", is_dir: true, size: 0 }] });
+    const withFolder = createFileActionHandlers({
+      ...base,
+      selected: [{ name: "d", is_dir: true, size: 0 }],
+    });
     expect(withFolder.isActionDisabled("copy")).toBe(true);
     expect(withFolder.isActionDisabled("cut")).toBe(false);
     expect(withFolder.isActionDisabled("delete")).toBe(false);
-    const files = createFileActionHandlers({ ...base, selected: [{ name: "a", is_dir: false, size: 1 }] });
+    const files = createFileActionHandlers({
+      ...base,
+      selected: [{ name: "a", is_dir: false, size: 1 }],
+    });
     expect(files.isActionDisabled("copy")).toBe(false);
   });
 });
 
 describe("FilesToolbar", () => {
-  const props = { refreshing: false, createDisabled: false, clipboard: null, pasteDisabled: false, onRefresh: vi.fn(), onNewFolder: vi.fn(), onNewFile: vi.fn(), onUpload: vi.fn(), onPaste: vi.fn() };
+  const props = {
+    refreshing: false,
+    createDisabled: false,
+    clipboard: null,
+    pasteDisabled: false,
+    onRefresh: vi.fn(),
+    onNewFolder: vi.fn(),
+    onNewFile: vi.fn(),
+    onUpload: vi.fn(),
+    onPaste: vi.fn(),
+  };
   it("offers Paste only when something was cut or copied, and says how many", async () => {
     await mountForm(<FilesToolbar {...props} />);
     expect(button("Paste 2 items")).toBeUndefined();
@@ -175,7 +236,12 @@ describe("FilesToolbar", () => {
 
 describe("FileBreadcrumbs", () => {
   const render = (path: string, onNavigate = vi.fn(), onCopyPath = vi.fn()) => (
-    <FileBreadcrumbs crumbs={breadcrumbs(path)} currentPath={path} onNavigate={onNavigate} onCopyPath={onCopyPath} />
+    <FileBreadcrumbs
+      crumbs={breadcrumbs(path)}
+      currentPath={path}
+      onNavigate={onNavigate}
+      onCopyPath={onCopyPath}
+    />
   );
 
   it("goes up one folder and to any ancestor", async () => {
@@ -201,7 +267,16 @@ describe("FileBreadcrumbs", () => {
 });
 
 describe("FileTransferStatus", () => {
-  const idle = { downloading: null, downloadProgress: 0, uploading: null, uploadProgress: 0, uploadMessage: null, fsMessage: null, onDismissUploadMessage: vi.fn(), onDismissFsMessage: vi.fn() };
+  const idle = {
+    downloading: null,
+    downloadProgress: 0,
+    uploading: null,
+    uploadProgress: 0,
+    uploadMessage: null,
+    fsMessage: null,
+    onDismissUploadMessage: vi.fn(),
+    onDismissFsMessage: vi.fn(),
+  };
 
   it("renders nothing while idle", async () => {
     await mountForm(<FileTransferStatus {...idle} />);
@@ -209,7 +284,13 @@ describe("FileTransferStatus", () => {
   });
 
   it("names the file and the percentage of a running transfer", async () => {
-    await mountForm(<FileTransferStatus {...idle} downloading={"C:\\Users\\Demo\\backup.zip"} downloadProgress={42} />);
+    await mountForm(
+      <FileTransferStatus
+        {...idle}
+        downloading={"C:\\Users\\Demo\\backup.zip"}
+        downloadProgress={42}
+      />,
+    );
     const bar = document.querySelector('[role="progressbar"]')!;
     expect(bar.getAttribute("aria-label")).toBe("Downloading backup.zip");
     expect(bar.getAttribute("aria-valuenow")).toBe("42");
@@ -218,7 +299,14 @@ describe("FileTransferStatus", () => {
 
   it("announces failures as alerts, successes as status, and lets either be dismissed", async () => {
     const onDismissFsMessage = vi.fn();
-    await mountForm(<FileTransferStatus {...idle} fsMessage={{ ok: false, text: "Rename failed." }} uploadMessage="Upload finished." onDismissFsMessage={onDismissFsMessage} />);
+    await mountForm(
+      <FileTransferStatus
+        {...idle}
+        fsMessage={{ ok: false, text: "Rename failed." }}
+        uploadMessage="Upload finished."
+        onDismissFsMessage={onDismissFsMessage}
+      />,
+    );
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("Rename failed.");
     expect(document.querySelector('[role="status"]')?.textContent).toContain("Upload finished.");
     await click(document.querySelector('[role="alert"] button')!);
@@ -236,10 +324,25 @@ describe("DeleteFilesDialog", () => {
     function FocusHarness() {
       const [isOpen, setOpen] = useState(false);
       const trigger = useRef<HTMLButtonElement>(null);
-      return <>
-        <button ref={trigger} onClick={() => setOpen(true)}>Delete selection</button>
-        <DeleteFilesDialog open={isOpen} onOpenChange={setOpen} returnFocus={trigger} subject="a.txt" names={["a.txt"]} folderCount={0} location="C:\\Demo" busy={false} disabled={false} onConfirm={vi.fn()} />
-      </>;
+      return (
+        <>
+          <button ref={trigger} onClick={() => setOpen(true)}>
+            Delete selection
+          </button>
+          <DeleteFilesDialog
+            open={isOpen}
+            onOpenChange={setOpen}
+            returnFocus={trigger}
+            subject="a.txt"
+            names={["a.txt"]}
+            folderCount={0}
+            location="C:\\Demo"
+            busy={false}
+            disabled={false}
+            onConfirm={vi.fn()}
+          />
+        </>
+      );
     }
     await mountForm(<FocusHarness />);
     const trigger = button("Delete selection");
@@ -251,9 +354,24 @@ describe("DeleteFilesDialog", () => {
   const open = (over: Partial<React.ComponentProps<typeof DeleteFilesDialog>> = {}) => {
     const onConfirm = vi.fn();
     const onOpenChange = vi.fn();
-    return { onConfirm, onOpenChange, node: (
-      <DeleteFilesDialog open onOpenChange={onOpenChange} subject="2 items" names={["a.txt", "Projects"]} folderCount={1} location={"C:\\Users\\Demo"} busy={false} disabled={false} onConfirm={onConfirm} {...over} />
-    ) };
+    return {
+      onConfirm,
+      onOpenChange,
+      node: (
+        <DeleteFilesDialog
+          open
+          onOpenChange={onOpenChange}
+          subject="2 items"
+          names={["a.txt", "Projects"]}
+          folderCount={1}
+          location={"C:\\Users\\Demo"}
+          busy={false}
+          disabled={false}
+          onConfirm={onConfirm}
+          {...over}
+        />
+      ),
+    };
   };
 
   it("states the consequence, where it happens and what goes", async () => {

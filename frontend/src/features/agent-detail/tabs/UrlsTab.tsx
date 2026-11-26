@@ -25,8 +25,18 @@ import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabiliti
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 import { isAdminRole } from "@/features/auth/permissions";
 import type { DashboardRole } from "@/api/types";
-import { LoadFailed, MonitoringToolbar, ROW_ACTIONS_CLASS, ROW_ACTION_BUTTON_CLASS } from "@/features/agent-detail/components/MonitoringToolbar";
-import { categoryOf, listCountLabel, sharedValue, splitUrl } from "@/features/agent-detail/lib/monitoring";
+import {
+  LoadFailed,
+  MonitoringToolbar,
+  ROW_ACTIONS_CLASS,
+  ROW_ACTION_BUTTON_CLASS,
+} from "@/features/agent-detail/components/MonitoringToolbar";
+import {
+  categoryOf,
+  listCountLabel,
+  sharedValue,
+  splitUrl,
+} from "@/features/agent-detail/lib/monitoring";
 import { copyToClipboard } from "@/lib/utils";
 import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
@@ -90,7 +100,12 @@ type UrlCopyState = "idle" | "copied" | "failed";
 function useUrlCopy(url: string) {
   const [state, setState] = useState<UrlCopyState>("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
   const copy = async () => {
     const ok = await copyToClipboard(url);
     setState(ok ? "copied" : "failed");
@@ -102,15 +117,26 @@ function useUrlCopy(url: string) {
 
 /** Copies the full address with the same feedback as the phone menu. */
 function CopyUrlButton({ state, onCopy }: { state: UrlCopyState; onCopy: () => void }) {
-  return <Button variant="ghost" size="icon-sm" className={ROW_ACTION_BUTTON_CLASS}
-    aria-label={state === "copied" ? "URL copied" : "Copy full URL"}
-    title={state === "copied" ? "Copied" : "Copy full URL"} onClick={onCopy}>
-    {state === "copied" ? <Check /> : <Copy />}
-  </Button>;
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className={ROW_ACTION_BUTTON_CLASS}
+      aria-label={state === "copied" ? "URL copied" : "Copy full URL"}
+      title={state === "copied" ? "Copied" : "Copy full URL"}
+      onClick={onCopy}
+    >
+      {state === "copied" ? <Check /> : <Copy />}
+    </Button>
+  );
 }
 
 /** Wide screens: three icon buttons. Phones: one menu, so the address keeps the width. */
-function UrlRowActions({ item, openInActivity, openInRecall }: {
+function UrlRowActions({
+  item,
+  openInActivity,
+  openInRecall,
+}: {
   item: URLEvent;
   openInActivity: (q: string) => void;
   openInRecall: (iso: string) => void;
@@ -123,27 +149,64 @@ function UrlRowActions({ item, openInActivity, openInRecall }: {
       <span className="flex items-center gap-0.5 max-sm:hidden">
         {hasUrl ? <CopyUrlButton state={copyState} onCopy={() => void copy()} /> : null}
         {hasUrl ? (
-          <Button variant="ghost" size="icon-sm" className={ROW_ACTION_BUTTON_CLASS} aria-label="Show in timeline" title="Show in timeline" onClick={() => openInActivity(item.url)}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={ROW_ACTION_BUTTON_CLASS}
+            aria-label="Show in timeline"
+            title="Show in timeline"
+            onClick={() => openInActivity(item.url)}
+          >
             <Activity />
           </Button>
         ) : null}
         {item.timestamp ? (
-          <Button variant="ghost" size="icon-sm" className={ROW_ACTION_BUTTON_CLASS} aria-label="Open in Recall" title="Open in Recall" onClick={() => openInRecall(item.timestamp)}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={ROW_ACTION_BUTTON_CLASS}
+            aria-label="Open in Recall"
+            title="Open in Recall"
+            onClick={() => openInRecall(item.timestamp)}
+          >
             <History />
           </Button>
         ) : null}
       </span>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className={`${ROW_ACTION_BUTTON_CLASS} sm:hidden`} aria-label="Visit actions" title="Visit actions" />}>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={`${ROW_ACTION_BUTTON_CLASS} sm:hidden`}
+              aria-label="Visit actions"
+              title="Visit actions"
+            />
+          }
+        >
           <MoreHorizontal />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {hasUrl ? <DropdownMenuItem onClick={() => void copy()}>Copy full URL</DropdownMenuItem> : null}
-          {hasUrl ? <DropdownMenuItem onClick={() => openInActivity(item.url)}>Show in timeline</DropdownMenuItem> : null}
-          {item.timestamp ? <DropdownMenuItem onClick={() => openInRecall(item.timestamp)}>Open in Recall</DropdownMenuItem> : null}
+          {hasUrl ? (
+            <DropdownMenuItem onClick={() => void copy()}>Copy full URL</DropdownMenuItem>
+          ) : null}
+          {hasUrl ? (
+            <DropdownMenuItem onClick={() => openInActivity(item.url)}>
+              Show in timeline
+            </DropdownMenuItem>
+          ) : null}
+          {item.timestamp ? (
+            <DropdownMenuItem onClick={() => openInRecall(item.timestamp)}>
+              Open in Recall
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
-      <span role="status" className={copyState === "idle" ? "sr-only" : "max-w-28 text-xs text-muted-foreground"}>
+      <span
+        role="status"
+        className={copyState === "idle" ? "sr-only" : "max-w-28 text-xs text-muted-foreground"}
+      >
         {copyState === "copied" ? "Copied" : copyState === "failed" ? "Couldn’t copy URL" : ""}
       </span>
     </span>
@@ -167,7 +230,9 @@ function urlColumns(
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
-      cell: ({ row, table }) => <DayTimeCell table={table} columnId="timestamp" ts={row.original.timestamp} />,
+      cell: ({ row, table }) => (
+        <DayTimeCell table={table} columnId="timestamp" ts={row.original.timestamp} />
+      ),
       meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
     }),
     columnHelper.accessor("url", {
@@ -188,7 +253,11 @@ function urlColumns(
                 >
                   {host || "—"}
                 </a>
-                {item.title ? <span className="truncate text-[13px] text-muted-foreground max-sm:basis-full">{item.title}</span> : null}
+                {item.title ? (
+                  <span className="truncate text-[13px] text-muted-foreground max-sm:basis-full">
+                    {item.title}
+                  </span>
+                ) : null}
               </div>
               {rest ? (
                 <div className="truncate text-xs text-muted-foreground" title={item.url}>
@@ -196,7 +265,12 @@ function urlColumns(
                 </div>
               ) : null}
             </div>
-            <UrlRowActions key={`${item.id}:${item.url}:${item.timestamp}`} item={item} openInActivity={openInActivity} openInRecall={openInRecall} />
+            <UrlRowActions
+              key={`${item.id}:${item.url}:${item.timestamp}`}
+              item={item}
+              openInActivity={openInActivity}
+              openInRecall={openInRecall}
+            />
           </div>
         );
       },
@@ -234,10 +308,22 @@ function urlColumns(
 }
 
 /** Admin-only history actions. */
-function CategorizeMenu({ disabled, pending, onRun }: { disabled: boolean; pending: boolean; onRun: () => void }) {
+function CategorizeMenu({
+  disabled,
+  pending,
+  onRun,
+}: {
+  disabled: boolean;
+  pending: boolean;
+  onRun: () => void;
+}) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="More URL actions" title="More" />}>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="ghost" size="icon-sm" aria-label="More URL actions" title="More" />
+        }
+      >
         <MoreHorizontal />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -322,7 +408,13 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
   const sharedCategory = useMemo(() => sharedValue(items.map((r) => r.category ?? "")), [items]);
 
   if (!urlTrackingAvailable) {
-    return <CapabilityNotice info={agentInfo} capability="url_tracking" title="URL tracking unavailable" />;
+    return (
+      <CapabilityNotice
+        info={agentInfo}
+        capability="url_tracking"
+        title="URL tracking unavailable"
+      />
+    );
   }
 
   return (
@@ -339,22 +431,37 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
           limit: URLS_LIMIT,
           noun: VISITS,
         })}
-        detail={<SharedFacts values={[sharedBrowser === "—" ? "" : sharedBrowser, sharedCategory]} />}
+        detail={
+          <SharedFacts values={[sharedBrowser === "—" ? "" : sharedBrowser, sharedCategory]} />
+        }
         onRefresh={() => void urlsQuery.refetch()}
         refreshing={loading && items.length > 0}
         actions={
           canAdmin ? (
-            <CategorizeMenu disabled={!hasUncategorized} pending={backfill.isPending} onRun={() => backfill.mutate()} />
+            <CategorizeMenu
+              disabled={!hasUncategorized}
+              pending={backfill.isPending}
+              onRun={() => backfill.mutate()}
+            />
           ) : null
         }
       />
-      {urlsQuery.isError ? <LoadFailed what="website visits" onRetry={() => void urlsQuery.refetch()} /> : null}
+      {urlsQuery.isError ? (
+        <LoadFailed what="website visits" onRetry={() => void urlsQuery.refetch()} />
+      ) : null}
       <div className="px-2 py-2">
-        <DataTable dayGroupColumn="timestamp"
+        <DataTable
+          dayGroupColumn="timestamp"
           table={table}
           loading={loading}
           loadingText="Loading websites…"
-          emptyText={urlsQuery.isError ? "Nothing to show." : filteringText ? "No visits match this search." : "No websites visited yet."}
+          emptyText={
+            urlsQuery.isError
+              ? "Nothing to show."
+              : filteringText
+                ? "No visits match this search."
+                : "No websites visited yet."
+          }
           bodyClassName="[&_td]:align-top"
         />
       </div>

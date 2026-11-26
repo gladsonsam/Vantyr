@@ -1,0 +1,24 @@
+{
+  "$schema": "../node_modules/oxlint/configuration_schema.json",
+  "extends": ["../packages/oxlint-config/react-compiler.json"],
+  "ignorePatterns": ["dist", "node_modules", "src/api/types/generated"],
+  "overrides": [
+    {
+      "files": ["src/components/common/ErrorBoundary.tsx"],
+      "rules": {
+        "react/only-export-components": "off"
+      }
+    },
+    {
+      "files": ["**/*.js"],
+      "env": {
+        "browser": true,
+        "serviceworker": true
+      }
+    }
+  ],
+  "plugins": ["typescript", "react"],
+  "env": {
+    "browser": true
+  }
+}

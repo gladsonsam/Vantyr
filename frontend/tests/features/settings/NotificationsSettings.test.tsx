@@ -1,21 +1,36 @@
-// @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
 import { buttonByText, click, mountForm, unmountForms } from "@tests/support/formDom";
-import { NotificationsSettings } from "@/features/settings/NotificationsSettings";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({ notificationsStatus: vi.fn(), notificationsTest: vi.fn() }));
-vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e instanceof Error ? e.message : e) }));
+const api = (() => ({ notificationsStatus: vi.fn(), notificationsTest: vi.fn() }))();
+await vi.mock("@/api", () => ({
+  api,
+  errorText: (e: unknown) => String(e instanceof Error ? e.message : e),
+}));
 
-const provider = (id: string, enabled: boolean) => ({ id, label: id.toUpperCase(), description: `${id} desc`, env_keys: [`${id.toUpperCase()}_URL`], docs_url: enabled ? "" : `https://example.com/${id}`, enabled });
+const { NotificationsSettings } = await import("@/features/settings/NotificationsSettings");
+
+const provider = (id: string, enabled: boolean) => ({
+  id,
+  label: id.toUpperCase(),
+  description: `${id} desc`,
+  env_keys: [`${id.toUpperCase()}_URL`],
+  docs_url: enabled ? "" : `https://example.com/${id}`,
+  enabled,
+});
 const status = (enabledIds: string[]) => ({
   any_enabled: enabledIds.length > 0,
   providers: ["slack", "email", "ntfy"].map((id) => provider(id, enabledIds.includes(id))),
 });
 
-const render = (isAdmin = true) => mountForm(withQueryClient(<NotificationsSettings isAdmin={isAdmin} />, createTestQueryClient()));
+const render = (isAdmin = true) =>
+  mountForm(withQueryClient(<NotificationsSettings isAdmin={isAdmin} />, createTestQueryClient()));
 const text = () => document.body.textContent ?? "";
-const buttons = () => [...document.querySelectorAll("button")].map((b) => b.textContent?.trim() || b.getAttribute("aria-label"));
+const buttons = () =>
+  [...document.querySelectorAll("button")].map(
+    (b) => b.textContent?.trim() || b.getAttribute("aria-label"),
+  );
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(unmountForms);
@@ -44,7 +59,13 @@ describe("alert channels", () => {
 
   it("reports each channel's test result without claiming more than was sent", async () => {
     api.notificationsStatus.mockResolvedValue(status(["slack", "email"]));
-    api.notificationsTest.mockResolvedValue({ all_ok: false, results: [{ id: "slack", ok: true, error: null }, { id: "email", ok: false, error: "SMTP refused" }] });
+    api.notificationsTest.mockResolvedValue({
+      all_ok: false,
+      results: [
+        { id: "slack", ok: true, error: null },
+        { id: "email", ok: false, error: "SMTP refused" },
+      ],
+    });
     await render();
     expect(text()).toContain("Sends a real message to all 2 channels.");
     await click(buttonByText("Send test notification"));

@@ -41,7 +41,13 @@ function filterItems(value: string, search: string): number {
     return rank < 0 ? 0 : 1 / (rank + 1);
   }
   const haystack = value.toLowerCase();
-  return search.toLowerCase().split(/\s+/).filter(Boolean).every((word) => haystack.includes(word)) ? 0.5 : 0;
+  return search
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => haystack.includes(word))
+    ? 0.5
+    : 0;
 }
 
 interface Props {
@@ -66,6 +72,9 @@ export function CommandMenu({
   const toggleOpen = useEffectEvent(() => onOpenChange(!open));
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // A focused surface that already handled the chord (the remote desktop forwarding Ctrl+K)
+      // owns it. Fullscreen hides this palette, so opening it there would only steal keys.
+      if (event.defaultPrevented || document.fullscreenElement) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         toggleOpen();
@@ -80,9 +89,7 @@ export function CommandMenu({
     action();
   };
   const sorted = [...agents].sort(
-    (a, b) =>
-      Number(b.online) - Number(a.online) ||
-      (a.name ?? a.id).localeCompare(b.name ?? b.id),
+    (a, b) => Number(b.online) - Number(a.online) || (a.name ?? a.id).localeCompare(b.name ?? b.id),
   );
 
   return (
@@ -95,7 +102,9 @@ export function CommandMenu({
       className="[@media(max-height:560px)]:top-2"
     >
       <Command filter={filterItems}>
-        <CommandInput placeholder={tools ? "Search tools, pages and devices…" : "Search pages and devices…"} />
+        <CommandInput
+          placeholder={tools ? "Search tools, pages and devices…" : "Search pages and devices…"}
+        />
         <CommandList className="max-h-[min(18rem,calc(100dvh-6rem))]">
           <CommandEmpty>No results.</CommandEmpty>
           {tools && tools.items.length > 0 && (
@@ -109,7 +118,9 @@ export function CommandMenu({
                   >
                     <tool.icon />
                     <span className="shrink-0">{tool.label}</span>
-                    <CommandShortcut className="hidden min-w-0 truncate sm:inline">{tool.hint}</CommandShortcut>
+                    <CommandShortcut className="hidden min-w-0 truncate sm:inline">
+                      {tool.hint}
+                    </CommandShortcut>
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -131,9 +142,7 @@ export function CommandMenu({
                         status: agent.online ? "connected" : "offline",
                       }}
                     />
-                    <span className="truncate">
-                      {agent.name?.trim() || agent.id}
-                    </span>
+                    <span className="truncate">{agent.name?.trim() || agent.id}</span>
                     {/* The dot carries the status for sighted users; only the exception is spelled out. */}
                     <CommandShortcut>
                       {agent.online ? <span className="sr-only">online</span> : "offline"}

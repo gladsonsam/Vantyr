@@ -40,20 +40,38 @@ export function GroupList({ groups, ruleCounts, onAction }: GroupListProps) {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <Button variant="outline" className="pointer-coarse:h-9" onClick={() => onAction(g, "members")}>
+            <Button
+              variant="outline"
+              className="pointer-coarse:h-9"
+              onClick={() => onAction(g, "members")}
+            >
               <Users /> Members
             </Button>
-            <Button variant="ghost" className="pointer-coarse:h-9" aria-label={`Edit ${g.name}`} onClick={() => onAction(g, "rename")}>
+            <Button
+              variant="ghost"
+              className="pointer-coarse:h-9"
+              aria-label={`Edit ${g.name}`}
+              onClick={() => onAction(g, "rename")}
+            >
               <Pencil /> Edit
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
-                render={<Button variant="ghost" size="icon" className="pointer-coarse:size-9" aria-label={`More actions for ${g.name}`} />}
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="pointer-coarse:size-9"
+                    aria-label={`More actions for ${g.name}`}
+                  />
+                }
               >
                 <MoreHorizontal />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem onClick={() => onAction(g, "rule")}>New alert rule for this group</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onAction(g, "rule")}>
+                  New alert rule for this group
+                </DropdownMenuItem>
                 <DropdownMenuItem variant="destructive" onClick={() => onAction(g, "delete")}>
                   Delete group…
                 </DropdownMenuItem>

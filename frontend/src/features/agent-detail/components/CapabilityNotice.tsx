@@ -1,6 +1,10 @@
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import type { AgentInfo } from "@/api/types";
-import { capabilityLabel, capabilityStatus, type CapabilityKey } from "@/features/agent-detail/lib/agentCapabilities";
+import {
+  capabilityLabel,
+  capabilityStatus,
+  type CapabilityKey,
+} from "@/features/agent-detail/lib/agentCapabilities";
 
 interface CapabilityNoticeProps {
   info?: AgentInfo | null;
@@ -13,9 +17,7 @@ export function CapabilityNotice({ info, capability, title }: CapabilityNoticePr
   return (
     <Alert>
       <AlertTitle>{title ?? `${capabilityLabel(capability)} unavailable`}</AlertTitle>
-      <AlertDescription>
-        This device reports it as {status.replace(/_/g, " ")}.
-      </AlertDescription>
+      <AlertDescription>This device reports it as {status.replace(/_/g, " ")}.</AlertDescription>
     </Alert>
   );
 }

@@ -1,25 +1,35 @@
-// @vitest-environment jsdom
+import { withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
 import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it } from "bun:test";
 import type { DashboardSessionUser } from "@/api/types";
-import { withQueryClient } from "@tests/support/queryClient";
-import { SessionProvider } from "@/app/providers/SessionProvider";
-import { useSession, type SessionContextValue } from "@/app/providers/useSession";
 
-const apiMock = vi.hoisted(() => ({
+import type { SessionContextValue } from "@/app/providers/useSession";
+
+const apiMock = (() => ({
   authStatus: vi.fn(),
   me: vi.fn(),
   logout: vi.fn(),
   setDashboardCsrfToken: vi.fn(),
-}));
+}))();
 
-vi.mock("@/api", () => ({
+await vi.mock("@/api", () => ({
   api: { authStatus: apiMock.authStatus, me: apiMock.me, logout: apiMock.logout },
   setDashboardCsrfToken: apiMock.setDashboardCsrfToken,
 }));
 
-const admin: DashboardSessionUser = { id: "u1", username: "admin", role: "admin", display_name: "", display_icon: null, csrf_token: "csrf-123" };
+const { SessionProvider } = await import("@/app/providers/SessionProvider");
+const { useSession } = await import("@/app/providers/useSession");
+
+const admin: DashboardSessionUser = {
+  id: "u1",
+  username: "admin",
+  role: "admin",
+  display_name: "",
+  display_icon: null,
+  csrf_token: "csrf-123",
+};
 
 let session: SessionContextValue | null = null;
 function Probe() {
@@ -47,7 +57,15 @@ afterEach(async () => {
 
 it("loads the user and CSRF token right after an in-app login", async () => {
   apiMock.authStatus.mockResolvedValueOnce({ authenticated: false });
-  await act(async () => root.render(withQueryClient(<SessionProvider><Probe /></SessionProvider>)));
+  await act(async () =>
+    root.render(
+      withQueryClient(
+        <SessionProvider>
+          <Probe />
+        </SessionProvider>,
+      ),
+    ),
+  );
   expect(session?.authenticated).toBe(false);
   expect(session?.user).toBeNull();
   expect(apiMock.me).not.toHaveBeenCalled();

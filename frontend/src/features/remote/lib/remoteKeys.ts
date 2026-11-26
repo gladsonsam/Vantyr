@@ -2,12 +2,33 @@
 
 /** Browser KeyboardEvent.key values that map to SpecialKey enum variants. */
 const SPECIAL_KEY_MAP: Record<string, string> = {
-  Enter: "enter", Backspace: "backspace", Tab: "tab", Escape: "escape",
-  Delete: "delete", Insert: "insert", " ": "space",
-  Home: "home", End: "end", PageUp: "pageup", PageDown: "pagedown",
-  ArrowUp: "arrowup", ArrowDown: "arrowdown", ArrowLeft: "arrowleft", ArrowRight: "arrowright",
-  F1: "f1", F2: "f2", F3: "f3", F4: "f4", F5: "f5", F6: "f6",
-  F7: "f7", F8: "f8", F9: "f9", F10: "f10", F11: "f11", F12: "f12",
+  Enter: "enter",
+  Backspace: "backspace",
+  Tab: "tab",
+  Escape: "escape",
+  Delete: "delete",
+  Insert: "insert",
+  " ": "space",
+  Home: "home",
+  End: "end",
+  PageUp: "pageup",
+  PageDown: "pagedown",
+  ArrowUp: "arrowup",
+  ArrowDown: "arrowdown",
+  ArrowLeft: "arrowleft",
+  ArrowRight: "arrowright",
+  F1: "f1",
+  F2: "f2",
+  F3: "f3",
+  F4: "f4",
+  F5: "f5",
+  F6: "f6",
+  F7: "f7",
+  F8: "f8",
+  F9: "f9",
+  F10: "f10",
+  F11: "f11",
+  F12: "f12",
   CapsLock: "capslock",
 };
 
@@ -34,12 +55,19 @@ export type KeyDownAction =
   | { kind: "text"; text: string };
 
 /** What a keydown should send to the agent, or null when it maps to nothing. */
-export function keyDownAction(e: { key: string; ctrlKey: boolean; altKey: boolean; metaKey: boolean }): KeyDownAction | null {
+export function keyDownAction(e: {
+  key: string;
+  ctrlKey: boolean;
+  altKey: boolean;
+  metaKey: boolean;
+}): KeyDownAction | null {
   if (MODIFIER_KEYS.has(e.key)) return { kind: "modifier", key: e.key.toLowerCase() };
   const special = SPECIAL_KEY_MAP[e.key];
   if (special) return { kind: "special", key: special };
   if (isPrintable(e.key)) {
-    return e.ctrlKey || e.altKey || e.metaKey ? { kind: "char", char: e.key } : { kind: "text", text: e.key };
+    return e.ctrlKey || e.altKey || e.metaKey
+      ? { kind: "char", char: e.key }
+      : { kind: "text", text: e.key };
   }
   return null;
 }
@@ -55,14 +83,21 @@ export function buttonName(btn: number): "left" | "middle" | "right" {
  * per axis per event.
  */
 export function createWheelAccumulator() {
-  let scrollX = 0, scrollY = 0;
-  return (e: { deltaX: number; deltaY: number; deltaMode: number }): { dx: number; dy: number } | null => {
+  let scrollX = 0,
+    scrollY = 0;
+  return (e: {
+    deltaX: number;
+    deltaY: number;
+    deltaMode: number;
+  }): { dx: number; dy: number } | null => {
     const factor = e.deltaMode === 1 ? 1 : e.deltaMode === 2 ? 10 : 1 / 100;
-    scrollY += e.deltaY * factor; scrollX += e.deltaX * factor;
+    scrollY += e.deltaY * factor;
+    scrollX += e.deltaX * factor;
     const cdx = Math.max(-10, Math.min(10, Math.trunc(scrollX)));
     const cdy = Math.max(-10, Math.min(10, Math.trunc(scrollY)));
     if (cdx === 0 && cdy === 0) return null;
-    scrollX -= cdx; scrollY -= cdy;
+    scrollX -= cdx;
+    scrollY -= cdy;
     return { dx: cdx, dy: cdy };
   };
 }

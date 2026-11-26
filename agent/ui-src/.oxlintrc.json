@@ -1,0 +1,9 @@
+{
+  "$schema": "../../node_modules/oxlint/configuration_schema.json",
+  "extends": ["../../packages/oxlint-config/react-compiler.json"],
+  "ignorePatterns": ["dist", "node_modules"],
+  "plugins": ["typescript", "react"],
+  "env": {
+    "browser": true
+  }
+}

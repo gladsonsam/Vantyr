@@ -1,15 +1,18 @@
-// @vitest-environment jsdom
+import { testMock as vi } from "@tests/support/mock";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it } from "bun:test";
 import type { Agent } from "@/api/types";
 import type { NotificationItem } from "@/app/providers/useNotificationStore";
 import { AppShell } from "@/app/shell/AppShell";
 import { useMobileNavOpener } from "@/app/shell/useMobileNavOpener";
 
 // jsdom has no PointerEvent; Base UI buttons construct one on click.
-if (typeof window !== "undefined" && typeof (window as unknown as { PointerEvent?: unknown }).PointerEvent === "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof (window as unknown as { PointerEvent?: unknown }).PointerEvent === "undefined"
+) {
   (window as unknown as { PointerEvent?: unknown }).PointerEvent = MouseEvent;
 }
 
@@ -25,8 +28,16 @@ let el: HTMLDivElement;
 let root: Root;
 
 const online: Agent = {
-  id: "online", name: "Online PC", online: true, last_seen: "2026-01-01", first_seen: "2026-01-01",
-  icon: null, agent_version: null, connected_at: null, last_connected_at: null, last_disconnected_at: null,
+  id: "online",
+  name: "Online PC",
+  online: true,
+  last_seen: "2026-01-01",
+  first_seen: "2026-01-01",
+  icon: null,
+  agent_version: null,
+  connected_at: null,
+  last_connected_at: null,
+  last_disconnected_at: null,
 };
 const offline: Agent = { ...online, id: "offline", name: "Offline PC", online: false };
 
@@ -57,7 +68,12 @@ function OutsideProbe() {
 }
 
 interface RenderOptions {
-  currentUser?: { username: string; role: "admin" | "operator" | "viewer"; display_name: string; display_icon: string | null };
+  currentUser?: {
+    username: string;
+    role: "admin" | "operator" | "viewer";
+    display_name: string;
+    display_icon: string | null;
+  };
   notifications?: NotificationItem[];
   hideTopBar?: boolean;
   withUsers?: boolean;
@@ -122,7 +138,9 @@ async function clickMenuItem(label: string) {
 }
 
 beforeEach(() => {
-  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  (
+    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
   localStorage.clear();
   home.mockReset();
   preferences.mockReset();
@@ -131,20 +149,17 @@ beforeEach(() => {
   openActivityLog.mockReset();
   dismiss.mockReset();
   Object.defineProperty(window, "innerWidth", { value: 1024, configurable: true, writable: true });
-  vi.stubGlobal(
-    "matchMedia",
-    (query: string) => ({
-      get matches() {
-        return window.innerWidth < 768;
-      },
-      media: query,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      addListener: () => {},
-      removeListener: () => {},
-      dispatchEvent: () => false,
-    }),
-  );
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    get matches() {
+      return window.innerWidth < 768;
+    },
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  }));
   el = document.createElement("div");
   document.body.append(el);
   root = createRoot(el);
@@ -200,7 +215,9 @@ it("navigates with links, marks the current page, and shows the agent badge", as
 });
 
 it("hides the users nav entry for non-admins", async () => {
-  await renderShell({ currentUser: { username: "viewer", role: "viewer", display_name: "", display_icon: null } });
+  await renderShell({
+    currentUser: { username: "viewer", role: "viewer", display_name: "", display_icon: null },
+  });
   expect(el.querySelector('li a[href="/recall"]')).toBeNull();
   expect(el.querySelector('li a[href="/users"]')).toBeNull();
   expect(el.querySelector('li a[href="/settings"]')).not.toBeNull();
@@ -224,9 +241,13 @@ it("uses semantic account actions that fire callbacks", async () => {
 });
 
 it("hides user accounts for non-admins", async () => {
-  await renderShell({ currentUser: { username: "operator", role: "operator", display_name: "", display_icon: null } });
+  await renderShell({
+    currentUser: { username: "operator", role: "operator", display_name: "", display_icon: null },
+  });
   await click("Account options");
-  const items = [...document.querySelectorAll('[role="menuitem"]')].map((candidate) => candidate.textContent?.trim());
+  const items = [...document.querySelectorAll('[role="menuitem"]')].map((candidate) =>
+    candidate.textContent?.trim(),
+  );
   expect(items).toContain("Account settings");
   expect(items).not.toContain("User accounts");
   expect(items).toContain("Log out");
@@ -280,7 +301,11 @@ it("offers the open device's tools in the palette, and none on other pages", asy
     });
     return [...document.querySelectorAll("[cmdk-group-heading]")].map((g) => g.textContent);
   }
-  expect(await paletteGroups("/agents/online?tab=urls")).toEqual(["Tools · Online PC", "Devices", "Pages"]);
+  expect(await paletteGroups("/agents/online?tab=urls")).toEqual([
+    "Tools · Online PC",
+    "Devices",
+    "Pages",
+  ]);
   expect(document.body.textContent).toContain("Terminal");
   expect(document.body.textContent).toContain("Device logs");
 });

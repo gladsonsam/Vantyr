@@ -6,7 +6,15 @@ import { apiUrl } from "@/api";
  * channel count u16, little-endian) followed by interleaved little-endian Float32 PCM,
  * scheduled gaplessly on a Web Audio context. Stops when the agent goes offline or on unmount.
  */
-export function useDesktopAudio({ agentId, online, enabled }: { agentId: string; online: boolean; enabled: boolean }) {
+export function useDesktopAudio({
+  agentId,
+  online,
+  enabled,
+}: {
+  agentId: string;
+  online: boolean;
+  enabled: boolean;
+}) {
   const [audioActive, setAudioActive] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
@@ -69,13 +77,15 @@ export function useDesktopAudio({ agentId, online, enabled }: { agentId: string;
 
         if (!metaReady) {
           const joined = new Uint8Array(metaBuf.length + value.length);
-          joined.set(metaBuf); joined.set(value, metaBuf.length);
+          joined.set(metaBuf);
+          joined.set(value, metaBuf.length);
           metaBuf = joined;
           if (metaBuf.length < 6) continue;
           const view = new DataView(metaBuf.buffer);
           sampleRate = view.getUint32(0, true);
           channels = view.getUint16(4, true);
-          if (sampleRate < 8000 || sampleRate > 192000 || channels < 1 || channels > 8) throw new Error("invalid audio format");
+          if (sampleRate < 8000 || sampleRate > 192000 || channels < 1 || channels > 8)
+            throw new Error("invalid audio format");
           metaReady = true;
           ctx = playback;
           window.clearTimeout(connectionTimeout);
@@ -84,7 +94,8 @@ export function useDesktopAudio({ agentId, online, enabled }: { agentId: string;
           remainder = metaBuf.slice(6);
         } else {
           const joined = new Uint8Array(remainder.length + value.length);
-          joined.set(remainder); joined.set(value, remainder.length);
+          joined.set(remainder);
+          joined.set(value, remainder.length);
           remainder = joined;
         }
 
@@ -119,9 +130,11 @@ export function useDesktopAudio({ agentId, online, enabled }: { agentId: string;
         node.start(startAt);
         nextPlayTimeRef.current = startAt + audioBuf.duration;
       }
-      if (!abort.signal.aborted && audioAbortRef.current === abort) setError("Desktop audio disconnected. Turn sound on to reconnect.");
+      if (!abort.signal.aborted && audioAbortRef.current === abort)
+        setError("Desktop audio disconnected. Turn sound on to reconnect.");
     } catch {
-      if (!abort.signal.aborted && audioAbortRef.current === abort) setError("Couldn’t play desktop audio. Check device audio permission and try again.");
+      if (!abort.signal.aborted && audioAbortRef.current === abort)
+        setError("Couldn’t play desktop audio. Check device audio permission and try again.");
     } finally {
       window.clearTimeout(connectionTimeout);
       // An old request must never stop a newer request started by another click.
@@ -131,10 +144,21 @@ export function useDesktopAudio({ agentId, online, enabled }: { agentId: string;
 
   // Stop on device, capability, role or visibility changes as well as unmount.
   useEffect(() => {
-    const hidden = () => { if (document.hidden) stopAudio(); };
+    const hidden = () => {
+      if (document.hidden) stopAudio();
+    };
     document.addEventListener("visibilitychange", hidden);
-    return () => { document.removeEventListener("visibilitychange", hidden); stopAudio(); };
+    return () => {
+      document.removeEventListener("visibilitychange", hidden);
+      stopAudio();
+    };
   }, [agentId, online, enabled, stopAudio]);
 
-  return { active: audioActive && online && enabled, connecting: connecting && online && enabled, error: enabled && online ? error : "", start: startAudio, stop: stopAudio };
+  return {
+    active: audioActive && online && enabled,
+    connecting: connecting && online && enabled,
+    error: enabled && online ? error : "",
+    start: startAudio,
+    stop: stopAudio,
+  };
 }

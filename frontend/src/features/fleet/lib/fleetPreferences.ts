@@ -11,7 +11,10 @@ export interface SavedFleetView {
   sort: FleetSort;
   favoritesOnly: boolean;
 }
-export interface FleetPreferences { favorites: string[]; views: SavedFleetView[] }
+export interface FleetPreferences {
+  favorites: string[];
+  views: SavedFleetView[];
+}
 const EMPTY: FleetPreferences = { favorites: [], views: [] };
 const CHANGE = "vantyr:fleet-preferences";
 const fallback = new Map<string, string>();
@@ -23,40 +26,93 @@ export function parseFleetPreferences(raw: string | null): FleetPreferences {
     const data: unknown = JSON.parse(raw ?? "null");
     if (!data || typeof data !== "object") return EMPTY;
     const { favorites, views } = data as Partial<FleetPreferences>;
-    const validViews = Array.isArray(views) ? views.filter((v): v is SavedFleetView => {
-      if (!v || typeof v !== "object") return false;
-      return typeof v.name === "string" && v.name.trim().length > 0 && v.name.length <= 80 &&
-        typeof v.search === "string" && v.search.length <= 512 &&
-        ["all", "online", "offline", "active", "afk"].includes(v.status) &&
-        ["grid", "table"].includes(v.view) && typeof v.favoritesOnly === "boolean" &&
-        v.sort != null && ["connectivity", "name", "last_seen", "first_seen", "agent_version"].includes(v.sort.key) &&
-        ["asc", "desc"].includes(v.sort.direction);
-    }).slice(0, 20).map((v) => ({ name: v.name.trim(), search: v.search, status: v.status, view: v.view, favoritesOnly: v.favoritesOnly, sort: parseFleetSort(JSON.stringify(v.sort)) })) : [];
+    const validViews = Array.isArray(views)
+      ? views
+          .filter((v): v is SavedFleetView => {
+            if (!v || typeof v !== "object") return false;
+            return (
+              typeof v.name === "string" &&
+              v.name.trim().length > 0 &&
+              v.name.length <= 80 &&
+              typeof v.search === "string" &&
+              v.search.length <= 512 &&
+              ["all", "online", "offline", "active", "afk"].includes(v.status) &&
+              ["grid", "table"].includes(v.view) &&
+              typeof v.favoritesOnly === "boolean" &&
+              v.sort != null &&
+              ["connectivity", "name", "last_seen", "first_seen", "agent_version"].includes(
+                v.sort.key,
+              ) &&
+              ["asc", "desc"].includes(v.sort.direction)
+            );
+          })
+          .slice(0, 20)
+          .map((v) => ({
+            name: v.name.trim(),
+            search: v.search,
+            status: v.status,
+            view: v.view,
+            favoritesOnly: v.favoritesOnly,
+            sort: parseFleetSort(JSON.stringify(v.sort)),
+          }))
+      : [];
     return {
-      favorites: Array.isArray(favorites) ? [...new Set(favorites.filter((id): id is string => typeof id === "string" && id.length > 0 && id.length <= 128))].slice(0, 10000) : [],
-      views: validViews.filter((view, i, list) => list.findIndex((other) => other.name === view.name) === i),
+      favorites: Array.isArray(favorites)
+        ? [
+            ...new Set(
+              favorites.filter(
+                (id): id is string => typeof id === "string" && id.length > 0 && id.length <= 128,
+              ),
+            ),
+          ].slice(0, 10000)
+        : [],
+      views: validViews.filter(
+        (view, i, list) => list.findIndex((other) => other.name === view.name) === i,
+      ),
     };
-  } catch { return EMPTY; }
+  } catch {
+    return EMPTY;
+  }
 }
 function subscribe(callback: () => void) {
-  window.addEventListener("storage", callback); window.addEventListener(CHANGE, callback);
-  return () => { window.removeEventListener("storage", callback); window.removeEventListener(CHANGE, callback); };
+  window.addEventListener("storage", callback);
+  window.addEventListener(CHANGE, callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(CHANGE, callback);
+  };
 }
 function read(scope: string | null) {
   if (!scope) return null;
   if (fallback.has(scope)) return fallback.get(scope)!;
-  try { return localStorage.getItem(scope); } catch { return null; }
+  try {
+    return localStorage.getItem(scope);
+  } catch {
+    return null;
+  }
 }
 export function useFleetPreferences(scope: string | null) {
-  const raw = useSyncExternalStore(subscribe, () => read(scope), () => null);
-  const update = useCallback((change: (previous: FleetPreferences) => FleetPreferences) => {
-    if (!scope) return;
-    const previous = read(scope);
-    const next = JSON.stringify(change(parseFleetPreferences(previous)));
-    if (next === previous) return;
-    try { localStorage.setItem(scope, next); fallback.delete(scope); } catch { fallback.set(scope, next); }
-    window.dispatchEvent(new Event(CHANGE));
-  }, [scope]);
+  const raw = useSyncExternalStore(
+    subscribe,
+    () => read(scope),
+    () => null,
+  );
+  const update = useCallback(
+    (change: (previous: FleetPreferences) => FleetPreferences) => {
+      if (!scope) return;
+      const previous = read(scope);
+      const next = JSON.stringify(change(parseFleetPreferences(previous)));
+      if (next === previous) return;
+      try {
+        localStorage.setItem(scope, next);
+        fallback.delete(scope);
+      } catch {
+        fallback.set(scope, next);
+      }
+      window.dispatchEvent(new Event(CHANGE));
+    },
+    [scope],
+  );
   const preferences = useMemo(() => parseFleetPreferences(raw), [raw]);
   return [preferences, update] as const;
 }

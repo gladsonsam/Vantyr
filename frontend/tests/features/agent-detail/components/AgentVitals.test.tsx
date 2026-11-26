@@ -1,22 +1,39 @@
-// @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mountForm, unmountForms } from "@tests/support/formDom";
 import { withQueryClient } from "@tests/support/queryClient";
-import { AgentVitals } from "@/features/agent-detail/components/AgentVitals";
+import { mountForm, unmountForms } from "@tests/support/formDom";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+
 import type { Agent, AgentInfo } from "@/api/types";
 
-const backend = vi.hoisted(() => ({ agentMetrics: vi.fn(), agentInternetBlockedGet: vi.fn() }));
-vi.mock("@/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/api")>()), api: backend }));
+const backend = (() => ({ agentMetrics: vi.fn(), agentInternetBlockedGet: vi.fn() }))();
+const originalModule0 = await import("@/api");
+await vi.mock("@/api", async () => ({ ...originalModule0, api: backend }));
+
+const { AgentVitals } = await import("@/features/agent-detail/components/AgentVitals");
 
 const info = {
   cpu_cores: 12,
   memory_total_mb: 16384,
   memory_used_mb: 8192,
-  adapters: [{ name: "Ethernet", description: "Intel", mac: "02-00-5E-10-00-01", ips: ["192.168.20.148"], gateways: [], dns: [] }],
+  adapters: [
+    {
+      name: "Ethernet",
+      description: "Intel",
+      mac: "02-00-5E-10-00-01",
+      ips: ["192.168.20.148"],
+      gateways: [],
+      dns: [],
+    },
+  ],
 } as unknown as AgentInfo;
 
 function agent(online: boolean): Agent {
-  return { id: "a1", name: "SITTING-ROOM", online, last_seen: new Date().toISOString() } as unknown as Agent;
+  return {
+    id: "a1",
+    name: "SITTING-ROOM",
+    online,
+    last_seen: new Date().toISOString(),
+  } as unknown as Agent;
 }
 
 function renderVitals(online: boolean, activity?: "afk") {
@@ -68,7 +85,9 @@ describe("AgentVitals", () => {
     await renderVitals(true, "afk");
     await vi.waitFor(() => expect(rows().Internet).toBe("Blocked"));
     expect(rows().Session).toBe("Away");
-    const dd = (label: string) => Array.from(document.querySelectorAll("dt")).find((dt) => dt.textContent === label)!.nextElementSibling!;
+    const dd = (label: string) =>
+      Array.from(document.querySelectorAll("dt")).find((dt) => dt.textContent === label)!
+        .nextElementSibling!;
     expect(dd("Session").className).toContain("text-warning");
     expect(dd("Internet").className).toContain("text-destructive");
   });

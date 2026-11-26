@@ -1,11 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { sourceUrlSchema, urlOverrideSchema } from "@/features/settings/lib/urlCategorizationSchemas";
+import { describe, expect, it } from "bun:test";
+import {
+  sourceUrlSchema,
+  urlOverrideSchema,
+} from "@/features/settings/lib/urlCategorizationSchemas";
 
 describe("sourceUrlSchema", () => {
   it("requires a source URL and trims it", () => {
     const blank = sourceUrlSchema.safeParse({ source_url: "   " });
-    expect(blank.error?.issues).toMatchObject([{ path: ["source_url"], message: "source_url is required" }]);
-    expect(sourceUrlSchema.parse({ source_url: " https://x/list.tar.gz " }).source_url).toBe("https://x/list.tar.gz");
+    expect(blank.error?.issues).toMatchObject([
+      { path: ["source_url"], message: "source_url is required" },
+    ]);
+    expect(sourceUrlSchema.parse({ source_url: " https://x/list.tar.gz " }).source_url).toBe(
+      "https://x/list.tar.gz",
+    );
   });
 });
 

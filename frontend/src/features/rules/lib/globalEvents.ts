@@ -1,4 +1,9 @@
-import type { AgentSessionEvent, AlertRuleTriggeredEvent, AppBlockEvent, ScheduledScriptEvent } from "@/api/types";
+import type {
+  AgentSessionEvent,
+  AlertRuleTriggeredEvent,
+  AppBlockEvent,
+  ScheduledScriptEvent,
+} from "@/api/types";
 
 export type EventFilter = "all" | "alerts" | "appblock" | "scripts" | "connections";
 
@@ -90,5 +95,5 @@ export function toSessionEvents(data: { rows: AgentSessionEvent[] }): UnifiedEve
 
 /** Each feed is best-effort: one that fails shows no rows while the others still render. */
 export function feedRows(query: { isError: boolean; data?: UnifiedEvent[] }): UnifiedEvent[] {
-  return query.isError ? NO_EVENTS : query.data ?? NO_EVENTS;
+  return query.isError ? NO_EVENTS : (query.data ?? NO_EVENTS);
 }

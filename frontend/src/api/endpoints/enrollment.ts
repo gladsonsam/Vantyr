@@ -45,7 +45,9 @@ export const enrollmentEndpoints = {
     postEmpty("/settings/agent-enrollment-tokens/revoke-all"),
 
   /** Admin: list recent uses of an enrollment token. */
-  listAgentEnrollmentTokenUses: (id: string): Promise<{
+  listAgentEnrollmentTokenUses: (
+    id: string,
+  ): Promise<{
     uses: { used_at: string; agent_name: string; agent_id: string | null }[];
   }> => get(`/settings/agent-enrollment-tokens/${encodeURIComponent(id)}/uses`),
 

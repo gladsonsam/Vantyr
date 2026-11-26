@@ -10,7 +10,9 @@ export function useMemberChanges() {
   const [failure, setFailure] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<string | null>(null);
   const outcomeRef = useRef<HTMLParagraphElement>(null);
-  useEffect(() => { if (outcome) outcomeRef.current?.focus(); }, [outcome]);
+  useEffect(() => {
+    if (outcome) outcomeRef.current?.focus();
+  }, [outcome]);
 
   const run = async (action: () => Promise<void>, done: string) => {
     setBusy(true);

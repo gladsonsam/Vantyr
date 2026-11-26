@@ -33,11 +33,19 @@ export const alertRuleSchema = z
     // The server rejects a scope row that names nothing, so say which one before sending.
     for (const row of form.scopes) {
       if (row.kind === "group" && !row.group_id.trim()) {
-        ctx.addIssue({ code: "custom", path: ["scopes"], message: "Each group scope must select a group" });
+        ctx.addIssue({
+          code: "custom",
+          path: ["scopes"],
+          message: "Each group scope must select a group",
+        });
         return;
       }
       if (row.kind === "agent" && !row.agent_id.trim()) {
-        ctx.addIssue({ code: "custom", path: ["scopes"], message: "Each agent scope must select an agent" });
+        ctx.addIssue({
+          code: "custom",
+          path: ["scopes"],
+          message: "Each agent scope must select an agent",
+        });
         return;
       }
     }
@@ -47,10 +55,25 @@ export type AlertRuleForm = z.infer<typeof alertRuleSchema>;
 
 export type AlertRuleBody = Parameters<typeof api.alertRulesCreate>[0];
 
-export const isMonitoringChannel = (c: AlertRuleChannel) => c === "resource" || c === "agent_offline";
+export const isMonitoringChannel = (c: AlertRuleChannel) =>
+  c === "resource" || c === "agent_offline";
 
 export function defaultAlertRuleForm(): AlertRuleForm {
-  return { name: "", channel: "url", pattern: "", match_mode: "substring", case_insensitive: true, cooldown_secs: 300, enabled: true, take_screenshot: false, metric: "cpu_pct", comparator: "gt", threshold: 90, duration_mins: 5, scopes: [emptyScopeRow()] };
+  return {
+    name: "",
+    channel: "url",
+    pattern: "",
+    match_mode: "substring",
+    case_insensitive: true,
+    cooldown_secs: 300,
+    enabled: true,
+    take_screenshot: false,
+    metric: "cpu_pct",
+    comparator: "gt",
+    threshold: 90,
+    duration_mins: 5,
+    scopes: [emptyScopeRow()],
+  };
 }
 
 export function alertRuleToForm(r: AlertRule): AlertRuleForm {
@@ -86,7 +109,12 @@ export function alertRuleFormToBody(form: AlertRuleForm): AlertRuleBody {
     metric: form.channel === "resource" ? form.metric : null,
     comparator: form.channel === "resource" ? form.comparator : null,
     threshold: form.channel === "resource" ? form.threshold : null,
-    duration_secs: form.channel === "agent_offline" ? Math.max(0, Math.round(form.duration_mins * 60)) : null,
-    scopes: formScopesToApi(form.scopes).map((s) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })),
+    duration_secs:
+      form.channel === "agent_offline" ? Math.max(0, Math.round(form.duration_mins * 60)) : null,
+    scopes: formScopesToApi(form.scopes).map((s) => ({
+      kind: s.kind,
+      group_id: s.group_id,
+      agent_id: s.agent_id,
+    })),
   };
 }

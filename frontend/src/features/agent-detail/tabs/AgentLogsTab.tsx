@@ -1,6 +1,11 @@
 import { ArrowDownToLine, Search, WrapText, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@vantyr/ui/components/input-group";
 import {
   Select,
   SelectContent,
@@ -20,7 +25,12 @@ import { Switch } from "@/components/common/SettingsSwitch";
 import { LogViewer } from "@/features/agent-detail/components/LogViewer";
 import { LoadFailed } from "@/features/agent-detail/components/MonitoringToolbar";
 import { filterLog, logCountLabel, logPlaceholder } from "@/features/agent-detail/lib/logView";
-import { LOG_POLL_MS, isDefinitiveFailure, logPollInterval, logRetry } from "@/features/agent-detail/lib/logPolling";
+import {
+  LOG_POLL_MS,
+  isDefinitiveFailure,
+  logPollInterval,
+  logRetry,
+} from "@/features/agent-detail/lib/logPolling";
 import { AuditTab } from "@/features/logs/AuditTab";
 import { cn } from "@/lib/utils";
 
@@ -38,7 +48,11 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
           <TabsTrigger value="audit">Audit log</TabsTrigger>
         </TabsList>
       </Tabs>
-      {view === "audit" ? <AuditTab agentId={agentId} /> : <DeviceLog key={agentId} agentId={agentId} />}
+      {view === "audit" ? (
+        <AuditTab agentId={agentId} />
+      ) : (
+        <DeviceLog key={agentId} agentId={agentId} />
+      )}
     </div>
   );
 }
@@ -50,9 +64,17 @@ function DeviceLog({ agentId }: { agentId: string }) {
   const [filter, setFilter] = useState("");
   const log = useAgentLogData(agentId, autoRefresh);
 
-  const selectedSource = useMemo(() => log.sources.find((s) => s.id === log.sourceId) ?? null, [log.sources, log.sourceId]);
+  const selectedSource = useMemo(
+    () => log.sources.find((s) => s.id === log.sourceId) ?? null,
+    [log.sources, log.sourceId],
+  );
   const filtered = useMemo(() => filterLog(log.logText, filter), [log.logText, filter]);
-  const placeholder = logPlaceholder({ failed: log.tailFailed, waiting: log.loadingSources || log.tailPending, filtering: filter.trim() !== "", total: filtered.total });
+  const placeholder = logPlaceholder({
+    failed: log.tailFailed,
+    waiting: log.loadingSources || log.tailPending,
+    filtering: filter.trim() !== "",
+    total: filtered.total,
+  });
 
   return (
     <div className="overflow-hidden rounded-xl bg-card">
@@ -62,7 +84,10 @@ function DeviceLog({ agentId }: { agentId: string }) {
             sources={log.sources}
             value={log.sourceId}
             loading={log.loadingSources}
-            onChange={(id) => { log.setSourceId(id); setFollowing(true); }}
+            onChange={(id) => {
+              log.setSourceId(id);
+              setFollowing(true);
+            }}
           />
           <FilterInput value={filter} onChange={setFilter} />
           <RefreshButton
@@ -73,25 +98,50 @@ function DeviceLog({ agentId }: { agentId: string }) {
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-muted-foreground">
           <p role="status" className="min-w-0 basis-full tabular-nums sm:flex-1 sm:basis-0">
-            <LogState autoRefresh={autoRefresh} following={following} paused={log.pollingPaused} count={logCountLabel(filtered)} empty={filtered.total === 0} />
+            <LogState
+              autoRefresh={autoRefresh}
+              following={following}
+              paused={log.pollingPaused}
+              count={logCountLabel(filtered)}
+              empty={filtered.total === 0}
+            />
           </p>
           {autoRefresh && !following && (
-            <Button variant="outline" size="sm" className="pointer-coarse:h-9" onClick={() => setFollowing(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="pointer-coarse:h-9"
+              onClick={() => setFollowing(true)}
+            >
               <ArrowDownToLine /> Jump to latest
             </Button>
           )}
           <label className="flex cursor-pointer items-center gap-2 pointer-coarse:min-h-9">
-            <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} aria-label="Auto-refresh" />
+            <Switch
+              checked={autoRefresh}
+              onCheckedChange={setAutoRefresh}
+              aria-label="Auto-refresh"
+            />
             Auto-refresh
           </label>
-          <Button variant="outline" size="sm" className="pointer-coarse:h-9" aria-pressed={wrap} onClick={() => setWrap((w) => !w)}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="pointer-coarse:h-9"
+            aria-pressed={wrap}
+            onClick={() => setWrap((w) => !w)}
+          >
             <WrapText className={cn(wrap && "text-primary")} /> Wrap lines
           </Button>
           <CopyTextButton text={filtered.text} label="Copy" disabled={!filtered.text} />
         </div>
       </div>
       {log.error ? (
-        <LoadFailed what={log.pollingPaused ? "the log (auto-refresh paused)" : "the log"} detail={log.error} onRetry={() => void log.refresh()} />
+        <LoadFailed
+          what={log.pollingPaused ? "the log (auto-refresh paused)" : "the log"}
+          detail={log.error}
+          onRetry={() => void log.refresh()}
+        />
       ) : null}
       <div className="mt-3 h-[clamp(14rem,calc(100dvh-22rem),40rem)] border-t border-foreground/[0.06] bg-muted/40">
         <LogViewer
@@ -112,11 +162,25 @@ function DeviceLog({ agentId }: { agentId: string }) {
   );
 }
 
-function SourcePicker({ sources, value, loading, onChange }: {
-  sources: { id: string; label: string; path: string }[]; value: string; loading: boolean; onChange: (id: string) => void;
+function SourcePicker({
+  sources,
+  value,
+  loading,
+  onChange,
+}: {
+  sources: { id: string; label: string; path: string }[];
+  value: string;
+  loading: boolean;
+  onChange: (id: string) => void;
 }) {
   return (
-    <Select value={value} disabled={loading && sources.length === 0} onValueChange={(v) => { if (v) onChange(v); }}>
+    <Select
+      value={value}
+      disabled={loading && sources.length === 0}
+      onValueChange={(v) => {
+        if (v) onChange(v);
+      }}
+    >
       <SelectTrigger aria-label="Log file" className="w-full min-w-0 sm:w-72">
         <SelectValue placeholder={loading ? "Loading…" : "Choose a log"} />
       </SelectTrigger>
@@ -141,7 +205,12 @@ function FilterInput({ value, onChange }: { value: string; onChange: (value: str
       <InputGroupAddon>
         <Search />
       </InputGroupAddon>
-      <InputGroupInput aria-label="Filter log lines" placeholder="Filter lines" value={value} onChange={(e) => onChange(e.target.value)} />
+      <InputGroupInput
+        aria-label="Filter log lines"
+        placeholder="Filter lines"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
       {value && (
         <InputGroupAddon align="inline-end">
           <InputGroupButton size="icon-xs" aria-label="Clear filter" onClick={() => onChange("")}>
@@ -153,18 +222,37 @@ function FilterInput({ value, onChange }: { value: string; onChange: (value: str
   );
 }
 
-function LogState({ autoRefresh, following, paused, count, empty }: {
-  autoRefresh: boolean; following: boolean; paused: boolean; count: string; empty: boolean;
+function LogState({
+  autoRefresh,
+  following,
+  paused,
+  count,
+  empty,
+}: {
+  autoRefresh: boolean;
+  following: boolean;
+  paused: boolean;
+  count: string;
+  empty: boolean;
 }) {
   const live = autoRefresh && !paused;
-  const state = paused ? "Auto-refresh paused"
-    : !autoRefresh ? "Auto-refresh off"
-    : following ? `Live · every ${LOG_POLL_MS / 1000} s`
-    : "Paused while you read";
+  const state = paused
+    ? "Auto-refresh paused"
+    : !autoRefresh
+      ? "Auto-refresh off"
+      : following
+        ? `Live · every ${LOG_POLL_MS / 1000} s`
+        : "Paused while you read";
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2">
       <span className="inline-flex items-center gap-1.5">
-        <span className={cn("size-[7px] rounded-full", live && following ? "bg-success" : "bg-muted-foreground/50")} aria-hidden="true" />
+        <span
+          className={cn(
+            "size-[7px] rounded-full",
+            live && following ? "bg-success" : "bg-muted-foreground/50",
+          )}
+          aria-hidden="true"
+        />
         {state}
       </span>
       {!empty && <span>· {count} · last 512 KiB</span>}
@@ -177,7 +265,7 @@ function useAgentLogData(agentId: string, autoRefresh: boolean) {
   const [refreshing, setRefreshing] = useState(false);
 
   const sourcesQuery = useQuery(agentQueries.logSources(agentId));
-  const sources = sourcesQuery.isError ? NO_SOURCES : sourcesQuery.data?.sources ?? NO_SOURCES;
+  const sources = sourcesQuery.isError ? NO_SOURCES : (sourcesQuery.data?.sources ?? NO_SOURCES);
   const loadingSources = sourcesQuery.isFetching;
   // Fall back to the first source the agent offers when the current pick isn't one of them.
   if (sources.length > 0 && !sources.some((s) => s.id === sourceId)) {
@@ -189,7 +277,7 @@ function useAgentLogData(agentId: string, autoRefresh: boolean) {
     refetchInterval: (query) => logPollInterval(autoRefresh, query.state.error),
     retry: logRetry,
   });
-  const logText = tailQuery.isError ? "" : tailQuery.data?.text ?? "";
+  const logText = tailQuery.isError ? "" : (tailQuery.data?.text ?? "");
   const failure = sourcesQuery.error ?? tailQuery.error;
   const error = failure ? errorText(failure) : null;
   const pollingPaused = autoRefresh && isDefinitiveFailure(tailQuery.error);
@@ -205,5 +293,17 @@ function useAgentLogData(agentId: string, autoRefresh: boolean) {
     }
   };
 
-  return { sourceId, setSourceId, refreshing, sources, loadingSources, logText, error, pollingPaused, refresh, tailFailed: tailQuery.isError, tailPending: tailQuery.isPending };
+  return {
+    sourceId,
+    setSourceId,
+    refreshing,
+    sources,
+    loadingSources,
+    logText,
+    error,
+    pollingPaused,
+    refresh,
+    tailFailed: tailQuery.isError,
+    tailPending: tailQuery.isPending,
+  };
 }

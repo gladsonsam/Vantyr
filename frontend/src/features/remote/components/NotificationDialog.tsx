@@ -5,7 +5,13 @@ import { z } from "zod";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { Dialog, DialogFooter, DialogHeader, DialogOverlay, DialogTitle } from "@vantyr/ui/components/dialog";
+import {
+  Dialog,
+  DialogFooter,
+  DialogHeader,
+  DialogOverlay,
+  DialogTitle,
+} from "@vantyr/ui/components/dialog";
 import { InputField } from "@/components/common/form/fields";
 import { cn } from "@/lib/utils";
 
@@ -62,7 +68,11 @@ const notificationSchema = z.object({
 });
 type NotificationValues = z.infer<typeof notificationSchema>;
 
-function NotificationForm({ canSend, onSend, onClose }: {
+function NotificationForm({
+  canSend,
+  onSend,
+  onClose,
+}: {
   canSend: boolean;
   onSend: (title: string, message: string) => boolean;
   onClose: () => void;

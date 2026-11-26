@@ -10,15 +10,7 @@ import {
 import { RefreshButton } from "@/components/common/RefreshButton";
 
 export type FileAction =
-  | "copy_path"
-  | "copy"
-  | "cut"
-  | "paste"
-  | "download"
-  | "preview"
-  | "move"
-  | "rename"
-  | "delete";
+  "copy_path" | "copy" | "cut" | "paste" | "download" | "preview" | "move" | "rename" | "delete";
 
 /** Secondary actions on the selection, behind "More"; the everyday ones are buttons. */
 const MORE_ACTIONS: { id: FileAction; label: string }[] = [
@@ -59,9 +51,23 @@ export function FilesToolbar({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <RefreshButton onClick={onRefresh} loading={refreshing} label="Refresh folder" className="max-sm:size-9 pointer-coarse:size-9" />
+      <RefreshButton
+        onClick={onRefresh}
+        loading={refreshing}
+        label="Refresh folder"
+        className="max-sm:size-9 pointer-coarse:size-9"
+      />
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="max-sm:h-9 pointer-coarse:h-9" disabled={createDisabled} />}>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="outline"
+              size="sm"
+              className="max-sm:h-9 pointer-coarse:h-9"
+              disabled={createDisabled}
+            />
+          }
+        >
           <Plus /> New
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -69,13 +75,27 @@ export function FilesToolbar({
           <DropdownMenuItem onClick={onNewFile}>File</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <Button variant="outline" size="sm" className="max-sm:h-9 pointer-coarse:h-9" disabled={createDisabled} onClick={onUpload}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="max-sm:h-9 pointer-coarse:h-9"
+        disabled={createDisabled}
+        onClick={onUpload}
+      >
         <Upload /> Upload
       </Button>
       {clipboard ? (
-        <Button variant="outline" size="sm" className="max-sm:h-9 pointer-coarse:h-9" disabled={pasteDisabled} onClick={onPaste}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="max-sm:h-9 pointer-coarse:h-9"
+          disabled={pasteDisabled}
+          onClick={onPaste}
+        >
           <Clipboard /> Paste {clipboard.count} {clipboard.count === 1 ? "item" : "items"}
-          <span className="sr-only">{clipboard.mode === "move" ? " (move here)" : " (copy here)"}</span>
+          <span className="sr-only">
+            {clipboard.mode === "move" ? " (move here)" : " (copy here)"}
+          </span>
         </Button>
       ) : null}
     </div>
@@ -110,35 +130,77 @@ export function FileSelectionBar({
         <span className="min-w-0 font-medium wrap-break-word" title={summary}>
           {count === 1 ? summary : `${count} selected`}
         </span>
-        <Button variant="ghost" size="xs" className="shrink-0 max-sm:h-9 pointer-coarse:h-9" onClick={onClear}>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="shrink-0 max-sm:h-9 pointer-coarse:h-9"
+          onClick={onClear}
+        >
           Clear
         </Button>
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
-        <Button variant="outline" size="sm" className="max-sm:h-9 pointer-coarse:h-9" disabled={disabled || isActionDisabled("download")} onClick={() => onAction("download")}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="max-sm:h-9 pointer-coarse:h-9"
+          disabled={disabled || isActionDisabled("download")}
+          onClick={() => onAction("download")}
+        >
           <Download /> Download
         </Button>
-        <Button variant="outline" size="sm" className="max-sm:h-9 pointer-coarse:h-9" disabled={disabled || isActionDisabled("rename")} onClick={() => onAction("rename")}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="max-sm:h-9 pointer-coarse:h-9"
+          disabled={disabled || isActionDisabled("rename")}
+          onClick={() => onAction("rename")}
+        >
           <Pencil /> Rename
         </Button>
-        <Button variant="outline" size="sm" className="text-destructive max-sm:h-9 pointer-coarse:h-9" disabled={disabled || isActionDisabled("delete")} onClick={() => onAction("delete")}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-destructive max-sm:h-9 pointer-coarse:h-9"
+          disabled={disabled || isActionDisabled("delete")}
+          onClick={() => onAction("delete")}
+        >
           <Trash2 /> Delete
         </Button>
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="max-sm:h-9 pointer-coarse:h-9" disabled={disabled} />}>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="max-sm:h-9 pointer-coarse:h-9"
+                disabled={disabled}
+              />
+            }
+          >
             <MoreHorizontal /> More
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {MORE_ACTIONS.slice(0, 2).map(({ id, label }) => (
-              <DropdownMenuItem key={id} disabled={isActionDisabled(id)} onClick={() => onAction(id)}>
+              <DropdownMenuItem
+                key={id}
+                disabled={isActionDisabled(id)}
+                onClick={() => onAction(id)}
+              >
                 {label}
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
             {MORE_ACTIONS.slice(2).map(({ id, label }) => (
-              <DropdownMenuItem key={id} disabled={isActionDisabled(id)} onClick={() => onAction(id)}>
+              <DropdownMenuItem
+                key={id}
+                disabled={isActionDisabled(id)}
+                onClick={() => onAction(id)}
+              >
                 {label}
-                {id === "copy" && isActionDisabled(id) && count > 0 ? <span className="ml-auto text-xs text-muted-foreground">files only</span> : null}
+                {id === "copy" && isActionDisabled(id) && count > 0 ? (
+                  <span className="ml-auto text-xs text-muted-foreground">files only</span>
+                ) : null}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

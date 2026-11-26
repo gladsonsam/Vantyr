@@ -56,28 +56,45 @@ interface AppBlockModalProps {
 
 export function AppBlockModal({ visible, agentId, onDismiss, onCreated }: AppBlockModalProps) {
   return (
-    <Dialog open={visible} onOpenChange={(open) => { if (!open) onDismiss(); }}>
+    <Dialog
+      open={visible}
+      onOpenChange={(open) => {
+        if (!open) onDismiss();
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add app block rule</DialogTitle>
-          <DialogDescription>
-            Applies on the next policy sync.
-          </DialogDescription>
+          <DialogDescription>Applies on the next policy sync.</DialogDescription>
         </DialogHeader>
-        {visible && <AppBlockForm key={agentId} agentId={agentId} onDismiss={onDismiss} onCreated={onCreated} />}
+        {visible && (
+          <AppBlockForm
+            key={agentId}
+            agentId={agentId}
+            onDismiss={onDismiss}
+            onCreated={onCreated}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function AppBlockForm({ agentId, onDismiss, onCreated }: Pick<AppBlockModalProps, "agentId" | "onDismiss" | "onCreated">) {
+function AppBlockForm({
+  agentId,
+  onDismiss,
+  onCreated,
+}: Pick<AppBlockModalProps, "agentId" | "onDismiss" | "onCreated">) {
   const [error, setError] = useState<string | null>(null);
 
   // Known exe names and the protected list load whenever the modal opens; failures leave them empty.
-  const suggestions = useQuery({ ...ruleQueries.knownExes(agentId), select: toExes }).data ?? NO_EXES;
-  const protectedExes = useQuery({ ...ruleQueries.appBlockProtectedExes(), select: toProtected }).data ?? NO_EXES;
+  const suggestions =
+    useQuery({ ...ruleQueries.knownExes(agentId), select: toExes }).data ?? NO_EXES;
+  const protectedExes =
+    useQuery({ ...ruleQueries.appBlockProtectedExes(), select: toProtected }).data ?? NO_EXES;
   const create = useMutation({
-    mutationFn: (body: Parameters<typeof api.appBlockRulesCreate>[0]) => api.appBlockRulesCreate(body),
+    mutationFn: (body: Parameters<typeof api.appBlockRulesCreate>[0]) =>
+      api.appBlockRulesCreate(body),
     onSuccess: () => {
       onCreated();
       onDismiss();
@@ -108,9 +125,10 @@ function AppBlockForm({ agentId, onDismiss, onCreated }: Pick<AppBlockModalProps
   // Filter suggestions as user types, excluding protected exes.
   const protectedNames = new Set(protectedExes);
   const filtered = exePattern.trim()
-    ? suggestions.filter((s) =>
-        s.toLowerCase().includes(exePattern.trim().toLowerCase()) &&
-        !protectedNames.has(s.toLowerCase()),
+    ? suggestions.filter(
+        (s) =>
+          s.toLowerCase().includes(exePattern.trim().toLowerCase()) &&
+          !protectedNames.has(s.toLowerCase()),
       )
     : suggestions.filter((s) => !protectedNames.has(s.toLowerCase()));
 
@@ -125,7 +143,13 @@ function AppBlockForm({ agentId, onDismiss, onCreated }: Pick<AppBlockModalProps
           </p>
         )}
 
-        <FormField control={control} name="exe_pattern" id="appblock-exe" label="EXE name" hideError>
+        <FormField
+          control={control}
+          name="exe_pattern"
+          id="appblock-exe"
+          label="EXE name"
+          hideError
+        >
           {({ field, id }) => (
             <>
               <Input id={id} {...field} placeholder="e.g. tiktok.exe" autoFocus />
@@ -173,7 +197,13 @@ function AppBlockForm({ agentId, onDismiss, onCreated }: Pick<AppBlockModalProps
           )}
         </FormField>
 
-        <InputField control={control} name="label" id="appblock-label" label="Label (optional)" placeholder="e.g. Block TikTok" />
+        <InputField
+          control={control}
+          name="label"
+          id="appblock-label"
+          label="Label (optional)"
+          placeholder="e.g. Block TikTok"
+        />
 
         <CheckboxField control={control} name="apply_to_all" label="Apply to all devices" />
 
@@ -194,51 +224,60 @@ function AppBlockForm({ agentId, onDismiss, onCreated }: Pick<AppBlockModalProps
                   <div className="flex flex-col gap-2">
                     {schedules.fields.map((row, i) => {
                       const r = rows[i] ?? row;
-                      return <div key={row.id} className="flex items-center gap-2">
-                        <Select value={String(r.day_of_week)} onValueChange={(v) => patchRow(i, { day_of_week: Number(v) })}>
-                          <SelectTrigger aria-label="Day of week" className="w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {DAY_OPTIONS.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                {o.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          aria-label="Window start"
-                          className="w-20"
-                          value={r.start}
-                          onChange={(e) => patchRow(i, { start: e.target.value })}
-                          placeholder="HH:MM"
-                        />
-                        <span className="text-sm text-muted-foreground">to</span>
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          aria-label="Window end"
-                          className="w-20"
-                          value={r.end}
-                          onChange={(e) => patchRow(i, { end: e.target.value })}
-                          placeholder="HH:MM"
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label="Remove window"
-                          disabled={rows.length <= 1}
-                          onClick={() => schedules.remove(i)}
-                        >
-                          <X />
-                        </Button>
-                      </div>
+                      return (
+                        <div key={row.id} className="flex items-center gap-2">
+                          <Select
+                            value={String(r.day_of_week)}
+                            onValueChange={(v) => patchRow(i, { day_of_week: Number(v) })}
+                          >
+                            <SelectTrigger aria-label="Day of week" className="w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {DAY_OPTIONS.map((o) => (
+                                <SelectItem key={o.value} value={o.value}>
+                                  {o.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            aria-label="Window start"
+                            className="w-20"
+                            value={r.start}
+                            onChange={(e) => patchRow(i, { start: e.target.value })}
+                            placeholder="HH:MM"
+                          />
+                          <span className="text-sm text-muted-foreground">to</span>
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            aria-label="Window end"
+                            className="w-20"
+                            value={r.end}
+                            onChange={(e) => patchRow(i, { end: e.target.value })}
+                            placeholder="HH:MM"
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Remove window"
+                            disabled={rows.length <= 1}
+                            onClick={() => schedules.remove(i)}
+                          >
+                            <X />
+                          </Button>
+                        </div>
+                      );
                     })}
                     <div>
-                      <Button variant="outline" size="sm" onClick={() => schedules.append(emptyScheduleRow())}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => schedules.append(emptyScheduleRow())}
+                      >
                         <Plus /> Add window
                       </Button>
                     </div>

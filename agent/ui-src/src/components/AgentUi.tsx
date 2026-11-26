@@ -10,11 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@vantyr/ui/components/dialog";
-import {
-  Field as FieldPrimitive,
-  FieldDescription,
-  FieldLabel,
-} from "@vantyr/ui/components/field";
+import { Field as FieldPrimitive, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
 import { Input } from "@vantyr/ui/components/input";
 import { Spinner as SpinnerPrimitive } from "@vantyr/ui/components/spinner";
 
@@ -32,9 +28,7 @@ export function Field({
   children: ReactNode;
 }) {
   const inputId = useId();
-  const existingId = isValidElement<{ id?: string }>(children)
-    ? children.props.id
-    : undefined;
+  const existingId = isValidElement<{ id?: string }>(children) ? children.props.id : undefined;
   const controlId = existingId ?? inputId;
   const content = isValidElement<{ id?: string }>(children)
     ? cloneElement(children, { id: controlId })
@@ -48,10 +42,7 @@ export function Field({
   );
 }
 
-export function TextInput({
-  ref,
-  ...props
-}: React.ComponentProps<typeof Input>) {
+export function TextInput({ ref, ...props }: React.ComponentProps<typeof Input>) {
   return <Input ref={ref} {...props} />;
 }
 
@@ -91,9 +82,7 @@ export function Toggle({
         <span
           className={cn(
             "size-4 rounded-full transition-transform",
-            checked
-              ? "translate-x-[16px] bg-primary"
-              : "bg-muted-foreground",
+            checked ? "translate-x-[16px] bg-primary" : "bg-muted-foreground",
           )}
         />
       </span>
@@ -185,9 +174,7 @@ export function ConnectionStatus({ status, message }: StatusResponse) {
         ? "text-destructive"
         : "text-muted-foreground";
   return (
-    <span
-      className={cn("inline-flex items-center gap-2 text-sm font-medium", color)}
-    >
+    <span className={cn("inline-flex items-center gap-2 text-sm font-medium", color)}>
       <span aria-hidden="true" className="size-2 rounded-full bg-current" />
       {label}
     </span>

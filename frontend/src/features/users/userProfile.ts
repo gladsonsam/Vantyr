@@ -8,7 +8,9 @@ export interface ProfileValues {
 }
 
 /** What a user's profile form shows when it opens (or re-seeds). */
-export function profileValuesFor(user: Pick<DashboardUser, "display_name" | "username" | "display_icon">): ProfileValues {
+export function profileValuesFor(
+  user: Pick<DashboardUser, "display_name" | "username" | "display_icon">,
+): ProfileValues {
   return {
     display_name: user.display_name?.trim() ?? "",
     username: user.username,

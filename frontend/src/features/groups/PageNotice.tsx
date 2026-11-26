@@ -3,7 +3,15 @@ import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 
 /** A failure message above the list, with Try again or Dismiss when there is something to do about it. */
-export function PageNotice({ message, onRetry, onDismiss }: { message: string; onRetry?: () => void; onDismiss?: () => void }) {
+export function PageNotice({
+  message,
+  onRetry,
+  onDismiss,
+}: {
+  message: string;
+  onRetry?: () => void;
+  onDismiss?: () => void;
+}) {
   return (
     <Alert variant="destructive">
       <AlertDescription className="flex flex-wrap items-center justify-between gap-2">

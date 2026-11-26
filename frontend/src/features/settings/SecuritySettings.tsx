@@ -9,8 +9,9 @@ export function SecuritySettings() {
         <CardTitle className="flex items-center gap-1.5">
           Device password and consent
           <HelpTip>
-            Remote files, terminal, scripts or desktop control can still change local settings. The device
-            password is never reported here; older server password policies are historical only.
+            Remote files, terminal, scripts or desktop control can still change local settings. The
+            device password is never reported here; older server password policies are historical
+            only.
           </HelpTip>
         </CardTitle>
       </CardHeader>

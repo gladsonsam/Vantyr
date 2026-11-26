@@ -17,10 +17,15 @@ const DEFAULT_PATH = "C:\\Users\\Demo\\Documents";
 const CHUNK_DELAY_MS = 160;
 
 const file = (size: number, text?: string): DemoNode => ({ dir: false, size, text });
-const folder = (entries: Record<string, DemoNode> = {}): DemoNode => ({ dir: true, size: 0, children: new Map(Object.entries(entries)) });
+const folder = (entries: Record<string, DemoNode> = {}): DemoNode => ({
+  dir: true,
+  size: 0,
+  children: new Map(Object.entries(entries)),
+});
 
 function seedTree(): Map<string, DemoNode> {
-  const note = "Planning notes\n\n- Rotate the shared kiosk passwords\n- Review the new URL categories\n- Schedule the agent update window\n";
+  const note =
+    "Planning notes\n\n- Rotate the shared kiosk passwords\n- Review the new URL categories\n- Schedule the agent update window\n";
   return new Map<string, DemoNode>([
     [
       "C:",
@@ -28,9 +33,12 @@ function seedTree(): Map<string, DemoNode> {
         Users: folder({
           Demo: folder({
             Documents: folder({
-              "Quarterly planning notes - final - reviewed by finance and operations (v12) - copy.txt": file(note.length, note),
-              "Customer onboarding documents and signed agreements 2026-Q4": folder({ "agreement-signed.pdf": file(482_113) }),
-              "Invoices": folder({ "2026-10.pdf": file(220_400), "2026-11.pdf": file(231_982) }),
+              "Quarterly planning notes - final - reviewed by finance and operations (v12) - copy.txt":
+                file(note.length, note),
+              "Customer onboarding documents and signed agreements 2026-Q4": folder({
+                "agreement-signed.pdf": file(482_113),
+              }),
+              Invoices: folder({ "2026-10.pdf": file(220_400), "2026-11.pdf": file(231_982) }),
               "readme.txt": file(54, "Demo file. Nothing here is real.\n"),
               "budget.xlsx": file(88_320),
               "backup-2026-11.zip": file(48_300_000),
@@ -38,11 +46,16 @@ function seedTree(): Map<string, DemoNode> {
               ".gitignore": file(12, "node_modules\n"),
               "desktop.ini": file(67),
             }),
-            Downloads: folder({ "installer.exe": file(112_400_000), "setup-notes.txt": file(31, "Install steps go here.\n") }),
+            Downloads: folder({
+              "installer.exe": file(112_400_000),
+              "setup-notes.txt": file(31, "Install steps go here.\n"),
+            }),
             Desktop: folder(),
           }),
         }),
-        "Program Files": folder({ "Vantyr Agent": folder({ "vantyr-agent.exe": file(14_200_000) }) }),
+        "Program Files": folder({
+          "Vantyr Agent": folder({ "vantyr-agent.exe": file(14_200_000) }),
+        }),
         Windows: folder({ "notepad.exe": file(201_216) }),
       }),
     ],
@@ -99,27 +112,49 @@ export function createDemoFileSystem() {
     const name = parts.pop() ?? "";
     return { parent: find(tree, parts.join("\\")), name };
   };
-  const clone = (node: DemoNode): DemoNode => ({ ...node, children: node.children ? new Map([...node.children].map(([k, v]) => [k, clone(v)])) : undefined });
+  const clone = (node: DemoNode): DemoNode => ({
+    ...node,
+    children: node.children
+      ? new Map([...node.children].map(([k, v]) => [k, clone(v)]))
+      : undefined,
+  });
 
   const reply = (emit: Emit, agentId: string, cmd: DemoFsCommand, ok: boolean, error?: string) =>
-    emit({ event: "fs_op_result", agent_id: agentId, data: { request_id: cmd.request_id, ok, ...(error ? { error } : {}) } });
+    emit({
+      event: "fs_op_result",
+      agent_id: agentId,
+      data: { request_id: cmd.request_id, ok, ...(error ? { error } : {}) },
+    });
 
   const list = (emit: Emit, agentId: string, requested: string | undefined) => {
     const tree = treeFor(agentId);
     if (requested === DRIVES_PATH) {
-      emit({ event: "dir_list", agent_id: agentId, data: { path: DRIVES_PATH, items: [...tree.keys()].map((name) => ({ name: `${name}\\`, is_dir: true, size: 0 })) } });
+      emit({
+        event: "dir_list",
+        agent_id: agentId,
+        data: {
+          path: DRIVES_PATH,
+          items: [...tree.keys()].map((name) => ({ name: `${name}\\`, is_dir: true, size: 0 })),
+        },
+      });
       return;
     }
     const path = requested || DEFAULT_PATH;
     const node = find(tree, path);
-    const items = node?.children ? [...node.children].map(([name, child]) => ({ name, is_dir: child.dir, size: child.size })) : [];
+    const items = node?.children
+      ? [...node.children].map(([name, child]) => ({ name, is_dir: child.dir, size: child.size }))
+      : [];
     emit({ event: "dir_list", agent_id: agentId, data: { path, items } });
   };
 
   const read = (emit: Emit, agentId: string, path: string) => {
     const node = find(treeFor(agentId), path);
     if (!node || node.dir) {
-      emit({ event: "file_chunk", agent_id: agentId, data: { path, data: "The system cannot find the file specified.", is_error: true } });
+      emit({
+        event: "file_chunk",
+        agent_id: agentId,
+        data: { path, data: "The system cannot find the file specified.", is_error: true },
+      });
       return;
     }
     const bytes = new TextEncoder().encode(node.text ?? `Demo content for ${path}\n`);
@@ -130,7 +165,16 @@ export function createDemoFileSystem() {
       const timer = setTimeout(() => {
         timers.delete(timer);
         const slice = bytes.slice(i * step, (i + 1) * step);
-        emit({ event: "file_chunk", agent_id: agentId, data: { path, chunk_index: i, total_chunks: total, data: btoa(String.fromCharCode(...slice)) } });
+        emit({
+          event: "file_chunk",
+          agent_id: agentId,
+          data: {
+            path,
+            chunk_index: i,
+            total_chunks: total,
+            data: btoa(String.fromCharCode(...slice)),
+          },
+        });
       }, i * CHUNK_DELAY_MS);
       timers.add(timer);
     }
@@ -146,7 +190,15 @@ export function createDemoFileSystem() {
     uploads.delete(key);
     const { parent, name } = parentOf(tree, path);
     if (parent?.children) parent.children.set(name, file(received));
-    emit({ event: "file_upload_result", agent_id: agentId, data: { path, ok: Boolean(parent?.children), ...(parent?.children ? {} : { error: "Path not found." }) } });
+    emit({
+      event: "file_upload_result",
+      agent_id: agentId,
+      data: {
+        path,
+        ok: Boolean(parent?.children),
+        ...(parent?.children ? {} : { error: "Path not found." }),
+      },
+    });
   };
 
   const operate = (emit: Emit, agentId: string, cmd: DemoFsCommand) => {
@@ -154,8 +206,16 @@ export function createDemoFileSystem() {
     switch (cmd.type) {
       case "Mkdir": {
         const parent = find(tree, cmd.path ?? "");
-        if (!parent?.children || !cmd.name) return reply(emit, agentId, cmd, false, "The folder could not be created.");
-        if (parent.children.has(cmd.name)) return reply(emit, agentId, cmd, false, "A file or folder with that name already exists.");
+        if (!parent?.children || !cmd.name)
+          return reply(emit, agentId, cmd, false, "The folder could not be created.");
+        if (parent.children.has(cmd.name))
+          return reply(
+            emit,
+            agentId,
+            cmd,
+            false,
+            "A file or folder with that name already exists.",
+          );
         parent.children.set(cmd.name, folder());
         return reply(emit, agentId, cmd, true);
       }
@@ -163,21 +223,31 @@ export function createDemoFileSystem() {
       case "RenamePath": {
         const source = find(tree, cmd.src ?? "");
         const target = parentOf(tree, cmd.dst ?? "");
-        if (!source || !target.parent?.children) return reply(emit, agentId, cmd, false, "The system cannot find the path specified.");
-        if (target.parent.children.has(target.name)) return reply(emit, agentId, cmd, false, "The destination already exists.");
+        if (!source || !target.parent?.children)
+          return reply(emit, agentId, cmd, false, "The system cannot find the path specified.");
+        if (target.parent.children.has(target.name))
+          return reply(emit, agentId, cmd, false, "The destination already exists.");
         target.parent.children.set(target.name, cmd.type === "CopyPath" ? clone(source) : source);
         if (cmd.type === "RenamePath") {
           const from = parentOf(tree, cmd.src ?? "");
-          from.parent?.children?.delete([...(from.parent.children?.keys() ?? [])].find((k) => k.toLowerCase() === from.name.toLowerCase()) ?? from.name);
+          from.parent?.children?.delete(
+            [...(from.parent.children?.keys() ?? [])].find(
+              (k) => k.toLowerCase() === from.name.toLowerCase(),
+            ) ?? from.name,
+          );
         }
         return reply(emit, agentId, cmd, true);
       }
       case "DeletePath": {
         const target = parentOf(tree, cmd.path ?? "");
-        const key = [...(target.parent?.children?.keys() ?? [])].find((k) => k.toLowerCase() === target.name.toLowerCase());
+        const key = [...(target.parent?.children?.keys() ?? [])].find(
+          (k) => k.toLowerCase() === target.name.toLowerCase(),
+        );
         const node = key ? target.parent?.children?.get(key) : null;
-        if (!node || !key) return reply(emit, agentId, cmd, false, "The system cannot find the path specified.");
-        if (node.dir && node.children?.size && !cmd.recursive) return reply(emit, agentId, cmd, false, "The folder is not empty.");
+        if (!node || !key)
+          return reply(emit, agentId, cmd, false, "The system cannot find the path specified.");
+        if (node.dir && node.children?.size && !cmd.recursive)
+          return reply(emit, agentId, cmd, false, "The folder is not empty.");
         target.parent?.children?.delete(key);
         return reply(emit, agentId, cmd, true);
       }

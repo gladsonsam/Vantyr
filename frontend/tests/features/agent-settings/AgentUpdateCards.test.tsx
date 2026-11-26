@@ -1,20 +1,27 @@
-// @vitest-environment jsdom
+import { buttonByText, click, mountForm, unmountForms } from "@tests/support/formDom";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
-import { buttonByText, click, mountForm, unmountForms } from "@tests/support/formDom";
-import { AgentAutoUpdateCard, AgentUpdateCard } from "@/features/agent-settings/AgentUpdateCards";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({
+const api = (() => ({
   agentUpdateNow: vi.fn(),
   agentAutoUpdateAgentGet: vi.fn(),
   agentAutoUpdateAgentPut: vi.fn(),
   agentAutoUpdateAgentDelete: vi.fn(),
+}))();
+await vi.mock("@/api", () => ({
+  api,
+  errorText: (e: unknown) => String(e instanceof Error ? e.message : e),
 }));
-vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e instanceof Error ? e.message : e) }));
-const latest = vi.hoisted(() => ({ value: "0.2.9" as string | null }));
-vi.mock("@/api/serverVersionStore", () => ({ useServerVersionPayload: () => ({ latest_agent_version: latest.value }) }));
+const latest = (() => ({ value: "0.2.9" as string | null }))();
+await vi.mock("@/api/serverVersionStore", () => ({
+  useServerVersionPayload: () => ({ latest_agent_version: latest.value }),
+}));
+
+const { AgentAutoUpdateCard, AgentUpdateCard } =
+  await import("@/features/agent-settings/AgentUpdateCards");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -24,11 +31,19 @@ afterEach(unmountForms);
 
 type VersionProps = { agentOnline?: boolean; agentVersion?: string | null; isAdmin?: boolean };
 const node = ({ agentOnline = true, agentVersion = "0.1.6", isAdmin = true }: VersionProps) => (
-  <AgentUpdateCard agentId="device" agentOnline={agentOnline} agentVersion={agentVersion} isAdmin={isAdmin} />
+  <AgentUpdateCard
+    agentId="device"
+    agentOnline={agentOnline}
+    agentVersion={agentVersion}
+    isAdmin={isAdmin}
+  />
 );
 const client = createTestQueryClient();
 const renderVersion = (props: VersionProps = {}) => mountForm(withQueryClient(node(props), client));
-const toggle = (name: string) => [...document.querySelectorAll('[role="group"] button')].find((b) => b.textContent?.startsWith(name)) as HTMLButtonElement;
+const toggle = (name: string) =>
+  [...document.querySelectorAll('[role="group"] button')].find((b) =>
+    b.textContent?.startsWith(name),
+  ) as HTMLButtonElement;
 
 describe("agent version card", () => {
   it("separates installed from latest and offers the update only when one exists", async () => {
@@ -68,12 +83,15 @@ describe("agent version card", () => {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
-    const show = (props: VersionProps) => act(async () => root.render(withQueryClient(node(props), client)));
+    const show = (props: VersionProps) =>
+      act(async () => root.render(withQueryClient(node(props), client)));
     await show({});
     await click(buttonByText("Update now"));
     expect(api.agentUpdateNow).toHaveBeenCalledWith("device");
     expect(document.body.textContent).toContain("Update requested at");
-    expect(document.body.textContent).toContain("not finished until the device restarts and reports a new version");
+    expect(document.body.textContent).toContain(
+      "not finished until the device restarts and reports a new version",
+    );
     expect(document.body.textContent).not.toContain("now reports");
     expect(buttonByText("Request again")).toBeTruthy();
     // Still the old version after a refresh: still only a request.
@@ -100,7 +118,13 @@ describe("agent version card", () => {
 
 describe("automatic updates card", () => {
   const overrideOff = { global: { enabled: true }, override: { enabled: false } };
-  const renderAuto = (isAdmin = true) => mountForm(withQueryClient(<AgentAutoUpdateCard agentId="device" isAdmin={isAdmin} />, createTestQueryClient()));
+  const renderAuto = (isAdmin = true) =>
+    mountForm(
+      withQueryClient(
+        <AgentAutoUpdateCard agentId="device" isAdmin={isAdmin} />,
+        createTestQueryClient(),
+      ),
+    );
 
   it("shows the inherited default and the effective result", async () => {
     api.agentAutoUpdateAgentGet.mockResolvedValue({ global: { enabled: true }, override: null });
@@ -111,11 +135,16 @@ describe("automatic updates card", () => {
 
   it("shows an override against the default and saves On, Off and back to the default", async () => {
     api.agentAutoUpdateAgentGet.mockResolvedValue(overrideOff);
-    api.agentAutoUpdateAgentPut.mockResolvedValue({ global: { enabled: true }, override: { enabled: true } });
+    api.agentAutoUpdateAgentPut.mockResolvedValue({
+      global: { enabled: true },
+      override: { enabled: true },
+    });
     api.agentAutoUpdateAgentDelete.mockResolvedValue({ global: { enabled: true }, override: null });
     await renderAuto();
     expect(toggle("Off").getAttribute("aria-pressed")).toBe("true");
-    expect(document.body.textContent).toContain("Off: set for this device; the server default is On.");
+    expect(document.body.textContent).toContain(
+      "Off: set for this device; the server default is On.",
+    );
     await click(toggle("On"));
     expect(api.agentAutoUpdateAgentPut).toHaveBeenCalledWith("device", { enabled: true });
     expect(document.body.textContent).toContain("Saved.");

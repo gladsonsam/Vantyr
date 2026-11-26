@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 
 function mediaQueryList(query: string): MediaQueryList | null {
-  return typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(query) : null;
+  return typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia(query)
+    : null;
 }
 
 /** Client-side breakpoint helper for responsive layouts (SPA). Reports `false` where `matchMedia` is missing. */

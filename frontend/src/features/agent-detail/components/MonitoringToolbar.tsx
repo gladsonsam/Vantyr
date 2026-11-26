@@ -1,13 +1,19 @@
 import type { ReactNode } from "react";
 import { Search, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@vantyr/ui/components/input-group";
 import { RefreshButton } from "@/components/common/RefreshButton";
 
 /** Row action button: always reachable by keyboard and touch, revealed on row hover for mouse users. */
 export const ROW_ACTIONS_CLASS =
   "flex shrink-0 items-center gap-0.5 transition-opacity focus-within:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover/row:opacity-100";
-export const ROW_ACTION_BUTTON_CLASS = "text-muted-foreground hover:text-foreground max-sm:size-9 pointer-coarse:size-9";
+export const ROW_ACTION_BUTTON_CLASS =
+  "text-muted-foreground hover:text-foreground max-sm:size-9 pointer-coarse:size-9";
 
 interface MonitoringToolbarProps {
   /** Accessible name of the list (kept out of sight: the pinned tool bar already says where you are). */
@@ -60,20 +66,34 @@ export function MonitoringToolbar({
           />
           {query && (
             <InputGroupAddon align="inline-end">
-              <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => onQueryChange("")}>
+              <InputGroupButton
+                size="icon-xs"
+                aria-label="Clear search"
+                onClick={() => onQueryChange("")}
+              >
                 <X />
               </InputGroupButton>
             </InputGroupAddon>
           )}
         </InputGroup>
         {actions}
-        <RefreshButton onClick={onRefresh} loading={refreshing} disabled={refreshDisabled} label={refreshLabel} />
+        <RefreshButton
+          onClick={onRefresh}
+          loading={refreshing}
+          disabled={refreshDisabled}
+          label={refreshLabel}
+        />
       </div>
       <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground tabular-nums">
         <span role="status">{count}</span>
         {detail}
         {query && (
-          <Button variant="ghost" size="xs" className="pointer-coarse:h-9" onClick={() => onQueryChange("")}>
+          <Button
+            variant="ghost"
+            size="xs"
+            className="pointer-coarse:h-9"
+            onClick={() => onQueryChange("")}
+          >
             Clear search
           </Button>
         )}
@@ -83,9 +103,20 @@ export function MonitoringToolbar({
 }
 
 /** A failed load must not read as "nothing happened": say so and offer the retry. */
-export function LoadFailed({ what, detail, onRetry }: { what: string; /** Why, when the server said. */ detail?: string; onRetry: () => void }) {
+export function LoadFailed({
+  what,
+  detail,
+  onRetry,
+}: {
+  what: string;
+  /** Why, when the server said. */ detail?: string;
+  onRetry: () => void;
+}) {
   return (
-    <div role="alert" className="mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive sm:mx-5">
+    <div
+      role="alert"
+      className="mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive sm:mx-5"
+    >
       <span className="min-w-0 break-words">
         Couldn’t load {what}.{detail ? ` ${detail}` : ""}
       </span>

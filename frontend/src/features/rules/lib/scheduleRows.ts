@@ -3,7 +3,11 @@ import type { RuleSchedule } from "@/api/types";
 import { minuteToTime, timeToMinute } from "../rulesUtils";
 
 /** One editable schedule window: a weekday and HH:MM start/end in the agent's local time. */
-export const scheduleRowSchema = z.object({ day_of_week: z.number(), start: z.string(), end: z.string() });
+export const scheduleRowSchema = z.object({
+  day_of_week: z.number(),
+  start: z.string(),
+  end: z.string(),
+});
 export type ScheduleFormRow = z.infer<typeof scheduleRowSchema>;
 
 export type ScheduleWindow = { day_of_week: number; start_minute: number; end_minute: number };
@@ -27,7 +31,13 @@ export function joinOvernight(windows: ScheduleWindow[]): Span[] {
     if (used.has(i) || w.end_minute !== 1440) return;
     const nextDay = (w.day_of_week + 1) % 7;
     const j = windows.findIndex(
-      (x, k) => k !== i && !used.has(k) && x.day_of_week === nextDay && x.start_minute === 0 && x.end_minute > 0 && x.end_minute < w.start_minute,
+      (x, k) =>
+        k !== i &&
+        !used.has(k) &&
+        x.day_of_week === nextDay &&
+        x.start_minute === 0 &&
+        x.end_minute > 0 &&
+        x.end_minute < w.start_minute,
     );
     if (j >= 0) {
       used.add(i);
@@ -39,15 +49,26 @@ export function joinOvernight(windows: ScheduleWindow[]): Span[] {
   windows.forEach((w, i) => {
     const j = pairs.get(i);
     if (j !== undefined) {
-      spans.push({ day: w.day_of_week, start: w.start_minute, endDay: windows[j].day_of_week, end: windows[j].end_minute });
+      spans.push({
+        day: w.day_of_week,
+        start: w.start_minute,
+        endDay: windows[j].day_of_week,
+        end: windows[j].end_minute,
+      });
     } else if (!used.has(i)) {
-      spans.push({ day: w.day_of_week, start: w.start_minute, endDay: w.day_of_week, end: w.end_minute });
+      spans.push({
+        day: w.day_of_week,
+        start: w.start_minute,
+        endDay: w.day_of_week,
+        end: w.end_minute,
+      });
     }
   });
   return spans;
 }
 
-export const SCHEDULE_NEEDS_WINDOW = "Schedule is enabled but no valid windows were provided (use HH:MM).";
+export const SCHEDULE_NEEDS_WINDOW =
+  "Schedule is enabled but no valid windows were provided (use HH:MM).";
 
 /**
  * Why these rows can't be saved as a schedule, or null when they can. A row the server would never receive
@@ -68,7 +89,11 @@ export function scheduleToRows(schedules: RuleSchedule[] | undefined | null): Sc
   const list = Array.isArray(schedules) ? schedules : [];
   if (list.length === 0) return [emptyScheduleRow()];
   // The two stored halves of an overnight window come back as the one row it was entered as.
-  return joinOvernight(list).map((s) => ({ day_of_week: s.day, start: minuteToTime(s.start), end: minuteToTime(s.end) }));
+  return joinOvernight(list).map((s) => ({
+    day_of_week: s.day,
+    start: minuteToTime(s.start),
+    end: minuteToTime(s.end),
+  }));
 }
 
 /**

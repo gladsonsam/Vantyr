@@ -3,7 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { BellRing, Plus, Search, X } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@vantyr/ui/components/input-group";
 import { Skeleton } from "@vantyr/ui/components/skeleton";
 import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -44,10 +49,11 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
     return m;
   }, [agents]);
 
-  const { toggle, save, remove, actionError, setActionError, saved, setSaved } = useAlertRuleMutations({
-    onSaved: () => setRuleDialog(null),
-    onDeleted: () => setDeleteRule(null),
-  });
+  const { toggle, save, remove, actionError, setActionError, saved, setSaved } =
+    useAlertRuleMutations({
+      onSaved: () => setRuleDialog(null),
+      onDeleted: () => setDeleteRule(null),
+    });
   const list = useAlertRuleSearch(rules, groups, agentsById);
 
   const openRuleDialog = (target: NonNullable<AlertRuleDialogTarget>) => {
@@ -91,7 +97,12 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
 
   // A failed refresh keeps the rules already on screen; only a first load that failed has nothing to show.
   if (rulesQuery.isError && rules.length === 0) {
-    return <LoadFailedCard message={`Couldn’t load alert rules: ${errorText(rulesQuery.error)}`} onRetry={retry} />;
+    return (
+      <LoadFailedCard
+        message={`Couldn’t load alert rules: ${errorText(rulesQuery.error)}`}
+        onRetry={retry}
+      />
+    );
   }
   if (rulesQuery.isPending) return <Skeleton className="h-64 w-full rounded-xl" />;
   if (rules.length === 0) {
@@ -143,8 +154,20 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
 
 /** The rules that are on screen: notices, the count, search and the list itself. */
 function AlertRulesView({
-  rules, list, refreshError, actionError, saved, groups, agentsById, switchesDisabled,
-  onRetry, onDismissAction, onDismissSaved, onCreate, onToggle, onAction,
+  rules,
+  list,
+  refreshError,
+  actionError,
+  saved,
+  groups,
+  agentsById,
+  switchesDisabled,
+  onRetry,
+  onDismissAction,
+  onDismissSaved,
+  onCreate,
+  onToggle,
+  onAction,
 }: {
   rules: AlertRule[];
   list: ReturnType<typeof useAlertRuleSearch>;
@@ -164,7 +187,9 @@ function AlertRulesView({
 }) {
   return (
     <>
-      {actionError && <ErrorBanner message={actionError} actionLabel="Dismiss" onAction={onDismissAction} />}
+      {actionError && (
+        <ErrorBanner message={actionError} actionLabel="Dismiss" onAction={onDismissAction} />
+      )}
       {refreshError && (
         <ErrorBanner
           message={`Couldn’t refresh alert rules: ${refreshError}. Showing the last list that loaded.`}
@@ -236,7 +261,15 @@ function RuleSearch({ query, onChange }: { query: string; onChange: (query: stri
   );
 }
 
-function ErrorBanner({ message, actionLabel, onAction }: { message: string; actionLabel: string; onAction: () => void }) {
+function ErrorBanner({
+  message,
+  actionLabel,
+  onAction,
+}: {
+  message: string;
+  actionLabel: string;
+  onAction: () => void;
+}) {
   return (
     <Alert variant="destructive" role="alert">
       <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
@@ -251,7 +284,10 @@ function ErrorBanner({ message, actionLabel, onAction }: { message: string; acti
 
 function Notice({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
-    <p role="status" className="flex items-center justify-between gap-3 rounded-lg bg-muted/60 px-3 py-2 text-sm">
+    <p
+      role="status"
+      className="flex items-center justify-between gap-3 rounded-lg bg-muted/60 px-3 py-2 text-sm"
+    >
       <span className="min-w-0 break-words">{message}</span>
       <Button variant="ghost" size="xs" aria-label="Dismiss message" onClick={onDismiss}>
         <X />
@@ -262,8 +298,22 @@ function Notice({ message, onDismiss }: { message: string; onDismiss: () => void
 
 /** The edit form, the delete confirmation and the history: each reports its own failure inside itself. */
 function AlertRuleDialogs({
-  groups, agents, agentsById, ruleDialog, saving, saveError, onSave, onCloseRule,
-  deleteRule, deleting, deleteError, onDelete, onCloseDelete, historyRule, history, onCloseHistory,
+  groups,
+  agents,
+  agentsById,
+  ruleDialog,
+  saving,
+  saveError,
+  onSave,
+  onCloseRule,
+  deleteRule,
+  deleting,
+  deleteError,
+  onDelete,
+  onCloseDelete,
+  historyRule,
+  history,
+  onCloseHistory,
 }: {
   groups: AgentGroup[];
   agents: Agent[];
@@ -284,7 +334,15 @@ function AlertRuleDialogs({
 }) {
   return (
     <>
-      <AlertRuleDialog target={ruleDialog} groups={groups} agents={agents} saving={saving} error={saveError} onSave={onSave} onClose={onCloseRule} />
+      <AlertRuleDialog
+        target={ruleDialog}
+        groups={groups}
+        agents={agents}
+        saving={saving}
+        error={saveError}
+        onSave={onSave}
+        onClose={onCloseRule}
+      />
       <ConfirmDeleteDialog
         open={deleteRule !== null}
         pending={deleting}
@@ -292,8 +350,10 @@ function AlertRuleDialogs({
         onClose={onCloseDelete}
         onConfirm={onDelete}
       >
-        It stops applying right away to {deleteRule ? scopeLabels(deleteRule.scopes, groups, agentsById).join(", ") : ""}. Alerts it
-        already raised stay in Events, but its own history can no longer be opened. This can’t be undone.
+        It stops applying right away to{" "}
+        {deleteRule ? scopeLabels(deleteRule.scopes, groups, agentsById).join(", ") : ""}. Alerts it
+        already raised stay in Events, but its own history can no longer be opened. This can’t be
+        undone.
         {deleteError && (
           <span role="alert" className="mt-2 block text-destructive">
             Couldn’t delete it: {deleteError}

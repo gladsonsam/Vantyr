@@ -37,8 +37,15 @@ export function useRetentionSettings(isAdmin: boolean) {
   const parsed = fields ? parseRetentionFields(fields) : null;
   const savedParsed = savedFields ? parseRetentionFields(savedFields) : null;
   const hasErrors = parsed ? RETENTION_KINDS.some(({ key }) => parsed[key].error) : false;
-  const dirty = Boolean(parsed && savedParsed && RETENTION_KINDS.some(({ key }) => parsed[key].days !== savedParsed[key].days));
-  const shortened = parsed && saved ? RETENTION_KINDS.filter(({ key }) => shortensRetention(saved[key], parsed[key].days)) : [];
+  const dirty = Boolean(
+    parsed &&
+    savedParsed &&
+    RETENTION_KINDS.some(({ key }) => parsed[key].days !== savedParsed[key].days),
+  );
+  const shortened =
+    parsed && saved
+      ? RETENTION_KINDS.filter(({ key }) => shortensRetention(saved[key], parsed[key].days))
+      : [];
 
   const settle = () => {
     if (save.isSuccess || save.isError) save.reset();

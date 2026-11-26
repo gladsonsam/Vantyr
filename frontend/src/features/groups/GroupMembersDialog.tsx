@@ -14,7 +14,13 @@ interface GroupMembersDialogProps {
 }
 
 /** Reads the open group's members fresh on every open and hands them to the dialog. */
-export function GroupMembersDialog({ group, agentsList, onDismiss, onAddMembers, onRemoveMember }: GroupMembersDialogProps) {
+export function GroupMembersDialog({
+  group,
+  agentsList,
+  onDismiss,
+  onAddMembers,
+  onRemoveMember,
+}: GroupMembersDialogProps) {
   const members = useQuery({
     ...groupQueries.members(group?.id ?? ""),
     enabled: group !== null,

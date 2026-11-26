@@ -5,7 +5,8 @@ export const ROLE_OPTIONS: { label: string; value: DashboardRole; description: s
   {
     label: "Viewer",
     value: "viewer",
-    description: "Read agents, telemetry, activity, and audit log. Cannot use live screen, remote actions, or scripts.",
+    description:
+      "Read agents, telemetry, activity, and audit log. Cannot use live screen, remote actions, or scripts.",
   },
   {
     label: "Operator",

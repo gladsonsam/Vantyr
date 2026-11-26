@@ -35,7 +35,12 @@ export function toAuditRows(data: { rows: AuditRecord[] }): AuditRow[] {
 }
 
 /** Rows the scope tabs and the page-views switch leave in (a device's own log ignores the scope). */
-export function scopeRows(rows: AuditRow[], scope: AuditScope, forDevice: boolean, showViews: boolean): AuditRow[] {
+export function scopeRows(
+  rows: AuditRow[],
+  scope: AuditScope,
+  forDevice: boolean,
+  showViews: boolean,
+): AuditRow[] {
   const visible = showViews ? rows : rows.filter((r) => !isPageView(r.action));
   if (forDevice || scope === "all") return visible;
   return visible.filter((r) => (scope === "auth" ? r.actor === "auth" : r.actor !== "auth"));

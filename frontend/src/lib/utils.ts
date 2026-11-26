@@ -17,8 +17,7 @@ function normalizeTimestampInput(ts: string | number): string | number {
 export function parseTimestamp(ts: string | number | undefined): Date | null {
   if (ts === undefined || ts === null) return null;
   const normalized = normalizeTimestampInput(ts);
-  const date =
-    typeof normalized === "number" ? new Date(normalized * 1000) : new Date(normalized);
+  const date = typeof normalized === "number" ? new Date(normalized * 1000) : new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -39,7 +38,13 @@ export function fmtFromNow(date: Date, now = Date.now()): string {
   const diff = date.getTime() - now;
   const abs = Math.abs(diff) / 1000;
   const value =
-    abs < 60 ? "now" : abs < 3600 ? `${Math.round(abs / 60)}m` : abs < 86_400 ? `${Math.round(abs / 3600)}h` : `${Math.round(abs / 86_400)}d`;
+    abs < 60
+      ? "now"
+      : abs < 3600
+        ? `${Math.round(abs / 60)}m`
+        : abs < 86_400
+          ? `${Math.round(abs / 3600)}h`
+          : `${Math.round(abs / 86_400)}d`;
   if (value === "now") return "just now";
   return diff > 0 ? `in ${value}` : `${value} ago`;
 }
@@ -88,8 +93,7 @@ export function formatWindowsInstallDate(s: string | null | undefined): string {
     return t.slice(0, 10);
   }
   const digits = t.replace(/\D/g, "");
-  const head =
-    digits.length >= 14 ? digits.slice(0, 8) : digits.length === 8 ? digits : "";
+  const head = digits.length >= 14 ? digits.slice(0, 8) : digits.length === 8 ? digits : "";
   if (head.length === 8) {
     const y = Number(head.slice(0, 4));
     const m = Number(head.slice(4, 6));
@@ -110,8 +114,7 @@ export function installDateSortKey(s: string | null | undefined): string | undef
     return t.slice(0, 10).replace(/-/g, "");
   }
   const digits = t.replace(/\D/g, "");
-  const head =
-    digits.length >= 14 ? digits.slice(0, 8) : digits.length === 8 ? digits : "";
+  const head = digits.length >= 14 ? digits.slice(0, 8) : digits.length === 8 ? digits : "";
   if (head.length === 8) {
     const y = Number(head.slice(0, 4));
     const m = Number(head.slice(4, 6));

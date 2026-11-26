@@ -46,7 +46,13 @@ export function installNativeChrome(): void {
       const inTextField = isTextFieldTarget(document.activeElement) || isTextFieldTarget(e.target);
 
       // Function keys that open find / refresh / devtools / fullscreen in Chromium
-      if (e.key === "F3" || e.key === "F5" || e.key === "F7" || e.key === "F11" || e.key === "F12") {
+      if (
+        e.key === "F3" ||
+        e.key === "F5" ||
+        e.key === "F7" ||
+        e.key === "F11" ||
+        e.key === "F12"
+      ) {
         e.preventDefault();
         e.stopPropagation();
         return;

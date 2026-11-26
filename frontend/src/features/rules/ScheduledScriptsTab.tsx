@@ -8,7 +8,10 @@ import type { Agent, AgentGroup, ScheduledScript } from "@/api/types";
 import { ConfirmActionDialog } from "./components/ConfirmActionDialog";
 import { ErrorBanner } from "./components/RuleTabParts";
 import { RuleTabLayout } from "./components/RuleTabLayout";
-import { ScheduledScriptDialog, type ScheduledScriptDialogTarget } from "./components/ScheduledScriptDialog";
+import {
+  ScheduledScriptDialog,
+  type ScheduledScriptDialogTarget,
+} from "./components/ScheduledScriptDialog";
 import { ScriptList, type ScriptAction } from "./components/ScriptList";
 import { ScriptRunHistoryDialog } from "./components/ScriptRunHistoryDialog";
 import { useRuleListView } from "./hooks/useRuleListView";
@@ -38,13 +41,15 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
   const [runScript, setRunScript] = useState<ScheduledScript | null>(null);
 
   const agentsById = useMemo(() => Object.fromEntries(agents.map((a) => [a.id, a])), [agents]);
-  const scopeText = (s: ScheduledScript | null) => (s ? ruleScopeLabels(s.scopes, groups, agentsById).join(", ") : "");
+  const scopeText = (s: ScheduledScript | null) =>
+    s ? ruleScopeLabels(s.scopes, groups, agentsById).join(", ") : "";
 
-  const { save, remove, toggle, trigger, actionError, setActionError, saved, setSaved } = useScheduledScriptMutations({
-    onSaved: () => setScriptDialog(null),
-    onDeleted: () => setDeleteScript(null),
-    onRunRequested: () => setRunScript(null),
-  });
+  const { save, remove, toggle, trigger, actionError, setActionError, saved, setSaved } =
+    useScheduledScriptMutations({
+      onSaved: () => setScriptDialog(null),
+      onDeleted: () => setDeleteScript(null),
+      onRunRequested: () => setRunScript(null),
+    });
   const haystack = useCallback(
     (r: ScheduledScript) => [r.name, r.shell, ...ruleScopeLabels(r.scopes, groups, agentsById)],
     [groups, agentsById],
@@ -88,8 +93,9 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
         onClose={() => setRunScript(null)}
         onConfirm={() => runScript && trigger.mutate(runScript)}
       >
-        It is sent right away to {scopeText(runScript)} and runs in {runScript ? shellLabel(runScript.shell) : ""} on each online device. Offline
-        devices skip it. Each device reports its result afterwards, in Run history.
+        It is sent right away to {scopeText(runScript)} and runs in{" "}
+        {runScript ? shellLabel(runScript.shell) : ""} on each online device. Offline devices skip
+        it. Each device reports its result afterwards, in Run history.
       </ConfirmActionDialog>
       <ConfirmDeleteDialog
         open={deleteScript !== null}
@@ -98,8 +104,8 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
         onClose={() => setDeleteScript(null)}
         onConfirm={() => deleteScript && remove.mutate(deleteScript)}
       >
-        It stops running on {scopeText(deleteScript)}. A run already sent isn’t recalled, and its run history can no longer be opened. This can’t
-        be undone.
+        It stops running on {scopeText(deleteScript)}. A run already sent isn’t recalled, and its
+        run history can no longer be opened. This can’t be undone.
         {remove.isError && (
           <span role="alert" className="mt-2 block text-destructive">
             Couldn’t delete it: {errorText(remove.error)}
@@ -122,7 +128,8 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
       searchPlaceholder="Search scripts…"
       empty={{
         title: "No scheduled scripts yet",
-        description: "A scheduled script runs a PowerShell or CMD script on agents every hour, day or week.",
+        description:
+          "A scheduled script runs a PowerShell or CMD script on agents every hour, day or week.",
         icon: <FileCode />,
       }}
       actionError={actionError}
@@ -131,7 +138,11 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
       onDismissSaved={() => setSaved(null)}
       banners={
         runs.failed && (
-          <ErrorBanner message="Couldn’t load how the last runs went, so last-run results are unknown." actionLabel="Try again" onAction={() => void runs.refetch()} />
+          <ErrorBanner
+            message="Couldn’t load how the last runs went, so last-run results are unknown."
+            actionLabel="Try again"
+            onAction={() => void runs.refetch()}
+          />
         )
       }
       onCreate={() => openScriptDialog({ mode: "create" })}

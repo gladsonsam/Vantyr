@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "bun:test";
 import {
   aggregateSessions,
   attachAlertEventsToSessions,
@@ -54,10 +54,7 @@ describe("aggregateSessions", () => {
     const base = Date.parse("2026-01-01T00:00:00Z");
     const sessions = realSessions(
       aggregateSessions({
-        windows: [
-          win(1, "code.exe", "a", base),
-          win(2, "chrome.exe", "b", base + 10_000),
-        ],
+        windows: [win(1, "code.exe", "a", base), win(2, "chrome.exe", "b", base + 10_000)],
         urls: [],
         keystrokes: [],
       }),

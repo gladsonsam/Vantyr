@@ -1,5 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { STREAM_PRESET_STORAGE_KEY, loadStreamPreset, monitorLabel, saveStreamPreset } from "@/features/remote/lib/streamPresets";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, describe, expect, it } from "bun:test";
+import {
+  STREAM_PRESET_STORAGE_KEY,
+  loadStreamPreset,
+  monitorLabel,
+  saveStreamPreset,
+} from "@/features/remote/lib/streamPresets";
 
 afterEach(() => {
   localStorage.clear();

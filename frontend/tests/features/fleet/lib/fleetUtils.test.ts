@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { hasValue, isNewerVersion, lastReportedTooltip } from "@/features/fleet/lib/fleetUtils";
 
 describe("fleetUtils placeholders and stored notes", () => {

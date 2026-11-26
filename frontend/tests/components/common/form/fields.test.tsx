@@ -1,10 +1,10 @@
-// @vitest-environment jsdom
+import { testMock as vi } from "@tests/support/mock";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "bun:test";
 import { CheckboxField, InputField, NumberField } from "@/components/common/form/fields";
 
 const schema = z.object({
@@ -15,11 +15,19 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 function Demo({ onSubmit }: { onSubmit: (values: Values) => void }) {
-  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { name: "", size: 3, on: false } });
+  const form = useForm<Values>({
+    resolver: zodResolver(schema),
+    defaultValues: { name: "", size: 3, on: false },
+  });
   return (
     <form onSubmit={form.handleSubmit(onSubmit)}>
       <InputField control={form.control} name="name" label="Name" />
-      <NumberField control={form.control} name="size" label="Size" parse={(raw) => parseInt(raw, 10) || 0} />
+      <NumberField
+        control={form.control}
+        name="size"
+        label="Size"
+        parse={(raw) => parseInt(raw, 10) || 0}
+      />
       <CheckboxField control={form.control} name="on" label="Turn on" />
       <button type="submit">Save</button>
     </form>
@@ -52,7 +60,9 @@ async function type(input: HTMLInputElement, value: string) {
 
 async function submit(host: HTMLElement) {
   await act(async () => {
-    host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    host
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
 }
 
@@ -86,6 +96,8 @@ describe("form fields", () => {
     await type(size, "");
     await submit(host);
     expect(onSubmit).not.toHaveBeenCalled();
-    expect(host.querySelector('[data-slot="field-error"]')?.textContent).toBe("Size must be at least 1");
+    expect(host.querySelector('[data-slot="field-error"]')?.textContent).toBe(
+      "Size must be at least 1",
+    );
   });
 });

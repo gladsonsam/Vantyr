@@ -108,7 +108,11 @@ export const demoAgentInfo: Record<string, AgentInfo> = Object.fromEntries(
       uptime_secs: a.online ? (index + 2) * 36_200 : undefined,
       system_model: index % 2 === 0 ? "ThinkPad T14" : "OptiPlex 7090",
       system_manufacturer: index % 2 === 0 ? "Lenovo" : "Dell Inc.",
-      os_name: a.name.includes("MBP") ? "macOS" : a.name.includes("BUILD") ? "Ubuntu" : "Windows 11 Pro",
+      os_name: a.name.includes("MBP")
+        ? "macOS"
+        : a.name.includes("BUILD")
+          ? "Ubuntu"
+          : "Windows 11 Pro",
       os_version: a.name.includes("BUILD") ? "24.04" : "23H2",
       cpu_brand: index % 2 === 0 ? "Intel Core i7-12700" : "AMD Ryzen 7 5700G",
       cpu_cores: index % 2 === 0 ? 12 : 8,
@@ -159,27 +163,100 @@ Object.assign(demoAgentInfo["win11dev"], {
   motherboard_model: "PRO B550M-VC WIFI (MS-7C95)",
   os_long_version: "Windows 11 Pro 23H2 (build 22631.4460)",
   timezone: "Australia/Sydney",
-  install_path: "C:\\Program Files\\Vantyr Agent\\Customer Support Tools\\Remote Monitoring\\vantyr-agent.exe",
+  install_path:
+    "C:\\Program Files\\Vantyr Agent\\Customer Support Tools\\Remote Monitoring\\vantyr-agent.exe",
   config_path: "C:\\Users\\Demo\\AppData\\Roaming\\Vantyr\\agent-config.toml",
-  config_server_url: "wss://demo.vantyr.local/ws/agent?token=demo-not-a-real-token-0123456789abcdef",
-  capabilities: { remote_input: "supported", clipboard: "supported", audio_capture: "limited", software_inventory: "supported", terminal: "needs_permission", system_control: "unsupported" },
+  config_server_url:
+    "wss://demo.vantyr.local/ws/agent?token=demo-not-a-real-token-0123456789abcdef",
+  capabilities: {
+    remote_input: "supported",
+    clipboard: "supported",
+    audio_capture: "limited",
+    software_inventory: "supported",
+    terminal: "needs_permission",
+    system_control: "unsupported",
+  },
   drives: [
-    { name: "C:", mount_point: "C:\\", file_system: "NTFS", total_gb: 930.52, available_gb: 826.09 },
-    { name: "Data", mount_point: "D:\\", file_system: "exFAT", total_gb: 1862.4, available_gb: 120.3 },
-    { name: "Backups", mount_point: "E:\\Backups", file_system: "NTFS", total_gb: 465.76, available_gb: 41.2 },
+    {
+      name: "C:",
+      mount_point: "C:\\",
+      file_system: "NTFS",
+      total_gb: 930.52,
+      available_gb: 826.09,
+    },
+    {
+      name: "Data",
+      mount_point: "D:\\",
+      file_system: "exFAT",
+      total_gb: 1862.4,
+      available_gb: 120.3,
+    },
+    {
+      name: "Backups",
+      mount_point: "E:\\Backups",
+      file_system: "NTFS",
+      total_gb: 465.76,
+      available_gb: 41.2,
+    },
   ],
   adapters: [
-    { name: "Ethernet", description: "Realtek PCIe 2.5GbE Family Controller", mac: "02-00-5E-10-00-00", ips: ["10.0.2.20", "fe80::a4ac:1498:9525:34ba"], gateways: ["10.0.2.1"], dns: ["1.1.1.1", "8.8.8.8", "1.1.1.1"] },
-    { name: "WiFi", description: "Intel Wi-Fi 6 AX200", mac: "02-00-5E-10-00-10", ips: ["169.254.42.42", "fe80::9e2d:8547:877c:7bb6"], gateways: [], dns: ["10.0.2.3"] },
-    { name: "Bluetooth Network Connection", description: "Bluetooth Device (Personal Area Network)", mac: "02-00-5E-10-00-70", ips: ["169.254.36.104"], gateways: [], dns: [] },
-    { name: "Loopback Pseudo-Interface 1", description: "Software Loopback Interface 1", mac: "", ips: ["127.0.0.1", "::1"], gateways: [], dns: [] },
+    {
+      name: "Ethernet",
+      description: "Realtek PCIe 2.5GbE Family Controller",
+      mac: "02-00-5E-10-00-00",
+      ips: ["10.0.2.20", "fe80::a4ac:1498:9525:34ba"],
+      gateways: ["10.0.2.1"],
+      dns: ["1.1.1.1", "8.8.8.8", "1.1.1.1"],
+    },
+    {
+      name: "WiFi",
+      description: "Intel Wi-Fi 6 AX200",
+      mac: "02-00-5E-10-00-10",
+      ips: ["169.254.42.42", "fe80::9e2d:8547:877c:7bb6"],
+      gateways: [],
+      dns: ["10.0.2.3"],
+    },
+    {
+      name: "Bluetooth Network Connection",
+      description: "Bluetooth Device (Personal Area Network)",
+      mac: "02-00-5E-10-00-70",
+      ips: ["169.254.36.104"],
+      gateways: [],
+      dns: [],
+    },
+    {
+      name: "Loopback Pseudo-Interface 1",
+      description: "Software Loopback Interface 1",
+      mac: "",
+      ips: ["127.0.0.1", "::1"],
+      gateways: [],
+      dns: [],
+    },
   ],
 });
 
 export const demoGroups: AgentGroup[] = [
-  { id: "grp-workstations", name: "Workstations", description: "Employee laptops and desktops", created_at: isoHoursAgo(900), member_count: 5 },
-  { id: "grp-kiosks", name: "Kiosks", description: "Shared unattended machines", created_at: isoHoursAgo(720), member_count: 2 },
-  { id: "grp-build", name: "Build fleet", description: "CI and automation hosts", created_at: isoHoursAgo(480), member_count: 1 },
+  {
+    id: "grp-workstations",
+    name: "Workstations",
+    description: "Employee laptops and desktops",
+    created_at: isoHoursAgo(900),
+    member_count: 5,
+  },
+  {
+    id: "grp-kiosks",
+    name: "Kiosks",
+    description: "Shared unattended machines",
+    created_at: isoHoursAgo(720),
+    member_count: 2,
+  },
+  {
+    id: "grp-build",
+    name: "Build fleet",
+    description: "CI and automation hosts",
+    created_at: isoHoursAgo(480),
+    member_count: 1,
+  },
 ];
 
 export const demoAlertRules: AlertRule[] = [
@@ -295,8 +372,16 @@ export const demoAppBlockRules: AppBlockRule[] = [
     match_mode: "contains",
     enabled: true,
     created_at: isoHoursAgo(12),
-    scopes: [{ kind: "group", group_id: "grp-workstations" }, { kind: "group", group_id: "grp-kiosks" }, { kind: "agent", agent_id: "sitting-room" }],
-    schedules: [1, 2, 3, 4, 5].map((day_of_week) => ({ day_of_week, start_minute: 9 * 60, end_minute: 17 * 60 })),
+    scopes: [
+      { kind: "group", group_id: "grp-workstations" },
+      { kind: "group", group_id: "grp-kiosks" },
+      { kind: "agent", agent_id: "sitting-room" },
+    ],
+    schedules: [1, 2, 3, 4, 5].map((day_of_week) => ({
+      day_of_week,
+      start_minute: 9 * 60,
+      end_minute: 17 * 60,
+    })),
   },
   {
     id: 14,
@@ -345,7 +430,10 @@ export const demoInternetBlockRules: InternetBlockRule[] = [
     name: "School nights",
     enabled: true,
     created_at: isoHoursAgo(10),
-    scopes: [{ kind: "group", group_id: "grp-workstations" }, { kind: "agent", agent_id: "sitting-room" }],
+    scopes: [
+      { kind: "group", group_id: "grp-workstations" },
+      { kind: "agent", agent_id: "sitting-room" },
+    ],
     schedules: [
       { day_of_week: 0, start_minute: 21 * 60, end_minute: 1440 },
       { day_of_week: 1, start_minute: 0, end_minute: 7 * 60 },
@@ -451,8 +539,18 @@ export function demoUrls(agentId: string, count = 24): UrlVisit[] {
     "https://www.example-shop.test/products/garden-chairs/summer-sale?utm_source=ads&utm_medium=cpc&utm_campaign=AU_EN_KWD_ACQ&ad_group=164750731181&gad_campaignid=21746669725&gclid=Cj0KCQiAdemoTrackingValue0123456789";
   return range(count).map((i) => ({
     id: i + 1,
-    url: i % 7 === 3 ? trackedUrl : i % 9 === 4 ? "https://example.org/" : urls[(i + agentId.length) % urls.length],
-    title: i % 9 === 4 ? null : i % 7 === 3 ? "Garden chairs — summer sale" : ["GitHub", "Tokio docs", "Cloudscape", "Hacker News", "Outlook"][i % 5],
+    url:
+      i % 7 === 3
+        ? trackedUrl
+        : i % 9 === 4
+          ? "https://example.org/"
+          : urls[(i + agentId.length) % urls.length],
+    title:
+      i % 9 === 4
+        ? null
+        : i % 7 === 3
+          ? "Garden chairs — summer sale"
+          : ["GitHub", "Tokio docs", "Cloudscape", "Hacker News", "Outlook"][i % 5],
     browser: i % 2 === 0 ? "Chrome" : "Edge",
     ts: isoMinutesAgo(i * 13 + 4),
     user: demoUserFor(agentId),
@@ -468,7 +566,9 @@ export function demoKeys(agentId: string, count = 12): KeySession[] {
     window_title: i % 2 === 0 ? "Vantyr - Visual Studio Code" : "PowerShell",
     text:
       i % 3 === 0
-        ? "[demo keystroke session redacted] " + "Meeting notes for the quarterly review: budget, hiring plan and roadmap. ".repeat(6) + "[⌫][⌫]\nNext steps:\n- send summary\n- book follow-up\n- archive the old board"
+        ? "[demo keystroke session redacted] " +
+          "Meeting notes for the quarterly review: budget, hiring plan and roadmap. ".repeat(6) +
+          "[⌫][⌫]\nNext steps:\n- send summary\n- book follow-up\n- archive the old board"
         : "[demo keystroke session redacted]",
     started_at: isoMinutesAgo(i * 17 + 5),
     updated_at: isoMinutesAgo(i * 17 + 2),
@@ -491,11 +591,31 @@ const DEMO_SOFTWARE: Array<[string, string, string, string]> = [
   ["Visual Studio Code", "1.96.2", "Microsoft Corporation", "20261104"],
   ["7-Zip 24.08 (x64)", "24.08", "Igor Pavlov", "20260822"],
   ["PowerShell 7-x64", "7.4.6.0", "Microsoft Corporation", "20260811"],
-  ["Microsoft Visual C++ 2022 X64 Additional Runtime - 14.40.33816", "14.40.33816", "Microsoft Corporation", "20260709"],
-  ["Microsoft Visual C++ 2022 X64 Minimum Runtime - 14.40.33816", "14.40.33816", "Microsoft Corporation", "20260709"],
-  ["Python 3.12.4 Core Interpreter (64-bit)", "3.12.4150.0", "Python Software Foundation", "20260518"],
+  [
+    "Microsoft Visual C++ 2022 X64 Additional Runtime - 14.40.33816",
+    "14.40.33816",
+    "Microsoft Corporation",
+    "20260709",
+  ],
+  [
+    "Microsoft Visual C++ 2022 X64 Minimum Runtime - 14.40.33816",
+    "14.40.33816",
+    "Microsoft Corporation",
+    "20260709",
+  ],
+  [
+    "Python 3.12.4 Core Interpreter (64-bit)",
+    "3.12.4150.0",
+    "Python Software Foundation",
+    "20260518",
+  ],
   ["Git", "2.47.1", "The Git Development Community", "20260517"],
-  ["Adobe Acrobat Reader - Enterprise Managed Deployment with Extended Language Pack and Accessibility Tools", "24.005.20320", "Adobe", "20260301"],
+  [
+    "Adobe Acrobat Reader - Enterprise Managed Deployment with Extended Language Pack and Accessibility Tools",
+    "24.005.20320",
+    "Adobe",
+    "20260301",
+  ],
   ["Node.js", "22.12.0", "Node.js Foundation", "20260215"],
   ["Zoom Workplace (64-bit)", "6.3.0 (47000)", "Zoom Communications, Inc.", "20260110"],
   ["Mozilla Firefox (x64 en-US)", "133.0", "Mozilla", "20251207"],
@@ -528,7 +648,11 @@ export function demoSoftware(agentId: string): AgentSoftwareRow[] {
 export function demoScheduledEvents(): ScheduledScriptEvent[] {
   const outcomes = [
     { status: "failed", output: "--- STDERR ---\nAccess is denied.\n--- ERROR ---\nExit code 1" },
-    { status: "success", output: "--- STDOUT ---\nOsName      OsVersion\n------      ---------\nWindows 11  10.0.26100\n" },
+    {
+      status: "success",
+      output:
+        "--- STDOUT ---\nOsName      OsVersion\n------      ---------\nWindows 11  10.0.26100\n",
+    },
     { status: "success", output: "--- STDOUT ---\nDiagnostics collected\n" },
     { status: "skipped_offline", output: null },
     { status: "fired", output: null },
@@ -558,11 +682,20 @@ export function demoAppBlockEvents(): AppBlockEvent[] {
 }
 
 function demoUserFor(agentId: string): string {
-  const short = agentId.replace(/[^a-z0-9]+/gi, "").slice(0, 10).toLowerCase();
+  const short = agentId
+    .replace(/[^a-z0-9]+/gi, "")
+    .slice(0, 10)
+    .toLowerCase();
   return `${short || "demo"}\\user`;
 }
 
-function agent(id: string, name: string, online: boolean, lastSeenHoursAgo: number, version: string): Agent {
+function agent(
+  id: string,
+  name: string,
+  online: boolean,
+  lastSeenHoursAgo: number,
+  version: string,
+): Agent {
   const seen = isoHoursAgo(lastSeenHoursAgo);
   return {
     id,

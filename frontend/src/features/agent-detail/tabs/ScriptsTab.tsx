@@ -16,7 +16,10 @@ import { api, errorText } from "@/api";
 import { settingsQueries } from "@/api/queries/settings";
 import type { AgentInfo, DashboardRole } from "@/api/types";
 import { CopyTextButton } from "@/components/common/CopyTextButton";
-import { capabilityAvailable, platformShellOptions } from "@/features/agent-detail/lib/agentCapabilities";
+import {
+  capabilityAvailable,
+  platformShellOptions,
+} from "@/features/agent-detail/lib/agentCapabilities";
 import { describeScriptResult, type ScriptOutcome } from "@/features/agent-detail/lib/scriptResult";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 import { cn } from "@/lib/utils";
@@ -40,14 +43,20 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
   const [script, setScript] = useState("");
   const capabilitiesQuery = useQuery(settingsQueries.capabilities());
   // `null` while unknown; a failed check counts as "not allowed".
-  const remoteOk = capabilitiesQuery.isError ? false : capabilitiesQuery.data?.remote_script ?? null;
+  const remoteOk = capabilitiesQuery.isError
+    ? false
+    : (capabilitiesQuery.data?.remote_script ?? null);
   const queryClient = useQueryClient();
   const runScript = useMutation({
-    mutationFn: (body: { shell: string; script: string; timeout_secs: number }) => api.runAgentScript(agentId, body),
+    mutationFn: (body: { shell: string; script: string; timeout_secs: number }) =>
+      api.runAgentScript(agentId, body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["agents"] }),
   });
   const running = runScript.isPending;
-  const outcome = useMemo(() => (runScript.data ? describeScriptResult(runScript.data) : null), [runScript.data]);
+  const outcome = useMemo(
+    () => (runScript.data ? describeScriptResult(runScript.data) : null),
+    [runScript.data],
+  );
   const scriptAvailable = capabilityAvailable(agentInfo, "script_execution");
   const shellOptions = useMemo(() => platformShellOptions(agentInfo), [agentInfo]);
 
@@ -59,7 +68,13 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
   const scriptControlsDisabled = !remoteAllowed || blockedByRole || running;
 
   if (!scriptAvailable) {
-    return <CapabilityNotice info={agentInfo} capability="script_execution" title="Scripts unavailable" />;
+    return (
+      <CapabilityNotice
+        info={agentInfo}
+        capability="script_execution"
+        title="Scripts unavailable"
+      />
+    );
   }
 
   return (
@@ -68,11 +83,15 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
 
       <section className="flex flex-col gap-3 rounded-xl bg-card p-3 sm:p-4">
         <div className="flex items-center gap-3">
-          <label htmlFor="scripts-shell" className="text-sm text-muted-foreground">Shell</label>
+          <label htmlFor="scripts-shell" className="text-sm text-muted-foreground">
+            Shell
+          </label>
           <Select
             value={shell.value}
             disabled={scriptControlsDisabled}
-            onValueChange={(next) => { if (next) setChosenShell(next); }}
+            onValueChange={(next) => {
+              if (next) setChosenShell(next);
+            }}
           >
             <SelectTrigger id="scripts-shell" className="min-w-0 flex-1 sm:w-64 sm:flex-none">
               <SelectValue placeholder="Select a shell" />
@@ -101,50 +120,81 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Button
             disabled={scriptControlsDisabled || !script.trim()}
-            onClick={() => runScript.mutate({ shell: shell.value, script, timeout_secs: TIMEOUT_SECS })}
+            onClick={() =>
+              runScript.mutate({ shell: shell.value, script, timeout_secs: TIMEOUT_SECS })
+            }
           >
             {running ? <Spinner /> : <Play />} {running ? "Running…" : "Run script"}
           </Button>
-          <Button variant="ghost" disabled={scriptControlsDisabled || !script} onClick={() => setScript("")}>
+          <Button
+            variant="ghost"
+            disabled={scriptControlsDisabled || !script}
+            onClick={() => setScript("")}
+          >
             Clear
           </Button>
           <p className="min-w-0 flex-1 basis-56 text-xs text-muted-foreground">
-            Runs right away on this device and is recorded in the audit log. Stops after {TIMEOUT_SECS / 60} minutes.
+            Runs right away on this device and is recorded in the audit log. Stops after{" "}
+            {TIMEOUT_SECS / 60} minutes.
           </p>
         </div>
       </section>
 
       {running && (
         <p role="status" className="flex items-center gap-2 px-1 text-sm text-muted-foreground">
-          <Spinner /> Waiting for the device to reply. This can take up to {TIMEOUT_SECS / 60} minutes.
+          <Spinner /> Waiting for the device to reply. This can take up to {TIMEOUT_SECS / 60}{" "}
+          minutes.
         </p>
       )}
 
       {runScript.error && (
-        <div role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm break-words text-destructive">
+        <div
+          role="alert"
+          className="rounded-lg bg-destructive/10 px-3 py-2 text-sm break-words text-destructive"
+        >
           The script didn’t run. {errorText(runScript.error)}
         </div>
       )}
 
       {outcome && !running && (
-        <ScriptResultPanel outcome={outcome} ranAt={runScript.submittedAt} onDismiss={() => runScript.reset()} />
+        <ScriptResultPanel
+          outcome={outcome}
+          ranAt={runScript.submittedAt}
+          onDismiss={() => runScript.reset()}
+        />
       )}
     </div>
   );
 }
 
-function ScriptResultPanel({ outcome, ranAt, onDismiss }: { outcome: ScriptOutcome; ranAt: number; onDismiss: () => void }) {
-  const Icon = outcome.tone === "ok" ? CircleCheck : outcome.tone === "failed" ? CircleX : CircleAlert;
+function ScriptResultPanel({
+  outcome,
+  ranAt,
+  onDismiss,
+}: {
+  outcome: ScriptOutcome;
+  ranAt: number;
+  onDismiss: () => void;
+}) {
+  const Icon =
+    outcome.tone === "ok" ? CircleCheck : outcome.tone === "failed" ? CircleX : CircleAlert;
   const output = [outcome.stdout, outcome.stderr].filter(Boolean).join("\n");
   const empty = !outcome.stdout && !outcome.stderr && !outcome.error;
   return (
-    <section aria-label="Script result" className="flex flex-col gap-3 rounded-xl bg-card p-3 sm:p-4">
+    <section
+      aria-label="Script result"
+      className="flex flex-col gap-3 rounded-xl bg-card p-3 sm:p-4"
+    >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <p
           role="status"
           className={cn(
             "flex min-w-0 flex-1 items-center gap-2 text-sm font-medium",
-            outcome.tone === "ok" ? "text-success" : outcome.tone === "failed" ? "text-destructive" : "text-warning",
+            outcome.tone === "ok"
+              ? "text-success"
+              : outcome.tone === "failed"
+                ? "text-destructive"
+                : "text-warning",
           )}
         >
           <Icon className="size-4 shrink-0" aria-hidden="true" />
@@ -154,12 +204,21 @@ function ScriptResultPanel({ outcome, ranAt, onDismiss }: { outcome: ScriptOutco
           </span>
         </p>
         <CopyTextButton text={output || outcome.error || ""} label="Copy output" disabled={empty} />
-        <Button variant="ghost" size="icon-sm" aria-label="Clear result" title="Clear result" className="pointer-coarse:size-9" onClick={onDismiss}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Clear result"
+          title="Clear result"
+          className="pointer-coarse:size-9"
+          onClick={onDismiss}
+        >
           <X />
         </Button>
       </div>
       {outcome.error && (
-        <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm break-words text-warning">{outcome.error}</p>
+        <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm break-words text-warning">
+          {outcome.error}
+        </p>
       )}
       {empty && <p className="text-sm text-muted-foreground">The script produced no output.</p>}
       <OutputBlock label="Output" text={outcome.stdout} />
@@ -187,8 +246,15 @@ function OutputBlock({ label, text, tone }: { label: string; text: string; tone?
   );
 }
 
-function ScriptAvailabilityNotice({ viewer, remoteOk }: { viewer: boolean; remoteOk: boolean | null }) {
-  return <>
+function ScriptAvailabilityNotice({
+  viewer,
+  remoteOk,
+}: {
+  viewer: boolean;
+  remoteOk: boolean | null;
+}) {
+  return (
+    <>
       {viewer && (
         <Alert>
           <Info />
@@ -205,5 +271,6 @@ function ScriptAvailabilityNotice({ viewer, remoteOk }: { viewer: boolean; remot
           </AlertDescription>
         </Alert>
       )}
-  </>;
+    </>
+  );
 }

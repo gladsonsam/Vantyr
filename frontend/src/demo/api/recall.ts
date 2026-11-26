@@ -8,7 +8,17 @@ import {
 } from "@/features/recall/lib/recallContext";
 import { demoAgents } from "@/demo/data";
 import { asRecord } from "./helpers";
-import { DEMO_FRAME_STEP_MS, demoFrame, demoFrameDataUri, demoFramesList, demoRange, demoRecallSettings, demoSegments, demoTimezone, demoToday } from "./recallFixtures";
+import {
+  DEMO_FRAME_STEP_MS,
+  demoFrame,
+  demoFrameDataUri,
+  demoFramesList,
+  demoRange,
+  demoRecallSettings,
+  demoSegments,
+  demoTimezone,
+  demoToday,
+} from "./recallFixtures";
 import type { DemoState } from "./state";
 
 /** Substring matching deliberately uses text semantics, not membership in a set. */
@@ -30,7 +40,11 @@ export function demoRecallApi(state: DemoState): Partial<ApiClient> {
     };
   };
   return {
-    historyDevices: async () => ({ agent_ids: demoAgents.filter((agent) => !removedAgents.has(agent.id)).map((agent) => agent.id) }),
+    historyDevices: async () => ({
+      agent_ids: demoAgents
+        .filter((agent) => !removedAgents.has(agent.id))
+        .map((agent) => agent.id),
+    }),
     // ── Screen history / "Recall" ──
     historyFrames: async (_id, opts) => {
       const { from, to, limit } = demoRange(opts);
@@ -58,51 +72,143 @@ export function demoRecallApi(state: DemoState): Partial<ApiClient> {
       return { frame: demoFrame(t) };
     },
     historySearch: async (_id, query, opts) => {
-      const q=String(query ?? "").trim(), o=asRecord(opts);
-      const cursor=typeof o.cursor==="string" ? o.cursor : null;
-      const match=cursor?.match(/^demo-search:([a-f0-9-]+):(\d+)$/);
-      const previous=match ? recallSearchPages.get(match[1]) : undefined;
-      const offset=match ? Number(match[2]) : 0;
-      if(cursor&&(!previous||!Number.isSafeInteger(offset)||offset<0||offset>previous.results.length))throw new Error("Demo search cursor expired or invalid. Search again.");
-      const filterInput={app:o.app,app_mode:o.app_mode,title:o.title,url_host:o.url_host,context:o.context};
-      const inherited={...previous?.filters};
-      for(const [key,value] of Object.entries(filterInput))if(value!==undefined)Object.assign(inherited,{[key]:value});
-      const filters=parseRecallFilters(previous ? inherited : filterInput);
-      const scope=o.scope ?? previous?.scope ?? "range", sort=o.sort ?? previous?.sort ?? (q ? "ranked" : "newest");
-      const monitor=o.monitor===undefined ? previous?.monitor ?? null : o.monitor;
-      if(typeof scope!=="string"||!["range","retained"].includes(scope)||typeof sort!=="string"||!["ranked","newest"].includes(sort)||!(monitor===null||Number.isSafeInteger(monitor)&&Number(monitor)>=0&&Number(monitor)<64))throw new Error("Invalid demo search scope, sort or display");
-      if(!q&&(!contextFiltersActive(filters)||sort==="ranked"))throw new Error("Context-only search requires a filter and newest order");
-      if(new TextEncoder().encode(q).length>4096)throw new Error("OCR query exceeds 4096 bytes");
-      const range=demoRange(opts), from=previous?.from ?? range.from, to=previous?.to ?? range.to;
-      if(previous&&(previous.device!==String(_id)||previous.query!==q||previous.scope!==scope||previous.sort!==sort||previous.monitor!==monitor||JSON.stringify(previous.filters)!==JSON.stringify(filters)||(o.from!==undefined&&Date.parse(String(o.from))!==from)||(o.to!==undefined&&Date.parse(String(o.to))!==to)))throw new Error("Demo search cursor filters do not match. Search again.");
-      if(!Number.isFinite(from)||!Number.isFinite(to)||from>=to||scope==="retained"&&o.from!==undefined)throw new Error("Invalid demo search bounds");
-      const cap=o.limit===undefined ? 100 : Number(o.limit);
-      if(!Number.isSafeInteger(cap)||cap<1||cap>3000)throw new Error("Invalid demo search page limit");
-      let candidates=previous?.results;
-      if(!candidates){
-        let frames=demoFramesList(from,to).filter(f=>{
-          if(monitor!==null&&f.monitor!==monitor||q&&!f.has_ocr)return false;
-          const c=parseRecallContext(f.context), known=recallContextKnown(c);
-          if(filters.context==="known"&&!known||filters.context==="unknown"&&known)return false;
-          const app=c?.window.status==="observed" ? c.window.app : null;
-          const title=c?.window.status==="observed" ? c.window.title : null;
-          const host=c?.browser.status==="observed" ? c.browser.url_host : null;
-          if(filters.app&&(!app||(filters.app_mode==="prefix" ? !asciiLower(app).startsWith(filters.app) : asciiLower(app)!==filters.app)))return false;
-          if(filters.title&&!matchesTitle(title,filters.title))return false;
-          return !filters.url_host||host===filters.url_host;
+      const q = String(query ?? "").trim(),
+        o = asRecord(opts);
+      const cursor = typeof o.cursor === "string" ? o.cursor : null;
+      const match = cursor?.match(/^demo-search:([a-f0-9-]+):(\d+)$/);
+      const previous = match ? recallSearchPages.get(match[1]) : undefined;
+      const offset = match ? Number(match[2]) : 0;
+      if (
+        cursor &&
+        (!previous ||
+          !Number.isSafeInteger(offset) ||
+          offset < 0 ||
+          offset > previous.results.length)
+      )
+        throw new Error("Demo search cursor expired or invalid. Search again.");
+      const filterInput = {
+        app: o.app,
+        app_mode: o.app_mode,
+        title: o.title,
+        url_host: o.url_host,
+        context: o.context,
+      };
+      const inherited = { ...previous?.filters };
+      for (const [key, value] of Object.entries(filterInput))
+        if (value !== undefined) Object.assign(inherited, { [key]: value });
+      const filters = parseRecallFilters(previous ? inherited : filterInput);
+      const scope = o.scope ?? previous?.scope ?? "range",
+        sort = o.sort ?? previous?.sort ?? (q ? "ranked" : "newest");
+      const monitor = o.monitor === undefined ? (previous?.monitor ?? null) : o.monitor;
+      if (
+        typeof scope !== "string" ||
+        !["range", "retained"].includes(scope) ||
+        typeof sort !== "string" ||
+        !["ranked", "newest"].includes(sort) ||
+        !(
+          monitor === null ||
+          (Number.isSafeInteger(monitor) && Number(monitor) >= 0 && Number(monitor) < 64)
+        )
+      )
+        throw new Error("Invalid demo search scope, sort or display");
+      if (!q && (!contextFiltersActive(filters) || sort === "ranked"))
+        throw new Error("Context-only search requires a filter and newest order");
+      if (new TextEncoder().encode(q).length > 4096)
+        throw new Error("OCR query exceeds 4096 bytes");
+      const range = demoRange(opts),
+        from = previous?.from ?? range.from,
+        to = previous?.to ?? range.to;
+      if (
+        previous &&
+        (previous.device !== String(_id) ||
+          previous.query !== q ||
+          previous.scope !== scope ||
+          previous.sort !== sort ||
+          previous.monitor !== monitor ||
+          JSON.stringify(previous.filters) !== JSON.stringify(filters) ||
+          (o.from !== undefined && Date.parse(String(o.from)) !== from) ||
+          (o.to !== undefined && Date.parse(String(o.to)) !== to))
+      )
+        throw new Error("Demo search cursor filters do not match. Search again.");
+      if (
+        !Number.isFinite(from) ||
+        !Number.isFinite(to) ||
+        from >= to ||
+        (scope === "retained" && o.from !== undefined)
+      )
+        throw new Error("Invalid demo search bounds");
+      const cap = o.limit === undefined ? 100 : Number(o.limit);
+      if (!Number.isSafeInteger(cap) || cap < 1 || cap > 3000)
+        throw new Error("Invalid demo search page limit");
+      let candidates = previous?.results;
+      if (!candidates) {
+        let frames = demoFramesList(from, to).filter((f) => {
+          if ((monitor !== null && f.monitor !== monitor) || (q && !f.has_ocr)) return false;
+          const c = parseRecallContext(f.context),
+            known = recallContextKnown(c);
+          if ((filters.context === "known" && !known) || (filters.context === "unknown" && known))
+            return false;
+          const app = c?.window.status === "observed" ? c.window.app : null;
+          const title = c?.window.status === "observed" ? c.window.title : null;
+          const host = c?.browser.status === "observed" ? c.browser.url_host : null;
+          if (
+            filters.app &&
+            (!app ||
+              (filters.app_mode === "prefix"
+                ? !asciiLower(app).startsWith(filters.app)
+                : asciiLower(app) !== filters.app))
+          )
+            return false;
+          if (filters.title && !matchesTitle(title, filters.title)) return false;
+          return !filters.url_host || host === filters.url_host;
         });
-        if(sort==="newest")frames=frames.reverse();
-        candidates=frames.map((f,i)=>({...f,rank:q ? 1/(i+1) : 0,snippet:q ? `…recognized on-screen text matching [[[${q}]]] in the captured screen…` : ""}));
+        if (sort === "newest") frames = frames.reverse();
+        candidates = frames.map((f, i) => ({
+          ...f,
+          rank: q ? 1 / (i + 1) : 0,
+          snippet: q
+            ? `…recognized on-screen text matching [[[${q}]]] in the captured screen…`
+            : "",
+        }));
       }
-      const results=candidates.slice(offset,offset+cap), hasMore=offset+results.length<candidates.length;
-      let next:string|null=null;
-      if(hasMore){
-        const key=match?.[1] ?? crypto.randomUUID();
-        if(!previous){recallSearchPages.set(key,{device:String(_id),query:q,filters,scope:String(scope),sort:String(sort),monitor:monitor as number|null,from,to,results:candidates});while(recallSearchPages.size>16)recallSearchPages.delete(recallSearchPages.keys().next().value!);}
-        next=`demo-search:${key}:${offset+results.length}`;
+      const results = candidates.slice(offset, offset + cap),
+        hasMore = offset + results.length < candidates.length;
+      let next: string | null = null;
+      if (hasMore) {
+        const key = match?.[1] ?? crypto.randomUUID();
+        if (!previous) {
+          recallSearchPages.set(key, {
+            device: String(_id),
+            query: q,
+            filters,
+            scope: String(scope),
+            sort: String(sort),
+            monitor: monitor as number | null,
+            from,
+            to,
+            results: candidates,
+          });
+          while (recallSearchPages.size > 16)
+            recallSearchPages.delete(recallSearchPages.keys().next().value!);
+        }
+        next = `demo-search:${key}:${offset + results.length}`;
       }
       // scope and sort were validated against their allowed values above.
-      return {query:q,from:scope==="retained" ? null : new Date(from).toISOString(),to:new Date(to).toISOString(),monitor:monitor as number|null,limit:cap,count:results.length,results,filters,complete:!hasMore,has_more:hasMore,next_cursor:next,scope:scope as "range" | "retained",sort:sort as "ranked" | "newest"};
+      return {
+        query: q,
+        from: scope === "retained" ? null : new Date(from).toISOString(),
+        to: new Date(to).toISOString(),
+        monitor: monitor as number | null,
+        limit: cap,
+        count: results.length,
+        results,
+        filters,
+        complete: !hasMore,
+        has_more: hasMore,
+        next_cursor: next,
+        scope: scope as "range" | "retained",
+        sort: sort as "ranked" | "newest",
+      };
     },
     // Demo has no real OCR geometry; return none so the overlay stays inert rather
     // than drawing selectable text that doesn't line up with the fake desktop.
@@ -123,7 +229,9 @@ export function demoRecallApi(state: DemoState): Partial<ApiClient> {
       const byApp: Record<string, number> = {};
       let active = 0;
       for (const s of segs) {
-        const secs = Math.round((new Date(s.end_ts).getTime() - new Date(s.start_ts).getTime()) / 1000);
+        const secs = Math.round(
+          (new Date(s.end_ts).getTime() - new Date(s.start_ts).getTime()) / 1000,
+        );
         active += secs;
         byCat[s.category] = (byCat[s.category] ?? 0) + secs;
         if (s.app) byApp[s.app] = (byApp[s.app] ?? 0) + secs;
@@ -145,11 +253,17 @@ export function demoRecallApi(state: DemoState): Partial<ApiClient> {
             .slice()
             .sort(
               (a, b) =>
-                new Date(b.end_ts).getTime() - new Date(b.start_ts).getTime() -
+                new Date(b.end_ts).getTime() -
+                new Date(b.start_ts).getTime() -
                 (new Date(a.end_ts).getTime() - new Date(a.start_ts).getTime()),
             )
             .slice(0, 3)
-            .map((s) => ({ label: s.summary ?? s.category, category: s.category, start_ts: s.start_ts, end_ts: s.end_ts })),
+            .map((s) => ({
+              label: s.summary ?? s.category,
+              category: s.category,
+              start_ts: s.start_ts,
+              end_ts: s.end_ts,
+            })),
           source: "rule",
           updated_at: new Date().toISOString(),
         },

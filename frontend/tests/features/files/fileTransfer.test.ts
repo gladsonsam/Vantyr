@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import {
   ChunkAssembler,
   REMOTE_FILE_CHUNK_BYTES,
@@ -73,7 +73,11 @@ describe("ChunkAssembler", () => {
     expect(asm.add("C:\\a.bin", 0, 3, bytes(1, 2))).toEqual({ status: "partial", percent: 67 });
     const done = asm.add("C:\\a.bin", 1, 3, bytes(3, 4));
     expect(done.status).toBe("complete");
-    expect(done.status === "complete" && done.parts).toEqual([bytes(1, 2), bytes(3, 4), bytes(5, 6)]);
+    expect(done.status === "complete" && done.parts).toEqual([
+      bytes(1, 2),
+      bytes(3, 4),
+      bytes(5, 6),
+    ]);
   });
 
   it("counts a repeated chunk once", () => {

@@ -62,6 +62,8 @@ export function applyActivityStateToSearchParams(
   return next;
 }
 
-export function readActivityStateFromSearchParams(params: URLSearchParams): ActivityUrlStateV1 | null {
+export function readActivityStateFromSearchParams(
+  params: URLSearchParams,
+): ActivityUrlStateV1 | null {
   return decodeActivityState(params.get("activity"));
 }

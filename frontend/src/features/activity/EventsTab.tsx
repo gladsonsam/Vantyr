@@ -1,6 +1,13 @@
 import { ChevronDown, History, Image as ImageIcon } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@vantyr/ui/components/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { DataTable } from "@/components/common/data-table/DataTable";
 import { DataTableColumnHeader } from "@/components/common/data-table/DataTableColumnHeader";
@@ -17,7 +24,11 @@ import { cn } from "@/lib/utils";
 import { prettyAppLabel } from "@/lib/appNames";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
-import { LoadFailed, MonitoringToolbar, ROW_ACTION_BUTTON_CLASS } from "@/features/agent-detail/components/MonitoringToolbar";
+import {
+  LoadFailed,
+  MonitoringToolbar,
+  ROW_ACTION_BUTTON_CLASS,
+} from "@/features/agent-detail/components/MonitoringToolbar";
 import { listCountLabel } from "@/features/agent-detail/lib/monitoring";
 
 // ── Shared bits ───────────────────────────────────────────────────────────────
@@ -25,11 +36,15 @@ import { listCountLabel } from "@/features/agent-detail/lib/monitoring";
 /** Channel word in its hue — no chip, just coloured text. */
 function ChannelWord({ channel }: { channel: string }) {
   const tone =
-    channel === "url" ? "text-info"
-    : channel === "agent_offline" ? "text-destructive"
-    : channel === "resource" ? "text-warning"
-    : channel === "url_category" ? "text-primary"
-    : "text-muted-foreground";
+    channel === "url"
+      ? "text-info"
+      : channel === "agent_offline"
+        ? "text-destructive"
+        : channel === "resource"
+          ? "text-warning"
+          : channel === "url_category"
+            ? "text-primary"
+            : "text-muted-foreground";
   return <span className={tone}>{alertChannelLabel(channel)}</span>;
 }
 
@@ -86,7 +101,9 @@ function alertEventColumns(onPreview: (id: number) => void, onViewTimeline?: (ts
   return alertColumnHelper.columns([
     alertColumnHelper.accessor("created_at", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
-      cell: ({ row, table }) => <DayTimeCell table={table} columnId="created_at" ts={row.original.created_at} />,
+      cell: ({ row, table }) => (
+        <DayTimeCell table={table} columnId="created_at" ts={row.original.created_at} />
+      ),
       meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
     }),
     alertColumnHelper.accessor("rule_name", {
@@ -95,7 +112,9 @@ function alertEventColumns(onPreview: (id: number) => void, onViewTimeline?: (ts
       cell: ({ row }) => (
         <div className="min-w-0">
           <div className="font-medium">{row.original.rule_name || "—"}</div>
-          <div className="text-xs"><ChannelWord channel={row.original.channel} /></div>
+          <div className="text-xs">
+            <ChannelWord channel={row.original.channel} />
+          </div>
         </div>
       ),
       meta: { className: "whitespace-nowrap max-sm:basis-full max-sm:order-first" },
@@ -103,8 +122,18 @@ function alertEventColumns(onPreview: (id: number) => void, onViewTimeline?: (ts
     alertColumnHelper.display({
       id: "snippet",
       header: "Matched text",
-      cell: ({ row }) => (row.original.snippet ? <span className="line-clamp-3 break-words" title={row.original.snippet}>{row.original.snippet}</span> : <span className="text-muted-foreground">—</span>),
-      meta: { className: "w-full max-w-0 font-mono text-xs whitespace-normal wrap-break-word max-sm:max-w-full max-sm:basis-full" },
+      cell: ({ row }) =>
+        row.original.snippet ? (
+          <span className="line-clamp-3 break-words" title={row.original.snippet}>
+            {row.original.snippet}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+      meta: {
+        className:
+          "w-full max-w-0 font-mono text-xs whitespace-normal wrap-break-word max-sm:max-w-full max-sm:basis-full",
+      },
     }),
     alertColumnHelper.display({
       id: "actions",
@@ -114,14 +143,32 @@ function alertEventColumns(onPreview: (id: number) => void, onViewTimeline?: (ts
         return (
           <div className="flex items-center justify-end gap-0.5">
             {r.has_screenshot ? (
-              <Button variant="ghost" size="sm" className="gap-1.5 pointer-coarse:h-9" aria-label={`View screenshot for ${r.rule_name || "alert"}`} onClick={() => onPreview(r.id)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 pointer-coarse:h-9"
+                aria-label={`View screenshot for ${r.rule_name || "alert"}`}
+                onClick={() => onPreview(r.id)}
+              >
                 <ImageIcon /> Screenshot
               </Button>
             ) : r.screenshot_requested ? (
-              <span className="px-2 text-xs text-muted-foreground" title="This rule takes a screenshot, but none was captured for this alert">No screenshot</span>
+              <span
+                className="px-2 text-xs text-muted-foreground"
+                title="This rule takes a screenshot, but none was captured for this alert"
+              >
+                No screenshot
+              </span>
             ) : null}
             {onViewTimeline ? (
-              <Button variant="ghost" size="icon-sm" className={ROW_ACTION_BUTTON_CLASS} aria-label="Show in timeline" title="Show in timeline" onClick={() => onViewTimeline(r.created_at)}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={ROW_ACTION_BUTTON_CLASS}
+                aria-label="Show in timeline"
+                title="Show in timeline"
+                onClick={() => onViewTimeline(r.created_at)}
+              >
                 <History />
               </Button>
             ) : null}
@@ -140,7 +187,7 @@ function AlertEventsTable({
   query: ReturnType<typeof useAlertEvents>;
   onViewTimeline?: (ts: string) => void;
 }) {
-  const items = query.isError ? NO_ALERT_EVENTS : query.data ?? NO_ALERT_EVENTS;
+  const items = query.isError ? NO_ALERT_EVENTS : (query.data ?? NO_ALERT_EVENTS);
   const [previewId, setPreviewId] = useState<number | null>(null);
 
   const columns = useMemo(() => alertEventColumns(setPreviewId, onViewTimeline), [onViewTimeline]);
@@ -161,17 +208,30 @@ function AlertEventsTable({
         placeholder="Search alerts"
         query={filteringText}
         onQueryChange={table.setGlobalFilter}
-        count={listCountLabel({ shown: table.getFilteredRowModel().rows.length, loaded: items.length, limit: EVENTS_LIMIT, noun: ALERTS })}
+        count={listCountLabel({
+          shown: table.getFilteredRowModel().rows.length,
+          loaded: items.length,
+          limit: EVENTS_LIMIT,
+          noun: ALERTS,
+        })}
         onRefresh={() => void query.refetch()}
         refreshing={query.isFetching && items.length > 0}
       />
-      {query.isError ? <LoadFailed what="alert events" onRetry={() => void query.refetch()} /> : null}
+      {query.isError ? (
+        <LoadFailed what="alert events" onRetry={() => void query.refetch()} />
+      ) : null}
       <div className="px-2 py-2">
         <DataTable
           dayGroupColumn="created_at"
           table={table}
           loading={query.isFetching}
-          emptyText={query.isError ? "Nothing to show." : filteringText ? "No alerts match this search." : "No alerts have fired on this device."}
+          emptyText={
+            query.isError
+              ? "Nothing to show."
+              : filteringText
+                ? "No alerts match this search."
+                : "No alerts have fired on this device."
+          }
           bodyClassName="[&_td]:align-top"
         />
       </div>
@@ -184,7 +244,10 @@ function AlertEventsTable({
 }
 
 function useAlertEvents(agentId: string) {
-  return useQuery({ ...ruleQueries.agentAlertEvents(agentId, ALERT_EVENTS_PAGE), select: toAlertEventRows });
+  return useQuery({
+    ...ruleQueries.agentAlertEvents(agentId, ALERT_EVENTS_PAGE),
+    select: toAlertEventRows,
+  });
 }
 
 // ── App block events table ────────────────────────────────────────────────────
@@ -203,14 +266,18 @@ function useAppBlockEvents(agentId: string) {
 
 function matchesKill(item: AppBlockEvent, text: string): boolean {
   const q = text.toLowerCase();
-  return item.exe_name.toLowerCase().includes(q) || (item.rule_name ?? "").toLowerCase().includes(q);
+  return (
+    item.exe_name.toLowerCase().includes(q) || (item.rule_name ?? "").toLowerCase().includes(q)
+  );
 }
 
 function appBlockColumns(agentId: string) {
   return killColumnHelper.columns([
     killColumnHelper.accessor("killed_at", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
-      cell: ({ row, table }) => <DayTimeCell table={table} columnId="killed_at" ts={row.original.killed_at} />,
+      cell: ({ row, table }) => (
+        <DayTimeCell table={table} columnId="killed_at" ts={row.original.killed_at} />
+      ),
       meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
     }),
     killColumnHelper.accessor("exe_name", {
@@ -226,14 +293,21 @@ function appBlockColumns(agentId: string) {
     killColumnHelper.accessor((item) => item.rule_name ?? undefined, {
       id: "rule",
       header: ({ column }) => <DataTableColumnHeader column={column} title="Blocked by" />,
-      cell: ({ row }) => row.original.rule_name ?? <span className="text-muted-foreground">Rule removed</span>,
+      cell: ({ row }) =>
+        row.original.rule_name ?? <span className="text-muted-foreground">Rule removed</span>,
       meta: { className: "w-full" },
     }),
   ]);
 }
 
-function AppBlockEventsTable({ agentId, query }: { agentId: string; query: ReturnType<typeof useAppBlockEvents> }) {
-  const items = query.isError ? NO_KILLS : query.data ?? NO_KILLS;
+function AppBlockEventsTable({
+  agentId,
+  query,
+}: {
+  agentId: string;
+  query: ReturnType<typeof useAppBlockEvents>;
+}) {
+  const items = query.isError ? NO_KILLS : (query.data ?? NO_KILLS);
 
   const columns = useMemo(() => appBlockColumns(agentId), [agentId]);
   const table = useDataTable({
@@ -253,17 +327,30 @@ function AppBlockEventsTable({ agentId, query }: { agentId: string; query: Retur
         placeholder="Search blocked apps"
         query={filteringText}
         onQueryChange={table.setGlobalFilter}
-        count={listCountLabel({ shown: table.getFilteredRowModel().rows.length, loaded: items.length, limit: EVENTS_LIMIT, noun: BLOCKS })}
+        count={listCountLabel({
+          shown: table.getFilteredRowModel().rows.length,
+          loaded: items.length,
+          limit: EVENTS_LIMIT,
+          noun: BLOCKS,
+        })}
         onRefresh={() => void query.refetch()}
         refreshing={query.isFetching && items.length > 0}
       />
-      {query.isError ? <LoadFailed what="blocked apps" onRetry={() => void query.refetch()} /> : null}
+      {query.isError ? (
+        <LoadFailed what="blocked apps" onRetry={() => void query.refetch()} />
+      ) : null}
       <div className="px-2 py-2">
         <DataTable
           dayGroupColumn="killed_at"
           table={table}
           loading={query.isFetching}
-          emptyText={query.isError ? "Nothing to show." : filteringText ? "Nothing matches this search." : "No apps have been blocked on this device."}
+          emptyText={
+            query.isError
+              ? "Nothing to show."
+              : filteringText
+                ? "Nothing matches this search."
+                : "No apps have been blocked on this device."
+          }
         />
       </div>
       <div className="border-t border-foreground/[0.06] px-5 py-1 empty:hidden">
@@ -282,9 +369,19 @@ interface EffectiveRules {
   netSource: string | null;
 }
 
-const NO_EFFECTIVE_RULES: EffectiveRules = { alertRules: [], appRules: [], netBlocked: false, netSource: null };
+const NO_EFFECTIVE_RULES: EffectiveRules = {
+  alertRules: [],
+  appRules: [],
+  netBlocked: false,
+  netSource: null,
+};
 
-function toEffectiveRules(r: { alert_rules: AlertRuleRow[]; app_block_rules: AppBlockRule[]; internet_blocked: boolean; internet_block_source: "all" | "group" | "agent" | null }): EffectiveRules {
+function toEffectiveRules(r: {
+  alert_rules: AlertRuleRow[];
+  app_block_rules: AppBlockRule[];
+  internet_blocked: boolean;
+  internet_block_source: "all" | "group" | "agent" | null;
+}): EffectiveRules {
   return {
     alertRules: r.alert_rules,
     appRules: r.app_block_rules,
@@ -306,10 +403,14 @@ function RuleGroup({ title, children }: { title: string; children: ReactNode }) 
   );
 }
 
-const RULE_TABLE_HEAD = "[&_tr]:border-foreground/[0.06] [&_th]:h-10 max-sm:[&_th]:px-2 max-sm:[&_th]:whitespace-normal [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground";
+const RULE_TABLE_HEAD =
+  "[&_tr]:border-foreground/[0.06] [&_th]:h-10 max-sm:[&_th]:px-2 max-sm:[&_th]:whitespace-normal [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground";
 
 function AlertRulesTable({ rules }: { rules: AlertRuleRow[] }) {
-  if (rules.length === 0) return <p className="text-[13px] text-muted-foreground">No alert rules apply to this device.</p>;
+  if (rules.length === 0)
+    return (
+      <p className="text-[13px] text-muted-foreground">No alert rules apply to this device.</p>
+    );
   return (
     <div className="overflow-x-auto rounded-xl bg-muted/50">
       <Table>
@@ -324,8 +425,12 @@ function AlertRulesTable({ rules }: { rules: AlertRuleRow[] }) {
           {rules.map((r) => (
             <TableRow key={r.id}>
               <TableCell className="whitespace-normal">{r.name}</TableCell>
-              <TableCell className="font-mono text-xs whitespace-normal break-all">{r.pattern}</TableCell>
-              <TableCell><ScopeWord kind={r.scope_kind} /></TableCell>
+              <TableCell className="font-mono text-xs whitespace-normal break-all">
+                {r.pattern}
+              </TableCell>
+              <TableCell>
+                <ScopeWord kind={r.scope_kind} />
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -335,7 +440,8 @@ function AlertRulesTable({ rules }: { rules: AlertRuleRow[] }) {
 }
 
 function AppRulesTable({ agentId, rules }: { agentId: string; rules: AppBlockRule[] }) {
-  if (rules.length === 0) return <p className="text-[13px] text-muted-foreground">No apps are blocked on this device.</p>;
+  if (rules.length === 0)
+    return <p className="text-[13px] text-muted-foreground">No apps are blocked on this device.</p>;
   return (
     <div className="overflow-x-auto rounded-xl bg-muted/50">
       <Table>
@@ -356,7 +462,9 @@ function AppRulesTable({ agentId, rules }: { agentId: string; rules: AppBlockRul
                 </div>
               </TableCell>
               <TableCell className="text-muted-foreground">{r.match_mode}</TableCell>
-              <TableCell><ScopeWord kind={r.scope_kind} /></TableCell>
+              <TableCell>
+                <ScopeWord kind={r.scope_kind} />
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -368,7 +476,9 @@ function AppRulesTable({ agentId, rules }: { agentId: string; rules: AppBlockRul
 function InternetAccess({ blocked, source }: { blocked: boolean; source: string | null }) {
   return (
     <p className="flex flex-wrap items-center gap-x-2 text-[13px]">
-      <span className={blocked ? "text-warning" : "text-success"}>{blocked ? "Blocked" : "Allowed"}</span>
+      <span className={blocked ? "text-warning" : "text-success"}>
+        {blocked ? "Blocked" : "Allowed"}
+      </span>
       {blocked ? <ScopeWord kind={!source || source === "agent" ? undefined : source} /> : null}
     </p>
   );
@@ -391,9 +501,20 @@ function ActiveRules({ agentId }: { agentId: string }) {
       <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-5 [&::-webkit-details-marker]:hidden">
         <span className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
           <span className="font-heading text-base font-medium">Active rules</span>
-          <span className={cn("text-[13px] text-muted-foreground", (rules.netBlocked || state === "failed") && "text-warning")}>{rulesSummary(rules, state)}</span>
+          <span
+            className={cn(
+              "text-[13px] text-muted-foreground",
+              (rules.netBlocked || state === "failed") && "text-warning",
+            )}
+          >
+            {rulesSummary(rules, state)}
+          </span>
         </span>
-        <ChevronDown size={16} className="shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
+        <ChevronDown
+          size={16}
+          className="shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+          aria-hidden="true"
+        />
       </summary>
       <div className="flex flex-col gap-5 px-4 pb-5 pt-1 sm:px-5">
         {state === "failed" ? (
@@ -439,10 +560,20 @@ export function EventsTab({ agentId, onViewTimeline }: EventsTabProps) {
       <Tabs defaultValue="alerts">
         <TabsList aria-label="Event type">
           <TabsTrigger value="alerts">
-            Alerts{alertCount != null && <span className="ml-1.5 text-muted-foreground tabular-nums">{tabCount(alertCount)}</span>}
+            Alerts
+            {alertCount != null && (
+              <span className="ml-1.5 text-muted-foreground tabular-nums">
+                {tabCount(alertCount)}
+              </span>
+            )}
           </TabsTrigger>
           <TabsTrigger value="appblock">
-            Blocked apps{killCount != null && <span className="ml-1.5 text-muted-foreground tabular-nums">{tabCount(killCount)}</span>}
+            Blocked apps
+            {killCount != null && (
+              <span className="ml-1.5 text-muted-foreground tabular-nums">
+                {tabCount(killCount)}
+              </span>
+            )}
           </TabsTrigger>
         </TabsList>
         <TabsContent value="alerts" className="mt-3">

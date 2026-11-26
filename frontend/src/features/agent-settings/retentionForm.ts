@@ -13,7 +13,10 @@ export function daysToField(
   return String(v);
 }
 
-export function parseRetentionField(s: string, mode: RetentionFieldMode = "global"): {
+export function parseRetentionField(
+  s: string,
+  mode: RetentionFieldMode = "global",
+): {
   value: number | null;
   error: string | null;
 } {
@@ -63,7 +66,10 @@ export function retentionDefaultPlaceholder(globalDays: number | null | undefine
  * One line saying what the typed value means for this device, next to the inherited default.
  * Empty while the text is not a valid value (the field's own error explains that).
  */
-export function describeRetentionField(text: string, globalDays: number | null | undefined): string {
+export function describeRetentionField(
+  text: string,
+  globalDays: number | null | undefined,
+): string {
   const parsed = parseRetentionField(text, "agent");
   if (parsed.error) return "";
   const inherited = globalDays ? fmtDays(globalDays) : "forever";

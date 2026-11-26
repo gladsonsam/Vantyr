@@ -30,7 +30,9 @@ async function fetchSessionState(): Promise<SessionState> {
     if (!st?.authenticated) return { authenticated: false, user: null, csrfToken: null };
     const data = await api.me().catch(() => null);
     const csrfToken =
-      data && typeof data.csrf_token === "string" && data.csrf_token.length > 0 ? data.csrf_token : null;
+      data && typeof data.csrf_token === "string" && data.csrf_token.length > 0
+        ? data.csrf_token
+        : null;
     return { authenticated: true, user: data, csrfToken };
   } catch {
     return { authenticated: false, user: null, csrfToken: null };
@@ -74,14 +76,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // Recover gracefully when the server reports the session has expired (any 401
   // from the fetch layer reports it) — demote to signed-out so the login
   // screen shows and the WebSocket reconnect loop stops.
-  useEffect(() =>
-    onSessionExpired(() => {
-      setAuthenticated(false);
-      setUser(null);
-      setDashboardCsrfToken(null);
-      // Drop cached server state so the next sign-in (possibly another user) starts clean.
-      queryClient.clear();
-    }), [queryClient]);
+  useEffect(
+    () =>
+      onSessionExpired(() => {
+        setAuthenticated(false);
+        setUser(null);
+        setDashboardCsrfToken(null);
+        // Drop cached server state so the next sign-in (possibly another user) starts clean.
+        queryClient.clear();
+      }),
+    [queryClient],
+  );
 
   const completeLogin = useCallback(() => {
     clearSsoGuards();

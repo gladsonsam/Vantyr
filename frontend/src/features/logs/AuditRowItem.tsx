@@ -25,8 +25,11 @@ export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRo
   const [open, setOpen] = useState(false);
   const action = formatAuditAction(row.action);
   const { pairs, full } = formatAuditDetail(row.action, row.detail);
-  const who = [showActor ? row.actor : null, row.client_ip].filter((part): part is string => Boolean(part));
-  const deviceLabel = showDevice && row.agent_id ? (deviceName ?? `Device ${row.agent_id.slice(0, 8)}`) : null;
+  const who = [showActor ? row.actor : null, row.client_ip].filter((part): part is string =>
+    Boolean(part),
+  );
+  const deviceLabel =
+    showDevice && row.agent_id ? (deviceName ?? `Device ${row.agent_id.slice(0, 8)}`) : null;
 
   return (
     <li className="flex flex-col gap-0.5 border-b border-foreground/[0.06] px-4 py-3 last:border-b-0">
@@ -48,7 +51,9 @@ export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRo
           {who.map((part, index) => (
             <Fragment key={part}>
               {index > 0 && <Dot />}
-              <span className={cn("min-w-0 break-words", part === row.client_ip && "font-mono")}>{part}</span>
+              <span className={cn("min-w-0 break-words", part === row.client_ip && "font-mono")}>
+                {part}
+              </span>
             </Fragment>
           ))}
           {deviceLabel && row.agent_id && (
@@ -74,7 +79,12 @@ export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRo
             onClick={() => setOpen((value) => !value)}
           >
             <span className="sr-only">Details: </span>
-            <span className={cn("min-w-0 flex-1 break-words [overflow-wrap:anywhere]", !open && "line-clamp-2")}>
+            <span
+              className={cn(
+                "min-w-0 flex-1 break-words [overflow-wrap:anywhere]",
+                !open && "line-clamp-2",
+              )}
+            >
               {pairs.map((pair, index) => (
                 <span key={pair.label}>
                   {index > 0 && <span className="px-1.5 text-muted-foreground/50">·</span>}
@@ -82,10 +92,19 @@ export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRo
                 </span>
               ))}
             </span>
-            <ChevronDown aria-hidden className={cn("mt-0.5 size-3.5 shrink-0 transition-transform motion-reduce:transition-none", open && "rotate-180")} />
+            <ChevronDown
+              aria-hidden
+              className={cn(
+                "mt-0.5 size-3.5 shrink-0 transition-transform motion-reduce:transition-none",
+                open && "rotate-180",
+              )}
+            />
           </button>
           {open && (
-            <div id={detailId} className="mb-1 flex flex-col gap-3 rounded-lg bg-muted/40 p-3 text-[13px]">
+            <div
+              id={detailId}
+              className="mb-1 flex flex-col gap-3 rounded-lg bg-muted/40 p-3 text-[13px]"
+            >
               <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[max-content_minmax(0,1fr)]">
                 <Fact label="When" value={fmtDateTimePrecise(row.ts)} />
                 <Fact label="Record" value={`#${row.id}`} />

@@ -65,7 +65,10 @@ export function useFleetActions() {
       const offlineCount = agentIds.length - onlineIds.length;
 
       if (onlineIds.length === 0) {
-        warning("No online agents selected", "Select at least one online agent to send this action.");
+        warning(
+          "No online agents selected",
+          "Select at least one online agent to send this action.",
+        );
         return;
       }
 
@@ -85,7 +88,10 @@ export function useFleetActions() {
           `${offlineCount} offline agent(s) were skipped.`,
         );
       } else {
-        info(`Sent ${actionLabel} to ${onlineIds.length} agent(s)`, "Commands queued over WebSocket.");
+        info(
+          `Sent ${actionLabel} to ${onlineIds.length} agent(s)`,
+          "Commands queued over WebSocket.",
+        );
       }
     },
     [agents, error, info, isViewer, warning, send],

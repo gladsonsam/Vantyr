@@ -19,7 +19,8 @@ export function useGroupsData() {
   const agents = agentsQuery.data?.agents ?? NO_AGENTS;
   // Unknown (still loading, or failed) stays null so the list says nothing instead of "no rules".
   const ruleCounts = useMemo(
-    () => (rulesQuery.data && !rulesQuery.isError ? ruleCountsByGroup(rulesQuery.data.rules) : null),
+    () =>
+      rulesQuery.data && !rulesQuery.isError ? ruleCountsByGroup(rulesQuery.data.rules) : null,
     [rulesQuery.data, rulesQuery.isError],
   );
   const agentOptions = useMemo(
@@ -47,6 +48,7 @@ export function useGroupsData() {
     agentsError: idle(agentsQuery) ? messageOf(agentsQuery.error) : null,
     retryGroups: () => void groupsQuery.refetch(),
     retryAgents: () => void agentsQuery.refetch(),
-    refresh: () => void Promise.all([groupsQuery.refetch(), agentsQuery.refetch(), rulesQuery.refetch()]),
+    refresh: () =>
+      void Promise.all([groupsQuery.refetch(), agentsQuery.refetch(), rulesQuery.refetch()]),
   };
 }

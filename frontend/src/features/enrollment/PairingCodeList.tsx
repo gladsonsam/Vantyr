@@ -33,11 +33,18 @@ const codeName = (t: EnrollmentToken) => t.note?.trim() || "Pairing code";
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** Where a code stands: usable, past its expiry, or out of uses (used up or revoked). */
-function codeStatus(t: EnrollmentToken, now: number): { label: string; Icon: typeof CircleCheck; tone: string } {
+function codeStatus(
+  t: EnrollmentToken,
+  now: number,
+): { label: string; Icon: typeof CircleCheck; tone: string } {
   const left = t.uses_remaining ?? 0;
   const expired = !!t.expires_at && new Date(t.expires_at).getTime() <= now;
   if (left <= 0) {
-    return { label: (t.used_count ?? 0) > 0 ? "Used up" : "Revoked or used up", Icon: CircleSlash, tone: "text-muted-foreground" };
+    return {
+      label: (t.used_count ?? 0) > 0 ? "Used up" : "Revoked or used up",
+      Icon: CircleSlash,
+      tone: "text-muted-foreground",
+    };
   }
   if (expired) return { label: "Expired", Icon: Clock, tone: "text-warning" };
   return { label: `${plural(left, "use", "uses")} left`, Icon: CircleCheck, tone: "text-success" };
@@ -50,13 +57,27 @@ function codeDetails(t: EnrollmentToken, now: number): string {
   return [
     expires && left > 0 && expires.getTime() > now ? `expires ${fmtFromNow(expires, now)}` : null,
     !expires && left > 0 ? "no expiry" : null,
-    used > 0 ? `used ${used}×${t.last_used_at ? `, last ${fmtFromNow(new Date(t.last_used_at), now)}` : ""}` : null,
+    used > 0
+      ? `used ${used}×${t.last_used_at ? `, last ${fmtFromNow(new Date(t.last_used_at), now)}` : ""}`
+      : null,
     `created ${fmtFromNow(new Date(t.created_at), now)}`,
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** The pairing codes already made: status, uses, and revoke for one or all. */
-export function PairingCodeList({ tokens, loading, error, listedAt, onRefresh, onRevoke, onRevokeAll, onListUses, onClearError }: {
+export function PairingCodeList({
+  tokens,
+  loading,
+  error,
+  listedAt,
+  onRefresh,
+  onRevoke,
+  onRevokeAll,
+  onListUses,
+  onClearError,
+}: {
   tokens: EnrollmentToken[];
   loading: boolean;
   error: string | null;
@@ -85,7 +106,8 @@ export function PairingCodeList({ tokens, loading, error, listedAt, onRefresh, o
     setUses((prev) => ({ ...prev, [id]: { loading: true, error: null, rows: [] } }));
     onListUses(id).then(
       (rows) => setUses((prev) => ({ ...prev, [id]: { loading: false, error: null, rows } })),
-      (e: unknown) => setUses((prev) => ({ ...prev, [id]: { loading: false, error: errorText(e), rows: [] } })),
+      (e: unknown) =>
+        setUses((prev) => ({ ...prev, [id]: { loading: false, error: errorText(e), rows: [] } })),
     );
   };
   const toggleUses = (id: string) => {
@@ -123,7 +145,8 @@ export function PairingCodeList({ tokens, loading, error, listedAt, onRefresh, o
     }
   };
   const openRevoke = (id: string | null) => {
-    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    openerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setRevokeId(id);
     setRevokeAllOpen(id === null);
   };
@@ -138,7 +161,12 @@ export function PairingCodeList({ tokens, loading, error, listedAt, onRefresh, o
   return (
     <section aria-labelledby="pairing-codes-heading" className="rounded-lg bg-muted/50 px-3.5 py-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h3 id="pairing-codes-heading" ref={headingRef} tabIndex={-1} className="font-heading text-base font-medium outline-none">
+        <h3
+          id="pairing-codes-heading"
+          ref={headingRef}
+          tabIndex={-1}
+          className="font-heading text-base font-medium outline-none"
+        >
           Pairing codes
         </h3>
         <div className="flex flex-wrap items-center gap-2">
@@ -147,7 +175,11 @@ export function PairingCodeList({ tokens, loading, error, listedAt, onRefresh, o
               Revoke all
             </Button>
           ) : null}
-          <RefreshButton onClick={() => void onRefresh()} loading={loading} label="Refresh pairing codes" />
+          <RefreshButton
+            onClick={() => void onRefresh()}
+            loading={loading}
+            label="Refresh pairing codes"
+          />
         </div>
       </div>
       <div className="flex flex-col gap-3">
@@ -155,15 +187,23 @@ export function PairingCodeList({ tokens, loading, error, listedAt, onRefresh, o
           <Alert variant="destructive">
             <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
               <span>{error}</span>
-              <Button variant="outline" size="sm" onClick={() => void onRefresh()}>Try again</Button>
+              <Button variant="outline" size="sm" onClick={() => void onRefresh()}>
+                Try again
+              </Button>
             </AlertDescription>
           </Alert>
         ) : null}
         {loading && tokens.length === 0 ? (
-          <p className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Spinner /> Loading…</p>
+          <p className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+            <Spinner /> Loading…
+          </p>
         ) : tokens.length === 0 ? (
           // A failed load already said so above; an empty list is only reported when the load worked.
-          error ? null : <p className="py-4 text-sm text-muted-foreground">No pairing codes yet. Generate one above to enroll a device.</p>
+          error ? null : (
+            <p className="py-4 text-sm text-muted-foreground">
+              No pairing codes yet. Generate one above to enroll a device.
+            </p>
+          )
         ) : (
           <ul className="flex flex-col divide-y divide-border/50">
             {tokens.map((t) => (
@@ -185,15 +225,26 @@ export function PairingCodeList({ tokens, loading, error, listedAt, onRefresh, o
       <AlertDialog open={revokeId !== null} onOpenChange={(open) => !open && closeDialogs()}>
         <AlertDialogContent finalFocus={finalFocus}>
           <AlertDialogHeader>
-            <AlertDialogTitle>Revoke {revokeTarget ? `“${codeName(revokeTarget)}”` : "this code"}?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Revoke {revokeTarget ? `“${codeName(revokeTarget)}”` : "this code"}?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              No new device can join with it after this. Devices that already joined with it stay connected.
+              No new device can join with it after this. Devices that already joined with it stay
+              connected.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {dialogError ? <Alert variant="destructive"><AlertDescription>Not revoked. {dialogError}</AlertDescription></Alert> : null}
+          {dialogError ? (
+            <Alert variant="destructive">
+              <AlertDescription>Not revoked. {dialogError}</AlertDescription>
+            </Alert>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={revoking}>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={revoking} onClick={() => revokeId && void confirm(() => onRevoke(revokeId))}>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={revoking}
+              onClick={() => revokeId && void confirm(() => onRevoke(revokeId))}
+            >
               {revoking && <Spinner />} Revoke code
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -203,15 +254,26 @@ export function PairingCodeList({ tokens, loading, error, listedAt, onRefresh, o
       <AlertDialog open={revokeAllOpen} onOpenChange={(open) => !open && closeDialogs()}>
         <AlertDialogContent finalFocus={finalFocus}>
           <AlertDialogHeader>
-            <AlertDialogTitle>Revoke {plural(revocable.length, "pairing code", "pairing codes")}?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Revoke {plural(revocable.length, "pairing code", "pairing codes")}?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Every code that still has uses left stops working, so no new device can join with them. Devices that already joined stay connected.
+              Every code that still has uses left stops working, so no new device can join with
+              them. Devices that already joined stay connected.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {dialogError ? <Alert variant="destructive"><AlertDescription>Not revoked. {dialogError}</AlertDescription></Alert> : null}
+          {dialogError ? (
+            <Alert variant="destructive">
+              <AlertDescription>Not revoked. {dialogError}</AlertDescription>
+            </Alert>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={revoking}>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={revoking} onClick={() => void confirm(onRevokeAll)}>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={revoking}
+              onClick={() => void confirm(onRevokeAll)}
+            >
               {revoking && <Spinner />} Revoke all
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -221,7 +283,15 @@ export function PairingCodeList({ tokens, loading, error, listedAt, onRefresh, o
   );
 }
 
-function CodeRow({ token: t, now, uses, usesOpen, onToggleUses, onRetryUses, onRevoke }: {
+function CodeRow({
+  token: t,
+  now,
+  uses,
+  usesOpen,
+  onToggleUses,
+  onRetryUses,
+  onRevoke,
+}: {
   token: EnrollmentToken;
   now: number;
   uses: UsesState | undefined;
@@ -249,7 +319,14 @@ function CodeRow({ token: t, now, uses, usesOpen, onToggleUses, onRetryUses, onR
         </div>
         <div className="flex items-center gap-1">
           {used > 0 && (
-            <Button variant="ghost" size="sm" aria-expanded={usesOpen} aria-controls={panelId} aria-label={`${usesOpen ? "Hide" : "Show"} devices that used ${name}`} onClick={onToggleUses}>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-expanded={usesOpen}
+              aria-controls={panelId}
+              aria-label={`${usesOpen ? "Hide" : "Show"} devices that used ${name}`}
+              onClick={onToggleUses}
+            >
               {usesOpen ? "Hide uses" : "Uses"}
             </Button>
           )}
@@ -263,12 +340,16 @@ function CodeRow({ token: t, now, uses, usesOpen, onToggleUses, onRetryUses, onR
       {usesOpen && (
         <div id={panelId} className="mt-2 rounded-lg bg-background/50 px-3.5 py-3">
           {uses?.loading || !uses ? (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner /> Loading…</p>
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Spinner /> Loading…
+            </p>
           ) : uses.error ? (
             <Alert variant="destructive">
               <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
                 <span>Couldn't load the uses. {uses.error}</span>
-                <Button variant="outline" size="sm" onClick={onRetryUses}>Try again</Button>
+                <Button variant="outline" size="sm" onClick={onRetryUses}>
+                  Try again
+                </Button>
               </AlertDescription>
             </Alert>
           ) : uses.rows.length === 0 ? (
@@ -276,9 +357,21 @@ function CodeRow({ token: t, now, uses, usesOpen, onToggleUses, onRetryUses, onR
           ) : (
             <ul className="flex flex-col divide-y divide-border/50">
               {uses.rows.map((r) => (
-                <li key={`${r.agent_id ?? r.agent_name}-${r.used_at}`} className="flex flex-col gap-0.5 py-2 first:pt-0 last:pb-0">
-                  <span className="text-sm break-words">{r.agent_name} <span className="text-xs text-muted-foreground">· {new Date(r.used_at).toLocaleString()}</span></span>
-                  {r.agent_id ? <span className="font-mono text-xs break-all text-muted-foreground">{r.agent_id}</span> : null}
+                <li
+                  key={`${r.agent_id ?? r.agent_name}-${r.used_at}`}
+                  className="flex flex-col gap-0.5 py-2 first:pt-0 last:pb-0"
+                >
+                  <span className="text-sm break-words">
+                    {r.agent_name}{" "}
+                    <span className="text-xs text-muted-foreground">
+                      · {new Date(r.used_at).toLocaleString()}
+                    </span>
+                  </span>
+                  {r.agent_id ? (
+                    <span className="font-mono text-xs break-all text-muted-foreground">
+                      {r.agent_id}
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ul>

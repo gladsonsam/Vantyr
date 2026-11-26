@@ -1,4 +1,9 @@
-import type { NotificationsStatus, NotificationsTestResponse, PushSubscribeBody, PushVapidKey } from "@/api/types";
+import type {
+  NotificationsStatus,
+  NotificationsTestResponse,
+  PushSubscribeBody,
+  PushVapidKey,
+} from "@/api/types";
 import { get, postEmpty, postJsonRes } from "@/api/client";
 
 export const notificationsEndpoints = {

@@ -1,0 +1,13 @@
+[define]
+"import.meta.env.DEV" = "true"
+"import.meta.env.PROD" = "false"
+"import.meta.env.MODE" = '"test"'
+"import.meta.env.BASE_URL" = '"/"'
+
+[test]
+root = "frontend/tests"
+preload = ["./frontend/tests/setup.ts"]
+
+[fmt]
+printWidth = 100
+ignorePatterns = ["frontend/src/api/types/generated/**", "**/dist/**", "**/node_modules/**"]

@@ -1,6 +1,7 @@
+import { testMock as vi } from "@tests/support/mock";
 import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createWsBus } from "@/api/wsBus";
 import type { WsEvent } from "@/api/types";
 import { withWsBus } from "@tests/support/wsBus";
@@ -55,7 +56,9 @@ if (!Blob.prototype.arrayBuffer) {
 }
 
 beforeEach(() => {
-  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  (
+    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
   send.mockClear();
   host = document.createElement("div");
   document.body.append(host);
@@ -96,7 +99,7 @@ describe("useAgentFs listings", () => {
     emit({ event: "dir_list", agent_id: "other", data: { path: "C:\\Docs", items: [] } });
     emit({ event: "dir_list", agent_id: "a1", data: { path: "C:\\Elsewhere", items: [] } });
     expect(fs.items).toHaveLength(1);
-    expect(fs.selected.map(item => item.name)).toEqual(["a.txt"]);
+    expect(fs.selected.map((item) => item.name)).toEqual(["a.txt"]);
     emit({ event: "dir_list", agent_id: "a1", data: { path: "c:\\docs", items: [file("b.txt")] } });
     expect(fs.items.map((i) => i.name)).toEqual(["b.txt"]);
     expect(fs.selected).toEqual([]);
@@ -197,10 +200,18 @@ describe("useAgentFs operations", () => {
     const cmd = lastCmd();
     expect(cmd).toMatchObject({ type: "Mkdir", name: "New" });
     expect(fs.busyOp).toBe("Create folder");
-    emit({ event: "fs_op_result", agent_id: "a1", data: { request_id: "someone else", ok: false } });
+    emit({
+      event: "fs_op_result",
+      agent_id: "a1",
+      data: { request_id: "someone else", ok: false },
+    });
     expect(fs.busyOp).toBe("Create folder");
     await act(async () => {
-      bus.emit({ event: "fs_op_result", agent_id: "a1", data: { request_id: cmd.request_id, ok: true } });
+      bus.emit({
+        event: "fs_op_result",
+        agent_id: "a1",
+        data: { request_id: cmd.request_id, ok: true },
+      });
       await outcome;
     });
     expect(fs.busyOp).toBeNull();
@@ -228,7 +239,11 @@ describe("useAgentFs operations", () => {
     });
     expect(fs.uploading).toBe("C:\\Docs\\up.txt");
     await act(async () => {
-      bus.emit({ event: "file_upload_result", agent_id: "a1", data: { path: "c:\\docs\\UP.txt", ok: true } });
+      bus.emit({
+        event: "file_upload_result",
+        agent_id: "a1",
+        data: { path: "c:\\docs\\UP.txt", ok: true },
+      });
       await done;
     });
     expect(fs.uploadMessage).toBe("Upload finished.");

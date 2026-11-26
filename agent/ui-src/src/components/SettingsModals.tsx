@@ -31,11 +31,7 @@ export function ExitModal({
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            variant="destructive"
-            disabled={busy || !password}
-            onClick={onConfirm}
-          >
+          <Button variant="destructive" disabled={busy || !password} onClick={onConfirm}>
             {busy ? "Exiting…" : "Exit"}
           </Button>
         </>
@@ -47,9 +43,7 @@ export function ExitModal({
             {error}
           </Notice>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            Enter the password to quit.
-          </p>
+          <p className="text-sm text-muted-foreground">Enter the password to quit.</p>
         )}
         <Field label="Password">
           <TextInput
@@ -88,20 +82,14 @@ export function ClearAllLogsModal({
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            variant="destructive"
-            disabled={busy || sources.length === 0}
-            onClick={onConfirm}
-          >
+          <Button variant="destructive" disabled={busy || sources.length === 0} onClick={onConfirm}>
             {busy ? "Clearing…" : "Clear all"}
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-2 text-sm">
-        <p>
-          Deletes every agent log on this device.
-        </p>
+        <p>Deletes every agent log on this device.</p>
         {sources.length > 0 && (
           <p className="text-muted-foreground">
             Includes: {sources.map((source) => source.label).join(", ")}
@@ -152,9 +140,7 @@ export function UpdateModal({
       }
     >
       {dialog?.phase === "checking" && (
-        <p className="text-sm text-muted-foreground">
-          Contacting update server…
-        </p>
+        <p className="text-sm text-muted-foreground">Contacting update server…</p>
       )}
       {dialog?.phase === "uptodate" && (
         <p className="text-sm text-muted-foreground">
@@ -163,14 +149,12 @@ export function UpdateModal({
       )}
       {dialog?.phase === "available" && (
         <p className="text-sm">
-          Version <strong>{dialog.publishedVersion}</strong> is available. The
-          agent will download the installer and restart.
+          Version <strong>{dialog.publishedVersion}</strong> is available. The agent will download
+          the installer and restart.
         </p>
       )}
       {dialog?.phase === "installing" && (
-        <p className="text-sm text-muted-foreground">
-          Downloading and starting the installer…
-        </p>
+        <p className="text-sm text-muted-foreground">Downloading and starting the installer…</p>
       )}
       {dialog?.phase === "error" && (
         <p className="text-sm text-muted-foreground">{dialog.message}</p>
@@ -182,8 +166,11 @@ export function UpdateModal({
 function updateTitle(dialog: UpdateDialogState): string {
   if (!dialog) return "";
   const titles = {
-    checking: "Checking for updates", uptodate: "Up to date", available: "Update available",
-    installing: "Installing update", error: "Update check failed",
+    checking: "Checking for updates",
+    uptodate: "Up to date",
+    available: "Update available",
+    installing: "Installing update",
+    error: "Update check failed",
   };
   return titles[dialog.phase];
 }

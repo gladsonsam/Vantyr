@@ -1,7 +1,6 @@
-// @vitest-environment jsdom
 import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it } from "bun:test";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable, type DataTableInstance } from "@/components/common/data-table/useDataTable";
 

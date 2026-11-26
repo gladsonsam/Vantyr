@@ -12,7 +12,19 @@ import type { enrollCodeSchema, TwoFactorCodeValues } from "./twoFactorSchemas";
  * acceptable. A refusal from the server (`error`) shows right under the box and puts the cursor
  * back in it with the code selected, so a wrong code is one retype away.
  */
-export function TwoFactorCodeForm({ schema, id, label, hint, submitLabel, submitVariant, busy, error, codeKind = "digits", onSubmit, extraAction }: {
+export function TwoFactorCodeForm({
+  schema,
+  id,
+  label,
+  hint,
+  submitLabel,
+  submitVariant,
+  busy,
+  error,
+  codeKind = "digits",
+  onSubmit,
+  extraAction,
+}: {
   schema: typeof enrollCodeSchema;
   id: string;
   label: string;
@@ -42,7 +54,12 @@ export function TwoFactorCodeForm({ schema, id, label, hint, submitLabel, submit
   const errorId = `${id}-error`;
 
   return (
-    <form onSubmit={form.handleSubmit((values) => onSubmit(values))} noValidate aria-busy={busy} className="contents">
+    <form
+      onSubmit={form.handleSubmit((values) => onSubmit(values))}
+      noValidate
+      aria-busy={busy}
+      className="contents"
+    >
       <InputField
         control={form.control}
         name="code"
@@ -55,7 +72,9 @@ export function TwoFactorCodeForm({ schema, id, label, hint, submitLabel, submit
         autoCapitalize="none"
         autoCorrect="off"
         spellCheck={false}
-        aria-describedby={[hint ? hintId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined}
+        aria-describedby={
+          [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined
+        }
         className="h-9 pointer-coarse:h-10"
         hideError
       />
@@ -70,7 +89,12 @@ export function TwoFactorCodeForm({ schema, id, label, hint, submitLabel, submit
         </Alert>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" variant={submitVariant} className="pointer-coarse:h-10" disabled={busy || !form.formState.isValid}>
+        <Button
+          type="submit"
+          variant={submitVariant}
+          className="pointer-coarse:h-10"
+          disabled={busy || !form.formState.isValid}
+        >
           {busy && <Spinner />} {submitLabel}
         </Button>
         {extraAction}

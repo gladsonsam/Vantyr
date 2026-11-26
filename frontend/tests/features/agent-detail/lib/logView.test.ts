@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { filterLog, logCountLabel, logLines } from "@/features/agent-detail/lib/logView";
 
 describe("logView", () => {

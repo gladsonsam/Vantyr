@@ -36,7 +36,13 @@ export function formatFileSize(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 
-const SYSTEM_FILES = new Set(["desktop.ini", "thumbs.db", ".ds_store", "$recycle.bin", "system volume information"]);
+const SYSTEM_FILES = new Set([
+  "desktop.ini",
+  "thumbs.db",
+  ".ds_store",
+  "$recycle.bin",
+  "system volume information",
+]);
 
 /** Dotfiles and OS bookkeeping files nobody browses for; the file list hides them until asked. */
 export function isHiddenFileName(name: string): boolean {

@@ -52,10 +52,21 @@ export function useScreenStream({
   const [monitorIndex, setMonitorIndex] = useState<number | null>(null);
 
   const presetTuning = STREAM_PRESET_TUNING[preset];
-  const tuning = useMemo(() => useVideo ? { ...presetTuning, intervalMs: preset === "saver" ? 100 : preset === "balanced" ? 50 : 33 } : presetTuning, [useVideo, presetTuning, preset]);
+  const tuning = useMemo(
+    () =>
+      useVideo
+        ? {
+            ...presetTuning,
+            intervalMs: preset === "saver" ? 100 : preset === "balanced" ? 50 : 33,
+          }
+        : presetTuning,
+    [useVideo, presetTuning, preset],
+  );
   const streamUrl = useMemo(
-    () => streamEnabled && session
-      ? mjpegStreamUrl(agentId, session, tuning, monitorIndex ?? undefined) : "",
+    () =>
+      streamEnabled && session
+        ? mjpegStreamUrl(agentId, session, tuning, monitorIndex ?? undefined)
+        : "",
     [streamEnabled, agentId, session, tuning, monitorIndex],
   );
 
@@ -87,7 +98,11 @@ export function useScreenStream({
   // Reset status when stream toggles or agent changes. The flags derive during
   // render; the effect below only clears the frame timestamp ref.
   const [prevStatusScope, setPrevStatusScope] = useState({ agentId, streamEnabled, session });
-  if (prevStatusScope.agentId !== agentId || prevStatusScope.streamEnabled !== streamEnabled || prevStatusScope.session !== session) {
+  if (
+    prevStatusScope.agentId !== agentId ||
+    prevStatusScope.streamEnabled !== streamEnabled ||
+    prevStatusScope.session !== session
+  ) {
     setPrevStatusScope({ agentId, streamEnabled, session });
     setStreaming(false);
     setEverLoaded(false);
@@ -168,7 +183,7 @@ export function useScreenStream({
 
 /** Own the server session identity and rotate it on visible-tab reentry. */
 function useStreamSession(scope: string, enabled: boolean) {
-  const [session, setSession] = useState(() => enabled ? crypto.randomUUID() : "");
+  const [session, setSession] = useState(() => (enabled ? crypto.randomUUID() : ""));
   const [previous, setPrevious] = useState(scope);
   if (previous !== scope) {
     setPrevious(scope);
@@ -178,8 +193,14 @@ function useStreamSession(scope: string, enabled: boolean) {
     if (!enabled) return;
     let wasHidden = document.hidden;
     const onVisibility = () => {
-      if (document.hidden) { wasHidden = true; return; }
-      if (wasHidden) { wasHidden = false; setSession(crypto.randomUUID()); }
+      if (document.hidden) {
+        wasHidden = true;
+        return;
+      }
+      if (wasHidden) {
+        wasHidden = false;
+        setSession(crypto.randomUUID());
+      }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
@@ -187,7 +208,12 @@ function useStreamSession(scope: string, enabled: boolean) {
   return [session, setSession] as const;
 }
 
-function useStreamStall(enabled: boolean, detectsStalls: boolean, lastFrame: React.RefObject<number | null>, setStalled: React.Dispatch<React.SetStateAction<boolean>>) {
+function useStreamStall(
+  enabled: boolean,
+  detectsStalls: boolean,
+  lastFrame: React.RefObject<number | null>,
+  setStalled: React.Dispatch<React.SetStateAction<boolean>>,
+) {
   const scope = `${enabled}:${detectsStalls}`;
   const [previous, setPrevious] = useState(scope);
   if (previous !== scope) {

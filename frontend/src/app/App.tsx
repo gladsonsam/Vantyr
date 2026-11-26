@@ -15,11 +15,14 @@ import { LoadShell } from "@/app/shell/LoadShell";
  * server and wrap the app in the demo's adapters (simulated desktop, fleet feed, terminal,
  * clipboard, recall evidence). The demo is loaded on demand, so it is not part of real builds.
  */
-const Environment = import.meta.env.VITE_VANTYR_DEMO_MODE === "true"
-  ? lazy(() => import("@/demo/loadDemoEnvironment").then((demo) => demo.loadDemoEnvironment()))
-  : Fragment;
+const Environment =
+  import.meta.env.VITE_VANTYR_DEMO_MODE === "true"
+    ? lazy(() => import("@/demo/loadDemoEnvironment").then((demo) => demo.loadDemoEnvironment()))
+    : Fragment;
 
-const LoginPage = lazy(() => import("@/features/auth/LoginPage").then((m) => ({ default: m.LoginPage })));
+const LoginPage = lazy(() =>
+  import("@/features/auth/LoginPage").then((m) => ({ default: m.LoginPage })),
+);
 
 export function App() {
   return (

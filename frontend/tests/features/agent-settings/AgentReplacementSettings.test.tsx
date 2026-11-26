@@ -1,11 +1,14 @@
-// @vitest-environment jsdom
+import { testMock as vi } from "@tests/support/mock";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "@/api";
-import { AgentReplacementSettings } from "@/features/agent-settings/AgentReplacementSettings";
+import { afterEach, describe, expect, it } from "bun:test";
 
-vi.mock("@/api", () => ({ api: { createAgentEnrollmentToken: vi.fn(), revokeAgentEnrollmentToken: vi.fn() } }));
+await vi.mock("@/api", () => ({
+  api: { createAgentEnrollmentToken: vi.fn(), revokeAgentEnrollmentToken: vi.fn() },
+}));
+const { api } = await import("@/api");
+const { AgentReplacementSettings } =
+  await import("@/features/agent-settings/AgentReplacementSettings");
 
 let host: HTMLDivElement;
 let root: Root;
@@ -15,7 +18,9 @@ async function render() {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  await act(async () => root.render(<AgentReplacementSettings agentId="device-uuid" agentName="Original" />));
+  await act(async () =>
+    root.render(<AgentReplacementSettings agentId="device-uuid" agentName="Original" />),
+  );
 }
 
 afterEach(async () => {
@@ -40,16 +45,30 @@ describe("replacement enrollment", () => {
   }
 
   it("requests an explicitly bound code and explains preserved identity", async () => {
-    vi.mocked(api.createAgentEnrollmentToken).mockResolvedValue({ id: "invite", enrollment_token: "123456", uses: 1, expires_at: "2026-10-03T12:00:00Z", bound_agent_id: "device-uuid" } as Awaited<ReturnType<typeof api.createAgentEnrollmentToken>>);
+    vi.mocked(api.createAgentEnrollmentToken).mockResolvedValue({
+      id: "invite",
+      enrollment_token: "123456",
+      uses: 1,
+      expires_at: "2026-10-03T12:00:00Z",
+      bound_agent_id: "device-uuid",
+    } as Awaited<ReturnType<typeof api.createAgentEnrollmentToken>>);
     const element = await requestCode();
-    expect(api.createAgentEnrollmentToken).toHaveBeenCalledWith({ uses: 1, bound_agent_id: "device-uuid" });
+    expect(api.createAgentEnrollmentToken).toHaveBeenCalledWith({
+      uses: 1,
+      bound_agent_id: "device-uuid",
+    });
     expect(element.textContent).toContain("123456");
     expect(element.textContent).toContain("keeps this device's name");
     expect(api.revokeAgentEnrollmentToken).not.toHaveBeenCalled();
   });
 
   it("revokes a generic code from an older server and never displays it as a replacement", async () => {
-    vi.mocked(api.createAgentEnrollmentToken).mockResolvedValue({ id: "generic", enrollment_token: "654321", uses: 1, expires_at: null });
+    vi.mocked(api.createAgentEnrollmentToken).mockResolvedValue({
+      id: "generic",
+      enrollment_token: "654321",
+      uses: 1,
+      expires_at: null,
+    });
     vi.mocked(api.revokeAgentEnrollmentToken).mockResolvedValue({ ok: true });
     const element = await requestCode();
     expect(api.revokeAgentEnrollmentToken).toHaveBeenCalledWith("generic");
@@ -62,20 +81,32 @@ describe("replacement enrollment", () => {
 
   it("states the consequence and creates nothing when the confirmation is cancelled", async () => {
     await render();
-    const trigger = [...host.querySelectorAll("button")].find((button) => button.textContent === "Re-enroll")!;
+    const trigger = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Re-enroll",
+    )!;
     await act(async () => trigger.click());
     expect(document.body.textContent).toContain("disconnects immediately");
     expect(document.body.textContent).toContain("History and settings are kept");
-    const cancel = [...document.body.querySelectorAll("button")].find((button) => button.textContent === "Cancel")!;
+    const cancel = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Cancel",
+    )!;
     await act(async () => cancel.click());
     expect(api.createAgentEnrollmentToken).not.toHaveBeenCalled();
     expect(document.body.textContent).not.toContain("Revoke and create code");
   });
 
   it("offers a labelled copy action next to the new pairing code", async () => {
-    vi.mocked(api.createAgentEnrollmentToken).mockResolvedValue({ id: "invite", enrollment_token: "123456", uses: 1, expires_at: null, bound_agent_id: "device-uuid" } as Awaited<ReturnType<typeof api.createAgentEnrollmentToken>>);
+    vi.mocked(api.createAgentEnrollmentToken).mockResolvedValue({
+      id: "invite",
+      enrollment_token: "123456",
+      uses: 1,
+      expires_at: null,
+      bound_agent_id: "device-uuid",
+    } as Awaited<ReturnType<typeof api.createAgentEnrollmentToken>>);
     const element = await requestCode();
-    expect([...element.querySelectorAll("button")].some((button) => button.textContent === "Copy code")).toBe(true);
+    expect(
+      [...element.querySelectorAll("button")].some((button) => button.textContent === "Copy code"),
+    ).toBe(true);
     expect(element.textContent).toContain("Enter it in the Vantyr app on the new install");
   });
 });

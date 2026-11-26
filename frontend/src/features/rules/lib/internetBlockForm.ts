@@ -1,7 +1,13 @@
 import { z } from "zod";
 import type { api } from "@/api";
 import { emptyScopeRow } from "../rulesUtils";
-import { emptyScheduleRow, expandScheduleRows, scheduleRowSchema, scheduleRowsProblem, SCHEDULE_NEEDS_WINDOW } from "./scheduleRows";
+import {
+  emptyScheduleRow,
+  expandScheduleRows,
+  scheduleRowSchema,
+  scheduleRowsProblem,
+  SCHEDULE_NEEDS_WINDOW,
+} from "./scheduleRows";
 import { scopesProblem } from "./scopeRows";
 
 export { SCHEDULE_NEEDS_WINDOW };
@@ -9,11 +15,13 @@ export { SCHEDULE_NEEDS_WINDOW };
 export const internetBlockSchema = z
   .object({
     name: z.string(),
-    scopes: z.array(z.object({
-      kind: z.enum(["all", "group", "agent"]),
-      group_id: z.string(),
-      agent_id: z.string(),
-    })),
+    scopes: z.array(
+      z.object({
+        kind: z.enum(["all", "group", "agent"]),
+        group_id: z.string(),
+        agent_id: z.string(),
+      }),
+    ),
     scheduled: z.boolean(),
     schedule_rows: z.array(scheduleRowSchema),
   })
@@ -42,14 +50,23 @@ export const internetScheduleWindows = (form: InternetScheduleForm) =>
 export type InternetBlockRuleBody = Parameters<typeof api.internetBlockRulesCreate>[0];
 
 export function defaultInternetBlockForm(): InternetBlockForm {
-  return { name: "", scopes: [emptyScopeRow()], scheduled: false, schedule_rows: [emptyScheduleRow()] };
+  return {
+    name: "",
+    scopes: [emptyScopeRow()],
+    scheduled: false,
+    schedule_rows: [emptyScheduleRow()],
+  };
 }
 
 /** The request body for a form that already passed validation. */
 export function internetBlockFormToBody(form: InternetBlockForm): InternetBlockRuleBody {
   return {
     name: form.name.trim(),
-    scopes: form.scopes.map((s) => ({ kind: s.kind, group_id: s.group_id || undefined, agent_id: s.agent_id || undefined })),
+    scopes: form.scopes.map((s) => ({
+      kind: s.kind,
+      group_id: s.group_id || undefined,
+      agent_id: s.agent_id || undefined,
+    })),
     schedules: form.scheduled ? expandScheduleRows(form.schedule_rows) : undefined,
   };
 }

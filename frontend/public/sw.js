@@ -24,7 +24,7 @@ self.addEventListener("install", (event) => {
       .open(SHELL_CACHE)
       .then((cache) => cache.add(SHELL_URL))
       .catch(() => undefined)
-      .then(() => self.skipWaiting())
+      .then(() => self.skipWaiting()),
   );
 });
 
@@ -33,10 +33,8 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) =>
-        Promise.all(keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k)))
-      )
-      .then(() => self.clients.claim())
+      .then((keys) => Promise.all(keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
   );
 });
 
@@ -57,9 +55,7 @@ self.addEventListener("fetch", (event) => {
           caches.open(SHELL_CACHE).then((cache) => cache.put(SHELL_URL, copy));
           return res;
         })
-        .catch(() =>
-          caches.match(SHELL_URL).then((cached) => cached || caches.match(request))
-        )
+        .catch(() => caches.match(SHELL_URL).then((cached) => cached || caches.match(request))),
     );
     return;
   }
@@ -74,9 +70,9 @@ self.addEventListener("fetch", (event) => {
             fetch(request).then((res) => {
               if (res.ok) cache.put(request, res.clone());
               return res;
-            })
-        )
-      )
+            }),
+        ),
+      ),
     );
   }
 });
@@ -103,7 +99,7 @@ self.addEventListener("push", (event) => {
       badge: "/icon-192.png",
       tag: "vantyr-alert",
       data: { url },
-    })
+    }),
   );
 });
 
@@ -112,19 +108,17 @@ self.addEventListener("notificationclick", (event) => {
   const target = (event.notification.data && event.notification.data.url) || "/";
 
   event.waitUntil(
-    self.clients
-      .matchAll({ type: "window", includeUncontrolled: true })
-      .then((clients) => {
-        // Focus an existing dashboard tab if one is open, otherwise open a new one.
-        for (const client of clients) {
-          const sameOrigin = new URL(client.url).origin === self.location.origin;
-          if (sameOrigin && "focus" in client) {
-            client.navigate(target).catch(() => undefined);
-            return client.focus();
-          }
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      // Focus an existing dashboard tab if one is open, otherwise open a new one.
+      for (const client of clients) {
+        const sameOrigin = new URL(client.url).origin === self.location.origin;
+        if (sameOrigin && "focus" in client) {
+          client.navigate(target).catch(() => undefined);
+          return client.focus();
         }
-        if (self.clients.openWindow) return self.clients.openWindow(target);
-        return undefined;
-      })
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(target);
+      return undefined;
+    }),
   );
 });

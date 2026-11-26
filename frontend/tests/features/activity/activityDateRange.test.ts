@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   DATE_PRESETS,
   absoluteRangeForPresetDays,
@@ -14,19 +15,35 @@ describe("resolveDateRangeToDayBounds", () => {
 
   it("normalises ISO dates (with or without a time part) to local day keys", () => {
     expect(
-      resolveDateRangeToDayBounds({ type: "absolute", startDate: "2026-03-01T10:00:00Z", endDate: "2026-03-04" }),
+      resolveDateRangeToDayBounds({
+        type: "absolute",
+        startDate: "2026-03-01T10:00:00Z",
+        endDate: "2026-03-04",
+      }),
     ).toEqual({ start: "2026-03-01", end: "2026-03-04" });
   });
 
   it("swaps reversed bounds", () => {
     expect(
-      resolveDateRangeToDayBounds({ type: "absolute", startDate: "2026-03-09", endDate: "2026-03-02" }),
+      resolveDateRangeToDayBounds({
+        type: "absolute",
+        startDate: "2026-03-09",
+        endDate: "2026-03-02",
+      }),
     ).toEqual({ start: "2026-03-02", end: "2026-03-09" });
   });
 
   it("rejects unparseable dates", () => {
-    expect(resolveDateRangeToDayBounds({ type: "absolute", startDate: "nope", endDate: "2026-03-02" })).toBeNull();
-    expect(resolveDateRangeToDayBounds({ type: "absolute", startDate: "2026-03", endDate: "2026-03-02" })).toBeNull();
+    expect(
+      resolveDateRangeToDayBounds({ type: "absolute", startDate: "nope", endDate: "2026-03-02" }),
+    ).toBeNull();
+    expect(
+      resolveDateRangeToDayBounds({
+        type: "absolute",
+        startDate: "2026-03",
+        endDate: "2026-03-02",
+      }),
+    ).toBeNull();
   });
 });
 
@@ -50,13 +67,19 @@ describe("date presets", () => {
     for (const preset of DATE_PRESETS) {
       if (preset.days == null) continue;
       const { start, end } = absoluteRangeForPresetDays(preset.days);
-      expect(presetKeyForValue({ type: "absolute", startDate: start, endDate: end })).toBe(preset.key);
+      expect(presetKeyForValue({ type: "absolute", startDate: start, endDate: end })).toBe(
+        preset.key,
+      );
     }
   });
 
   it("reports hand-picked or invalid ranges as custom", () => {
-    expect(presetKeyForValue({ type: "absolute", startDate: "2026-03-01", endDate: "2026-03-03" })).toBe("custom");
-    expect(presetKeyForValue({ type: "absolute", startDate: "bad", endDate: "bad" })).toBe("custom");
+    expect(
+      presetKeyForValue({ type: "absolute", startDate: "2026-03-01", endDate: "2026-03-03" }),
+    ).toBe("custom");
+    expect(presetKeyForValue({ type: "absolute", startDate: "bad", endDate: "bad" })).toBe(
+      "custom",
+    );
   });
 });
 
@@ -64,12 +87,22 @@ describe("dateRangeLabel", () => {
   it("names presets and the unfiltered state", () => {
     expect(dateRangeLabel(null)).toBe("All days");
     const week = absoluteRangeForPresetDays(7);
-    expect(dateRangeLabel({ type: "absolute", startDate: week.start, endDate: week.end })).toBe("Last 7 days");
+    expect(dateRangeLabel({ type: "absolute", startDate: week.start, endDate: week.end })).toBe(
+      "Last 7 days",
+    );
   });
   it("spells out hand-picked days", () => {
-    const one = dateRangeLabel({ type: "absolute", startDate: "2026-03-01", endDate: "2026-03-01" });
+    const one = dateRangeLabel({
+      type: "absolute",
+      startDate: "2026-03-01",
+      endDate: "2026-03-01",
+    });
     expect(one).toMatch(/1/);
-    const many = dateRangeLabel({ type: "absolute", startDate: "2026-03-01", endDate: "2026-03-03" });
+    const many = dateRangeLabel({
+      type: "absolute",
+      startDate: "2026-03-01",
+      endDate: "2026-03-03",
+    });
     expect(many).toContain("–");
   });
 });

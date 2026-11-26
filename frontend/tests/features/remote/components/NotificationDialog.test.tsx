@@ -1,6 +1,13 @@
-// @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { buttonByText, byLabel, click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, describe, expect, it } from "bun:test";
+import {
+  buttonByText,
+  byLabel,
+  click,
+  mountForm,
+  typeInto,
+  unmountForms,
+} from "@tests/support/formDom";
 import { NotificationDialog } from "@/features/remote/components/NotificationDialog";
 
 afterEach(unmountForms);
@@ -10,7 +17,13 @@ async function open(onSend: (title: string, message: string) => boolean, canSend
   document.body.append(container);
   const onOpenChange = vi.fn();
   await mountForm(
-    <NotificationDialog open onOpenChange={onOpenChange} containerRef={{ current: container }} canSend={canSend} onSend={onSend} />,
+    <NotificationDialog
+      open
+      onOpenChange={onOpenChange}
+      containerRef={{ current: container }}
+      canSend={canSend}
+      onSend={onSend}
+    />,
   );
   return onOpenChange;
 }

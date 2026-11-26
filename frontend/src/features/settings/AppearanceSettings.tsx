@@ -22,7 +22,10 @@ export function AppearanceSettings({ themeMode, onThemeChange }: AppearanceSetti
       <CardHeader className="px-5 pt-5 pb-3">
         <CardTitle className="flex items-center gap-1.5">
           Appearance
-          <HelpTip>Applies only to you, and is remembered in this browser. System follows your device’s light or dark setting.</HelpTip>
+          <HelpTip>
+            Applies only to you, and is remembered in this browser. System follows your device’s
+            light or dark setting.
+          </HelpTip>
         </CardTitle>
       </CardHeader>
       <CardContent className="px-5 pb-5">
@@ -39,7 +42,11 @@ export function AppearanceSettings({ themeMode, onThemeChange }: AppearanceSetti
           }}
         >
           {THEME_OPTIONS.map(({ label, value, icon: Icon }) => (
-            <ToggleGroupItem key={value} value={value} className="flex-1 gap-1.5 rounded-md! px-3 pointer-coarse:h-10 sm:flex-none aria-pressed:bg-background">
+            <ToggleGroupItem
+              key={value}
+              value={value}
+              className="flex-1 gap-1.5 rounded-md! px-3 pointer-coarse:h-10 sm:flex-none aria-pressed:bg-background"
+            >
               <Icon aria-hidden="true" /> {label}
             </ToggleGroupItem>
           ))}

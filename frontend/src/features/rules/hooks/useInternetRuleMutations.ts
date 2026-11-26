@@ -12,7 +12,12 @@ export const internetRuleTitle = (r: { name: string }) => r.name || "Internet bl
  * The changes the internet block list makes. A refused switch is kept as `actionError`; a refused create,
  * schedule save or delete stays on its mutation so the dialog that asked for it can show it.
  */
-export function useInternetRuleMutations({ onCreated, onScheduleSaved, onDeleted, onToggled }: {
+export function useInternetRuleMutations({
+  onCreated,
+  onScheduleSaved,
+  onDeleted,
+  onToggled,
+}: {
   onCreated: () => void;
   onScheduleSaved: () => void;
   onDeleted: () => void;
@@ -22,7 +27,8 @@ export function useInternetRuleMutations({ onCreated, onScheduleSaved, onDeleted
   const [actionError, setActionError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const listKey = ruleQueries.internetBlockRules().queryKey;
-  const refreshRules = () => queryClient.invalidateQueries({ queryKey: ruleKeys.internetBlockRules() });
+  const refreshRules = () =>
+    queryClient.invalidateQueries({ queryKey: ruleKeys.internetBlockRules() });
 
   const create = useMutation({
     mutationFn: (body: InternetBlockRuleBody) => api.internetBlockRulesCreate(body),
@@ -34,14 +40,24 @@ export function useInternetRuleMutations({ onCreated, onScheduleSaved, onDeleted
   });
 
   const toggle = useMutation({
-    mutationFn: (r: InternetBlockRule) => api.internetBlockRulesUpdate(r.id, { enabled: !r.enabled }),
+    mutationFn: (r: InternetBlockRule) =>
+      api.internetBlockRulesUpdate(r.id, { enabled: !r.enabled }),
     onSuccess: (_, r) => {
-      queryClient.setQueryData(listKey, (prev) => prev && { ...prev, rules: prev.rules.map((x) => (x.id === r.id ? { ...x, enabled: !x.enabled } : x)) });
+      queryClient.setQueryData(
+        listKey,
+        (prev) =>
+          prev && {
+            ...prev,
+            rules: prev.rules.map((x) => (x.id === r.id ? { ...x, enabled: !x.enabled } : x)),
+          },
+      );
       onToggled();
     },
     onError: (e, r) => {
       onToggled();
-      setActionError(`Couldn’t turn ${r.enabled ? "off" : "on"} “${internetRuleTitle(r)}”: ${errorText(e)}`);
+      setActionError(
+        `Couldn’t turn ${r.enabled ? "off" : "on"} “${internetRuleTitle(r)}”: ${errorText(e)}`,
+      );
     },
   });
 
@@ -58,7 +74,10 @@ export function useInternetRuleMutations({ onCreated, onScheduleSaved, onDeleted
   const remove = useMutation({
     mutationFn: (r: InternetBlockRule) => api.internetBlockRulesDelete(r.id),
     onSuccess: (_, r) => {
-      queryClient.setQueryData(listKey, (prev) => prev && { ...prev, rules: prev.rules.filter((x) => x.id !== r.id) });
+      queryClient.setQueryData(
+        listKey,
+        (prev) => prev && { ...prev, rules: prev.rules.filter((x) => x.id !== r.id) },
+      );
       onDeleted();
       setSaved(`Deleted “${internetRuleTitle(r)}”.`);
     },

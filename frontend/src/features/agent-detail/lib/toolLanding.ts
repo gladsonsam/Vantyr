@@ -18,7 +18,12 @@ interface ArrivalContext {
  * Clicks always land. The default entry (Timeline, Live desktop) keeps showing the desktop on top
  * unless the address asks for the tool, and a Timeline moment is scrolled to by the Timeline.
  */
-export function shouldLandOnArrival({ tab, scrollRequested, hasMoment, firstArrival }: ArrivalContext): boolean {
+export function shouldLandOnArrival({
+  tab,
+  scrollRequested,
+  hasMoment,
+  firstArrival,
+}: ArrivalContext): boolean {
   if (tab === "live") return !firstArrival;
   if (tab === "activity") return scrollRequested && !hasMoment;
   return true;
@@ -50,7 +55,8 @@ export function landOnTool(root: HTMLElement, tab: TabKey): void {
   const bar = root.querySelector<HTMLElement>(".agent-detail-section-tabs");
   const content = root.querySelector<HTMLElement>("[data-agent-tool-content]");
   if (!bar || !content) return;
-  scroller.scrollTop += content.getBoundingClientRect().top - (scroller.getBoundingClientRect().top + bar.offsetHeight);
+  scroller.scrollTop +=
+    content.getBoundingClientRect().top - (scroller.getBoundingClientRect().top + bar.offsetHeight);
 }
 
 function isOffTarget(root: HTMLElement): boolean {
@@ -68,7 +74,11 @@ const INTERRUPTS = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
  * that finishes loading). Re-land when that moved the tool, until the person scrolls or touches
  * the page or the settle time is up. Returns a function that stops watching.
  */
-export function keepOnTool(root: HTMLElement, tab: TabKey, durationMs = LANDING_SETTLE_MS): () => void {
+export function keepOnTool(
+  root: HTMLElement,
+  tab: TabKey,
+  durationMs = LANDING_SETTLE_MS,
+): () => void {
   if (tab === "live" || typeof ResizeObserver === "undefined") return () => undefined;
   const observer = new ResizeObserver(() => {
     if (isOffTarget(root)) landOnTool(root, tab);
@@ -79,7 +89,8 @@ export function keepOnTool(root: HTMLElement, tab: TabKey, durationMs = LANDING_
     for (const type of INTERRUPTS) window.removeEventListener(type, stop, true);
   };
   const timer = window.setTimeout(stop, durationMs);
-  for (const type of INTERRUPTS) window.addEventListener(type, stop, { capture: true, passive: true });
+  for (const type of INTERRUPTS)
+    window.addEventListener(type, stop, { capture: true, passive: true });
   observer.observe(root);
   return stop;
 }

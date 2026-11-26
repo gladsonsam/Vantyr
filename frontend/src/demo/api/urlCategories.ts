@@ -20,13 +20,32 @@ export function demoUrlCategoriesApi(): Partial<ApiClient> {
     urlCategorizationUpdateNow: async () => ({ ok: true }),
     urlCategorizationCategoriesGet: async () => ({
       categories: [
-        { key: "productivity", label: "Productivity", enabled: true, description: "Work tools and docs" },
-        { key: "social_networks", label: "Social networks", enabled: true, description: "Social media sites" },
-        { key: "information", label: "Information", enabled: true, description: "News and reference sites" },
+        {
+          key: "productivity",
+          label: "Productivity",
+          enabled: true,
+          description: "Work tools and docs",
+        },
+        {
+          key: "social_networks",
+          label: "Social networks",
+          enabled: true,
+          description: "Social media sites",
+        },
+        {
+          key: "information",
+          label: "Information",
+          enabled: true,
+          description: "News and reference sites",
+        },
       ],
     }),
     urlCategorizationCategoriesPut: async (body) => ({
-      categories: body.categories.map((c) => ({ ...c, label: c.label ?? c.key, description: c.description ?? "" })),
+      categories: body.categories.map((c) => ({
+        ...c,
+        label: c.label ?? c.key,
+        description: c.description ?? "",
+      })),
     }),
     urlCategorizationOverridesList: async () => ({
       rows: [
@@ -54,7 +73,19 @@ export function demoUrlCategoriesApi(): Partial<ApiClient> {
     }),
     agentUrlCategoryBackfill: async () => ({ enqueued: 250 }),
     urlCustomCategoriesList: async () => ({
-      rows: [{ id: 1, key: "design_tools", label_en: "Design tools", description_en: "Design and product work", display_order: 10, hidden: false, updated_at: isoHoursAgo(30), member_count: 1, ut1_keys: ["productivity"] }],
+      rows: [
+        {
+          id: 1,
+          key: "design_tools",
+          label_en: "Design tools",
+          description_en: "Design and product work",
+          display_order: 10,
+          hidden: false,
+          updated_at: isoHoursAgo(30),
+          member_count: 1,
+          ut1_keys: ["productivity"],
+        },
+      ],
     }),
     urlCustomCategoriesCreate: async () => ({ id: 2 }),
     urlCustomCategoriesUpdate: async () => ({ ok: true }),

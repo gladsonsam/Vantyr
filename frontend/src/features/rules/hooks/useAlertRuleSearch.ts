@@ -7,7 +7,11 @@ const PAGE_SIZE = 50;
 const SEARCH_FROM = 6;
 
 /** Search (name, match, channel, scope) and paging over the rule list. */
-export function useAlertRuleSearch(rules: AlertRule[], groups: AgentGroup[], agentsById: Record<string, Agent>) {
+export function useAlertRuleSearch(
+  rules: AlertRule[],
+  groups: AgentGroup[],
+  agentsById: Record<string, Agent>,
+) {
   const [query, setQueryState] = useState("");
   const [page, setPage] = useState(1);
 
@@ -15,14 +19,21 @@ export function useAlertRuleSearch(rules: AlertRule[], groups: AgentGroup[], age
     const q = query.trim().toLowerCase();
     if (!q) return rules;
     return rules.filter((r) =>
-      [r.name, r.pattern, channelLabel(r.channel), ruleMatchSummary(r), ...scopeLabels(r.scopes, groups, agentsById)].some((text) =>
-        text.toLowerCase().includes(q),
-      ),
+      [
+        r.name,
+        r.pattern,
+        channelLabel(r.channel),
+        ruleMatchSummary(r),
+        ...scopeLabels(r.scopes, groups, agentsById),
+      ].some((text) => text.toLowerCase().includes(q)),
     );
   }, [rules, query, groups, agentsById]);
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const activePage = Math.min(page, pages);
-  const displayed = useMemo(() => filtered.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE), [filtered, activePage]);
+  const displayed = useMemo(
+    () => filtered.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE),
+    [filtered, activePage],
+  );
 
   return {
     query,

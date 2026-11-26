@@ -8,7 +8,14 @@ import {
 } from "@vantyr/ui/components/dropdown-menu";
 import { Switch } from "@/components/common/SettingsSwitch";
 import type { Agent, AgentGroup, AlertRule } from "@/api/types";
-import { channelLabel, cooldownLabel, fmtSeconds, ruleMatchSummary, ruleTitle, scopeLabels } from "../lib/alertRuleSummary";
+import {
+  channelLabel,
+  cooldownLabel,
+  fmtSeconds,
+  ruleMatchSummary,
+  ruleTitle,
+  scopeLabels,
+} from "../lib/alertRuleSummary";
 
 export type AlertRuleAction = "history" | "edit" | "delete";
 
@@ -16,7 +23,14 @@ export type AlertRuleAction = "history" | "edit" | "delete";
 const SCOPES_SHOWN = 2;
 
 /** One row per alert rule: whether it is on, what it watches, where it applies, then its actions. */
-export function AlertRuleList({ rules, groups, agentsById, switchesDisabled, onToggle, onAction }: {
+export function AlertRuleList({
+  rules,
+  groups,
+  agentsById,
+  switchesDisabled,
+  onToggle,
+  onAction,
+}: {
   rules: AlertRule[];
   groups: AgentGroup[];
   agentsById: Record<string, Agent>;
@@ -42,7 +56,14 @@ export function AlertRuleList({ rules, groups, agentsById, switchesDisabled, onT
   );
 }
 
-function AlertRuleItem({ rule: r, groups, agentsById, switchDisabled, onToggle, onAction }: {
+function AlertRuleItem({
+  rule: r,
+  groups,
+  agentsById,
+  switchDisabled,
+  onToggle,
+  onAction,
+}: {
   rule: AlertRule;
   groups: AgentGroup[];
   agentsById: Record<string, Agent>;
@@ -71,7 +92,11 @@ function AlertRuleItem({ rule: r, groups, agentsById, switchDisabled, onToggle, 
           <h3 className="truncate text-base font-medium">{title}</h3>
           <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground">
             <span className="font-medium text-foreground/80">{channelLabel(r.channel)}</span>
-            {r.name.trim() && match && <span className="min-w-0 truncate font-mono text-xs" title={match}>{match}</span>}
+            {r.name.trim() && match && (
+              <span className="min-w-0 truncate font-mono text-xs" title={match}>
+                {match}
+              </span>
+            )}
             {!r.enabled && <span className="font-medium text-foreground">Off, not firing</span>}
           </p>
           <p className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -82,7 +107,10 @@ function AlertRuleItem({ rule: r, groups, agentsById, switchDisabled, onToggle, 
                 {hidden > 0 && ` +${hidden} more`}
               </span>
             </span>
-            <span className="inline-flex items-center gap-1.5" title={cooldownLabel(r.cooldown_secs)}>
+            <span
+              className="inline-flex items-center gap-1.5"
+              title={cooldownLabel(r.cooldown_secs)}
+            >
               <Clock className="size-3.5 shrink-0" aria-hidden />
               {r.cooldown_secs <= 0 ? "Every match" : `Once per ${fmtSeconds(r.cooldown_secs)}`}
             </span>
@@ -95,15 +123,32 @@ function AlertRuleItem({ rule: r, groups, agentsById, switchDisabled, onToggle, 
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2 pl-[3.25rem] sm:pl-0">
-        <Button variant="outline" className="pointer-coarse:h-9" aria-label={`Event history for ${title}`} onClick={() => onAction(r, "history")}>
+        <Button
+          variant="outline"
+          className="pointer-coarse:h-9"
+          aria-label={`Event history for ${title}`}
+          onClick={() => onAction(r, "history")}
+        >
           <History /> History
         </Button>
-        <Button variant="ghost" className="pointer-coarse:h-9" aria-label={`Edit ${title}`} onClick={() => onAction(r, "edit")}>
+        <Button
+          variant="ghost"
+          className="pointer-coarse:h-9"
+          aria-label={`Edit ${title}`}
+          onClick={() => onAction(r, "edit")}
+        >
           <Pencil /> Edit
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="ghost" size="icon" className="pointer-coarse:size-9" aria-label={`More actions for ${title}`} />}
+            render={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="pointer-coarse:size-9"
+                aria-label={`More actions for ${title}`}
+              />
+            }
           >
             <MoreHorizontal />
           </DropdownMenuTrigger>

@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { ApiError } from "@/api/client";
-import { isDefinitiveFailure, logPollInterval, logRetry } from "@/features/agent-detail/lib/logPolling";
+import {
+  isDefinitiveFailure,
+  logPollInterval,
+  logRetry,
+} from "@/features/agent-detail/lib/logPolling";
 
 describe("log polling", () => {
   it("treats authorisation 4xx as definitive but not timeouts, rate limits or network errors", () => {

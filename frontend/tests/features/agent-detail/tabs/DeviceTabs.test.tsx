@@ -1,27 +1,40 @@
-// @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act } from "react";
-import { click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
 import { withQueryClient } from "@tests/support/queryClient";
-import type { AgentInfo } from "@/api/types";
-import { SoftwareTab } from "@/features/agent-detail/tabs/SoftwareTab";
-import { SpecsTab } from "@/features/agent-detail/tabs/SpecsTab";
+import { click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { act } from "react";
 
-const backend = vi.hoisted(() => ({
+import type { AgentInfo } from "@/api/types";
+
+const backend = (() => ({
   agentSoftware: vi.fn(),
   collectAgentSoftware: vi.fn(),
   agentMetrics: vi.fn(),
   agentInfo: vi.fn(),
-}));
-vi.mock("@/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/api")>()), api: backend }));
+}))();
+const originalModule0 = await import("@/api");
+await vi.mock("@/api", async () => ({ ...originalModule0, api: backend }));
+
+const { SoftwareTab } = await import("@/features/agent-detail/tabs/SoftwareTab");
+const { SpecsTab } = await import("@/features/agent-detail/tabs/SpecsTab");
 
 const row = (name: string, over: Record<string, unknown> = {}) => ({
-  name, version: "1.0", publisher: "Acme", install_location: null, install_date: "20260110", captured_at: "2026-01-02T10:00:00Z", ...over,
+  name,
+  version: "1.0",
+  publisher: "Acme",
+  install_location: null,
+  install_date: "20260110",
+  captured_at: "2026-01-02T10:00:00Z",
+  ...over,
 });
 
 beforeEach(() => {
   backend.agentSoftware.mockReset().mockResolvedValue({
-    rows: [row("Alpha"), row("Beta", { publisher: "Contoso", install_date: "20260301" }), row("Gamma", { publisher: null, install_date: null })],
+    rows: [
+      row("Alpha"),
+      row("Beta", { publisher: "Contoso", install_date: "20260301" }),
+      row("Gamma", { publisher: null, install_date: null }),
+    ],
     last_captured_at: "2026-01-02T10:00:00Z",
   });
   backend.collectAgentSoftware.mockReset().mockResolvedValue({ ok: true });
@@ -32,8 +45,10 @@ afterEach(unmountForms);
 
 const text = () => document.body.textContent ?? "";
 const settle = () => act(async () => {});
-const byLabel = (label: string) => document.querySelector(`[aria-label="${label}"]`) as HTMLElement | null;
-const rowNames = () => Array.from(document.querySelectorAll("tbody tr")).map((r) => r.querySelector("td")?.textContent);
+const byLabel = (label: string) =>
+  document.querySelector(`[aria-label="${label}"]`) as HTMLElement | null;
+const rowNames = () =>
+  Array.from(document.querySelectorAll("tbody tr")).map((r) => r.querySelector("td")?.textContent);
 
 async function mount(node: React.ReactNode) {
   await mountForm(withQueryClient(node));
@@ -51,10 +66,16 @@ describe("SoftwareTab", () => {
 
   it("filters by name, version or publisher and reports how many matched", async () => {
     await mount(<SoftwareTab agentId="a1" dashboardRole="operator" />);
-    await typeInto(document.querySelector('input[aria-label="Find software"]') as HTMLInputElement, "contoso");
+    await typeInto(
+      document.querySelector('input[aria-label="Find software"]') as HTMLInputElement,
+      "contoso",
+    );
     expect(text()).toContain("1 of 3 programs");
     expect(rowNames()).toEqual(["Beta"]);
-    await typeInto(document.querySelector('input[aria-label="Find software"]') as HTMLInputElement, "zzz");
+    await typeInto(
+      document.querySelector('input[aria-label="Find software"]') as HTMLInputElement,
+      "zzz",
+    );
     expect(text()).toContain("No software matches “zzz”.");
   });
 
@@ -81,15 +102,26 @@ describe("SoftwareTab", () => {
   it("reports a failed load instead of an empty table, and retries", async () => {
     backend.agentSoftware.mockRejectedValueOnce(new Error("boom"));
     await mount(<SoftwareTab agentId="a1" dashboardRole="operator" />);
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Couldn’t load the software list");
-    await click(Array.from(document.querySelectorAll('[role="alert"] button')).find((b) => b.textContent === "Try again")!);
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t load the software list",
+    );
+    await click(
+      Array.from(document.querySelectorAll('[role="alert"] button')).find(
+        (b) => b.textContent === "Try again",
+      )!,
+    );
     await settle();
     expect(document.querySelector('[role="alert"]')).toBeNull();
     expect(text()).toContain("3 programs");
   });
 
   it("says so when the device cannot report software", async () => {
-    await mount(<SoftwareTab agentId="a1" agentInfo={{ capabilities: { software_inventory: "unsupported" } } as AgentInfo} />);
+    await mount(
+      <SoftwareTab
+        agentId="a1"
+        agentInfo={{ capabilities: { software_inventory: "unsupported" } } as AgentInfo}
+      />,
+    );
     expect(text()).toContain("Inventory unavailable");
   });
 });
@@ -105,13 +137,23 @@ const INFO: AgentInfo = {
   memory_total_mb: 32768,
   system_serial: "PF3DEMO",
   install_path: "C:\\Program Files\\Vantyr\\agent.exe",
-  capabilities: { remote_input: "supported", audio_capture: "limited", system_control: "unsupported" },
+  capabilities: {
+    remote_input: "supported",
+    audio_capture: "limited",
+    system_control: "unsupported",
+  },
   drives: [
     { name: "C:", mount_point: "C:\\", file_system: "NTFS", total_gb: 500, available_gb: 100 },
     { name: "Data", mount_point: "D:\\", file_system: "exFAT", total_gb: 1000, available_gb: 50 },
   ],
   adapters: [
-    { name: "Ethernet", mac: "02-00-5E-10-00-00", ips: ["10.0.2.20", "fe80::1"], gateways: ["10.0.2.1"], dns: ["1.1.1.1", "1.1.1.1"] },
+    {
+      name: "Ethernet",
+      mac: "02-00-5E-10-00-00",
+      ips: ["10.0.2.20", "fe80::1"],
+      gateways: ["10.0.2.1"],
+      dns: ["1.1.1.1", "1.1.1.1"],
+    },
     { name: "WiFi", ips: ["169.254.4.4"], gateways: [], dns: [] },
   ],
 };
@@ -123,7 +165,9 @@ describe("SpecsTab", () => {
     expect(text()).toContain("Windows 11 Pro 23H2");
     expect(text()).toContain("Intel Core i7 · 12 cores");
     expect(text()).toContain("32 GB");
-    const sections = Array.from(document.querySelectorAll("details > summary")).map((s) => s.textContent);
+    const sections = Array.from(document.querySelectorAll("details > summary")).map(
+      (s) => s.textContent,
+    );
     expect(sections.some((s) => s?.includes("Hardware identifiers"))).toBe(true);
     expect(sections.some((s) => s?.includes("1 of 3 fully available"))).toBe(true);
     expect(Array.from(document.querySelectorAll("details")).every((d) => !d.open)).toBe(true);
@@ -143,7 +187,9 @@ describe("SpecsTab", () => {
     expect(byLabel("Copy MAC address 02-00-5E-10-00-00")).not.toBeNull();
     expect(byLabel("Copy IPv4 address 10.0.2.20")).not.toBeNull();
     expect(document.querySelectorAll('[aria-label="Copy DNS address 1.1.1.1"]')).toHaveLength(1);
-    const folded = Array.from(document.querySelectorAll("details")).find((d) => d.textContent?.includes("Not connected & local"))!;
+    const folded = Array.from(document.querySelectorAll("details")).find((d) =>
+      d.textContent?.includes("Not connected & local"),
+    )!;
     expect(folded.textContent).toContain("WiFi");
     expect(folded.open).toBe(false);
   });
@@ -158,7 +204,10 @@ describe("SpecsTab", () => {
   });
 
   it("says when copying is blocked instead of failing silently", async () => {
-    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) }, configurable: true });
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+      configurable: true,
+    });
     await mount(<SpecsTab agentId="a1" cachedInfo={INFO} />);
     await click(byLabel("Copy IPv4 address 10.0.2.20")!);
     expect(text()).toContain("Couldn’t copy");
@@ -167,9 +216,13 @@ describe("SpecsTab", () => {
   it("reports a failed system-info load and retries, keeping the resource history", async () => {
     backend.agentInfo.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({ info: INFO });
     await mount(<SpecsTab agentId="a1" cachedInfo={null} />);
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Couldn’t load system info.");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t load system info.",
+    );
     expect(text()).toContain("Resource history");
-    await click(Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "Try again")!);
+    await click(
+      Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "Try again")!,
+    );
     await settle();
     expect(text()).toContain("Lenovo ThinkPad T14");
   });

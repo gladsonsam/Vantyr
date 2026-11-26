@@ -2,7 +2,10 @@ import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { DataTable } from "@/components/common/data-table/DataTable";
 import { DataTableColumnHeader } from "@/components/common/data-table/DataTableColumnHeader";
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
-import { DataTableSortSelect, type SortChoice } from "@/components/common/data-table/DataTableSortSelect";
+import {
+  DataTableSortSelect,
+  type SortChoice,
+} from "@/components/common/data-table/DataTableSortSelect";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { HelpTip } from "@/components/common/HelpTip";
@@ -12,7 +15,10 @@ import { agentKeys, agentQueries } from "@/api/queries/agents";
 import type { AgentInfo, AgentSoftwareRow, DashboardRole } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
-import { LoadFailed, MonitoringToolbar } from "@/features/agent-detail/components/MonitoringToolbar";
+import {
+  LoadFailed,
+  MonitoringToolbar,
+} from "@/features/agent-detail/components/MonitoringToolbar";
 import { listCountLabel } from "@/features/agent-detail/lib/monitoring";
 import { fmtDateTime, formatWindowsInstallDate, installDateSortKey } from "@/lib/utils";
 
@@ -47,7 +53,10 @@ const columns = columnHelper.columns([
     header: "Version",
     enableSorting: false,
     cell: ({ row }) => row.original.version || "—",
-    meta: { className: "whitespace-nowrap tabular-nums max-sm:text-muted-foreground", label: "Version" },
+    meta: {
+      className: "whitespace-nowrap tabular-nums max-sm:text-muted-foreground",
+      label: "Version",
+    },
   }),
   columnHelper.accessor("publisher_sort", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Publisher" />,
@@ -58,7 +67,10 @@ const columns = columnHelper.columns([
     header: ({ column }) => <DataTableColumnHeader column={column} title="Installed" />,
     cell: ({ row }) => formatWindowsInstallDate(row.original.install_date ?? null),
     sortDescFirst: true,
-    meta: { className: "whitespace-nowrap tabular-nums max-sm:text-muted-foreground", label: "Installed" },
+    meta: {
+      className: "whitespace-nowrap tabular-nums max-sm:text-muted-foreground",
+      label: "Installed",
+    },
   }),
 ]);
 
@@ -84,7 +96,10 @@ function matchesSoftware(item: SoftwareRow, query: string): boolean {
 
 const NO_SOFTWARE: SoftwareRow[] = [];
 
-function toSoftwareInventory(data: { rows?: AgentSoftwareRow[]; last_captured_at?: string | null }) {
+function toSoftwareInventory(data: {
+  rows?: AgentSoftwareRow[];
+  last_captured_at?: string | null;
+}) {
   return {
     rows: (data.rows ?? []).map((r): SoftwareRow => ({
       ...r,
@@ -95,12 +110,21 @@ function toSoftwareInventory(data: { rows?: AgentSoftwareRow[]; last_captured_at
   };
 }
 
-export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotifyInfo, onNotifyError }: SoftwareTabProps) {
+export function SoftwareTab({
+  agentId,
+  agentInfo,
+  dashboardRole = null,
+  onNotifyInfo,
+  onNotifyError,
+}: SoftwareTabProps) {
   const queryClient = useQueryClient();
-  const softwareQuery = useQuery({ ...agentQueries.software(agentId), select: toSoftwareInventory });
+  const softwareQuery = useQuery({
+    ...agentQueries.software(agentId),
+    select: toSoftwareInventory,
+  });
   // A failed load clears the table rather than leaving the last inventory up.
-  const rows = softwareQuery.isError ? NO_SOFTWARE : softwareQuery.data?.rows ?? NO_SOFTWARE;
-  const lastCaptured = softwareQuery.isError ? null : softwareQuery.data?.lastCaptured ?? null;
+  const rows = softwareQuery.isError ? NO_SOFTWARE : (softwareQuery.data?.rows ?? NO_SOFTWARE);
+  const lastCaptured = softwareQuery.isError ? null : (softwareQuery.data?.lastCaptured ?? null);
   const loading = softwareQuery.isFetching;
 
   const collect = useMutation({
@@ -131,7 +155,13 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
   const filteringText = String(table.state.globalFilter ?? "");
 
   if (!softwareAvailable) {
-    return <CapabilityNotice info={agentInfo} capability="software_inventory" title="Inventory unavailable" />;
+    return (
+      <CapabilityNotice
+        info={agentInfo}
+        capability="software_inventory"
+        title="Inventory unavailable"
+      />
+    );
   }
 
   const count = listCountLabel({
@@ -165,9 +195,14 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
             <>
               {lastCaptured ? <span>Updated {fmtDateTime(lastCaptured)}</span> : null}
               <HelpTip label="About this list" className="max-sm:-my-2 max-sm:size-9">
-                The device sends its installed software once a day while it is online. Re-scan asks it to send the list now.
+                The device sends its installed software once a day while it is online. Re-scan asks
+                it to send the list now.
               </HelpTip>
-              <DataTableSortSelect table={table} choices={SORT_CHOICES} className="ml-auto w-40 sm:hidden" />
+              <DataTableSortSelect
+                table={table}
+                choices={SORT_CHOICES}
+                className="ml-auto w-40 sm:hidden"
+              />
             </>
           }
           onRefresh={onCollect}
@@ -175,9 +210,16 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
           refreshDisabled={!canCollect}
           refreshLabel={canCollect ? "Re-scan this device" : "Re-scan needs the operator role"}
         />
-        {softwareQuery.isError ? <LoadFailed what="the software list" onRetry={() => void softwareQuery.refetch()} /> : null}
+        {softwareQuery.isError ? (
+          <LoadFailed what="the software list" onRetry={() => void softwareQuery.refetch()} />
+        ) : null}
         <div className="px-2 pt-2">
-          <DataTable table={table} loading={loading} loadingText="Loading software…" emptyText={emptyText} />
+          <DataTable
+            table={table}
+            loading={loading}
+            loadingText="Loading software…"
+            emptyText={emptyText}
+          />
         </div>
         <div className="border-t border-foreground/[0.06] px-5 py-1 empty:hidden">
           <DataTablePagination table={table} />

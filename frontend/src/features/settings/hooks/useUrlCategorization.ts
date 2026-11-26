@@ -5,9 +5,14 @@ import { errorText } from "@/api/client";
 import { urlCategoryQueries } from "@/api/queries/urlCategories";
 
 export type UrlCategorizationStatus = Awaited<ReturnType<typeof api.urlCategorizationStatusGet>>;
-export type UrlCategorizationPatch = Partial<{ enabled: boolean; auto_update: boolean; source_url: string }>;
+export type UrlCategorizationPatch = Partial<{
+  enabled: boolean;
+  auto_update: boolean;
+  source_url: string;
+}>;
 
-export const DEFAULT_SOURCE_URL = "https://github.com/olbat/ut1-blacklists/archive/refs/heads/master.tar.gz";
+export const DEFAULT_SOURCE_URL =
+  "https://github.com/olbat/ut1-blacklists/archive/refs/heads/master.tar.gz";
 
 /** A list download or import is in flight. */
 export function urlCatJobRunning(status: UrlCategorizationStatus | null | undefined): boolean {
@@ -43,7 +48,8 @@ export function useUrlCategorization(isAdmin: boolean) {
   };
 
   const saveMutation = useMutation({
-    mutationFn: (body: { enabled: boolean; auto_update: boolean; source_url: string }) => api.urlCategorizationSettingsPut(body),
+    mutationFn: (body: { enabled: boolean; auto_update: boolean; source_url: string }) =>
+      api.urlCategorizationSettingsPut(body),
     onSuccess: () => refresh(),
     onError: (e) => setActionError(errorText(e)),
   });
@@ -67,13 +73,19 @@ export function useUrlCategorization(isAdmin: boolean) {
       return false;
     }
     setActionError(null);
-    return saveMutation.mutateAsync(next).then(() => true, () => false);
+    return saveMutation.mutateAsync(next).then(
+      () => true,
+      () => false,
+    );
   };
 
   const updateNow = async (): Promise<boolean> => {
     if (!isAdmin) return false;
     setActionError(null);
-    return updateNowMutation.mutateAsync().then(() => true, () => false);
+    return updateNowMutation.mutateAsync().then(
+      () => true,
+      () => false,
+    );
   };
 
   return {

@@ -1,32 +1,69 @@
-// @vitest-environment jsdom
+import { click, typeInto } from "@tests/support/formDom";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
-import { click, typeInto } from "@tests/support/formDom";
-import { AlertRulesTab } from "@/features/rules/AlertRulesTab";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+
 import type { Agent, AgentGroup, AlertRule } from "@/api/types";
 
-const api = vi.hoisted(() => ({
+const api = (() => ({
   alertRulesList: vi.fn(),
   alertRulesCreate: vi.fn(async () => ({ id: 9 })),
   alertRulesUpdate: vi.fn(async () => ({ ok: true })),
   alertRulesDelete: vi.fn(async () => ({ ok: true })),
   alertRuleEvents: vi.fn(),
+}))();
+await vi.mock("@/api", () => ({
+  api,
+  errorText: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+  apiUrl: (p: string) => p,
 }));
-vi.mock("@/api", () => ({ api, errorText: (e: unknown) => (e instanceof Error ? e.message : String(e)), apiUrl: (p: string) => p }));
+
+const { AlertRulesTab } = await import("@/features/rules/AlertRulesTab");
 
 const rule = (id: number, patch: Partial<AlertRule> = {}): AlertRule => ({
-  id, name: `Rule ${id}`, channel: "url", pattern: `site${id}.com`, match_mode: "substring", case_insensitive: true,
-  cooldown_secs: 300, enabled: true, take_screenshot: false, scopes: [{ kind: "all" }], ...patch,
+  id,
+  name: `Rule ${id}`,
+  channel: "url",
+  pattern: `site${id}.com`,
+  match_mode: "substring",
+  case_insensitive: true,
+  cooldown_secs: 300,
+  enabled: true,
+  take_screenshot: false,
+  scopes: [{ kind: "all" }],
+  ...patch,
 });
 const rules: AlertRule[] = [
   rule(1, { name: "Social media", pattern: "facebook.com" }),
-  rule(2, { name: "Credentials", channel: "keys", pattern: "password", cooldown_secs: 900, take_screenshot: true, scopes: [{ kind: "group", group_id: "g1" }, { kind: "agent", agent_id: "a1" }, { kind: "group", group_id: "g2" }] }),
-  rule(3, { name: "", channel: "resource", pattern: "", metric: "cpu_pct", comparator: "gt", threshold: 90, enabled: false }),
+  rule(2, {
+    name: "Credentials",
+    channel: "keys",
+    pattern: "password",
+    cooldown_secs: 900,
+    take_screenshot: true,
+    scopes: [
+      { kind: "group", group_id: "g1" },
+      { kind: "agent", agent_id: "a1" },
+      { kind: "group", group_id: "g2" },
+    ],
+  }),
+  rule(3, {
+    name: "",
+    channel: "resource",
+    pattern: "",
+    metric: "cpu_pct",
+    comparator: "gt",
+    threshold: 90,
+    enabled: false,
+  }),
 ];
-const groups = [{ id: "g1", name: "Lab" }, { id: "g2", name: "Kiosks" }] as AgentGroup[];
+const groups = [
+  { id: "g1", name: "Lab" },
+  { id: "g2", name: "Kiosks" },
+] as AgentGroup[];
 const agents = [{ id: "a1", name: "Alpha" }] as Agent[];
 
 let host: HTMLDivElement;
@@ -49,14 +86,26 @@ afterEach(async () => {
 
 async function render() {
   await act(async () =>
-    root.render(withQueryClient(<MemoryRouter><AlertRulesTab groups={groups} agents={agents} /></MemoryRouter>, createTestQueryClient())),
+    root.render(
+      withQueryClient(
+        <MemoryRouter>
+          <AlertRulesTab groups={groups} agents={agents} />
+        </MemoryRouter>,
+        createTestQueryClient(),
+      ),
+    ),
   );
 }
 const items = () => [...host.querySelectorAll('ul[aria-label="Alert rules"] > li')];
 const btn = (name: string, scope: ParentNode = document) =>
-  [...scope.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") ?? b.textContent)?.trim() === name) as HTMLButtonElement | undefined;
+  [...scope.querySelectorAll("button")].find(
+    (b) => (b.getAttribute("aria-label") ?? b.textContent)?.trim() === name,
+  ) as HTMLButtonElement | undefined;
 const dialog = () => document.querySelector<HTMLElement>('[role="dialog"], [role="alertdialog"]');
-const menuItem = (name: string) => [...document.querySelectorAll('[role="menuitem"]')].find((i) => i.textContent?.trim().startsWith(name)) as HTMLElement;
+const menuItem = (name: string) =>
+  [...document.querySelectorAll('[role="menuitem"]')].find((i) =>
+    i.textContent?.trim().startsWith(name),
+  ) as HTMLElement;
 async function openMenu(title: string) {
   await click(btn(`More actions for ${title}`)!);
   await act(async () => {});
@@ -87,9 +136,23 @@ describe("AlertRulesTab list", () => {
   it("only offers search for a long list and searches name, match, channel and scope", async () => {
     await render();
     expect(host.querySelector('input[aria-label="Search alert rules"]')).toBeNull();
-    const many = Array.from({ length: 7 }, (_, i) => rule(i + 10, { name: `Many ${i}`, scopes: [{ kind: "group", group_id: i === 4 ? "g2" : "g1" }] }));
+    const many = Array.from({ length: 7 }, (_, i) =>
+      rule(i + 10, {
+        name: `Many ${i}`,
+        scopes: [{ kind: "group", group_id: i === 4 ? "g2" : "g1" }],
+      }),
+    );
     api.alertRulesList.mockResolvedValue({ rules: many });
-    await act(async () => root.render(withQueryClient(<MemoryRouter><AlertRulesTab key="2" groups={groups} agents={agents} /></MemoryRouter>, createTestQueryClient())));
+    await act(async () =>
+      root.render(
+        withQueryClient(
+          <MemoryRouter>
+            <AlertRulesTab key="2" groups={groups} agents={agents} />
+          </MemoryRouter>,
+          createTestQueryClient(),
+        ),
+      ),
+    );
     const search = host.querySelector<HTMLInputElement>('input[aria-label="Search alert rules"]')!;
     await typeInto(search, "kiosks");
     expect(items().map((i) => i.querySelector("h3")?.textContent)).toEqual(["Many 4"]);
@@ -124,8 +187,18 @@ describe("AlertRulesTab switch", () => {
     await click(items()[2].querySelector<HTMLElement>('[role="switch"]')!);
     expect(api.alertRulesUpdate).toHaveBeenCalledTimes(1);
     expect(api.alertRulesUpdate).toHaveBeenCalledWith(3, {
-      name: "", channel: "resource", pattern: "", match_mode: "substring", case_insensitive: true, cooldown_secs: 300,
-      enabled: true, take_screenshot: false, metric: "cpu_pct", comparator: "gt", threshold: 90, duration_secs: undefined,
+      name: "",
+      channel: "resource",
+      pattern: "",
+      match_mode: "substring",
+      case_insensitive: true,
+      cooldown_secs: 300,
+      enabled: true,
+      take_screenshot: false,
+      metric: "cpu_pct",
+      comparator: "gt",
+      threshold: 90,
+      duration_secs: undefined,
       scopes: [{ kind: "all", group_id: undefined, agent_id: undefined }],
     });
     expect(api.alertRulesList).toHaveBeenCalledTimes(2);
@@ -135,7 +208,9 @@ describe("AlertRulesTab switch", () => {
     api.alertRulesUpdate.mockRejectedValueOnce(new Error("Forbidden"));
     await render();
     await click(items()[0].querySelector<HTMLElement>('[role="switch"]')!);
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Couldn’t turn off “Social media”: Forbidden");
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t turn off “Social media”: Forbidden",
+    );
     expect(items()[0].querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
     await click(btn("Dismiss")!);
     expect(host.querySelector('[role="alert"]')).toBeNull();
@@ -180,12 +255,19 @@ describe("AlertRulesTab edit and history", () => {
     await render();
     await click(btn("Edit Social media")!);
     expect(dialog()?.querySelector("h2")?.textContent).toBe("Edit alert rule");
-    expect(document.querySelector<HTMLInputElement>("#alert-rule-pattern")!.value).toBe("facebook.com");
+    expect(document.querySelector<HTMLInputElement>("#alert-rule-pattern")!.value).toBe(
+      "facebook.com",
+    );
     await click(btn("Save changes", dialog()!)!);
-    expect(dialog()?.querySelector('[role="alert"]')?.textContent).toBe("Couldn’t save the rule: invalid regex");
+    expect(dialog()?.querySelector('[role="alert"]')?.textContent).toBe(
+      "Couldn’t save the rule: invalid regex",
+    );
     expect(host.querySelector('[role="alert"]')).toBeNull();
     await click(btn("Save changes", dialog()!)!);
-    expect(api.alertRulesUpdate).toHaveBeenLastCalledWith(1, expect.objectContaining({ name: "Social media", pattern: "facebook.com", enabled: true }));
+    expect(api.alertRulesUpdate).toHaveBeenLastCalledWith(
+      1,
+      expect.objectContaining({ name: "Social media", pattern: "facebook.com", enabled: true }),
+    );
     expect(dialog()).toBeNull();
     expect(host.textContent).toContain("Saved “Social media”.");
   });
@@ -195,15 +277,42 @@ describe("AlertRulesTab edit and history", () => {
     await click(btn("New rule", host)!);
     await typeInto(document.querySelector<HTMLInputElement>("#alert-rule-pattern")!, "twitch.tv");
     await click(btn("Create rule", dialog()!)!);
-    expect(api.alertRulesCreate).toHaveBeenCalledWith(expect.objectContaining({ pattern: "twitch.tv", channel: "url", enabled: true, scopes: [{ kind: "all", group_id: undefined, agent_id: undefined }] }));
+    expect(api.alertRulesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pattern: "twitch.tv",
+        channel: "url",
+        enabled: true,
+        scopes: [{ kind: "all", group_id: undefined, agent_id: undefined }],
+      }),
+    );
     expect(dialog()).toBeNull();
   });
 
   it("lists the alerts a rule raised, with the matched text and a deep link to the agent's activity", async () => {
     api.alertRuleEvents.mockResolvedValue({
       rows: [
-        { id: 5, agent_id: "a1", agent_name: "Alpha", rule_name: "Social media", channel: "url", snippet: "facebook.com/profile?id=1", has_screenshot: true, screenshot_requested: true, created_at: "2026-11-01T10:00:00Z" },
-        { id: 4, agent_id: "a1", agent_name: "Alpha", rule_name: "Social media", channel: "url", snippet: "", has_screenshot: false, screenshot_requested: true, created_at: "2026-11-01T09:00:00Z" },
+        {
+          id: 5,
+          agent_id: "a1",
+          agent_name: "Alpha",
+          rule_name: "Social media",
+          channel: "url",
+          snippet: "facebook.com/profile?id=1",
+          has_screenshot: true,
+          screenshot_requested: true,
+          created_at: "2026-11-01T10:00:00Z",
+        },
+        {
+          id: 4,
+          agent_id: "a1",
+          agent_name: "Alpha",
+          rule_name: "Social media",
+          channel: "url",
+          snippet: "",
+          has_screenshot: false,
+          screenshot_requested: true,
+          created_at: "2026-11-01T09:00:00Z",
+        },
       ],
     });
     await render();
@@ -215,8 +324,14 @@ describe("AlertRulesTab edit and history", () => {
     expect(text).toContain("2 alerts, newest first.");
     expect(text).toContain("facebook.com/profile?id=1");
     expect(text).toContain("No screenshot");
-    expect([...dialog()!.querySelectorAll("button")].some((b) => b.getAttribute("aria-label")?.startsWith("View screenshot from"))).toBe(true);
-    expect(dialog()!.querySelector("a")?.getAttribute("href")).toBe("/agents/a1?tab=activity&at=2026-11-01T10%3A00%3A00Z");
+    expect(
+      [...dialog()!.querySelectorAll("button")].some((b) =>
+        b.getAttribute("aria-label")?.startsWith("View screenshot from"),
+      ),
+    ).toBe(true);
+    expect(dialog()!.querySelector("a")?.getAttribute("href")).toBe(
+      "/agents/a1?tab=activity&at=2026-11-01T10%3A00%3A00Z",
+    );
   });
 
   it("says when the history could not be loaded instead of 'no events', and retries", async () => {
@@ -224,7 +339,9 @@ describe("AlertRulesTab edit and history", () => {
     await render();
     await click(btn("Event history for Social media")!);
     await act(async () => {});
-    expect(dialog()?.querySelector('[role="alert"]')?.textContent).toContain("Couldn’t load this rule’s history: timeout");
+    expect(dialog()?.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t load this rule’s history: timeout",
+    );
     expect(dialog()?.textContent).not.toContain("No alerts yet");
     await click(btn("Try again", dialog()!)!);
     await act(async () => {});
@@ -233,11 +350,23 @@ describe("AlertRulesTab edit and history", () => {
 
   it("says when older alerts are not shown", async () => {
     api.alertRuleEvents.mockResolvedValue({
-      rows: Array.from({ length: 200 }, (_, i) => ({ id: i + 1, agent_id: "a1", agent_name: "Alpha", rule_name: "x", channel: "url", snippet: `s${i}`, has_screenshot: false, screenshot_requested: false, created_at: "2026-11-01T10:00:00Z" })),
+      rows: Array.from({ length: 200 }, (_, i) => ({
+        id: i + 1,
+        agent_id: "a1",
+        agent_name: "Alpha",
+        rule_name: "x",
+        channel: "url",
+        snippet: `s${i}`,
+        has_screenshot: false,
+        screenshot_requested: false,
+        created_at: "2026-11-01T10:00:00Z",
+      })),
     });
     await render();
     await click(btn("Event history for Social media")!);
     await act(async () => {});
-    expect(dialog()?.textContent).toContain("200 alerts, newest first. Older alerts may not be shown.");
+    expect(dialog()?.textContent).toContain(
+      "200 alerts, newest first. Older alerts may not be shown.",
+    );
   });
 });

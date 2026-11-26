@@ -2,11 +2,7 @@ import { useId, useMemo, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@vantyr/ui/components/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@vantyr/ui/components/popover";
 import { useRecallEvidenceNote } from "@/features/recall/hooks/useRecallEvidenceNote";
 import { recallQueries } from "@/api/queries/recall";
 import type { HistoryDay } from "@/api/types";
@@ -45,12 +41,7 @@ const controlStyle: CSSProperties = {
   fontSize: 16,
 };
 
-function useRecordedCoverage({
-  agentId,
-  day,
-  timezone,
-  coverageScope,
-}: RecallDayPickerProps) {
+function useRecordedCoverage({ agentId, day, timezone, coverageScope }: RecallDayPickerProps) {
   const coverageQuery = useQuery({
     ...recallQueries.days(agentId, coverageScope),
     enabled: coverageScope !== null,
@@ -60,8 +51,7 @@ function useRecordedCoverage({
     coverageQuery.isError,
     Boolean(coverageQuery.data),
   );
-  const days =
-    status === "ready" ? (coverageQuery.data?.days ?? NO_DAYS) : NO_DAYS;
+  const days = status === "ready" ? (coverageQuery.data?.days ?? NO_DAYS) : NO_DAYS;
   const today = todayIso(timezone ?? undefined);
   const covered = useMemo(
     () =>
@@ -70,10 +60,7 @@ function useRecordedCoverage({
         .sort((a, b) => a.day.localeCompare(b.day)),
     [days, today],
   );
-  const byDay = useMemo(
-    () => new Map(covered.map((d) => [d.day, d])),
-    [covered],
-  );
+  const byDay = useMemo(() => new Map(covered.map((d) => [d.day, d])), [covered]);
   const maxCount = useMemo(
     () => covered.reduce((max, d) => Math.max(max, d.frame_count), 1),
     [covered],
@@ -92,11 +79,7 @@ function useRecordedCoverage({
   const selected = byDay.get(day);
   const response = status === "ready" ? coverageQuery.data : undefined;
   const responseZone = response?.timezone ?? timezone;
-  const { outside, partialDay } = selectedCoverageBounds(
-    day,
-    responseZone,
-    response,
-  );
+  const { outside, partialDay } = selectedCoverageBounds(day, responseZone, response);
   const previous = covered
     .slice()
     .reverse()
@@ -134,8 +117,7 @@ export function RecallDayPicker(props: RecallDayPickerProps) {
   const id = useId();
   const evidenceNote = useRecallEvidenceNote();
   const coverage = useRecordedCoverage(props);
-  const { byDay, status, covered, today, previous, next, responseZone } =
-    coverage;
+  const { byDay, status, covered, today, previous, next, responseZone } = coverage;
 
   return (
     <div
@@ -262,22 +244,11 @@ export function RecallDayPicker(props: RecallDayPickerProps) {
   );
 }
 
-function CoverageGrid({
-  id,
-  day,
-  coverage,
-}: {
-  id: string;
-  day: string;
-  coverage: Coverage;
-}) {
+function CoverageGrid({ id, day, coverage }: { id: string; day: string; coverage: Coverage }) {
   const { columns, byDay, status, today, maxCount } = coverage;
   return (
     <div style={{ minWidth: 0, maxWidth: "100%" }}>
-      <div
-        id={`${id}-coverage`}
-        className="mb-1.5 text-xs text-muted-foreground"
-      >
+      <div id={`${id}-coverage`} className="mb-1.5 text-xs text-muted-foreground">
         Last 12 weeks of retained recordings
       </div>
       <div
@@ -287,10 +258,7 @@ function CoverageGrid({
         style={{ display: "flex", gap: 2, width: 154, maxWidth: "100%" }}
       >
         {columns.map((column, col) => (
-          <div
-            key={col}
-            style={{ display: "flex", flexDirection: "column", gap: 2 }}
-          >
+          <div key={col} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {column.map((date) => {
               const row = byDay.get(date),
                 future = date > today;
@@ -311,10 +279,7 @@ function CoverageGrid({
                     height: 11,
                     boxSizing: "border-box",
                     borderRadius: 2,
-                    border:
-                      date === day
-                        ? "1px solid var(--foreground)"
-                        : "1px solid transparent",
+                    border: date === day ? "1px solid var(--foreground)" : "1px solid transparent",
                     background: row
                       ? `color-mix(in srgb, var(--success) ${Math.round(22 + (row.frame_count / maxCount) * 78)}%, transparent)`
                       : "var(--muted)",
@@ -343,10 +308,7 @@ function CoverageStatus({ id, coverage }: { id: string; coverage: Coverage }) {
       ) : status === "failed" ? (
         <>
           Could not load recorded-day coverage.{" "}
-          <button
-            onClick={() => void coverageQuery.refetch()}
-            style={controlStyle}
-          >
+          <button onClick={() => void coverageQuery.refetch()} style={controlStyle}>
             Retry coverage
           </button>
         </>
@@ -389,8 +351,8 @@ function SelectedDayEvidence({
       )}
       {status === "ready" && partialDay && (
         <div>
-          Coverage overlaps only part of this device calendar day; the rest of
-          the day is unverified.
+          Coverage overlaps only part of this device calendar day; the rest of the day is
+          unverified.
         </div>
       )}
     </div>
@@ -422,8 +384,8 @@ function SelectedCoverage({
   return (
     <>
       <strong>
-        {selected.frame_count} retained frames on {day}, observed within the
-        returned coverage period.
+        {selected.frame_count} retained frames on {day}, observed within the returned coverage
+        period.
       </strong>
       <div>
         {first

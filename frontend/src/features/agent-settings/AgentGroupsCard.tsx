@@ -7,7 +7,13 @@ import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardContent } from "@vantyr/ui/components/card";
 import { Field, FieldLabel } from "@vantyr/ui/components/field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@vantyr/ui/components/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@vantyr/ui/components/select";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { HelpTip } from "@/components/common/HelpTip";
 
@@ -17,7 +23,13 @@ const NO_MEMBERS: AgentGroupMembership[] = [];
 type MembershipChange = { action: "add" | "remove"; groupId: string };
 
 /** The groups this agent belongs to (it inherits their alert rules); admins add and remove it. */
-export function AgentGroupsCard({ agentId, onOpenAgentGroups }: { agentId: string; onOpenAgentGroups?: () => void }) {
+export function AgentGroupsCard({
+  agentId,
+  onOpenAgentGroups,
+}: {
+  agentId: string;
+  onOpenAgentGroups?: () => void;
+}) {
   const queryClient = useQueryClient();
   const [memberGroupsQuery, allGroupsQuery] = useQueries({
     queries: [groupQueries.forAgent(agentId), groupQueries.list()],
@@ -45,7 +57,9 @@ export function AgentGroupsCard({ agentId, onOpenAgentGroups }: { agentId: strin
   const ok = membershipSuccess(change.isSuccess, change.variables);
   // A removed row takes its button with it, so focus moves to the outcome instead of falling back to the page.
   const statusRef = useRef<HTMLParagraphElement>(null);
-  useEffect(() => { if (ok) statusRef.current?.focus(); }, [ok]);
+  useEffect(() => {
+    if (ok) statusRef.current?.focus();
+  }, [ok]);
 
   const addableGroupOptions = useMemo(() => {
     const inSet = new Set(memberRows.map((g) => g.id));
@@ -64,7 +78,13 @@ export function AgentGroupsCard({ agentId, onOpenAgentGroups }: { agentId: strin
             <HelpTip>This device inherits alert rules from the groups it is in.</HelpTip>
           </h3>
           {onOpenAgentGroups && (
-            <Button variant="outline" size="sm" className="pointer-coarse:h-9" disabled={busy} onClick={() => onOpenAgentGroups()}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="pointer-coarse:h-9"
+              disabled={busy}
+              onClick={() => onOpenAgentGroups()}
+            >
               Manage groups
             </Button>
           )}
@@ -74,14 +94,22 @@ export function AgentGroupsCard({ agentId, onOpenAgentGroups }: { agentId: strin
             <AlertDescription>{String(error)}</AlertDescription>
           </Alert>
         )}
-        {ok && <p ref={statusRef} tabIndex={-1} role="status" className="text-success outline-none">{ok}</p>}
+        {ok && (
+          <p ref={statusRef} tabIndex={-1} role="status" className="text-success outline-none">
+            {ok}
+          </p>
+        )}
         {loading && memberGroups === null ? (
           <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground">
             <Spinner /> Loading groups…
           </div>
         ) : (
           <>
-            <MemberList rows={memberRows} busy={busy} onRemove={(groupId) => change.mutate({ action: "remove", groupId })} />
+            <MemberList
+              rows={memberRows}
+              busy={busy}
+              onRemove={(groupId) => change.mutate({ action: "remove", groupId })}
+            />
             <AddToGroup
               options={addableGroupOptions}
               pick={addGroupPick}
@@ -103,7 +131,7 @@ function membershipSuccess(success: boolean, change: MembershipChange | undefine
 }
 
 function usableMembership<T>(rows: T[] | undefined, failure: unknown): T[] | null {
-  return failure ? null : rows ?? null;
+  return failure ? null : (rows ?? null);
 }
 
 function membershipTitle(count: number | null) {
@@ -112,17 +140,40 @@ function membershipTitle(count: number | null) {
   return `In ${count} ${count === 1 ? "group" : "groups"}`;
 }
 
-function MemberList({ rows, busy, onRemove }: { rows: AgentGroupMembership[]; busy: boolean; onRemove: (groupId: string) => void }) {
+function MemberList({
+  rows,
+  busy,
+  onRemove,
+}: {
+  rows: AgentGroupMembership[];
+  busy: boolean;
+  onRemove: (groupId: string) => void;
+}) {
   if (rows.length === 0) return null;
   return (
-    <ul aria-label="Groups this device is in" className="overflow-hidden rounded-lg border border-foreground/[0.08]">
+    <ul
+      aria-label="Groups this device is in"
+      className="overflow-hidden rounded-lg border border-foreground/[0.08]"
+    >
       {rows.map((g) => (
-        <li key={g.id} className="flex min-h-11 items-center gap-3 border-b border-foreground/[0.06] px-3 py-2 last:border-b-0">
+        <li
+          key={g.id}
+          className="flex min-h-11 items-center gap-3 border-b border-foreground/[0.06] px-3 py-2 last:border-b-0"
+        >
           <div className="min-w-0 flex-1">
             <p className="truncate font-medium">{g.name}</p>
-            {g.description?.trim() && <p className="truncate text-xs text-muted-foreground">{g.description.trim()}</p>}
+            {g.description?.trim() && (
+              <p className="truncate text-xs text-muted-foreground">{g.description.trim()}</p>
+            )}
           </div>
-          <Button variant="ghost" size="sm" className="pointer-coarse:h-9" aria-label={`Remove from ${g.name}`} disabled={busy} onClick={() => onRemove(g.id)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="pointer-coarse:h-9"
+            aria-label={`Remove from ${g.name}`}
+            disabled={busy}
+            onClick={() => onRemove(g.id)}
+          >
             Remove
           </Button>
         </li>
@@ -131,17 +182,34 @@ function MemberList({ rows, busy, onRemove }: { rows: AgentGroupMembership[]; bu
   );
 }
 
-function AddToGroup({ options, pick, onPick, busy, adding, onAdd }: {
-  options: { label: string; value: string }[]; pick: string; onPick: (groupId: string) => void;
-  busy: boolean; adding: boolean; onAdd: (groupId: string) => void;
+function AddToGroup({
+  options,
+  pick,
+  onPick,
+  busy,
+  adding,
+  onAdd,
+}: {
+  options: { label: string; value: string }[];
+  pick: string;
+  onPick: (groupId: string) => void;
+  busy: boolean;
+  adding: boolean;
+  onAdd: (groupId: string) => void;
 }) {
   return (
     <Field>
       <FieldLabel htmlFor="add-to-group">Add to a group</FieldLabel>
       <div className="flex flex-col gap-2 sm:flex-row">
-        <Select value={pick} onValueChange={(value) => onPick(value ?? "")} disabled={busy || options.length === 0}>
+        <Select
+          value={pick}
+          onValueChange={(value) => onPick(value ?? "")}
+          disabled={busy || options.length === 0}
+        >
           <SelectTrigger id="add-to-group" className="h-9 w-full sm:max-w-xs">
-            <SelectValue placeholder={options.length === 0 ? "No other groups" : "Choose a group"} />
+            <SelectValue
+              placeholder={options.length === 0 ? "No other groups" : "Choose a group"}
+            />
           </SelectTrigger>
           <SelectContent>
             {options.map((o) => (
@@ -151,8 +219,15 @@ function AddToGroup({ options, pick, onPick, busy, adding, onAdd }: {
             ))}
           </SelectContent>
         </Select>
-        <Button variant="outline" disabled={!pick || busy} onClick={() => { if (pick) onAdd(pick); }}>
-          <span>Add</span>{adding && <Spinner />}
+        <Button
+          variant="outline"
+          disabled={!pick || busy}
+          onClick={() => {
+            if (pick) onAdd(pick);
+          }}
+        >
+          <span>Add</span>
+          {adding && <Spinner />}
         </Button>
       </div>
     </Field>

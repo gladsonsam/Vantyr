@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { Copy } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@vantyr/ui/components/card";
 import { errorText } from "@/api/client";
 import { PendingApprovalsCard } from "./PendingApprovalsCard";
 import type { PendingAgentClaim } from "./PendingApprovalsCard";
@@ -27,7 +33,11 @@ interface AgentEnrollmentSettingsProps {
   setEnrollTokensError: (err: string | null) => void;
   loadEnrollmentTokens: () => Promise<void>;
 
-  onGenerateToken: (body: { uses: number; expires_in_hours?: number; note?: string }) => Promise<{ enrollment_token: string; uses: number; expires_at: string | null }>;
+  onGenerateToken: (body: {
+    uses: number;
+    expires_in_hours?: number;
+    note?: string;
+  }) => Promise<{ enrollment_token: string; uses: number; expires_at: string | null }>;
   onRevokeToken: (id: string) => Promise<void>;
   onRevokeAllTokens: () => Promise<void>;
   onListTokenUses: (id: string) => Promise<TokenUse[]>;
@@ -61,7 +71,12 @@ export function AgentEnrollmentSettings({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   const generateRequest = useRef(0);
-  useEffect(() => () => { generateRequest.current += 1; }, []);
+  useEffect(
+    () => () => {
+      generateRequest.current += 1;
+    },
+    [],
+  );
   const handleGenerate = async (body: EnrollmentTokenBody) => {
     const request = ++generateRequest.current;
     setEnrollError(null);
@@ -101,7 +116,8 @@ export function AgentEnrollmentSettings({
       <CardHeader className="px-5 pt-5 pb-2">
         <CardTitle>Agent enrollment</CardTitle>
         <CardDescription>
-          Generate a pairing code and enter it on the new device. A device that asks to join without a code waits below for your approval.
+          Generate a pairing code and enter it on the new device. A device that asks to join without
+          a code waits below for your approval.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6 px-5 pt-3 pb-5">
@@ -109,7 +125,9 @@ export function AgentEnrollmentSettings({
           <Alert variant="destructive">
             <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
               <span>Couldn't check for devices waiting for approval. {enrollClaimsError}</span>
-              <Button variant="outline" size="sm" onClick={() => void onRefreshClaims()}>Try again</Button>
+              <Button variant="outline" size="sm" onClick={() => void onRefreshClaims()}>
+                Try again
+              </Button>
             </AlertDescription>
           </Alert>
         ) : null}
@@ -121,15 +139,19 @@ export function AgentEnrollmentSettings({
           onReject={onRejectClaim}
         />
         <section aria-labelledby="new-code-heading" className="flex flex-col gap-4">
-          <h3 id="new-code-heading" className="font-heading text-base font-medium">New pairing code</h3>
+          <h3 id="new-code-heading" className="font-heading text-base font-medium">
+            New pairing code
+          </h3>
           <EnrollmentTokenForm
             layout="card"
             onGenerate={handleGenerate}
-            extra={enrollResult ? (
-              <Button variant="outline" onClick={() => void copyEnrollmentToken()}>
-                <Copy /> {copyState === "copied" ? "Copied" : "Copy code"}
-              </Button>
-            ) : null}
+            extra={
+              enrollResult ? (
+                <Button variant="outline" onClick={() => void copyEnrollmentToken()}>
+                  <Copy /> {copyState === "copied" ? "Copied" : "Copy code"}
+                </Button>
+              ) : null
+            }
           />
           {enrollError ? (
             <Alert variant="destructive">
@@ -150,10 +172,13 @@ export function AgentEnrollmentSettings({
                     : " · no expiry"}
                 </span>
                 <span className="mt-1 block text-sm text-muted-foreground">
-                  Enter it on the new device. It is shown only now; the list below never shows the code again.
+                  Enter it on the new device. It is shown only now; the list below never shows the
+                  code again.
                 </span>
                 {copyState === "failed" ? (
-                  <span role="status" className="mt-1 block text-sm text-destructive">Couldn't copy automatically. Select the code and copy it by hand.</span>
+                  <span role="status" className="mt-1 block text-sm text-destructive">
+                    Couldn't copy automatically. Select the code and copy it by hand.
+                  </span>
                 ) : null}
               </AlertDescription>
             </Alert>

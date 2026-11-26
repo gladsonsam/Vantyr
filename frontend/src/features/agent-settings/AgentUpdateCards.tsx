@@ -26,8 +26,16 @@ import {
 const VERSION_STATUS: Record<VersionState, { text: string; Icon: typeof Clock; tone: string }> = {
   available: { text: "A newer version is available", Icon: CloudDownload, tone: "text-warning" },
   current: { text: "Up to date", Icon: CircleCheck, tone: "text-success" },
-  "latest-unknown": { text: "The latest version is unknown", Icon: CircleHelp, tone: "text-muted-foreground" },
-  "installed-unknown": { text: "This device has not reported its version", Icon: CircleHelp, tone: "text-muted-foreground" },
+  "latest-unknown": {
+    text: "The latest version is unknown",
+    Icon: CircleHelp,
+    tone: "text-muted-foreground",
+  },
+  "installed-unknown": {
+    text: "This device has not reported its version",
+    Icon: CircleHelp,
+    tone: "text-muted-foreground",
+  },
 };
 
 function timeOf(at: number) {
@@ -72,7 +80,9 @@ export function AgentUpdateCard({
           </div>
           <div>
             <dt className="text-muted-foreground">Latest</dt>
-            <dd className="text-lg font-semibold tabular-nums">{versionLabel(latestAgentVersion)}</dd>
+            <dd className="text-lg font-semibold tabular-nums">
+              {versionLabel(latestAgentVersion)}
+            </dd>
           </div>
         </dl>
         <p className={cn("flex items-center gap-2", tone)}>
@@ -93,19 +103,29 @@ export function AgentUpdateCard({
         {waiting && (
           <p role="status" className="flex items-start gap-2 text-muted-foreground">
             <Clock aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-            <span>Update requested at {timeOf(outcome.at)}. It is not finished until the device restarts and reports a new version.</span>
+            <span>
+              Update requested at {timeOf(outcome.at)}. It is not finished until the device restarts
+              and reports a new version.
+            </span>
           </p>
         )}
 
         {state === "available" && isAdmin && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <Button disabled={updateNow.isPending || !agentOnline} onClick={() => updateNow.mutate()}>
+            <Button
+              disabled={updateNow.isPending || !agentOnline}
+              onClick={() => updateNow.mutate()}
+            >
               {updateNow.isPending && <Spinner />} {waiting ? "Request again" : "Update now"}
             </Button>
-            {!agentOnline && <span className="text-muted-foreground">Available when the device is online.</span>}
+            {!agentOnline && (
+              <span className="text-muted-foreground">Available when the device is online.</span>
+            )}
           </div>
         )}
-        {state === "available" && !isAdmin && <p className="text-muted-foreground">Only admins can start an update.</p>}
+        {state === "available" && !isAdmin && (
+          <p className="text-muted-foreground">Only admins can start an update.</p>
+        )}
       </CardContent>
     </Card>
   );
@@ -121,7 +141,9 @@ export function AgentAutoUpdateCard({ agentId, isAdmin }: { agentId: string; isA
   /** `null` drops the override (back to the global default). */
   const save = useMutation({
     mutationFn: (enabled: boolean | null) =>
-      enabled === null ? api.agentAutoUpdateAgentDelete(agentId) : api.agentAutoUpdateAgentPut(agentId, { enabled }),
+      enabled === null
+        ? api.agentAutoUpdateAgentDelete(agentId)
+        : api.agentAutoUpdateAgentPut(agentId, { enabled }),
     onSuccess: (s) => queryClient.setQueryData(settingsKeys.agentAutoUpdate(agentId), s),
   });
 
@@ -129,14 +151,19 @@ export function AgentAutoUpdateCard({ agentId, isAdmin }: { agentId: string; isA
   if (!autoUpdQuery.data) {
     return (
       <LoadFailedCard
-        message={autoUpdQuery.error ? errorText(autoUpdQuery.error) : "Automatic update settings are unavailable."}
+        message={
+          autoUpdQuery.error
+            ? errorText(autoUpdQuery.error)
+            : "Automatic update settings are unavailable."
+        }
         onRetry={() => void autoUpdQuery.refetch()}
       />
     );
   }
 
   const choice = autoUpdateChoice(override);
-  const defaultLabel = globalEnabled == null ? "Server default" : `Server default (${globalEnabled ? "on" : "off"})`;
+  const defaultLabel =
+    globalEnabled == null ? "Server default" : `Server default (${globalEnabled ? "on" : "off"})`;
   const choose = (next: AutoUpdateChoice) => {
     if (!isAdmin || next === choice) return;
     save.mutate(next === "inherit" ? null : next === "on");
@@ -165,13 +192,22 @@ export function AgentAutoUpdateCard({ agentId, isAdmin }: { agentId: string; isA
               if (next) choose(next);
             }}
           >
-            <ToggleGroupItem value="inherit" className="rounded-md! px-2.5 aria-pressed:bg-background pointer-coarse:h-9">
+            <ToggleGroupItem
+              value="inherit"
+              className="rounded-md! px-2.5 aria-pressed:bg-background pointer-coarse:h-9"
+            >
               {defaultLabel}
             </ToggleGroupItem>
-            <ToggleGroupItem value="on" className="rounded-md! px-2.5 aria-pressed:bg-background pointer-coarse:h-9">
+            <ToggleGroupItem
+              value="on"
+              className="rounded-md! px-2.5 aria-pressed:bg-background pointer-coarse:h-9"
+            >
               On
             </ToggleGroupItem>
-            <ToggleGroupItem value="off" className="rounded-md! px-2.5 aria-pressed:bg-background pointer-coarse:h-9">
+            <ToggleGroupItem
+              value="off"
+              className="rounded-md! px-2.5 aria-pressed:bg-background pointer-coarse:h-9"
+            >
               Off
             </ToggleGroupItem>
           </ToggleGroup>

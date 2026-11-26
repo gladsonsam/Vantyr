@@ -60,8 +60,14 @@ export function AuditTab({ agentId, scope = "all", title = "Audit log" }: AuditT
         onRefresh={retry}
       />
       {auditQuery.isError && !loadFailed && (
-        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <span className="min-w-0 break-words">Couldn’t refresh the audit log: {failure}. Showing the records from the last successful load.</span>
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          <span className="min-w-0 break-words">
+            Couldn’t refresh the audit log: {failure}. Showing the records from the last successful
+            load.
+          </span>
           <Button variant="outline" size="sm" onClick={retry}>
             Try again
           </Button>
@@ -93,9 +99,24 @@ export function AuditTab({ agentId, scope = "all", title = "Audit log" }: AuditT
 }
 
 /** Why nothing is listed, and the one control that brings records back. */
-function NoRecords({ view, scope, forDevice }: { view: ReturnType<typeof useAuditView>; scope: AuditScope; forDevice: boolean }) {
+function NoRecords({
+  view,
+  scope,
+  forDevice,
+}: {
+  view: ReturnType<typeof useAuditView>;
+  scope: AuditScope;
+  forDevice: boolean;
+}) {
   const { filters, hiddenViews } = view;
-  const empty = emptyMessage({ query: filters.query, status: filters.status, scope, forDevice, hiddenViews, loaded: view.rows.length });
+  const empty = emptyMessage({
+    query: filters.query,
+    status: filters.status,
+    scope,
+    forDevice,
+    hiddenViews,
+    loaded: view.rows.length,
+  });
   const action = filters.query.trim()
     ? { label: "Clear search", run: () => filters.setQuery("") }
     : filters.status !== "all"

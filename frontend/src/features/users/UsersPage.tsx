@@ -24,16 +24,27 @@ export function UsersPage() {
         <Spinner /> Loading your account…
       </p>
     ) : (
-      <ErrorBanner message={`Couldn't load your account: ${m.meError ?? "Failed to load"}`} onRetry={() => void m.reloadAccounts()} retrying={m.usersFetching} />
+      <ErrorBanner
+        message={`Couldn't load your account: ${m.meError ?? "Failed to load"}`}
+        onRetry={() => void m.reloadAccounts()}
+        retrying={m.usersFetching}
+      />
     );
   }
 
-  const remember = (u: { id: string }) => m.rememberOpener(document.querySelector<HTMLElement>(`[data-manage-user="${u.id}"]`));
+  const remember = (u: { id: string }) =>
+    m.rememberOpener(document.querySelector<HTMLElement>(`[data-manage-user="${u.id}"]`));
   const profile = <UserProfileCard me={me} onSave={m.saveSelfProfile} />;
 
   return (
     <div className="flex flex-col gap-6">
-      {m.meError && <ErrorBanner message={`Couldn't refresh your account: ${m.meError}. Showing what loaded last.`} onRetry={() => void m.reloadAccounts()} retrying={m.usersFetching} />}
+      {m.meError && (
+        <ErrorBanner
+          message={`Couldn't refresh your account: ${m.meError}. Showing what loaded last.`}
+          onRetry={() => void m.reloadAccounts()}
+          retrying={m.usersFetching}
+        />
+      )}
       {m.canManage ? (
         <Tabs value={tab} onValueChange={(value) => setTab(value as AccountTab)}>
           <TabsList aria-label="Account sections">
@@ -47,17 +58,37 @@ export function UsersPage() {
               loadError={m.usersError}
               meId={me.id}
               onReload={() => void m.reloadAccounts()}
-              onCreate={() => { m.rememberOpener(null); m.setCreateOpen(true); }}
+              onCreate={() => {
+                m.rememberOpener(null);
+                m.setCreateOpen(true);
+              }}
               actions={{
-                onEdit: (u) => { remember(u); m.setEditTarget(u); },
-                onSetRole: (u, role) => { remember(u); m.askRole(u, role); },
-                onResetPassword: (u) => { remember(u); m.setPasswordTarget({ id: u.id, username: u.username, name: userLabel(u) }); },
-                onIdentities: (u) => { remember(u); m.setIdentityTarget({ id: u.id, username: u.username, name: userLabel(u) }); },
-                onDelete: (u) => { remember(u); m.askDelete(u); },
+                onEdit: (u) => {
+                  remember(u);
+                  m.setEditTarget(u);
+                },
+                onSetRole: (u, role) => {
+                  remember(u);
+                  m.askRole(u, role);
+                },
+                onResetPassword: (u) => {
+                  remember(u);
+                  m.setPasswordTarget({ id: u.id, username: u.username, name: userLabel(u) });
+                },
+                onIdentities: (u) => {
+                  remember(u);
+                  m.setIdentityTarget({ id: u.id, username: u.username, name: userLabel(u) });
+                },
+                onDelete: (u) => {
+                  remember(u);
+                  m.askDelete(u);
+                },
               }}
             />
           </TabsContent>
-          <TabsContent value="profile" className="pt-2">{profile}</TabsContent>
+          <TabsContent value="profile" className="pt-2">
+            {profile}
+          </TabsContent>
         </Tabs>
       ) : (
         <>
@@ -76,9 +107,20 @@ function UserDialogs({ m, meId }: { m: UserManagement; meId: string }) {
   const roleSelf = roleTarget?.user.id === meId;
   return (
     <>
-      <CreateUserModal visible={m.createOpen} onDismiss={() => m.setCreateOpen(false)} finalFocus={m.finalFocus} onCreate={m.createAccount} />
+      <CreateUserModal
+        visible={m.createOpen}
+        onDismiss={() => m.setCreateOpen(false)}
+        finalFocus={m.finalFocus}
+        onCreate={m.createAccount}
+      />
 
-      <EditUserModal user={m.editTarget} isSelf={m.editTarget?.id === meId} onDismiss={() => m.setEditTarget(null)} finalFocus={m.finalFocus} onSave={m.saveOtherProfile} />
+      <EditUserModal
+        user={m.editTarget}
+        isSelf={m.editTarget?.id === meId}
+        onDismiss={() => m.setEditTarget(null)}
+        finalFocus={m.finalFocus}
+        onSave={m.saveOtherProfile}
+      />
 
       <ResetPasswordModal
         visible={Boolean(m.passwordTarget)}
@@ -105,7 +147,11 @@ function UserDialogs({ m, meId }: { m: UserManagement; meId: string }) {
       <ConfirmUserDialog
         open={roleTarget !== null}
         pending={m.changingRole}
-        title={roleTarget ? `Make ${userLabel(roleTarget.user)} ${roleTarget.role === "admin" ? "an" : "a"} ${roleTarget.role}?` : "Change role?"}
+        title={
+          roleTarget
+            ? `Make ${userLabel(roleTarget.user)} ${roleTarget.role === "admin" ? "an" : "a"} ${roleTarget.role}?`
+            : "Change role?"
+        }
         confirmLabel="Change role"
         destructive={roleSelf && roleTarget?.role !== "admin"}
         finalFocus={m.finalFocus}
@@ -114,7 +160,10 @@ function UserDialogs({ m, meId }: { m: UserManagement; meId: string }) {
         onClose={() => m.setRoleTarget(null)}
         onConfirm={() => void m.confirmRole()}
       >
-        {roleTarget && roleChangeConsequence(roleTarget.user, roleTarget.role, roleSelf).map((line) => <p key={line}>{line}</p>)}
+        {roleTarget &&
+          roleChangeConsequence(roleTarget.user, roleTarget.role, roleSelf).map((line) => (
+            <p key={line}>{line}</p>
+          ))}
       </ConfirmUserDialog>
 
       <ConfirmUserDialog
@@ -130,7 +179,10 @@ function UserDialogs({ m, meId }: { m: UserManagement; meId: string }) {
         onConfirm={() => void m.confirmDelete()}
       >
         <p>They are signed out now and can't sign in again. This can't be undone.</p>
-        <p>Their linked identities, two-factor setup and notification subscriptions are removed. Past audit records stay.</p>
+        <p>
+          Their linked identities, two-factor setup and notification subscriptions are removed. Past
+          audit records stay.
+        </p>
       </ConfirmUserDialog>
     </>
   );

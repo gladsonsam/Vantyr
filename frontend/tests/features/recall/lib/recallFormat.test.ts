@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { addCalendarDays, dayIn, dayRange } from "@/features/recall/lib/recallFormat";
 import { parseRecallParams, recallPageHref } from "@/features/recall/lib/recallUrl";
 
@@ -7,7 +7,9 @@ describe("Recall calendar and shared state", () => {
     const at = Date.parse("2026-10-03T01:00:00Z");
     expect(dayIn("America/Los_Angeles", at)).toBe("2026-10-02");
     expect(dayIn("Australia/Perth", at)).toBe("2026-10-03");
-    expect(dayRange("2026-10-03", "Australia/Perth").fromMs).toBe(Date.parse("2026-10-02T16:00:00Z"));
+    expect(dayRange("2026-10-03", "Australia/Perth").fromMs).toBe(
+      Date.parse("2026-10-02T16:00:00Z"),
+    );
   });
   it("uses calendar boundaries over both DST transitions", () => {
     const spring = dayRange("2026-03-08", "America/New_York");
@@ -18,9 +20,14 @@ describe("Recall calendar and shared state", () => {
   });
   it("round trips all shared state and rejects malformed state", () => {
     const state = { at: "2026-10-03T01:00:00Z", day: "2026-10-02", monitor: 0 };
-    expect(parseRecallParams(new URL(recallPageHref("pc", state), "https://example.test").searchParams))
-      .toEqual({ agent: "pc", ...state });
-    expect(parseRecallParams(new URLSearchParams("at=no&day=2026-02-30&monitor=-1")))
-      .toEqual({ agent: null, at: null, day: null, monitor: null });
+    expect(
+      parseRecallParams(new URL(recallPageHref("pc", state), "https://example.test").searchParams),
+    ).toEqual({ agent: "pc", ...state });
+    expect(parseRecallParams(new URLSearchParams("at=no&day=2026-02-30&monitor=-1"))).toEqual({
+      agent: null,
+      at: null,
+      day: null,
+      monitor: null,
+    });
   });
 });

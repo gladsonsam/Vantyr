@@ -25,12 +25,32 @@ type InputProps = Omit<ComponentProps<typeof Input>, Controlled>;
 
 /** Text-like `Input` bound to a string field. */
 export function InputField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, description, id, fieldClassName, hideError, ...inputProps
+  control,
+  name,
+  label,
+  description,
+  id,
+  fieldClassName,
+  hideError,
+  ...inputProps
 }: BaseFieldProps<T, N> & InputProps) {
   return (
-    <FormField control={control} name={name} label={label} description={description} id={id} className={fieldClassName} hideError={hideError}>
+    <FormField
+      control={control}
+      name={name}
+      label={label}
+      description={description}
+      id={id}
+      className={fieldClassName}
+      hideError={hideError}
+    >
       {({ field, fieldState, id: fieldId }) => (
-        <Input {...inputProps} {...field} id={fieldId} aria-invalid={fieldState.invalid || undefined} />
+        <Input
+          {...inputProps}
+          {...field}
+          id={fieldId}
+          aria-invalid={fieldState.invalid || undefined}
+        />
       )}
     </FormField>
   );
@@ -41,10 +61,26 @@ export function InputField<T extends FieldValues, N extends FieldPath<T>>({
  * value (clamp, floor, fall back to a default) so the form never holds NaN.
  */
 export function NumberField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, description, id, fieldClassName, hideError, parse = Number, ...inputProps
+  control,
+  name,
+  label,
+  description,
+  id,
+  fieldClassName,
+  hideError,
+  parse = Number,
+  ...inputProps
 }: BaseFieldProps<T, N> & Omit<InputProps, "type"> & { parse?: (raw: string) => number }) {
   return (
-    <FormField control={control} name={name} label={label} description={description} id={id} className={fieldClassName} hideError={hideError}>
+    <FormField
+      control={control}
+      name={name}
+      label={label}
+      description={description}
+      id={id}
+      className={fieldClassName}
+      hideError={hideError}
+    >
       {({ field, fieldState, id: fieldId }) => (
         <Input
           {...inputProps}
@@ -64,12 +100,32 @@ export function NumberField<T extends FieldValues, N extends FieldPath<T>>({
 
 /** `Textarea` bound to a string field. */
 export function TextareaField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, description, id, fieldClassName, hideError, ...props
+  control,
+  name,
+  label,
+  description,
+  id,
+  fieldClassName,
+  hideError,
+  ...props
 }: BaseFieldProps<T, N> & Omit<ComponentProps<typeof Textarea>, Controlled>) {
   return (
-    <FormField control={control} name={name} label={label} description={description} id={id} className={fieldClassName} hideError={hideError}>
+    <FormField
+      control={control}
+      name={name}
+      label={label}
+      description={description}
+      id={id}
+      className={fieldClassName}
+      hideError={hideError}
+    >
       {({ field, fieldState, id: fieldId }) => (
-        <Textarea {...props} {...field} id={fieldId} aria-invalid={fieldState.invalid || undefined} />
+        <Textarea
+          {...props}
+          {...field}
+          id={fieldId}
+          aria-invalid={fieldState.invalid || undefined}
+        />
       )}
     </FormField>
   );
@@ -77,14 +133,31 @@ export function TextareaField<T extends FieldValues, N extends FieldPath<T>>({
 
 /** `FormSelect` bound to a string field. */
 export function SelectField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, description, id, fieldClassName, hideError, options, placeholder, ariaLabel,
+  control,
+  name,
+  label,
+  description,
+  id,
+  fieldClassName,
+  hideError,
+  options,
+  placeholder,
+  ariaLabel,
 }: BaseFieldProps<T, N> & {
   options: { label: string; value: string }[];
   placeholder?: string;
   ariaLabel: string;
 }) {
   return (
-    <FormField control={control} name={name} label={label} description={description} id={id} className={fieldClassName} hideError={hideError}>
+    <FormField
+      control={control}
+      name={name}
+      label={label}
+      description={description}
+      id={id}
+      className={fieldClassName}
+      hideError={hideError}
+    >
       {({ field }) => (
         <FormSelect
           ariaLabel={ariaLabel}
@@ -100,8 +173,16 @@ export function SelectField<T extends FieldValues, N extends FieldPath<T>>({
 
 /** Checkbox with its label on one row, bound to a boolean field. */
 export function CheckboxField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, description, fieldClassName, hideError,
-}: Pick<BaseFieldProps<T, N>, "control" | "name" | "description" | "fieldClassName" | "hideError"> & { label: ReactNode }) {
+  control,
+  name,
+  label,
+  description,
+  fieldClassName,
+  hideError,
+}: Pick<
+  BaseFieldProps<T, N>,
+  "control" | "name" | "description" | "fieldClassName" | "hideError"
+> & { label: ReactNode }) {
   return (
     <FormField control={control} name={name} className={fieldClassName} hideError={hideError}>
       {({ field }) => (
@@ -124,13 +205,29 @@ export function CheckboxField<T extends FieldValues, N extends FieldPath<T>>({
 
 /** Segmented single-choice toggle bound to a string field. */
 export function ToggleGroupField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, description, id, fieldClassName, hideError, options, ariaLabel,
+  control,
+  name,
+  label,
+  description,
+  id,
+  fieldClassName,
+  hideError,
+  options,
+  ariaLabel,
 }: BaseFieldProps<T, N> & {
   options: { label: string; value: string }[];
   ariaLabel: string;
 }) {
   return (
-    <FormField control={control} name={name} label={label} description={description} id={id} className={fieldClassName} hideError={hideError}>
+    <FormField
+      control={control}
+      name={name}
+      label={label}
+      description={description}
+      id={id}
+      className={fieldClassName}
+      hideError={hideError}
+    >
       {({ field, id: fieldId }) => (
         <ToggleGroup
           id={fieldId}
@@ -145,7 +242,12 @@ export function ToggleGroupField<T extends FieldValues, N extends FieldPath<T>>(
           }}
         >
           {options.map((o) => (
-            <ToggleGroupItem key={o.value} value={o.value} aria-label={o.label} className="rounded-md! px-3 aria-pressed:bg-background">
+            <ToggleGroupItem
+              key={o.value}
+              value={o.value}
+              aria-label={o.label}
+              className="rounded-md! px-3 aria-pressed:bg-background"
+            >
               {o.label}
             </ToggleGroupItem>
           ))}

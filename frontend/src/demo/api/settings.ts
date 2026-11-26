@@ -17,7 +17,10 @@ export function demoSettingsApi(): Partial<ApiClient> {
       globalRetention = { ...body };
       return { ...globalRetention };
     },
-    retentionAgentGet: async (id) => ({ global: globalRetention, override: retention.get(id) ?? null }),
+    retentionAgentGet: async (id) => ({
+      global: globalRetention,
+      override: retention.get(id) ?? null,
+    }),
     retentionAgentPut: async (id, body) => {
       retention.set(id, body);
       return { global: globalRetention, override: body };
@@ -39,7 +42,10 @@ export function demoSettingsApi(): Partial<ApiClient> {
       globalAutoUpdate = Boolean(asRecord(body).enabled);
       return { enabled: globalAutoUpdate };
     },
-    agentAutoUpdateAgentGet: async (id) => ({ global: { enabled: globalAutoUpdate }, override: autoUpdate.get(id) ?? null }),
+    agentAutoUpdateAgentGet: async (id) => ({
+      global: { enabled: globalAutoUpdate },
+      override: autoUpdate.get(id) ?? null,
+    }),
     agentAutoUpdateAgentPut: async (id, body) => {
       const override = { enabled: Boolean(asRecord(body).enabled) };
       autoUpdate.set(id, override);

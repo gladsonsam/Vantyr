@@ -44,7 +44,9 @@ interface SystemAboutSettingsProps {
   isAdmin: boolean;
   storage: Loaded<StorageUsage>;
   version: Loaded<SettingsVersionPayload>;
-  autoUpdate: Omit<Loaded<{ enabled: boolean }>, "updatedAt"> & { onSave: (enabled: boolean) => Promise<void> };
+  autoUpdate: Omit<Loaded<{ enabled: boolean }>, "updatedAt"> & {
+    onSave: (enabled: boolean) => Promise<void>;
+  };
 }
 
 function formatBytesAdaptive(bytes: number): string {
@@ -65,7 +67,19 @@ function clock(ms: number): string {
 }
 
 /** A card title with its help text and the one button that asks the server again. */
-function RefreshHeader({ title, help, action, loading, onClick }: { title: string; help: string; action: string; loading: boolean; onClick: () => void }) {
+function RefreshHeader({
+  title,
+  help,
+  action,
+  loading,
+  onClick,
+}: {
+  title: string;
+  help: string;
+  action: string;
+  loading: boolean;
+  onClick: () => void;
+}) {
   return (
     <CardHeader className="px-5 pt-5 pb-2">
       <CardTitle className="flex items-center gap-1.5">
@@ -81,7 +95,15 @@ function RefreshHeader({ title, help, action, loading, onClick }: { title: strin
   );
 }
 
-function StaleNotice({ children, loading, onRetry }: { children: string; loading: boolean; onRetry: () => void }) {
+function StaleNotice({
+  children,
+  loading,
+  onRetry,
+}: {
+  children: string;
+  loading: boolean;
+  onRetry: () => void;
+}) {
   return (
     <Alert variant="destructive">
       <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
@@ -94,7 +116,12 @@ function StaleNotice({ children, loading, onRetry }: { children: string; loading
   );
 }
 
-export function SystemAboutSettings({ isAdmin, storage, version, autoUpdate }: SystemAboutSettingsProps) {
+export function SystemAboutSettings({
+  isAdmin,
+  storage,
+  version,
+  autoUpdate,
+}: SystemAboutSettingsProps) {
   return (
     <div className="flex flex-col gap-8">
       <UpdatesCard isAdmin={isAdmin} version={version} autoUpdate={autoUpdate} />
@@ -104,7 +131,10 @@ export function SystemAboutSettings({ isAdmin, storage, version, autoUpdate }: S
 }
 
 /** What the version check proves: "Up to date" only from a fresh, successful answer that names a latest release. */
-function versionStatus(payload: SettingsVersionPayload): { text: string; tone: "ok" | "update" | "unknown" } {
+function versionStatus(payload: SettingsVersionPayload): {
+  text: string;
+  tone: "ok" | "update" | "unknown";
+} {
   if (payload.server_update_available && payload.latest_server_release) {
     return { text: `Update available: ${payload.latest_server_release}`, tone: "update" };
   }
@@ -112,7 +142,11 @@ function versionStatus(payload: SettingsVersionPayload): { text: string; tone: "
   return { text: "Up to date", tone: "ok" };
 }
 
-function UpdatesCard({ isAdmin, version, autoUpdate }: Pick<SystemAboutSettingsProps, "isAdmin" | "version" | "autoUpdate">) {
+function UpdatesCard({
+  isAdmin,
+  version,
+  autoUpdate,
+}: Pick<SystemAboutSettingsProps, "isAdmin" | "version" | "autoUpdate">) {
   const payload = version.data;
   return (
     <Card className="gap-0 py-0">
@@ -144,15 +178,27 @@ function UpdatesCard({ isAdmin, version, autoUpdate }: Pick<SystemAboutSettingsP
   );
 }
 
-const STATUS_TONE = { ok: "text-success", update: "text-foreground", unknown: "text-muted-foreground" } as const;
+const STATUS_TONE = {
+  ok: "text-success",
+  update: "text-foreground",
+  unknown: "text-muted-foreground",
+} as const;
 
-function VersionDetails({ payload, checkedAt }: { payload: SettingsVersionPayload; checkedAt: number }) {
+function VersionDetails({
+  payload,
+  checkedAt,
+}: {
+  payload: SettingsVersionPayload;
+  checkedAt: number;
+}) {
   const status = versionStatus(payload);
   return (
     <div className="flex flex-col gap-3">
       <p role="status" className={`text-sm font-medium ${STATUS_TONE[status.tone]}`}>
         {status.text}
-        {checkedAt > 0 && <span className="font-normal text-muted-foreground"> · checked {clock(checkedAt)}</span>}
+        {checkedAt > 0 && (
+          <span className="font-normal text-muted-foreground"> · checked {clock(checkedAt)}</span>
+        )}
       </p>
       <dl className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-3">
         <Fact label="Running" value={payload.server_version} />
@@ -161,7 +207,12 @@ function VersionDetails({ payload, checkedAt }: { payload: SettingsVersionPayloa
       </dl>
       {payload.releases_url ? (
         <p className="text-sm">
-          <a href={payload.releases_url} target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-4 hover:underline">
+          <a
+            href={payload.releases_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline-offset-4 hover:underline"
+          >
             Open releases on GitHub
           </a>
         </p>
@@ -206,7 +257,11 @@ function StorageUsageCard({ storage }: { storage: Loaded<StorageUsage> }) {
               <Fact label="Public schema" value={formatBytesAdaptive(usage.public_tables_bytes)} />
               <Fact label="Other" value={formatBytesAdaptive(usage.other_bytes)} />
             </dl>
-            {storage.updatedAt > 0 && <p className="-mt-3 text-xs text-muted-foreground">As of {clock(storage.updatedAt)}</p>}
+            {storage.updatedAt > 0 && (
+              <p className="-mt-3 text-xs text-muted-foreground">
+                As of {clock(storage.updatedAt)}
+              </p>
+            )}
 
             <details className="group rounded-lg bg-muted/50 px-3.5 py-3">
               <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -214,7 +269,8 @@ function StorageUsageCard({ storage }: { storage: Loaded<StorageUsage> }) {
               </summary>
               <div className="flex flex-col gap-3 pt-3">
                 <p className="text-sm text-muted-foreground">
-                  Tables in <code className="font-mono text-xs">public</code>; partition children are rolled into their parent&apos;s size.
+                  Tables in <code className="font-mono text-xs">public</code>; partition children
+                  are rolled into their parent&apos;s size.
                 </p>
                 <Table>
                   <TableHeader>
@@ -226,8 +282,12 @@ function StorageUsageCard({ storage }: { storage: Loaded<StorageUsage> }) {
                   <TableBody>
                     {usage.tables.map((item) => (
                       <TableRow key={item.name}>
-                        <TableCell className="px-3 py-3.5 font-mono text-xs break-all">{item.name}</TableCell>
-                        <TableCell className="px-3 py-3.5">{formatBytesAdaptive(item.bytes)}</TableCell>
+                        <TableCell className="px-3 py-3.5 font-mono text-xs break-all">
+                          {item.name}
+                        </TableCell>
+                        <TableCell className="px-3 py-3.5">
+                          {formatBytesAdaptive(item.bytes)}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -246,7 +306,10 @@ function StorageUsageCard({ storage }: { storage: Loaded<StorageUsage> }) {
 }
 
 /** The global default for Windows agent auto-updates; the switch shows only what the server confirmed. */
-function AutoUpdatePolicy({ isAdmin, autoUpdate }: Pick<SystemAboutSettingsProps, "isAdmin" | "autoUpdate">) {
+function AutoUpdatePolicy({
+  isAdmin,
+  autoUpdate,
+}: Pick<SystemAboutSettingsProps, "isAdmin" | "autoUpdate">) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const enabled = autoUpdate.data?.enabled ?? null;
@@ -264,7 +327,10 @@ function AutoUpdatePolicy({ isAdmin, autoUpdate }: Pick<SystemAboutSettingsProps
   };
 
   return (
-    <section aria-labelledby="global-auto-update-label" className="flex flex-col gap-2 border-t border-foreground/[0.06] pt-5">
+    <section
+      aria-labelledby="global-auto-update-label"
+      className="flex flex-col gap-2 border-t border-foreground/[0.06] pt-5"
+    >
       {autoUpdate.error && !autoUpdate.data ? (
         <StaleNotice loading={autoUpdate.loading} onRetry={autoUpdate.onReload}>
           {`Couldn't load the agent auto-update default. ${autoUpdate.error}`}
@@ -288,12 +354,17 @@ function AutoUpdatePolicy({ isAdmin, autoUpdate }: Pick<SystemAboutSettingsProps
               onCheckedChange={(checked) => void change(checked)}
               aria-labelledby="global-auto-update-label"
             />
-            <label id="global-auto-update-label" htmlFor="global-auto-update" className="text-sm font-medium">
+            <label
+              id="global-auto-update-label"
+              htmlFor="global-auto-update"
+              className="text-sm font-medium"
+            >
               Agent auto-updates by default
             </label>
             <HelpTip>
-              When on, the server tells connected Windows agents they may check GitHub releases and install updates (the policy is pushed
-              over the WebSocket). A device can override this on its own Settings tab.
+              When on, the server tells connected Windows agents they may check GitHub releases and
+              install updates (the policy is pushed over the WebSocket). A device can override this
+              on its own Settings tab.
             </HelpTip>
             {saving && <Spinner />}
             <span className="text-sm text-muted-foreground">{enabled ? "On" : "Off"}</span>
@@ -303,7 +374,9 @@ function AutoUpdatePolicy({ isAdmin, autoUpdate }: Pick<SystemAboutSettingsProps
               <AlertDescription>Not saved. {saveError}</AlertDescription>
             </Alert>
           )}
-          {!isAdmin && <p className="text-sm text-muted-foreground">Only admins can change this default.</p>}
+          {!isAdmin && (
+            <p className="text-sm text-muted-foreground">Only admins can change this default.</p>
+          )}
         </>
       )}
     </section>

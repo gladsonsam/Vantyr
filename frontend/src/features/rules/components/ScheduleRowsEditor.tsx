@@ -16,7 +16,10 @@ function overnightEnd(row: ScheduleFormRow): string | null {
 }
 
 /** Weekday + HH:MM start/end windows, used by the app block and internet access rules. */
-export function ScheduleRowsEditor({ rows, onChange }: {
+export function ScheduleRowsEditor({
+  rows,
+  onChange,
+}: {
   rows: ScheduleFormRow[];
   onChange: (rows: ScheduleFormRow[]) => void;
 }) {
@@ -33,7 +36,10 @@ export function ScheduleRowsEditor({ rows, onChange }: {
       {rows.map((r, i) => {
         const next = overnightEnd(r);
         return (
-          <div key={rowKeys[i]} className="flex flex-col gap-1 border-b border-foreground/[0.06] pb-3">
+          <div
+            key={rowKeys[i]}
+            className="flex flex-col gap-1 border-b border-foreground/[0.06] pb-3"
+          >
             <div className="flex flex-wrap items-center gap-2">
               <div className="min-w-32 flex-1">
                 <FormSelect
@@ -75,11 +81,20 @@ export function ScheduleRowsEditor({ rows, onChange }: {
                 <X /> Remove
               </Button>
             </div>
-            {next && <p className="text-xs text-muted-foreground">Runs overnight, until {next} {r.end}.</p>}
+            {next && (
+              <p className="text-xs text-muted-foreground">
+                Runs overnight, until {next} {r.end}.
+              </p>
+            )}
           </div>
         );
       })}
-      <Button type="button" variant="ghost" className="self-start pointer-coarse:h-9" onClick={() => onChange([...rows, emptyScheduleRow()])}>
+      <Button
+        type="button"
+        variant="ghost"
+        className="self-start pointer-coarse:h-9"
+        onClick={() => onChange([...rows, emptyScheduleRow()])}
+      >
         <Plus /> Add window
       </Button>
     </div>

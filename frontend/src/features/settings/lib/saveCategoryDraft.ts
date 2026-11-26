@@ -14,7 +14,11 @@ export async function saveCategoryDraft(draft: CategoryDraft): Promise<void> {
     if (op.type === "create") {
       // Creation precedes membership assignment, and keys can be reused by later operations.
       // react-doctor-disable-next-line react-doctor/async-await-in-loop
-      const res = await api.urlCustomCategoriesCreate({ key: op.key, label_en: op.label_en, hidden: op.hidden });
+      const res = await api.urlCustomCategoriesCreate({
+        key: op.key,
+        label_en: op.label_en,
+        hidden: op.hidden,
+      });
       groupIds.set(op.key, res.id);
     } else {
       // react-doctor-disable-next-line react-doctor/async-await-in-loop

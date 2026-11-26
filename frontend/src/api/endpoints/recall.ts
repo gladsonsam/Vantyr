@@ -1,4 +1,18 @@
-import type { ActivitySegmentsResponse, AgentRecallSettings, DaySummaryResponse, FrameTextResponse, HistoryDaysResponse, HistoryMonitorsResponse, RecallContextFilters, RecallSettings, RecallSettingsPatch, ScreenActivityResponse, ScreenFrameAtResponse, ScreenFramesResponse, ScreenSearchResponse } from "@/api/types";
+import type {
+  ActivitySegmentsResponse,
+  AgentRecallSettings,
+  DaySummaryResponse,
+  FrameTextResponse,
+  HistoryDaysResponse,
+  HistoryMonitorsResponse,
+  RecallContextFilters,
+  RecallSettings,
+  RecallSettingsPatch,
+  ScreenActivityResponse,
+  ScreenFrameAtResponse,
+  ScreenFramesResponse,
+  ScreenSearchResponse,
+} from "@/api/types";
 import { get, requestJson, putJson, delJson, apiUrl } from "@/api/client";
 
 /**
@@ -22,9 +36,10 @@ export interface HistoryRangeOpts {
 export interface HistorySearchOpts extends HistoryRangeOpts, Partial<RecallContextFilters> {}
 export function historySearchQuery(query: string, opts: HistorySearchOpts): string {
   const params = new URLSearchParams(historyRangeQuery(opts));
-  params.set("q",query);
-  for (const key of ["app","title","url_host","context"] as const) if (opts[key] !== undefined) params.set(key,opts[key] ?? "");
-  if (opts.app && opts.app_mode !== undefined) params.set("app_mode",opts.app_mode);
+  params.set("q", query);
+  for (const key of ["app", "title", "url_host", "context"] as const)
+    if (opts[key] !== undefined) params.set(key, opts[key] ?? "");
+  if (opts.app && opts.app_mode !== undefined) params.set("app_mode", opts.app_mode);
   return `?${params}`;
 }
 
@@ -76,8 +91,16 @@ export const recallEndpoints = {
    * coverage heatmap so an operator can see where the data is instead of stepping
    * through empty dates. Defaults to the last 90 days server-side.
    */
-  historyDays: (id: string, opts: HistoryRangeOpts = {}, signal?: AbortSignal): Promise<HistoryDaysResponse> =>
-    requestJson(`/agents/${id}/history/days${historyRangeQuery(opts)}`, { method: "GET", signal }, { includePathInHttpError: true }),
+  historyDays: (
+    id: string,
+    opts: HistoryRangeOpts = {},
+    signal?: AbortSignal,
+  ): Promise<HistoryDaysResponse> =>
+    requestJson(
+      `/agents/${id}/history/days${historyRangeQuery(opts)}`,
+      { method: "GET", signal },
+      { includePathInHttpError: true },
+    ),
 
   /** Displays this agent recorded in a range (drives the monitor picker). */
   historyMonitors: (id: string, opts: HistoryRangeOpts = {}): Promise<HistoryMonitorsResponse> =>
@@ -103,7 +126,12 @@ export const recallEndpoints = {
     query: string,
     opts: HistorySearchOpts = {},
     signal?: AbortSignal,
-  ): Promise<ScreenSearchResponse> => requestJson(`/agents/${id}/history/search${historySearchQuery(query,opts)}`, {method:"GET",signal}, {includePathInHttpError:true}),
+  ): Promise<ScreenSearchResponse> =>
+    requestJson(
+      `/agents/${id}/history/search${historySearchQuery(query, opts)}`,
+      { method: "GET", signal },
+      { includePathInHttpError: true },
+    ),
 
   /**
    * Derived activity segments for one day (`YYYY-MM-DD` in the **agent's** local
@@ -133,10 +161,8 @@ export const recallEndpoints = {
    * Replace this agent's override (admin). Omitted fields become "inherit the
    * global value" — this is a whole-row replace, not a merge.
    */
-  agentRecallSettingsPut: (
-    id: string,
-    patch: RecallSettingsPatch,
-  ): Promise<AgentRecallSettings> => putJson(`/agents/${id}/history/settings`, patch),
+  agentRecallSettingsPut: (id: string, patch: RecallSettingsPatch): Promise<AgentRecallSettings> =>
+    putJson(`/agents/${id}/history/settings`, patch),
 
   /** Drop the override entirely so the agent inherits every global value again. */
   agentRecallSettingsDelete: (id: string): Promise<{ ok: boolean }> =>

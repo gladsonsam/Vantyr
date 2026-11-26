@@ -31,7 +31,12 @@ function units(raw: number, perUnit: number): string {
  * text is never clamped as it is typed (that turns "1" into 320 before "1920" can be typed); it is
  * reported, and the field returns to the last valid value when it loses focus.
  */
-function parseTyped(text: string, perUnit: number, range: Range, extra: readonly number[]): number | null {
+function parseTyped(
+  text: string,
+  perUnit: number,
+  range: Range,
+  extra: readonly number[],
+): number | null {
   const trimmed = text.trim();
   if (!(perUnit === 1 ? /^\d+$/ : /^\d+(\.\d+)?$/).test(trimmed)) return null;
   const value = Math.round(Number(trimmed) * perUnit);
@@ -57,7 +62,19 @@ interface NumberFieldProps {
   differsFrom?: string;
 }
 
-function NumberField({ id, label, value, perUnit, range, extra = [], rangeText, onCommit, disabled, description, differsFrom }: NumberFieldProps) {
+function NumberField({
+  id,
+  label,
+  value,
+  perUnit,
+  range,
+  extra = [],
+  rangeText,
+  onCommit,
+  disabled,
+  description,
+  differsFrom,
+}: NumberFieldProps) {
   const shown = units(value, perUnit);
   const [text, setText] = useState(shown);
   const [seen, setSeen] = useState(shown);
@@ -96,7 +113,15 @@ function NumberField({ id, label, value, perUnit, range, extra = [], rangeText, 
   );
 }
 
-function CheckField({ id, label, description, checked, onChange, disabled, differsFrom }: {
+function CheckField({
+  id,
+  label,
+  description,
+  checked,
+  onChange,
+  disabled,
+  differsFrom,
+}: {
   id: string;
   label: string;
   description?: ReactNode;
@@ -107,10 +132,18 @@ function CheckField({ id, label, description, checked, onChange, disabled, diffe
 }) {
   return (
     <Field orientation="horizontal">
-      <Checkbox id={id} checked={checked} onCheckedChange={(next) => onChange(next === true)} disabled={disabled} aria-label={label} />
+      <Checkbox
+        id={id}
+        checked={checked}
+        onCheckedChange={(next) => onChange(next === true)}
+        disabled={disabled}
+        aria-label={label}
+      />
       <FieldContent>
         {/* A real label, so the text is part of the tap target and not just the 16px box. */}
-        <Label htmlFor={id} className="w-fit">{label}</Label>
+        <Label htmlFor={id} className="w-fit">
+          {label}
+        </Label>
         {description && <FieldDescription>{description}</FieldDescription>}
         {differsFrom && <FieldDescription>Fleet default: {differsFrom}</FieldDescription>}
       </FieldContent>
@@ -130,13 +163,24 @@ function AdvancedOptions({ summary, children }: { summary: string; children: Rea
           onClick={() => setOpen((was) => !was)}
           className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-medium outline-none transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
         >
-          <ChevronDown aria-hidden="true" className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")} />
+          <ChevronDown
+            aria-hidden="true"
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform",
+              !open && "-rotate-90",
+            )}
+          />
           <span>More options</span>
-          <span className="min-w-0 flex-1 truncate text-right text-xs font-normal text-muted-foreground">{summary}</span>
+          <span className="min-w-0 flex-1 truncate text-right text-xs font-normal text-muted-foreground">
+            {summary}
+          </span>
         </button>
       </h4>
       {open && (
-        <div id="recall-advanced" className="grid grid-cols-1 gap-4 border-t border-foreground/[0.06] p-3 sm:grid-cols-2">
+        <div
+          id="recall-advanced"
+          className="grid grid-cols-1 gap-4 border-t border-foreground/[0.06] p-3 sm:grid-cols-2"
+        >
           {children}
         </div>
       )}
@@ -173,8 +217,10 @@ export function RecallSettingsFields({
   const locked = Boolean(disabled) || !value.enabled;
   const secondsDiffer = (key: "interval_ms" | "hot_interval_ms") =>
     defaults && defaults[key] !== value[key] ? `${units(defaults[key], 1000)} s` : undefined;
-  const differs = <K extends keyof RecallSettings>(key: K, format: (v: RecallSettings[K]) => string) =>
-    defaults && defaults[key] !== value[key] ? format(defaults[key]) : undefined;
+  const differs = <K extends keyof RecallSettings>(
+    key: K,
+    format: (v: RecallSettings[K]) => string,
+  ) => (defaults && defaults[key] !== value[key] ? format(defaults[key]) : undefined);
   const onOff = (enabled: boolean) => (enabled ? "on" : "off");
 
   return (
@@ -249,7 +295,9 @@ export function RecallSettingsFields({
         differsFrom={differs("ocr", onOff)}
       />
 
-      <AdvancedOptions summary={`Duplicates ${value.dedup_hamming} · keyframe every ${units(value.keyframe_max_gap_ms, 60_000)} min`}>
+      <AdvancedOptions
+        summary={`Duplicates ${value.dedup_hamming} · keyframe every ${units(value.keyframe_max_gap_ms, 60_000)} min`}
+      >
         <NumberField
           id="recall-dedup"
           label="Duplicate threshold (0–64)"

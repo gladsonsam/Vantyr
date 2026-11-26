@@ -36,12 +36,26 @@ function ErrorNotice({ message }: { message: string }) {
   );
 }
 
-function RetryAlert({ message, fetching, onRetry }: { message: string; fetching: boolean; onRetry: () => void }) {
+function RetryAlert({
+  message,
+  fetching,
+  onRetry,
+}: {
+  message: string;
+  fetching: boolean;
+  onRetry: () => void;
+}) {
   return (
     <Alert variant="destructive">
       <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
         <span>{message}</span>
-        <Button variant="outline" size="sm" className="pointer-coarse:h-9" disabled={fetching} onClick={onRetry}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="pointer-coarse:h-9"
+          disabled={fetching}
+          onClick={onRetry}
+        >
           {fetching && <Spinner />} Try again
         </Button>
       </AlertDescription>
@@ -49,7 +63,15 @@ function RetryAlert({ message, fetching, onRetry }: { message: string; fetching:
   );
 }
 
-function StartSetup({ busy, error, onStart }: { busy: boolean; error: string | null; onStart: () => void }) {
+function StartSetup({
+  busy,
+  error,
+  onStart,
+}: {
+  busy: boolean;
+  error: string | null;
+  onStart: () => void;
+}) {
   return (
     <div className="flex flex-col items-start gap-3">
       {error ? <ErrorNotice message={error} /> : null}
@@ -70,7 +92,9 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
       className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-4 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       <div>
-        <h3 id="twofa-recovery-title" className="text-sm font-medium">Save your recovery codes</h3>
+        <h3 id="twofa-recovery-title" className="text-sm font-medium">
+          Save your recovery codes
+        </h3>
         <p className="text-sm text-muted-foreground">
           Each works once if you lose your authenticator. They will not be shown again.
         </p>
@@ -90,7 +114,13 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
   );
 }
 
-function SetupSteps({ setup, busy, error, onEnable, onCancel }: {
+function SetupSteps({
+  setup,
+  busy,
+  error,
+  onEnable,
+  onCancel,
+}: {
   setup: SetupSecret;
   busy: boolean;
   error: string | null;
@@ -105,10 +135,15 @@ function SetupSteps({ setup, busy, error, onEnable, onCancel }: {
           <p ref={focusOnMount} tabIndex={-1} className="text-sm font-medium outline-none">
             Add this key to your authenticator app
           </p>
-          <p className="rounded-lg bg-muted/50 p-3 font-mono text-[15px] break-all select-all">{setup.secret}</p>
+          <p className="rounded-lg bg-muted/50 p-3 font-mono text-[15px] break-all select-all">
+            {setup.secret}
+          </p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <CopyTextButton text={setup.secret} label="Copy key" />
-            <a href={setup.otpauth_uri} className="text-sm text-primary underline-offset-4 hover:underline">
+            <a
+              href={setup.otpauth_uri}
+              className="text-sm text-primary underline-offset-4 hover:underline"
+            >
               Open in authenticator app
             </a>
           </div>
@@ -124,11 +159,16 @@ function SetupSteps({ setup, busy, error, onEnable, onCancel }: {
             busy={busy}
             error={error}
             onSubmit={onEnable}
-            extraAction={(
-              <Button variant="ghost" className="pointer-coarse:h-10" disabled={busy} onClick={onCancel}>
+            extraAction={
+              <Button
+                variant="ghost"
+                className="pointer-coarse:h-10"
+                disabled={busy}
+                onClick={onCancel}
+              >
                 Cancel setup
               </Button>
-            )}
+            }
           />
         </div>
       </li>
@@ -136,9 +176,19 @@ function SetupSteps({ setup, busy, error, onEnable, onCancel }: {
   );
 }
 
-function StatusLine({ enabled, statusRef }: { enabled: boolean; statusRef: RefObject<HTMLDivElement | null> }) {
+function StatusLine({
+  enabled,
+  statusRef,
+}: {
+  enabled: boolean;
+  statusRef: RefObject<HTMLDivElement | null>;
+}) {
   return (
-    <div ref={statusRef} tabIndex={-1} className="flex items-start gap-2.5 outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+    <div
+      ref={statusRef}
+      tabIndex={-1}
+      className="flex items-start gap-2.5 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
       {enabled ? (
         <ShieldCheck className="mt-0.5 size-5 shrink-0 text-success" aria-hidden="true" />
       ) : (
@@ -147,7 +197,9 @@ function StatusLine({ enabled, statusRef }: { enabled: boolean; statusRef: RefOb
       <div className="min-w-0">
         <p className="text-sm font-medium">{enabled ? "Enabled" : "Not enabled"}</p>
         <p className="text-sm text-muted-foreground">
-          {enabled ? "Signing in asks for a code from your authenticator app." : "Signing in uses only your password."}
+          {enabled
+            ? "Signing in asks for a code from your authenticator app."
+            : "Signing in uses only your password."}
         </p>
       </div>
     </div>
@@ -162,8 +214,13 @@ function useTwoFactorFlow(statusRef: RefObject<HTMLDivElement | null>) {
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
 
   const setEnabled = (next: boolean) =>
-    queryClient.setQueryData(authQueries.twofaStatus().queryKey, (s) => ({ pending: false, ...s, enabled: next }));
-  const fail = (source: ActionError["source"]) => (e: unknown) => setActionError({ source, message: errorText(e) });
+    queryClient.setQueryData(authQueries.twofaStatus().queryKey, (s) => ({
+      pending: false,
+      ...s,
+      enabled: next,
+    }));
+  const fail = (source: ActionError["source"]) => (e: unknown) =>
+    setActionError({ source, message: errorText(e) });
 
   const setupMutation = useMutation({
     mutationFn: () => api.twofaSetup(),
@@ -197,7 +254,8 @@ function useTwoFactorFlow(statusRef: RefObject<HTMLDivElement | null>) {
 
   const busy = setupMutation.isPending || enableMutation.isPending || disableMutation.isPending;
   const setupError = actionError?.source === "setup" ? actionError.message : null;
-  const errorFor = (source: ActionError["source"]) => (actionError?.source === source ? actionError.message : null);
+  const errorFor = (source: ActionError["source"]) =>
+    actionError?.source === source ? actionError.message : null;
 
   const startSetup = () => {
     setActionError(null);
@@ -222,7 +280,18 @@ function useTwoFactorFlow(statusRef: RefObject<HTMLDivElement | null>) {
     statusRef.current?.focus();
   };
 
-  return { setup, recoveryCodes, busy, setupError, errorFor, startSetup, enable, disable, cancelSetup, dismissRecoveryCodes };
+  return {
+    setup,
+    recoveryCodes,
+    busy,
+    setupError,
+    errorFor,
+    startSetup,
+    enable,
+    disable,
+    cancelSetup,
+    dismissRecoveryCodes,
+  };
 }
 
 type TwoFactorFlow = ReturnType<typeof useTwoFactorFlow>;
@@ -246,7 +315,15 @@ function TwoFactorActions({ enabled, flow }: { enabled: boolean; flow: TwoFactor
     );
   }
   if (flow.setup) {
-    return <SetupSteps setup={flow.setup} busy={flow.busy} error={flow.errorFor("enable")} onEnable={flow.enable} onCancel={flow.cancelSetup} />;
+    return (
+      <SetupSteps
+        setup={flow.setup}
+        busy={flow.busy}
+        error={flow.errorFor("enable")}
+        onEnable={flow.enable}
+        onCancel={flow.cancelSetup}
+      />
+    );
   }
   return <StartSetup busy={flow.busy} error={flow.setupError} onStart={flow.startSetup} />;
 }
@@ -267,15 +344,27 @@ function TwoFactorContent() {
   const status = statusQuery.data;
   if (!status) {
     // Without a known status "Not enabled" could be false, and offering setup could replace a working one.
-    return <RetryAlert message={`Couldn’t load your two-factor status: ${errorText(statusQuery.error)}`} fetching={statusQuery.isFetching} onRetry={retry} />;
+    return (
+      <RetryAlert
+        message={`Couldn’t load your two-factor status: ${errorText(statusQuery.error)}`}
+        fetching={statusQuery.isFetching}
+        onRetry={retry}
+      />
+    );
   }
   return (
     <>
       {statusQuery.isRefetchError ? (
-        <RetryAlert message="Couldn’t refresh your two-factor status, so this may be out of date." fetching={statusQuery.isFetching} onRetry={retry} />
+        <RetryAlert
+          message="Couldn’t refresh your two-factor status, so this may be out of date."
+          fetching={statusQuery.isFetching}
+          onRetry={retry}
+        />
       ) : null}
       <StatusLine enabled={status.enabled} statusRef={statusRef} />
-      {flow.recoveryCodes ? <RecoveryCodes codes={flow.recoveryCodes} onDone={flow.dismissRecoveryCodes} /> : null}
+      {flow.recoveryCodes ? (
+        <RecoveryCodes codes={flow.recoveryCodes} onDone={flow.dismissRecoveryCodes} />
+      ) : null}
       <TwoFactorActions enabled={status.enabled} flow={flow} />
     </>
   );
@@ -287,7 +376,10 @@ export function TwoFactorSettings() {
       <CardHeader className="px-5 pt-5 pb-2">
         <CardTitle className="flex items-center gap-1.5">
           Two-factor authentication
-          <HelpTip>Protect your own dashboard sign-in with a time-based code from an authenticator app (Google Authenticator, Authy, 1Password, …). Optional and per-account.</HelpTip>
+          <HelpTip>
+            Protect your own dashboard sign-in with a time-based code from an authenticator app
+            (Google Authenticator, Authy, 1Password, …). Optional and per-account.
+          </HelpTip>
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-5 pb-5">

@@ -33,10 +33,11 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
   const agentsById = useMemo(() => Object.fromEntries(agents.map((a) => [a.id, a])), [agents]);
   const contextAgentId = agents[0]?.id ?? "";
 
-  const { toggle, save, remove, actionError, setActionError, saved, setSaved } = useAppBlockMutations({
-    onSaved: () => setRuleDialog(null),
-    onDeleted: () => setDeleteRule(null),
-  });
+  const { toggle, save, remove, actionError, setActionError, saved, setSaved } =
+    useAppBlockMutations({
+      onSaved: () => setRuleDialog(null),
+      onDeleted: () => setDeleteRule(null),
+    });
   const haystack = useCallback(
     (r: AppBlockRule) => [r.name, r.exe_pattern, ...appBlockScopeLabels(r, groups, agentsById)],
     [groups, agentsById],
@@ -79,9 +80,10 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
         onClose={() => setDeleteRule(null)}
         onConfirm={() => deleteRule && remove.mutate(deleteRule)}
       >
-        {deleteRule?.exe_pattern} stops being closed on {deleteRule ? appBlockScopeLabels(deleteRule, groups, agentsById).join(", ") : ""} as devices
-        get the change; offline devices when they reconnect. What it already closed stays in Events, but this rule’s own history can
-        no longer be opened. This can’t be undone.
+        {deleteRule?.exe_pattern} stops being closed on{" "}
+        {deleteRule ? appBlockScopeLabels(deleteRule, groups, agentsById).join(", ") : ""} as
+        devices get the change; offline devices when they reconnect. What it already closed stays in
+        Events, but this rule’s own history can no longer be opened. This can’t be undone.
         {remove.isError && (
           <span role="alert" className="mt-2 block text-destructive">
             Couldn’t delete it: {errorText(remove.error)}
@@ -104,7 +106,8 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
       searchPlaceholder="Search rules…"
       empty={{
         title: "No app block rules yet",
-        description: "An app block rule closes an app every time it starts on the devices you choose.",
+        description:
+          "An app block rule closes an app every time it starts on the devices you choose.",
         icon: <ShieldBan />,
       }}
       actionError={actionError}

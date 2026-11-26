@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { emptyScheduleRow, expandScheduleRows, scheduleRowsProblem, SCHEDULE_NEEDS_WINDOW, scheduleToRows } from "@/features/rules/lib/scheduleRows";
+import { describe, expect, it } from "bun:test";
+import {
+  emptyScheduleRow,
+  expandScheduleRows,
+  scheduleRowsProblem,
+  SCHEDULE_NEEDS_WINDOW,
+  scheduleToRows,
+} from "@/features/rules/lib/scheduleRows";
 import { updateScopeRow } from "@/features/rules/lib/scopeRows";
 
 describe("expandScheduleRows", () => {
@@ -17,11 +23,13 @@ describe("expandScheduleRows", () => {
   });
 
   it("drops rows with a bad time or an empty window", () => {
-    expect(expandScheduleRows([
-      { day_of_week: 1, start: "nope", end: "10:00" },
-      { day_of_week: 1, start: "10:00", end: "10:00" },
-      { day_of_week: 1, start: "08:00", end: "09:00" },
-    ])).toEqual([{ day_of_week: 1, start_minute: 480, end_minute: 540 }]);
+    expect(
+      expandScheduleRows([
+        { day_of_week: 1, start: "nope", end: "10:00" },
+        { day_of_week: 1, start: "10:00", end: "10:00" },
+        { day_of_week: 1, start: "08:00", end: "09:00" },
+      ]),
+    ).toEqual([{ day_of_week: 1, start_minute: 480, end_minute: 540 }]);
   });
 
   it("accepts 24:00 as the end of day", () => {
@@ -49,7 +57,9 @@ describe("scheduleToRows overnight", () => {
     const rows = [{ day_of_week: 6, start: "22:00", end: "06:00" }];
     expect(scheduleToRows(expandScheduleRows(rows))).toEqual(rows);
     // Editing and saving again stores exactly what was stored before.
-    expect(expandScheduleRows(scheduleToRows(expandScheduleRows(rows)))).toEqual(expandScheduleRows(rows));
+    expect(expandScheduleRows(scheduleToRows(expandScheduleRows(rows)))).toEqual(
+      expandScheduleRows(rows),
+    );
   });
 });
 
@@ -66,7 +76,9 @@ describe("scheduleRowsProblem", () => {
   });
 
   it("asks for a window when none can be stored", () => {
-    expect(scheduleRowsProblem([{ day_of_week: 1, start: "nope", end: "17:00" }])).toBe(SCHEDULE_NEEDS_WINDOW);
+    expect(scheduleRowsProblem([{ day_of_week: 1, start: "nope", end: "17:00" }])).toBe(
+      SCHEDULE_NEEDS_WINDOW,
+    );
   });
 
   it("names a window that would otherwise be dropped silently beside valid ones", () => {
@@ -83,8 +95,12 @@ describe("updateScopeRow", () => {
   const rows = [{ kind: "group" as const, group_id: "g1", agent_id: "" }];
 
   it("clears the ids that stop applying when the kind changes", () => {
-    expect(updateScopeRow(rows, 0, { kind: "all" })).toEqual([{ kind: "all", group_id: "", agent_id: "" }]);
-    expect(updateScopeRow(rows, 0, { kind: "agent" })).toEqual([{ kind: "agent", group_id: "", agent_id: "" }]);
+    expect(updateScopeRow(rows, 0, { kind: "all" })).toEqual([
+      { kind: "all", group_id: "", agent_id: "" },
+    ]);
+    expect(updateScopeRow(rows, 0, { kind: "agent" })).toEqual([
+      { kind: "agent", group_id: "", agent_id: "" },
+    ]);
   });
 
   it("leaves other rows and the original array untouched", () => {

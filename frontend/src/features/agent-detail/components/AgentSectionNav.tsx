@@ -45,13 +45,21 @@ export function AgentSectionNav({ agentName, activeTab, onTabChange }: AgentSect
         <AgentToolSwitcher agentName={agentName} activeTab={activeTab} onSelect={onTabChange} />
         {siblings.length > 1 && (
           <div ref={siblingsRef} className="min-w-0 max-w-full">
-            <Tabs value={activeTab} onValueChange={(next) => onTabChange(next as TabKey)} className="min-w-0">
+            <Tabs
+              value={activeTab}
+              onValueChange={(next) => onTabChange(next as TabKey)}
+              className="min-w-0"
+            >
               <TabsList aria-label={`${AGENT_SECTION_META[section].label} tools`} className="h-9!">
                 {siblings.map((tab) => {
                   const meta = AGENT_TAB_META[tab];
                   const Icon = meta.icon;
                   return (
-                    <TabsTrigger key={tab} value={tab} className="flex-none gap-1.5 px-2.5 text-[13px]">
+                    <TabsTrigger
+                      key={tab}
+                      value={tab}
+                      className="flex-none gap-1.5 px-2.5 text-[13px]"
+                    >
                       <Icon size={13} aria-hidden="true" />
                       <span>{meta.label}</span>
                     </TabsTrigger>

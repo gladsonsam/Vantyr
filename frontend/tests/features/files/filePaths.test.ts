@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { DRIVES_PATH, baseName, breadcrumbs, formatFileSize, joinPath } from "@/features/files/filePaths";
+import { describe, expect, it } from "bun:test";
+import {
+  DRIVES_PATH,
+  baseName,
+  breadcrumbs,
+  formatFileSize,
+  joinPath,
+} from "@/features/files/filePaths";
 
 describe("joinPath", () => {
   it("joins with a single backslash", () => {

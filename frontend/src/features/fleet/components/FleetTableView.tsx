@@ -1,10 +1,23 @@
 import { ArrowUpCircle, MonitorPlay } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@vantyr/ui/components/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@vantyr/ui/components/tooltip";
 import { cn } from "@/lib/utils";
-import { formatLastSeen, formatUptime, hasValue, normalizeVersion, lastReportedTooltip } from "@/features/fleet/lib/fleetUtils";
+import {
+  formatLastSeen,
+  formatUptime,
+  hasValue,
+  normalizeVersion,
+  lastReportedTooltip,
+} from "@/features/fleet/lib/fleetUtils";
 import type { FleetRow } from "@/features/fleet/types";
 import { AgentActionsMenu, type AgentActionHandlers } from "./AgentActionsMenu";
 import { ActivityCell } from "./ActivityCell";
@@ -29,8 +42,17 @@ export interface FleetViewProps {
 const ACTIONS_CELL =
   "sticky right-0 z-10 w-28 bg-card pr-5! shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.5)] group-hover:bg-[color-mix(in_oklch,var(--ui-card),white_5%)] group-data-[state=selected]:bg-[color-mix(in_oklch,var(--ui-card),white_8%)]";
 
-export function FleetTableView({ rows, favoriteIds, onToggleFavorite, selection, latestAgentVersion, handlers }: FleetViewProps) {
-  const selectedVisible = selection ? rows.filter((row) => selection.selected.has(row.id)).length : 0;
+export function FleetTableView({
+  rows,
+  favoriteIds,
+  onToggleFavorite,
+  selection,
+  latestAgentVersion,
+  handlers,
+}: FleetViewProps) {
+  const selectedVisible = selection
+    ? rows.filter((row) => selection.selected.has(row.id)).length
+    : 0;
   const allSelected = rows.length > 0 && selectedVisible === rows.length;
   return (
     <div className="@container overflow-hidden rounded-xl bg-card">
@@ -44,7 +66,9 @@ export function FleetTableView({ rows, favoriteIds, onToggleFavorite, selection,
                   checked={allSelected}
                   indeterminate={selectedVisible > 0 && !allSelected}
                   disabled={selection.disabled || rows.length === 0}
-                  onCheckedChange={(checked) => selection.setAll(checked ? rows.map((row) => row.id) : [])}
+                  onCheckedChange={(checked) =>
+                    selection.setAll(checked ? rows.map((row) => row.id) : [])
+                  }
                 />
               </TableHead>
             )}
@@ -84,15 +108,31 @@ export function FleetTableView({ rows, favoriteIds, onToggleFavorite, selection,
                     <DeviceIcon row={row} />
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className={cn("truncate font-medium", !row.online && "text-muted-foreground")}>{row.displayName}</span>
+                        <span
+                          className={cn(
+                            "truncate font-medium",
+                            !row.online && "text-muted-foreground",
+                          )}
+                        >
+                          {row.displayName}
+                        </span>
                         <OsMark row={row} />
                       </div>
                       <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                        <span className="truncate">{hasValue(row.user) ? row.user : "No user"}</span>
+                        <span className="truncate">
+                          {hasValue(row.user) ? row.user : "No user"}
+                        </span>
                         <span aria-hidden="true">·</span>
-                        {hasValue(row.ip) ? <span className="truncate font-mono">{row.ip}</span> : <span className="truncate">No IP reported</span>}
+                        {hasValue(row.ip) ? (
+                          <span className="truncate font-mono">{row.ip}</span>
+                        ) : (
+                          <span className="truncate">No IP reported</span>
+                        )}
                         {row.updateNeeded && (
-                          <ArrowUpCircle className="size-3.5 shrink-0 text-warning @4xl:hidden" aria-label="Update available" />
+                          <ArrowUpCircle
+                            className="size-3.5 shrink-0 text-warning @4xl:hidden"
+                            aria-label="Update available"
+                          />
                         )}
                       </div>
                     </div>
@@ -111,18 +151,26 @@ export function FleetTableView({ rows, favoriteIds, onToggleFavorite, selection,
                   {row.online ? (
                     formatUptime(row.effectiveUptimeSecs)
                   ) : (
-                    <span className="text-muted-foreground">seen {formatLastSeen(row.last_seen)}</span>
+                    <span className="text-muted-foreground">
+                      seen {formatLastSeen(row.last_seen)}
+                    </span>
                   )}
                 </TableCell>
                 <TableCell className="hidden font-mono text-xs tabular-nums @4xl:table-cell">
                   <div className="flex items-center gap-1.5">
-                    {row.version ? `v${normalizeVersion(row.version)}` : <span className="font-sans text-muted-foreground">Unknown</span>}
+                    {row.version ? (
+                      `v${normalizeVersion(row.version)}`
+                    ) : (
+                      <span className="font-sans text-muted-foreground">Unknown</span>
+                    )}
                     {row.updateNeeded && (
                       <Tooltip>
                         <TooltipTrigger render={<span className="inline-flex text-warning" />}>
                           <ArrowUpCircle className="size-3.5" aria-label="Update available" />
                         </TooltipTrigger>
-                        <TooltipContent>Update to v{normalizeVersion(latestAgentVersion)} available</TooltipContent>
+                        <TooltipContent>
+                          Update to v{normalizeVersion(latestAgentVersion)} available
+                        </TooltipContent>
                       </Tooltip>
                     )}
                   </div>

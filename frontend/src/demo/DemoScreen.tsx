@@ -7,7 +7,7 @@
  * `demoLiveStatus` app/window the rest of the demo uses) so the screen panel —
  * and any promo footage recorded from it — looks alive.
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { demoLiveStatus } from "./data";
 
 type Scene = "terminal" | "code" | "design" | "email" | "browser";
@@ -16,7 +16,8 @@ function sceneFor(agentId: string): { scene: Scene; title: string } {
   const s = demoLiveStatus[agentId];
   const app = (s?.app ?? "").toLowerCase();
   const win = s?.window ?? "Desktop";
-  if (app.includes("terminal") || /ssh|build|pipeline|powershell/i.test(win)) return { scene: "terminal", title: win };
+  if (app.includes("terminal") || /ssh|build|pipeline|powershell/i.test(win))
+    return { scene: "terminal", title: win };
   if (app.includes("code")) return { scene: "code", title: win };
   if (app.includes("figma")) return { scene: "design", title: win };
   if (app.includes("outlook")) return { scene: "email", title: win };
@@ -57,15 +58,22 @@ function Wallpaper() {
         style={{
           position: "absolute",
           inset: 0,
-          backgroundImage:
-            "radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px)",
+          backgroundImage: "radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px)",
           backgroundSize: "26px 26px",
         }}
       />
       {/* faint Vantyr bracket watermark */}
       <svg
         viewBox="0 0 20 20"
-        style={{ position: "absolute", left: "50%", top: "42%", width: 220, height: 220, transform: "translate(-50%,-50%)", opacity: 0.05 }}
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "42%",
+          width: 220,
+          height: 220,
+          transform: "translate(-50%,-50%)",
+          opacity: 0.05,
+        }}
       >
         <path d="M2 2h5.5v2.6H4.6V8H2V2z" fill={C.gr} />
         <path d="M18 2h-5.5v2.6h2.9V8H18V2z" fill={C.gr} />
@@ -76,7 +84,15 @@ function Wallpaper() {
   );
 }
 
-function WindowFrame({ title, accent, children }: { title: string; accent: string; children: React.ReactNode }) {
+function WindowFrame({
+  title,
+  accent,
+  children,
+}: {
+  title: string;
+  accent: string;
+  children: React.ReactNode;
+}) {
   return (
     <div
       style={{
@@ -94,14 +110,47 @@ function WindowFrame({ title, accent, children }: { title: string; accent: strin
         flexDirection: "column",
       }}
     >
-      <div style={{ height: 34, background: C.bar, borderBottom: `1px solid ${C.line}`, display: "flex", alignItems: "center", paddingLeft: 12, gap: 7 }}>
+      <div
+        style={{
+          height: 34,
+          background: C.bar,
+          borderBottom: `1px solid ${C.line}`,
+          display: "flex",
+          alignItems: "center",
+          paddingLeft: 12,
+          gap: 7,
+        }}
+      >
         {[C.red, C.amber, C.gr].map((c) => (
-          <span key={c} style={{ width: 10, height: 10, borderRadius: "50%", background: c, opacity: 0.85 }} />
+          <span
+            key={c}
+            style={{ width: 10, height: 10, borderRadius: "50%", background: c, opacity: 0.85 }}
+          />
         ))}
-        <span style={{ marginLeft: 12, fontSize: 12.5, color: C.dim, fontFamily: "var(--mono, monospace)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <span
+          style={{
+            marginLeft: 12,
+            fontSize: 12.5,
+            color: C.dim,
+            fontFamily: "var(--mono, monospace)",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
           {title}
         </span>
-        <span style={{ marginLeft: "auto", marginRight: 12, width: 36, height: 4, borderRadius: 2, background: accent, opacity: 0.5 }} />
+        <span
+          style={{
+            marginLeft: "auto",
+            marginRight: 12,
+            width: 36,
+            height: 4,
+            borderRadius: 2,
+            background: accent,
+            opacity: 0.5,
+          }}
+        />
       </div>
       <div style={{ flex: 1, minHeight: 0, position: "relative" }}>{children}</div>
     </div>
@@ -109,6 +158,9 @@ function WindowFrame({ title, accent, children }: { title: string; accent: strin
 }
 
 function Taskbar() {
+  const [clock] = useState(() =>
+    new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+  );
   return (
     <div
       style={{
@@ -132,10 +184,20 @@ function Taskbar() {
         <circle cx="10" cy="10" r="1.6" fill={C.gr} />
       </svg>
       {[C.blue, C.amber, C.purple, C.gr].map((c) => (
-        <span key={c} style={{ width: 18, height: 18, borderRadius: 5, background: c, opacity: 0.7 }} />
+        <span
+          key={c}
+          style={{ width: 18, height: 18, borderRadius: 5, background: c, opacity: 0.7 }}
+        />
       ))}
-      <span style={{ marginLeft: "auto", fontSize: 12, color: C.dim, fontFamily: "var(--mono, monospace)" }}>
-        {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+      <span
+        style={{
+          marginLeft: "auto",
+          fontSize: 12,
+          color: C.dim,
+          fontFamily: "var(--mono, monospace)",
+        }}
+      >
+        {clock}
       </span>
     </div>
   );
@@ -157,40 +219,133 @@ function TerminalScene() {
     ["$ git push origin build/pipeline-2291", C.tx],
   ];
   return (
-    <div style={{ position: "absolute", inset: 0, background: "#0c0e12", padding: 16, fontFamily: "var(--mono, monospace)", fontSize: 14, lineHeight: 1.7, overflow: "hidden" }}>
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: "#0c0e12",
+        padding: 16,
+        fontFamily: "var(--mono, monospace)",
+        fontSize: 14,
+        lineHeight: 1.7,
+        overflow: "hidden",
+      }}
+    >
       <div style={{ animation: "vfs-scan 26s linear infinite" }}>
-        {["first", "repeat"].map(copy => <div key={copy}>{lines.map(l => (
-          <div key={l[0]} style={{ color: l[1] as string }}>{l[0]}</div>
-        ))}</div>)}
+        {["first", "repeat"].map((copy) => (
+          <div key={copy}>
+            {lines.map((l) => (
+              <div key={l[0]} style={{ color: l[1] as string }}>
+                {l[0]}
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
-      <span style={{ display: "inline-block", width: 9, height: 17, background: C.gr, verticalAlign: "middle", animation: "vfs-caret 1.05s step-end infinite" }} />
+      <span
+        style={{
+          display: "inline-block",
+          width: 9,
+          height: 17,
+          background: C.gr,
+          verticalAlign: "middle",
+          animation: "vfs-caret 1.05s step-end infinite",
+        }}
+      />
     </div>
   );
 }
 
 function CodeScene() {
   const code: Array<Array<[string, string]>> = [
-    [["pub async fn ", C.blue], ["run_agent_loop", C.gr], ["(cfg: Config) {", C.tx]],
-    [["    let mut ", C.blue], ["stream", C.tx], [" = ", C.tx], ["connect", C.gr], ["(&cfg).", C.tx], ["await", C.purple], ["?;", C.tx]],
-    [["    ", C.tx], ["loop", C.purple], [" {", C.tx]],
+    [
+      ["pub async fn ", C.blue],
+      ["run_agent_loop", C.gr],
+      ["(cfg: Config) {", C.tx],
+    ],
+    [
+      ["    let mut ", C.blue],
+      ["stream", C.tx],
+      [" = ", C.tx],
+      ["connect", C.gr],
+      ["(&cfg).", C.tx],
+      ["await", C.purple],
+      ["?;", C.tx],
+    ],
+    [
+      ["    ", C.tx],
+      ["loop", C.purple],
+      [" {", C.tx],
+    ],
     [["        let frame = capture_screen()", C.tx]],
-    [["            .", C.tx], ["encode_jpeg", C.gr], ["(quality);", C.tx]],
-    [["        stream.", C.tx], ["send", C.gr], ["(frame).", C.tx], ["await", C.purple], ["?;", C.tx]],
-    [["        telemetry.", C.tx], ["flush", C.gr], ["().", C.tx], ["await", C.purple], [";", C.tx]],
+    [
+      ["            .", C.tx],
+      ["encode_jpeg", C.gr],
+      ["(quality);", C.tx],
+    ],
+    [
+      ["        stream.", C.tx],
+      ["send", C.gr],
+      ["(frame).", C.tx],
+      ["await", C.purple],
+      ["?;", C.tx],
+    ],
+    [
+      ["        telemetry.", C.tx],
+      ["flush", C.gr],
+      ["().", C.tx],
+      ["await", C.purple],
+      [";", C.tx],
+    ],
     [["    }", C.tx]],
     [["}", C.tx]],
   ];
   return (
-    <div style={{ position: "absolute", inset: 0, background: "#0e1014", display: "flex", fontFamily: "var(--mono, monospace)", fontSize: 14, lineHeight: 1.85 }}>
-      <div style={{ width: 44, background: "#0b0d11", color: "rgba(255,255,255,0.25)", textAlign: "right", padding: "14px 8px", userSelect: "none" }}>
-        {code.map((line, i) => <div key={line.map(segment => segment[0]).join("")}>{i + 1}</div>)}
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: "#0e1014",
+        display: "flex",
+        fontFamily: "var(--mono, monospace)",
+        fontSize: 14,
+        lineHeight: 1.85,
+      }}
+    >
+      <div
+        style={{
+          width: 44,
+          background: "#0b0d11",
+          color: "rgba(255,255,255,0.25)",
+          textAlign: "right",
+          padding: "14px 8px",
+          userSelect: "none",
+        }}
+      >
+        {code.map((line, i) => (
+          <div key={line.map((segment) => segment[0]).join("")}>{i + 1}</div>
+        ))}
       </div>
       <div style={{ padding: "14px 16px", flex: 1 }}>
         {code.map((row, i) => (
-          <div key={row.map(segment => segment[0]).join("")}>
-            {row.map((seg) => <span key={seg[0]} style={{ color: seg[1] }}>{seg[0]}</span>)}
+          <div key={row.map((segment) => segment[0]).join("")}>
+            {row.map((seg) => (
+              <span key={seg[0]} style={{ color: seg[1] }}>
+                {seg[0]}
+              </span>
+            ))}
             {i === code.length - 4 && (
-              <span style={{ display: "inline-block", width: 8, height: 16, background: C.tx, verticalAlign: "middle", marginLeft: 1, animation: "vfs-caret 1.05s step-end infinite" }} />
+              <span
+                style={{
+                  display: "inline-block",
+                  width: 8,
+                  height: 16,
+                  background: C.tx,
+                  verticalAlign: "middle",
+                  marginLeft: 1,
+                  animation: "vfs-caret 1.05s step-end infinite",
+                }}
+              />
             )}
           </div>
         ))}
@@ -203,22 +358,76 @@ function DesignScene() {
   return (
     <div style={{ position: "absolute", inset: 0, background: "#15171c", display: "flex" }}>
       <div style={{ width: 150, borderRight: `1px solid ${C.line}`, padding: 12 }}>
-        {["Frame · Dashboard", "Sidebar", "Agent card", "Vitals", "Tabs", "Timeline"].map((t, i) => (
-          <div key={t} style={{ fontSize: 12.5, color: i === 2 ? C.gr : C.dim, padding: "6px 8px", borderRadius: 6, background: i === 2 ? "rgba(32,221,143,0.1)" : "transparent", marginBottom: 2, fontFamily: "var(--font, sans-serif)" }}>
-            {t}
-          </div>
-        ))}
+        {["Frame · Dashboard", "Sidebar", "Agent card", "Vitals", "Tabs", "Timeline"].map(
+          (t, i) => (
+            <div
+              key={t}
+              style={{
+                fontSize: 12.5,
+                color: i === 2 ? C.gr : C.dim,
+                padding: "6px 8px",
+                borderRadius: 6,
+                background: i === 2 ? "rgba(32,221,143,0.1)" : "transparent",
+                marginBottom: 2,
+                fontFamily: "var(--font, sans-serif)",
+              }}
+            >
+              {t}
+            </div>
+          ),
+        )}
       </div>
-      <div style={{ flex: 1, position: "relative", background: "#0e1014", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ width: "62%", height: "64%", background: C.win, borderRadius: 10, border: `2px solid ${C.gr}`, boxShadow: `0 0 40px rgba(32,221,143,0.25)`, padding: 14, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gridAutoRows: "minmax(40px, auto)", gap: 10 }}>
+      <div
+        style={{
+          flex: 1,
+          position: "relative",
+          background: "#0e1014",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          style={{
+            width: "62%",
+            height: "64%",
+            background: C.win,
+            borderRadius: 10,
+            border: `2px solid ${C.gr}`,
+            boxShadow: `0 0 40px rgba(32,221,143,0.25)`,
+            padding: 14,
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr",
+            gridAutoRows: "minmax(40px, auto)",
+            gap: 10,
+          }}
+        >
           {Array.from({ length: 9 }).map((_, i) => (
-            <div key={i} style={{ borderRadius: 8, background: i % 4 === 0 ? "rgba(32,221,143,0.18)" : "rgba(255,255,255,0.05)", border: `1px solid ${C.line}`, animation: i % 3 === 0 ? "vfs-pulse 3s ease-in-out infinite" : "none" }} />
+            <div
+              key={i}
+              style={{
+                borderRadius: 8,
+                background: i % 4 === 0 ? "rgba(32,221,143,0.18)" : "rgba(255,255,255,0.05)",
+                border: `1px solid ${C.line}`,
+                animation: i % 3 === 0 ? "vfs-pulse 3s ease-in-out infinite" : "none",
+              }}
+            />
           ))}
         </div>
       </div>
       <div style={{ width: 130, borderLeft: `1px solid ${C.line}`, padding: 12 }}>
         {["Fill", "#20DD8F", "Radius 10", "Auto-layout", "Opacity 100%"].map((t) => (
-          <div key={t} style={{ fontSize: 12, color: C.dim, marginBottom: 8, fontFamily: "var(--mono, monospace)" }}>{t}</div>
+          <div
+            key={t}
+            style={{
+              fontSize: 12,
+              color: C.dim,
+              marginBottom: 8,
+              fontFamily: "var(--mono, monospace)",
+            }}
+          >
+            {t}
+          </div>
         ))}
       </div>
     </div>
@@ -234,24 +443,71 @@ function EmailScene() {
     ["New enrollment request", "noreply@vantyr.local", false],
   ];
   return (
-    <div style={{ position: "absolute", inset: 0, background: "#101216", display: "flex", fontFamily: "var(--font, sans-serif)" }}>
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: "#101216",
+        display: "flex",
+        fontFamily: "var(--font, sans-serif)",
+      }}
+    >
       <div style={{ width: "42%", borderRight: `1px solid ${C.line}` }}>
         {rows.map((r, i) => (
-          <div key={String(r[0])} style={{ padding: "12px 16px", borderBottom: `1px solid ${C.line}`, background: i === 0 ? "rgba(32,221,143,0.07)" : "transparent" }}>
+          <div
+            key={String(r[0])}
+            style={{
+              padding: "12px 16px",
+              borderBottom: `1px solid ${C.line}`,
+              background: i === 0 ? "rgba(32,221,143,0.07)" : "transparent",
+            }}
+          >
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {r[2] && <span style={{ width: 7, height: 7, borderRadius: "50%", background: C.gr }} />}
-              <span style={{ fontSize: 14, color: r[2] ? C.tx : C.dim, fontWeight: r[2] ? 600 : 400 }}>{r[0]}</span>
+              {r[2] && (
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: C.gr }} />
+              )}
+              <span
+                style={{ fontSize: 14, color: r[2] ? C.tx : C.dim, fontWeight: r[2] ? 600 : 400 }}
+              >
+                {r[0]}
+              </span>
             </div>
-            <div style={{ fontSize: 12, color: "rgba(231,233,238,0.4)", marginTop: 4 }}>{r[1] as string}</div>
+            <div style={{ fontSize: 12, color: "rgba(231,233,238,0.4)", marginTop: 4 }}>
+              {r[1] as string}
+            </div>
           </div>
         ))}
       </div>
       <div style={{ flex: 1, padding: 20 }}>
         <div style={{ fontSize: 17, color: C.tx, fontWeight: 600 }}>Build #2291 succeeded</div>
         <div style={{ fontSize: 13, color: C.dim, marginTop: 6 }}>ci@vantyr.local · 2 min ago</div>
-        <div style={{ marginTop: 16, height: 8, width: "90%", borderRadius: 4, background: "rgba(255,255,255,0.06)" }} />
-        <div style={{ marginTop: 10, height: 8, width: "80%", borderRadius: 4, background: "rgba(255,255,255,0.06)" }} />
-        <div style={{ marginTop: 10, height: 8, width: "86%", borderRadius: 4, background: "rgba(255,255,255,0.06)" }} />
+        <div
+          style={{
+            marginTop: 16,
+            height: 8,
+            width: "90%",
+            borderRadius: 4,
+            background: "rgba(255,255,255,0.06)",
+          }}
+        />
+        <div
+          style={{
+            marginTop: 10,
+            height: 8,
+            width: "80%",
+            borderRadius: 4,
+            background: "rgba(255,255,255,0.06)",
+          }}
+        />
+        <div
+          style={{
+            marginTop: 10,
+            height: 8,
+            width: "86%",
+            borderRadius: 4,
+            background: "rgba(255,255,255,0.06)",
+          }}
+        />
       </div>
     </div>
   );
@@ -260,17 +516,58 @@ function EmailScene() {
 function BrowserScene() {
   return (
     <div style={{ position: "absolute", inset: 0, background: "#0f1115", padding: 0 }}>
-      <div style={{ height: 30, background: "#0b0d11", borderBottom: `1px solid ${C.line}`, display: "flex", alignItems: "center", padding: "0 12px", gap: 8 }}>
-        <span style={{ fontSize: 12, color: C.dim, fontFamily: "var(--mono, monospace)" }}>⌂  github.com/example/vantyr/pull/482</span>
+      <div
+        style={{
+          height: 30,
+          background: "#0b0d11",
+          borderBottom: `1px solid ${C.line}`,
+          display: "flex",
+          alignItems: "center",
+          padding: "0 12px",
+          gap: 8,
+        }}
+      >
+        <span style={{ fontSize: 12, color: C.dim, fontFamily: "var(--mono, monospace)" }}>
+          ⌂ github.com/example/vantyr/pull/482
+        </span>
       </div>
       <div style={{ padding: 22 }}>
-        <div style={{ fontSize: 18, color: C.tx, fontWeight: 600, fontFamily: "var(--font, sans-serif)" }}>Cross-platform agent build · #482</div>
+        <div
+          style={{
+            fontSize: 18,
+            color: C.tx,
+            fontWeight: 600,
+            fontFamily: "var(--font, sans-serif)",
+          }}
+        >
+          Cross-platform agent build · #482
+        </div>
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <span style={{ fontSize: 12, color: C.bg, background: C.gr, borderRadius: 999, padding: "3px 10px", fontWeight: 600 }}>● Open</span>
+          <span
+            style={{
+              fontSize: 12,
+              color: C.bg,
+              background: C.gr,
+              borderRadius: 999,
+              padding: "3px 10px",
+              fontWeight: 600,
+            }}
+          >
+            ● Open
+          </span>
           <span style={{ fontSize: 12, color: C.dim }}>gladsonsam wants to merge 12 commits</span>
         </div>
         {[88, 72, 80, 64].map((w, i) => (
-          <div key={i} style={{ marginTop: 12, height: 9, width: `${w}%`, borderRadius: 4, background: "rgba(255,255,255,0.06)" }} />
+          <div
+            key={i}
+            style={{
+              marginTop: 12,
+              height: 9,
+              width: `${w}%`,
+              borderRadius: 4,
+              background: "rgba(255,255,255,0.06)",
+            }}
+          />
         ))}
       </div>
     </div>
@@ -279,7 +576,16 @@ function BrowserScene() {
 
 export function DemoScreen({ agentId }: { agentId: string }) {
   const { scene, title } = useMemo(() => sceneFor(agentId), [agentId]);
-  const accent = scene === "terminal" ? C.gr : scene === "code" ? C.blue : scene === "design" ? C.purple : scene === "email" ? C.amber : C.gr;
+  const accent =
+    scene === "terminal"
+      ? C.gr
+      : scene === "code"
+        ? C.blue
+        : scene === "design"
+          ? C.purple
+          : scene === "email"
+            ? C.amber
+            : C.gr;
 
   return (
     <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>

@@ -11,112 +11,558 @@
   --gr-soft: color-mix(in srgb, var(--primary) 12%, transparent);
   --red: var(--destructive);
 }
-.screen-remote-panel { min-width: 0; overflow-wrap: anywhere; }
-.screen-remote-tools { padding: 8px 10px; background: var(--card); border-top: 1px solid var(--line); flex-shrink: 0; }
-.remote-primary-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.remote-session-status { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 16px; padding: 2px 2px 8px; font-size: 12px; }
-.remote-session-mode { font-weight: 600; color: var(--muted-foreground); }
-.remote-session-mode.is-controlling { color: var(--gr); }
-.remote-input-hint { color: var(--muted-foreground); font-size: 11px; }
-.screen-remote-tools button, .remote-tools-sheet button, .remote-tools-sheet select, .remote-tools-sheet textarea, .screen-remote-tools textarea { min-height: 44px; min-width: 44px; max-width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 10px; color: var(--tx); background: var(--card-2); font: inherit; }
-.remote-primary-actions button { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 8px 12px; line-height: 1.2; flex: 0 1 auto; }
-.remote-primary-actions button svg { flex-shrink: 0; }
-.remote-primary-actions button:last-child { margin-left: auto; }
-.remote-primary-actions .remote-control-button { background: var(--gr); border-color: var(--gr); color: var(--primary-foreground); }
-.remote-primary-actions .remote-control-button:disabled { background: var(--card-2); border-color: var(--line-2); color: var(--tx-3); }
-.remote-primary-actions .is-controlling { background: var(--gr-soft, #20dd8f20); border-color: var(--gr); color: var(--gr); }
-.remote-primary-actions .is-active { border-color: var(--gr); color: var(--gr); }
-.screen-remote-tools button, .remote-tools-sheet button { cursor: pointer; }
-.screen-remote-tools button:disabled, .remote-tools-sheet button:disabled, .remote-tools-sheet select:disabled { opacity: .4; cursor: not-allowed; }
-.screen-remote-tools :is(button, textarea):focus-visible, .remote-tools-sheet :is(button, select, textarea, input):focus-visible { outline: 2px solid var(--gr); outline-offset: 2px; }
-.remote-connection-note { display: block; margin-top: 6px; font-size: 11px; line-height: 1.4; color: var(--muted-foreground); }
-.remote-connection-note[role="alert"] { color: var(--red); }
-.remote-keyboard-tray { padding-top: 10px; max-height: min(45dvh, calc(var(--remote-viewport-height, 100dvh) * .45)); overflow-y: auto; overscroll-behavior: contain; }
-.remote-software-keyboard { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
-.remote-software-keyboard label { flex: 1 1 200px; display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
-.remote-software-keyboard span { flex-basis: 100%; font-size: 11px; line-height: 1.5; color: var(--tx-3); }
-.screen-remote-tools textarea, .remote-tools-sheet textarea { width: 100%; font-size: 16px; }
+.screen-remote-panel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.screen-remote-tools {
+  padding: 8px 10px;
+  background: var(--card);
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.remote-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.remote-session-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px 16px;
+  padding: 2px 2px 8px;
+  font-size: 12px;
+}
+.remote-session-mode {
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+.remote-session-mode.is-controlling {
+  color: var(--gr);
+}
+.remote-input-hint {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.screen-remote-tools button,
+.remote-tools-sheet button,
+.remote-tools-sheet select,
+.remote-tools-sheet textarea,
+.screen-remote-tools textarea {
+  min-height: 44px;
+  min-width: 44px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  color: var(--tx);
+  background: var(--card-2);
+  font: inherit;
+}
+.remote-primary-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 12px;
+  line-height: 1.2;
+  flex: 0 1 auto;
+}
+.remote-primary-actions button svg {
+  flex-shrink: 0;
+}
+.remote-primary-actions button:last-child {
+  margin-left: auto;
+}
+.remote-primary-actions .remote-control-button {
+  background: var(--gr);
+  border-color: var(--gr);
+  color: var(--primary-foreground);
+}
+.remote-primary-actions .remote-control-button:disabled {
+  background: var(--card-2);
+  border-color: var(--line-2);
+  color: var(--tx-3);
+}
+.remote-primary-actions .is-controlling {
+  background: var(--gr-soft, #20dd8f20);
+  border-color: var(--gr);
+  color: var(--gr);
+}
+.remote-primary-actions .is-active {
+  border-color: var(--gr);
+  color: var(--gr);
+}
+.screen-remote-tools button,
+.remote-tools-sheet button {
+  cursor: pointer;
+}
+.screen-remote-tools button:disabled,
+.remote-tools-sheet button:disabled,
+.remote-tools-sheet select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.screen-remote-tools :is(button, textarea):focus-visible,
+.remote-tools-sheet :is(button, select, textarea, input):focus-visible {
+  outline: 2px solid var(--gr);
+  outline-offset: 2px;
+}
+.remote-connection-note {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+.remote-connection-note[role="alert"] {
+  color: var(--red);
+}
+.remote-keyboard-tray {
+  padding-top: 10px;
+  max-height: min(45dvh, calc(var(--remote-viewport-height, 100dvh) * 0.45));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.remote-software-keyboard {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.remote-software-keyboard label {
+  flex: 1 1 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+}
+.remote-software-keyboard span {
+  flex-basis: 100%;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--tx-3);
+}
+.screen-remote-tools textarea,
+.remote-tools-sheet textarea {
+  width: 100%;
+  font-size: 16px;
+}
 /* View-only stage lets a swipe scroll the page; the input overlay claims touches only while controlling. */
-.screen-remote-stage { overflow: hidden; position: relative; }
-.screen-remote-maximized .screen-remote-stage { touch-action: none; }
-.screen-remote-panel .vantyr-remote-overlay { position: absolute; inset: 0; z-index: 1; touch-action: none; }
-.screen-remote-panel .vantyr-screen-frame { position: relative; }
-.screen-remote-panel.vantyr-screen-viewer-fullscreen { flex-direction: column; }
-.screen-remote-maximized { height: 100dvh !important; height: min(100dvh, var(--remote-viewport-height, 100dvh)) !important; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); box-sizing: border-box; }
-.screen-remote-maximized .screen-remote-stage { flex: 1; min-height: 0; border-radius: 0; }
-.screen-remote-maximized .vantyr-screen-image { min-height: 0; }
-.remote-trackpad-cursor { position: absolute; width: 16px; height: 16px; margin: -8px; border: 2px solid #fff; border-radius: 50%; background: #20dd8f80; box-shadow: 0 0 0 1px #000; pointer-events: none; }
-.remote-tools-backdrop { position: fixed; inset: 0; bottom: auto; height: min(100dvh, var(--remote-viewport-height, 100dvh)); z-index: 4000; background: #05080eb3; backdrop-filter: blur(5px); display: flex; align-items: flex-end; justify-content: center; padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); box-sizing: border-box; }
-.remote-tools-sheet { margin: auto; padding: 0; box-sizing: border-box; width: 100%; max-width: 420px; max-height: min(78dvh, calc(var(--remote-viewport-height, 100dvh) - 24px)); background: var(--card); color: var(--tx); border: 1px solid var(--line-2); border-radius: 20px; box-shadow: 0 24px 80px #0008; display: flex; flex-direction: column; overflow: hidden; }
-.remote-tools-sheet header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px 12px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
-.remote-tools-eyebrow { font-size: 9px; letter-spacing: .14em; font-weight: 700; color: var(--gr); }
-.remote-tools-sheet h2 { font-size: 18px; font-weight: 700; letter-spacing: -.03em; margin: 3px 0 0; }
-.remote-tools-sheet header button { display: grid; place-items: center; padding: 0; background: transparent; }
-.remote-tools-scroll { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 8px 12px 12px; min-height: 0; }
-.remote-tool-group { border-bottom: 1px solid var(--line); }
-.remote-tool-group:last-child { border-bottom: 0; }
-.remote-tool-group .remote-tool-group-toggle { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 4px; min-height: 52px; border: 0; border-radius: 6px; background: transparent; font-size: 13px; font-weight: 600; text-align: left; }
-.remote-tool-group-toggle[aria-expanded="true"] { color: var(--gr); }
-.remote-tool-group-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
-.remote-tool-group-content { display: flex; flex-direction: column; gap: 10px; padding: 2px 2px 14px; }
-.remote-tool-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.remote-tool-fields label { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 11px; color: var(--tx-3); }
-.remote-tool-fields select { width: 100%; min-width: 0; font-size: 13px; color: var(--tx); }
-.remote-tool-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
-.remote-tool-buttons button { display: flex; align-items: center; justify-content: center; gap: 7px; flex: 1 1 auto; font-size: 12px; }
-.remote-shortcuts { display: grid; grid-template-columns: repeat(4, minmax(44px, 1fr)); gap: 6px; }
-.remote-tool-hint, .remote-tool-group-content > p { margin: 0; font-size: 11px; line-height: 1.6; color: var(--tx-3); }
-.remote-clipboard-panel { min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
-.remote-clipboard-panel label, .remote-clipboard-panel p { flex: 1 1 100%; margin: 0; }
-.remote-clipboard-panel label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
-.remote-clipboard-panel p { font-size: 11px; line-height: 1.5; color: var(--tx-3); }
-.remote-clipboard-panel button { flex: 1 1 auto; font-size: 12px; }
-.remote-clipboard-panel [role="alert"] { color: var(--red); }
-@media (min-width: 600px) { .remote-tools-backdrop { align-items: center; } }
-@media (max-height: 480px) { .remote-tools-sheet { max-height: min(calc(100dvh - 16px), calc(var(--remote-viewport-height, 100dvh) - 16px)); } .remote-tools-backdrop { padding-block: 8px; } .remote-tools-sheet header { padding-block: 8px; } .remote-keyboard-tray { max-height: min(55dvh, calc(var(--remote-viewport-height, 100dvh) * .55)); } }
+.screen-remote-stage {
+  overflow: hidden;
+  position: relative;
+}
+.screen-remote-maximized .screen-remote-stage {
+  touch-action: none;
+}
+.screen-remote-panel .vantyr-remote-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  touch-action: none;
+}
+.screen-remote-panel .vantyr-screen-frame {
+  position: relative;
+}
+.screen-remote-panel.vantyr-screen-viewer-fullscreen {
+  flex-direction: column;
+}
+.screen-remote-maximized {
+  height: 100dvh !important;
+  height: min(100dvh, var(--remote-viewport-height, 100dvh)) !important;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  box-sizing: border-box;
+}
+.screen-remote-maximized .screen-remote-stage {
+  flex: 1;
+  min-height: 0;
+  border-radius: 0;
+}
+.screen-remote-maximized .vantyr-screen-image {
+  min-height: 0;
+}
+.remote-trackpad-cursor {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin: -8px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #20dd8f80;
+  box-shadow: 0 0 0 1px #000;
+  pointer-events: none;
+}
+.remote-tools-backdrop {
+  position: fixed;
+  inset: 0;
+  bottom: auto;
+  height: min(100dvh, var(--remote-viewport-height, 100dvh));
+  z-index: 4000;
+  background: #05080eb3;
+  backdrop-filter: blur(5px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  box-sizing: border-box;
+}
+.remote-tools-sheet {
+  margin: auto;
+  padding: 0;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 420px;
+  max-height: min(78dvh, calc(var(--remote-viewport-height, 100dvh) - 24px));
+  background: var(--card);
+  color: var(--tx);
+  border: 1px solid var(--line-2);
+  border-radius: 20px;
+  box-shadow: 0 24px 80px #0008;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.remote-tools-sheet header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.remote-tools-eyebrow {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  color: var(--gr);
+}
+.remote-tools-sheet h2 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin: 3px 0 0;
+}
+.remote-tools-sheet header button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: transparent;
+}
+.remote-tools-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  padding: 8px 12px 12px;
+  min-height: 0;
+}
+.remote-tool-group {
+  border-bottom: 1px solid var(--line);
+}
+.remote-tool-group:last-child {
+  border-bottom: 0;
+}
+.remote-tool-group .remote-tool-group-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 4px;
+  min-height: 52px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+.remote-tool-group-toggle[aria-expanded="true"] {
+  color: var(--gr);
+}
+.remote-tool-group-toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+.remote-tool-group-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 2px 14px;
+}
+.remote-tool-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.remote-tool-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--tx-3);
+}
+.remote-tool-fields select {
+  width: 100%;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--tx);
+}
+.remote-tool-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.remote-tool-buttons button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 1 1 auto;
+  font-size: 12px;
+}
+.remote-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(44px, 1fr));
+  gap: 6px;
+}
+.remote-tool-hint,
+.remote-tool-group-content > p {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--tx-3);
+}
+.remote-clipboard-panel {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.remote-clipboard-panel label,
+.remote-clipboard-panel p {
+  flex: 1 1 100%;
+  margin: 0;
+}
+.remote-clipboard-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.remote-clipboard-panel p {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--tx-3);
+}
+.remote-clipboard-panel button {
+  flex: 1 1 auto;
+  font-size: 12px;
+}
+.remote-clipboard-panel [role="alert"] {
+  color: var(--red);
+}
+@media (min-width: 600px) {
+  .remote-tools-backdrop {
+    align-items: center;
+  }
+}
+@media (max-height: 480px) {
+  .remote-tools-sheet {
+    max-height: min(calc(100dvh - 16px), calc(var(--remote-viewport-height, 100dvh) - 16px));
+  }
+  .remote-tools-backdrop {
+    padding-block: 8px;
+  }
+  .remote-tools-sheet header {
+    padding-block: 8px;
+  }
+  .remote-keyboard-tray {
+    max-height: min(55dvh, calc(var(--remote-viewport-height, 100dvh) * 0.55));
+  }
+}
 @media (max-width: 599px) {
-  .remote-primary-actions { display: grid; grid-template-columns: repeat(3, minmax(44px, 1fr)); }
-  .remote-primary-actions button:last-child { margin-left: 0; }
-  .remote-input-hint { flex-basis: 100%; }
+  .remote-primary-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(44px, 1fr));
+  }
+  .remote-primary-actions button:last-child {
+    margin-left: 0;
+  }
+  .remote-input-hint {
+    flex-basis: 100%;
+  }
 }
 /* Icon over a one-word label: icon-only buttons left "take control" undiscoverable on phones. */
 @media (max-width: 1279px), (max-height: 480px) and (orientation: landscape) {
-  .remote-primary-actions button { height: 52px; padding: 0; flex-direction: column; gap: 3px; }
-  .remote-primary-actions button span { display: none; }
-  .remote-primary-actions button::after { content: attr(data-short-label); font-size: 10.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
+  .remote-primary-actions button {
+    height: 52px;
+    padding: 0;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .remote-primary-actions button span {
+    display: none;
+  }
+  .remote-primary-actions button::after {
+    content: attr(data-short-label);
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+  }
 }
 /* Tablets: all actions in one evenly spaced row. */
 @media (min-width: 600px) and (max-width: 1279px) {
-  .remote-primary-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); }
-  .remote-primary-actions button:last-child { margin-left: 0; }
+  .remote-primary-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  }
+  .remote-primary-actions button:last-child {
+    margin-left: 0;
+  }
 }
 /* Wide screens: mode text and actions share one row so the desktop keeps the height. */
 @media (min-width: 1280px) and (min-height: 481px) {
-  .screen-remote-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
-  .remote-session-status { flex: 1 1 14rem; min-width: 0; padding: 0; }
-  .remote-primary-actions { flex: 0 1 auto; justify-content: flex-end; }
-  .remote-connection-note, .remote-keyboard-tray { flex-basis: 100%; margin-top: 2px; }
+  .screen-remote-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 16px;
+  }
+  .remote-session-status {
+    flex: 1 1 14rem;
+    min-width: 0;
+    padding: 0;
+  }
+  .remote-primary-actions {
+    flex: 0 1 auto;
+    justify-content: flex-end;
+  }
+  .remote-connection-note,
+  .remote-keyboard-tray {
+    flex-basis: 100%;
+    margin-top: 2px;
+  }
 }
 /* Short landscape (phones on their side): the desktop fills the height and the actions become a side rail. */
 @media (max-height: 480px) and (orientation: landscape) {
-  .screen-remote-panel:not(.screen-remote-maximized) { flex-direction: row; align-items: stretch; }
-  .screen-remote-panel:not(.screen-remote-maximized) > .screen-remote-stage { width: auto !important; flex: 1 1 0; min-width: 0; max-height: calc(100dvh - 72px) !important; }
-  .screen-remote-panel:not(.screen-remote-maximized) > .screen-remote-tools { flex: 0 0 124px; width: 124px; padding: 6px; border-top: 0; border-left: 1px solid var(--line); overflow-y: auto; overscroll-behavior: contain; max-height: calc(100dvh - 72px); }
-  .screen-remote-tools .remote-session-status { display: none; }
-  .screen-remote-tools .remote-primary-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-  .screen-remote-tools .remote-primary-actions button:last-child { margin-left: 0; }
-  .screen-remote-tools .remote-connection-note { margin-top: 6px; font-size: 10.5px; }
-  .screen-remote-tools .remote-keyboard-tray { position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 3500; max-height: 60dvh; padding: 10px; background: var(--card); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: 0 12px 40px #0009; }
+  .screen-remote-panel:not(.screen-remote-maximized) {
+    flex-direction: row;
+    align-items: stretch;
+  }
+  .screen-remote-panel:not(.screen-remote-maximized) > .screen-remote-stage {
+    width: auto !important;
+    flex: 1 1 0;
+    min-width: 0;
+    max-height: calc(100dvh - 72px) !important;
+  }
+  .screen-remote-panel:not(.screen-remote-maximized) > .screen-remote-tools {
+    flex: 0 0 124px;
+    width: 124px;
+    padding: 6px;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    max-height: calc(100dvh - 72px);
+  }
+  .screen-remote-tools .remote-session-status {
+    display: none;
+  }
+  .screen-remote-tools .remote-primary-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .screen-remote-tools .remote-primary-actions button:last-child {
+    margin-left: 0;
+  }
+  .screen-remote-tools .remote-connection-note {
+    margin-top: 6px;
+    font-size: 10.5px;
+  }
+  .screen-remote-tools .remote-keyboard-tray {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    z-index: 3500;
+    max-height: 60dvh;
+    padding: 10px;
+    background: var(--card);
+    border: 1px solid var(--line-2);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px #0009;
+  }
 }
 
-.remote-screen-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; color: #c4ccd6; text-align: center; font-size: 13px; }
-.remote-screen-placeholder svg { color: #8897aa; margin-bottom: 4px; }
-.remote-screen-placeholder span { max-width: 55ch; font-size: 12px; line-height: 1.5; }
-.remote-live-badge { position: absolute; top: 12px; left: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; color: white; background: #15212de6; font-size: 11px; pointer-events: none; }
-.remote-live-badge::before { content: ""; width: 6px; height: 6px; background: #60cf9c; border-radius: 50%; }
+.remote-screen-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: #c4ccd6;
+  text-align: center;
+  font-size: 13px;
+}
+.remote-screen-placeholder svg {
+  color: #8897aa;
+  margin-bottom: 4px;
+}
+.remote-screen-placeholder span {
+  max-width: 55ch;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.remote-live-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: white;
+  background: #15212de6;
+  font-size: 11px;
+  pointer-events: none;
+}
+.remote-live-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  background: #60cf9c;
+  border-radius: 50%;
+}
 
-.remote-tools-sheet::backdrop { background: #05080eb3; backdrop-filter: blur(5px); }
+.remote-tools-sheet::backdrop {
+  background: #05080eb3;
+  backdrop-filter: blur(5px);
+}
 
 /* The native modal owns its backdrop; the fullscreen-tree wrapper remains for fallback browsers. */
-.remote-tools-backdrop:has(dialog:modal) { background: transparent; backdrop-filter: none; }
-@media (max-width: 599px) { .remote-tools-sheet { margin: auto auto max(12px, env(safe-area-inset-bottom)); } }
+.remote-tools-backdrop:has(dialog:modal) {
+  background: transparent;
+  backdrop-filter: none;
+}
+@media (max-width: 599px) {
+  .remote-tools-sheet {
+    margin: auto auto max(12px, env(safe-area-inset-bottom));
+  }
+}

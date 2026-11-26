@@ -9,7 +9,6 @@ WORKDIR /js
 COPY package.json package-lock.json ./
 COPY frontend/package.json frontend/package.json
 COPY packages/ui/package.json packages/ui/package.json
-COPY packages/eslint-config/package.json packages/eslint-config/package.json
 RUN npm ci --workspace frontend --include-workspace-root --no-audit --no-fund
 
 # Build the app.

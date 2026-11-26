@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { testMock as vi } from "@tests/support/mock";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { Agent } from "@/api/types";
 import {
   formatLastSeen,
@@ -49,9 +50,15 @@ describe("osFromInfo", () => {
 
 describe("statusFor", () => {
   it("prefers offline, then the live activity, then connected", () => {
-    expect(statusFor(agent(false), { activity: "active" })).toEqual({ status: "offline", label: "Offline" });
+    expect(statusFor(agent(false), { activity: "active" })).toEqual({
+      status: "offline",
+      label: "Offline",
+    });
     expect(statusFor(agent(true), { activity: "afk" })).toEqual({ status: "afk", label: "AFK" });
-    expect(statusFor(agent(true), { activity: "active" })).toEqual({ status: "active", label: "Active now" });
+    expect(statusFor(agent(true), { activity: "active" })).toEqual({
+      status: "active",
+      label: "Active now",
+    });
     expect(statusFor(agent(true))).toEqual({ status: "connected", label: "Online" });
   });
 });
@@ -59,7 +66,10 @@ describe("statusFor", () => {
 describe("statusTone", () => {
   it("carries status by hue without pill badges", () => {
     expect(statusTone("afk")).toEqual({ text: "text-warning", dot: "var(--warning)" });
-    expect(statusTone("offline")).toEqual({ text: "text-muted-foreground", dot: "var(--muted-foreground)" });
+    expect(statusTone("offline")).toEqual({
+      text: "text-muted-foreground",
+      dot: "var(--muted-foreground)",
+    });
     expect(statusTone("active")).toEqual({ text: "text-success", dot: "var(--success)" });
     expect(statusTone("connected")).toEqual({ text: "text-success", dot: "var(--success)" });
   });

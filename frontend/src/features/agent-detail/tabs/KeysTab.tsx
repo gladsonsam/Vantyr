@@ -14,8 +14,15 @@ import { AppIcon } from "@/components/common/AppIcon";
 import type { AgentInfo, KeySession } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
-import { LoadFailed, MonitoringToolbar } from "@/features/agent-detail/components/MonitoringToolbar";
-import { isLongText, listCountLabel, titleRestatesApp } from "@/features/agent-detail/lib/monitoring";
+import {
+  LoadFailed,
+  MonitoringToolbar,
+} from "@/features/agent-detail/components/MonitoringToolbar";
+import {
+  isLongText,
+  listCountLabel,
+  titleRestatesApp,
+} from "@/features/agent-detail/lib/monitoring";
 import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
 interface KeystrokeEvent {
@@ -71,7 +78,13 @@ function TypedText({ text }: { text: string }) {
   const long = isLongText(text);
   return (
     <div className="flex flex-col items-start gap-1">
-      <div id={id} className={cn("max-w-full whitespace-pre-wrap break-words", long && !open && "line-clamp-3")}>
+      <div
+        id={id}
+        className={cn(
+          "max-w-full whitespace-pre-wrap break-words",
+          long && !open && "line-clamp-3",
+        )}
+      >
         {text}
       </div>
       {long ? (
@@ -102,7 +115,9 @@ function keystrokeColumns(agentId: string, showCorrected: boolean) {
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
-      cell: ({ row, table }) => <DayTimeCell table={table} columnId="timestamp" ts={row.original.timestamp} />,
+      cell: ({ row, table }) => (
+        <DayTimeCell table={table} columnId="timestamp" ts={row.original.timestamp} />
+      ),
       meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
     }),
     columnHelper.accessor("exe_name", {
@@ -130,15 +145,31 @@ function keystrokeColumns(agentId: string, showCorrected: boolean) {
       // A window called just like its app adds nothing to the row.
       cell: ({ row }) => {
         const item = row.original;
-        return titleRestatesApp(item.window_title, item.app_display, item.exe_name) ? null : item.window_title;
+        return titleRestatesApp(item.window_title, item.app_display, item.exe_name)
+          ? null
+          : item.window_title;
       },
-      meta: { className: "max-w-56 text-[13px] text-muted-foreground whitespace-normal wrap-break-word max-sm:basis-full" },
+      meta: {
+        className:
+          "max-w-56 text-[13px] text-muted-foreground whitespace-normal wrap-break-word max-sm:basis-full",
+      },
     }),
     columnHelper.display({
       id: "keys",
       header: "Typed text",
-      cell: ({ row }) => <TypedText text={showCorrected ? applyBackspaceCorrection(row.original.keys || "") : row.original.keys || ""} />,
-      meta: { className: "min-w-64 max-w-xl font-mono text-xs whitespace-normal wrap-break-word max-sm:order-first max-sm:basis-full" },
+      cell: ({ row }) => (
+        <TypedText
+          text={
+            showCorrected
+              ? applyBackspaceCorrection(row.original.keys || "")
+              : row.original.keys || ""
+          }
+        />
+      ),
+      meta: {
+        className:
+          "min-w-64 max-w-xl font-mono text-xs whitespace-normal wrap-break-word max-sm:order-first max-sm:basis-full",
+      },
     }),
   ]);
 }
@@ -187,7 +218,13 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
   const filteringText = String(table.state.globalFilter ?? "");
 
   if (!keysAvailable) {
-    return <CapabilityNotice info={agentInfo} capability="keyboard_monitor" title="Keystrokes unavailable" />;
+    return (
+      <CapabilityNotice
+        info={agentInfo}
+        capability="keyboard_monitor"
+        title="Keystrokes unavailable"
+      />
+    );
   }
 
   return (
@@ -207,7 +244,10 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
         onRefresh={() => void keysQuery.refetch()}
         refreshing={loading && items.length > 0}
         actions={
-          <label className="flex cursor-pointer items-center gap-2 px-1 text-sm text-muted-foreground" title="Show every key press, including backspaces, instead of the text as typed">
+          <label
+            className="flex cursor-pointer items-center gap-2 px-1 text-sm text-muted-foreground"
+            title="Show every key press, including backspaces, instead of the text as typed"
+          >
             <Checkbox
               checked={showRaw}
               onCheckedChange={(checked) => setShowRaw(checked === true)}
@@ -217,13 +257,22 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
           </label>
         }
       />
-      {keysQuery.isError ? <LoadFailed what="typed text" onRetry={() => void keysQuery.refetch()} /> : null}
+      {keysQuery.isError ? (
+        <LoadFailed what="typed text" onRetry={() => void keysQuery.refetch()} />
+      ) : null}
       <div className="px-2 py-2">
-        <DataTable dayGroupColumn="timestamp"
+        <DataTable
+          dayGroupColumn="timestamp"
           table={table}
           loading={loading}
           loadingText="Loading keystrokes…"
-          emptyText={keysQuery.isError ? "Nothing to show." : filteringText ? "No typing matches this search." : "No keystrokes recorded yet."}
+          emptyText={
+            keysQuery.isError
+              ? "Nothing to show."
+              : filteringText
+                ? "No typing matches this search."
+                : "No keystrokes recorded yet."
+          }
           bodyClassName="[&_td]:align-top"
         />
       </div>

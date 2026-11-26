@@ -1,15 +1,22 @@
-// @vitest-environment jsdom
+import { click, typeInto } from "@tests/support/formDom";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
+import { testMock as vi } from "@tests/support/mock";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
-import { click, typeInto } from "@tests/support/formDom";
-import { AgentsContext, type AgentsContextValue } from "@/app/providers/useAgents";
-import { AuditTab } from "@/features/logs/AuditTab";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-const api = vi.hoisted(() => ({ audit: vi.fn() }));
-vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e instanceof Error ? e.message : e), apiUrl: (p: string) => p }));
+import type { AgentsContextValue } from "@/app/providers/useAgents";
+
+const api = (() => ({ audit: vi.fn() }))();
+await vi.mock("@/api", () => ({
+  api,
+  errorText: (e: unknown) => String(e instanceof Error ? e.message : e),
+  apiUrl: (p: string) => p,
+}));
+
+const { AgentsContext } = await import("@/app/providers/useAgents");
+const { AuditTab } = await import("@/features/logs/AuditTab");
 
 const record = (id: number, patch: Record<string, unknown> = {}) => ({
   id,
@@ -58,14 +65,22 @@ async function render(props: Parameters<typeof AuditTab>[0] = {}) {
 const items = () => [...host.querySelectorAll("li")];
 const status = () => host.querySelector('[role="status"]')?.textContent;
 const button = (name: string) =>
-  [...host.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") ?? b.textContent)?.trim().startsWith(name)) as HTMLButtonElement;
+  [...host.querySelectorAll("button")].find((b) =>
+    (b.getAttribute("aria-label") ?? b.textContent)?.trim().startsWith(name),
+  ) as HTMLButtonElement;
 const search = () => host.querySelector<HTMLInputElement>('input[aria-label="Search audit log"]')!;
 
 describe("AuditTab", () => {
   it("lists actions newest first with outcome, who, where from and the device, hiding page views", async () => {
     api.audit.mockResolvedValue({
       rows: [
-        record(3, { action: "update_internet_policy", status: "error", agent_id: "a1", actor: "operator", detail: { error: "device offline" } }),
+        record(3, {
+          action: "update_internet_policy",
+          status: "error",
+          agent_id: "a1",
+          actor: "operator",
+          detail: { error: "device offline" },
+        }),
         record(2, { action: "view_windows", agent_id: "a1" }),
         record(1, { action: "login", actor: "auth", client_ip: null }),
       ],
@@ -97,7 +112,13 @@ describe("AuditTab", () => {
 
   it("opens a row's detail with the raw record, announcing the state and keeping focus on the button", async () => {
     api.audit.mockResolvedValue({
-      rows: [record(7, { action: "run_command", status: "error", detail: { cmd_type: "ListDir", error: '{"message":"module not authorized"}' } })],
+      rows: [
+        record(7, {
+          action: "run_command",
+          status: "error",
+          detail: { cmd_type: "ListDir", error: '{"message":"module not authorized"}' },
+        }),
+      ],
     });
     await render();
     const toggle = items()[0].querySelector<HTMLButtonElement>("button[aria-expanded]")!;
@@ -124,7 +145,10 @@ describe("AuditTab", () => {
 
   it("searches every word across action, user, device and detail, and explains a miss", async () => {
     api.audit.mockResolvedValue({
-      rows: [record(2, { agent_id: "a1", detail: { target: "kiosk" } }), record(1, { action: "login", actor: "auth", client_ip: null })],
+      rows: [
+        record(2, { agent_id: "a1", detail: { target: "kiosk" } }),
+        record(1, { action: "login", actor: "auth", client_ip: null }),
+      ],
     });
     await render();
     await typeInto(search(), "run alpha");
@@ -147,7 +171,10 @@ describe("AuditTab", () => {
 
   it("groups by day and flips to oldest first", async () => {
     api.audit.mockResolvedValue({
-      rows: [record(2, { ts: "2026-11-02T09:00:00Z", action: "power_action" }), record(1, { ts: "2026-10-30T09:00:00Z", action: "run_script" })],
+      rows: [
+        record(2, { ts: "2026-11-02T09:00:00Z", action: "power_action" }),
+        record(1, { ts: "2026-10-30T09:00:00Z", action: "run_script" }),
+      ],
     });
     await render();
     expect(host.querySelectorAll("h3")).toHaveLength(2);
@@ -158,7 +185,11 @@ describe("AuditTab", () => {
   });
 
   it("pages fifty at a time with a range in the status line, and a new search starts again at page 1", async () => {
-    api.audit.mockResolvedValue({ rows: Array.from({ length: 60 }, (_, i) => record(60 - i, { actor: i % 2 ? "admin" : "operator" })) });
+    api.audit.mockResolvedValue({
+      rows: Array.from({ length: 60 }, (_, i) =>
+        record(60 - i, { actor: i % 2 ? "admin" : "operator" }),
+      ),
+    });
     await render();
     expect(items()).toHaveLength(50);
     expect(status()).toBe("1–50 of 60");
@@ -211,7 +242,9 @@ describe("AuditTab", () => {
   });
 
   it("keeps the records on screen when a refresh fails and says so", async () => {
-    api.audit.mockResolvedValueOnce({ rows: [record(1)] }).mockRejectedValueOnce(new Error("offline"));
+    api.audit
+      .mockResolvedValueOnce({ rows: [record(1)] })
+      .mockRejectedValueOnce(new Error("offline"));
     await render();
     await click(button("Refresh audit log"));
     expect(items()).toHaveLength(1);
