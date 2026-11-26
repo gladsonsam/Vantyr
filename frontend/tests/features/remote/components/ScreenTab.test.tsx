@@ -1041,6 +1041,7 @@ it.each([true, false])(
     );
     expect([...host.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual([
       "Take control",
+      "Control in fullscreen",
       "Software keyboard",
       "Open clipboard",
       "Hear desktop audio",
@@ -1545,7 +1546,7 @@ it("keeps the windowed toolbar and Live badge, with no corner handle", async () 
   await render();
   expect(chromeHandle()).toBeNull();
   expect(chromePanel().classList.contains("is-immersive")).toBe(false);
-  expect(chromePanel().textContent).toContain("Viewing desktop");
+  expect(chromePanel().textContent).toContain("Viewing");
   expect(host.querySelector(".remote-live-badge")).not.toBeNull();
 });
 it("hides the toolbar and Live badge in fullscreen until the corner handle asks for them", async () => {
@@ -1555,7 +1556,7 @@ it("hides the toolbar and Live badge in fullscreen until the corner handle asks 
   expect(chromeHandle()?.getAttribute("aria-expanded")).toBe("false");
   expect(chromePanel().classList.contains("is-immersive")).toBe(true);
   expect(chromePanel().hasAttribute("inert")).toBe(true);
-  expect(chromePanel().textContent).not.toContain("Viewing desktop");
+  expect(chromePanel().textContent).not.toContain("Viewing");
   await act(async () => chromeHandle()!.click());
   expect(chromeShown()).toBe(true);
   expect(chromeHandle()?.getAttribute("aria-expanded")).toBe("true");

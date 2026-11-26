@@ -40,8 +40,22 @@
   font-weight: 600;
   color: var(--muted-foreground);
 }
+.remote-session-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.remote-session-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tx-3);
+}
 .remote-session-mode.is-controlling {
   color: var(--gr);
+}
+.remote-session-mode.is-controlling .remote-session-dot {
+  background: var(--gr);
 }
 .remote-input-hint {
   color: var(--muted-foreground);
@@ -77,8 +91,61 @@
 .remote-primary-actions button svg {
   flex-shrink: 0;
 }
-.remote-primary-actions button:last-child {
-  margin-left: auto;
+.remote-control-group,
+.remote-quiet-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+/* Primary pair reads as one split button of equal weight. */
+.remote-control-group {
+  gap: 2px;
+}
+.remote-control-group button:not(:only-child):first-child {
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+.remote-control-group button:not(:only-child):last-child {
+  border-top-left-radius: 4px;
+  border-bottom-left-radius: 4px;
+}
+.remote-quiet-tools button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted-foreground);
+}
+.remote-quiet-tools button.is-active {
+  background: var(--card-2);
+}
+/* Small screens keep the labelled grid: the groups dissolve into its cells. */
+@media (max-width: 1279px), (max-height: 480px) and (orientation: landscape) {
+  .remote-control-group,
+  .remote-quiet-tools {
+    display: contents;
+  }
+  .remote-quiet-tools button {
+    background: var(--card-2);
+    border-color: var(--line-2);
+    color: var(--tx);
+  }
+  .remote-control-group button:not(:only-child) {
+    border-radius: 10px;
+  }
+}
+/* Wide screens: tools are quiet icon-only buttons (the label stays for screen readers). */
+@media (min-width: 1280px) and (min-height: 481px) {
+  .remote-quiet-tools .remote-tool-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .remote-quiet-tools button {
+    padding: 8px;
+  }
 }
 .remote-primary-actions .remote-control-button {
   background: var(--gr);
@@ -396,9 +463,6 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(44px, 1fr));
   }
-  .remote-primary-actions button:last-child {
-    margin-left: 0;
-  }
   .remote-input-hint {
     flex-basis: 100%;
   }
@@ -427,9 +491,6 @@
   .remote-primary-actions {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-  }
-  .remote-primary-actions button:last-child {
-    margin-left: 0;
   }
 }
 /* Wide screens: mode text and actions share one row so the desktop keeps the height. */
@@ -484,9 +545,6 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
-  }
-  .screen-remote-tools .remote-primary-actions button:last-child {
-    margin-left: 0;
   }
   .screen-remote-tools .remote-connection-note {
     margin-top: 6px;

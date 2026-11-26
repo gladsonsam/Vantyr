@@ -57,9 +57,17 @@ type StreamToolsProps = {
     onMonitor: (index: number) => void;
     onReconnect: (() => void) | null;
   };
-  audio: { show: boolean; disabled: boolean; active: boolean; onToggle: () => void; note?: string };
+  audio: {
+    show: boolean;
+    disabled: boolean;
+    active: boolean;
+    onToggle: () => void;
+    note?: string;
+  };
   onNotify: (() => void) | null;
   activeApp?: string;
+  /** Whether going fullscreen also takes control. */
+  fullscreenControl: { enabled: boolean; onChange: (enabled: boolean) => void };
 };
 
 export function StreamToolsSheet({
@@ -76,6 +84,7 @@ export function StreamToolsSheet({
   audio,
   onNotify,
   activeApp,
+  fullscreenControl,
 }: StreamToolsProps) {
   const { agentId, inputEnabled, pointerEnabled, leaseToken } = control;
   return (
@@ -92,7 +101,8 @@ export function StreamToolsSheet({
           aria-expanded={clipboard.open}
           onClick={clipboard.onToggle}
         >
-          Text clipboard<span aria-hidden="true">{clipboard.open ? "−" : "+"}</span>
+          Text clipboard
+          <span aria-hidden="true">{clipboard.open ? "−" : "+"}</span>
         </button>
         {clipboard.open && (
           <div className="remote-tool-group-content">
@@ -240,6 +250,17 @@ export function StreamToolsSheet({
             Reconnect live view
           </button>
         )}
+      </RemoteToolGroup>
+      <RemoteToolGroup title="Fullscreen">
+        <div className="remote-tool-buttons">
+          <button
+            type="button"
+            aria-pressed={fullscreenControl.enabled}
+            onClick={() => fullscreenControl.onChange(!fullscreenControl.enabled)}
+          >
+            Fullscreen also takes control: {fullscreenControl.enabled ? "On" : "Off"}
+          </button>
+        </div>
       </RemoteToolGroup>
       <AudioTools audio={audio} onNotify={onNotify} />
       <RemoteToolGroup title="Help">

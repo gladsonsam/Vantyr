@@ -26,6 +26,10 @@ import { useRemoteControlLease } from "@/features/remote/hooks/useRemoteControlL
 import { useRemoteKeyboardCapture } from "@/features/remote/hooks/useKeyboardLock";
 import { useRemoteInput } from "@/features/remote/hooks/useRemoteInput";
 import { useScreenStream } from "@/features/remote/hooks/useScreenStream";
+import {
+  useFullscreenControlPreference,
+  useSoundPreference,
+} from "@/features/remote/hooks/useSoundPreference";
 import type { StreamPreset } from "@/features/remote/lib/streamPresets";
 import { NotificationDialog } from "./NotificationDialog";
 import type { RemoteKeyboardHandle } from "./RemoteSoftwareKeyboard";
@@ -163,6 +167,11 @@ export function ScreenTab({
     online,
     enabled: [source.audio, canOperate, audioAvailable, streamActive].every(Boolean),
   });
+  const sound = useSoundPreference(
+    audio,
+    [source.audio, canOperate, audioAvailable, streamActive, online, verifiedFrame].every(Boolean),
+  );
+  const [fullscreenControl, setFullscreenControl] = useFullscreenControlPreference();
 
   const { abort: abortStream, changePreset, changeMonitor } = stream;
   const applyStreamPreset = useCallback(
@@ -240,6 +249,11 @@ export function ScreenTab({
       lease={lease}
       input={input}
       audio={audio}
+      sound={sound}
+      fullscreenControl={{
+        enabled: fullscreenControl,
+        onChange: setFullscreenControl,
+      }}
       inputEnabled={inputEnabled}
       pointerEnabled={pointerEnabled}
       remoteControlAllowed={remoteControlAllowed}
@@ -502,6 +516,9 @@ interface ScreenToolsProps {
   lease: ReturnType<typeof useRemoteControlLease>;
   input: ReturnType<typeof useRemoteInput>;
   audio: ReturnType<typeof useDesktopAudio>;
+  sound: ReturnType<typeof useSoundPreference>;
+  /** "Fullscreen also takes control" setting. */
+  fullscreenControl: { enabled: boolean; onChange: (enabled: boolean) => void };
   inputEnabled: boolean;
   pointerEnabled: boolean;
   remoteControlAllowed: boolean;
@@ -546,6 +563,8 @@ function ScreenTools({
   lease,
   input,
   audio,
+  sound,
+  fullscreenControl,
   inputEnabled,
   pointerEnabled,
   remoteControlAllowed,
@@ -597,9 +616,36 @@ function ScreenTools({
     setToolsOpen(false);
     setClipboardOpen(false);
   };
-  const toggleAudio = () => toggleDesktopAudio(audio);
+  const toggleAudio = () => {
+    // Remember the choice: stopping means "off" from now on, starting means "on".
+    sound.setWanted(!(audio.active || audio.connecting));
+    toggleDesktopAudio(audio);
+  };
+  const takeControl = () => {
+    setInputError("");
+    lease.acquire();
+  };
+  // One click: request fullscreen first (it needs the click's user activation), then ask for
+  // control. If control isn't possible the view is still maximized and the reason is shown.
+  const controlInFullscreen = () => {
+    if (!maximized) onMaximize();
+    if (inputEnabled) return;
+    if (remoteControlAllowed) takeControl();
+    else setInputError(connectionNote);
+  };
+  const maximizeToggle = () => {
+    if (!maximized && fullscreenControl.enabled && !inputEnabled) controlInFullscreen();
+    else onMaximize();
+  };
   const monitorSelection = remoteMonitorSelection(agentInfo, streamEnabled, monitorIndex);
-  const audioControls = remoteAudioControls(audio, source, canOperate, audioAvailable, online);
+  const audioControls = remoteAudioControls(
+    audio,
+    source,
+    canOperate,
+    audioAvailable,
+    online,
+    sound.awaitingGesture,
+  );
   return (
     <>
       <StreamToolbar
@@ -608,12 +654,13 @@ function ScreenTools({
           active: inputEnabled,
           acquiring: lease.acquiring,
           allowed: remoteControlAllowed,
+          busy: /another viewer|owns remote control/i.test(lease.error),
           onToggle: () => {
-            if (!inputEnabled) {
-              setInputError("");
-              lease.acquire();
-            } else lease.release();
+            if (!inputEnabled) takeControl();
+            else lease.release();
           },
+          onFullscreen: controlInFullscreen,
+          fullscreenActive: maximized,
         }}
         keyboard={{
           open: keyboardOpen,
@@ -638,7 +685,7 @@ function ScreenTools({
         maximize={{
           maximized,
           disabled: !streamEnabled,
-          onToggle: onMaximize,
+          onToggle: maximizeToggle,
           title: fullscreenTitle,
         }}
         clipboard={{
@@ -653,7 +700,11 @@ function ScreenTools({
             setToolsOpen(true);
           },
         }}
-        audio={{ ...audioControls, connecting: audio.connecting, onToggle: toggleAudio }}
+        audio={{
+          ...audioControls,
+          connecting: audio.connecting,
+          onToggle: toggleAudio,
+        }}
         onReconnect={canReconnect ? reconnectStream : null}
         error={errorText}
         note={connectionNote}
@@ -663,8 +714,16 @@ function ScreenTools({
         <StreamToolsSheet
           triggerRef={clipboardTriggerUsed ? clipboardTrigger : toolsTrigger}
           onClose={closeTools}
-          message={{ text: errorText || connectionNote, alert: Boolean(errorText) }}
-          control={{ agentId, inputEnabled, pointerEnabled, leaseToken: lease.token }}
+          message={{
+            text: errorText || connectionNote,
+            alert: Boolean(errorText),
+          }}
+          control={{
+            agentId,
+            inputEnabled,
+            pointerEnabled,
+            leaseToken: lease.token,
+          }}
           touch={{
             mode: input.touchMode,
             action: touchAction,
@@ -733,6 +792,7 @@ function ScreenTools({
             ...audioControls,
             onToggle: toggleAudio,
           }}
+          fullscreenControl={fullscreenControl}
           onNotify={
             inputEnabled
               ? () => {
@@ -793,7 +853,10 @@ function remoteMonitorSelection(
     0,
     monitors.findIndex((m) => m.primary),
   );
-  return { options: enabled && monitors.length > 1 ? monitors : null, selected: index ?? primary };
+  return {
+    options: enabled && monitors.length > 1 ? monitors : null,
+    selected: index ?? primary,
+  };
 }
 function remoteAudioControls(
   audio: ReturnType<typeof useDesktopAudio>,
@@ -801,11 +864,13 @@ function remoteAudioControls(
   canOperate: boolean,
   available: boolean,
   online: boolean,
+  awaitingGesture: boolean,
 ) {
   return {
     show: available && canOperate,
     disabled: !online || !source.audio,
     active: audio.active,
+    awaitingGesture,
     note: audio.error || source.audioNote,
   };
 }

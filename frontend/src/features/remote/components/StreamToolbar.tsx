@@ -19,7 +19,17 @@ import { RemoteSoftwareKeyboard, type RemoteKeyboardHandle } from "./RemoteSoftw
  * maximize), the current error or connection note, and the keyboard tray.
  */
 type ToolbarProps = {
-  control: { active: boolean; acquiring: boolean; allowed: boolean; onToggle: () => void };
+  control: {
+    active: boolean;
+    acquiring: boolean;
+    allowed: boolean;
+    /** Another viewer holds the control lease. */
+    busy: boolean;
+    onToggle: () => void;
+    /** Maximize and take control in one click. */
+    onFullscreen: () => void;
+    fullscreenActive: boolean;
+  };
   /** Keyboard note beside the session mode (empty when there is nothing to say). */
   hint: string;
   keyboard: {
@@ -29,8 +39,17 @@ type ToolbarProps = {
     onToggle: () => void;
     onText: (text: string) => boolean;
   };
-  tools: { open: boolean; triggerRef: RefObject<HTMLButtonElement | null>; onOpen: () => void };
-  maximize: { maximized: boolean; disabled: boolean; onToggle: () => void; title?: string };
+  tools: {
+    open: boolean;
+    triggerRef: RefObject<HTMLButtonElement | null>;
+    onOpen: () => void;
+  };
+  maximize: {
+    maximized: boolean;
+    disabled: boolean;
+    onToggle: () => void;
+    title?: string;
+  };
   clipboard: {
     ref: RefObject<HTMLButtonElement | null>;
     open: boolean;
@@ -42,6 +61,8 @@ type ToolbarProps = {
     active: boolean;
     connecting: boolean;
     disabled: boolean;
+    /** Sound is wanted but the browser has not allowed it yet (needs a click). */
+    awaitingGesture?: boolean;
     onToggle: () => void;
   };
   onReconnect: (() => void) | null;
@@ -95,62 +116,72 @@ export function StreamToolbar({
         aria-label="Remote input tools"
         inert={immersive ? !immersive.visible : undefined}
       >
-        <SessionStatus active={control.active} hint={hint} immersive={immersive !== null} />
+        <SessionStatus
+          active={control.active}
+          busy={control.busy}
+          hint={hint}
+          immersive={immersive !== null}
+        />
         <div className="remote-primary-actions">
-          <ControlButton control={control} />
-          <button
-            type="button"
-            data-short-label="Keyboard"
-            aria-label="Software keyboard"
-            title="Software keyboard"
-            disabled={!keyboardEnabled}
-            aria-expanded={keyboardOpen}
-            className={keyboardOpen ? "is-active" : ""}
-            onClick={onToggleKeyboard}
-          >
-            <Keyboard size={18} aria-hidden="true" />
-            <span>Keyboard</span>
-          </button>
-          <button
-            ref={clipboardRef}
-            type="button"
-            data-short-label="Clipboard"
-            aria-label="Open clipboard"
-            title="Transfer text between this browser and the device"
-            aria-haspopup="dialog"
-            aria-expanded={clipboardOpen}
-            disabled={!clipboardEnabled}
-            onClick={onOpenClipboard}
-          >
-            <Clipboard size={18} aria-hidden="true" />
-            <span>Clipboard</span>
-          </button>
-          <AudioButton audio={audio} />
-          {onReconnect && (
+          <div className="remote-control-group">
+            <ControlButton control={control} />
+            <FullscreenControlButton control={control} />
+          </div>
+          <div className="remote-quiet-tools">
             <button
               type="button"
-              data-short-label="Reconnect"
-              aria-label="Reconnect live view"
-              onClick={onReconnect}
+              data-short-label="Keyboard"
+              aria-label="Software keyboard"
+              title="Software keyboard"
+              disabled={!keyboardEnabled}
+              aria-expanded={keyboardOpen}
+              className={keyboardOpen ? "is-active" : ""}
+              onClick={onToggleKeyboard}
             >
-              <RefreshCw size={18} aria-hidden="true" />
-              <span>Reconnect</span>
+              <Keyboard size={18} aria-hidden="true" />
+              <span className="remote-tool-label">Keyboard</span>
             </button>
-          )}
-          <button
-            ref={triggerRef}
-            type="button"
-            data-short-label="Tools"
-            aria-label="More tools"
-            title="More tools"
-            aria-haspopup="dialog"
-            aria-expanded={toolsOpen}
-            onClick={onOpenTools}
-          >
-            <MoreHorizontal size={19} aria-hidden="true" />
-            <span>More tools</span>
-          </button>
-          <MaximizeButton maximize={maximize} />
+            <button
+              ref={clipboardRef}
+              type="button"
+              data-short-label="Clipboard"
+              aria-label="Open clipboard"
+              title="Transfer text between this browser and the device"
+              aria-haspopup="dialog"
+              aria-expanded={clipboardOpen}
+              disabled={!clipboardEnabled}
+              onClick={onOpenClipboard}
+            >
+              <Clipboard size={18} aria-hidden="true" />
+              <span className="remote-tool-label">Clipboard</span>
+            </button>
+            <AudioButton audio={audio} />
+            {onReconnect && (
+              <button
+                type="button"
+                data-short-label="Reconnect"
+                aria-label="Reconnect live view"
+                onClick={onReconnect}
+              >
+                <RefreshCw size={18} aria-hidden="true" />
+                <span className="remote-tool-label">Reconnect</span>
+              </button>
+            )}
+            <button
+              ref={triggerRef}
+              type="button"
+              data-short-label="Tools"
+              aria-label="More tools"
+              title="More tools"
+              aria-haspopup="dialog"
+              aria-expanded={toolsOpen}
+              onClick={onOpenTools}
+            >
+              <MoreHorizontal size={19} aria-hidden="true" />
+              <span className="remote-tool-label">More tools</span>
+            </button>
+            <MaximizeButton maximize={maximize} />
+          </div>
         </div>
         {!immersive && <ConnectionNote error={error} note={note} />}
         {keyboardOpen && (
@@ -170,10 +201,12 @@ export function StreamToolbar({
 /** Mode and keyboard hint; maximized, only the hint stays (the desktop itself shows the mode). */
 function SessionStatus({
   active,
+  busy,
   hint,
   immersive,
 }: {
   active: boolean;
+  busy: boolean;
   hint: string;
   immersive: boolean;
 }) {
@@ -182,7 +215,8 @@ function SessionStatus({
     <div className="remote-session-status">
       {!immersive && (
         <span className={`remote-session-mode${active ? " is-controlling" : ""}`}>
-          {active ? "You’re controlling this desktop" : "Viewing desktop"}
+          <span className="remote-session-dot" aria-hidden="true" />
+          {active ? "Controlling" : busy ? "Someone else is controlling" : "Viewing"}
         </span>
       )}
       {hint && (
@@ -253,9 +287,29 @@ function ControlButton({ control }: Pick<ToolbarProps, "control">) {
   );
 }
 
+/** Takes control and goes fullscreen from one click; hidden once either is already done. */
+function FullscreenControlButton({ control }: Pick<ToolbarProps, "control">) {
+  if (control.active || control.fullscreenActive) return null;
+  return (
+    <button
+      type="button"
+      data-short-label="Full control"
+      className="remote-control-button"
+      aria-label="Control in fullscreen"
+      title="Take control and go fullscreen"
+      disabled={!control.allowed || control.acquiring}
+      onClick={control.onFullscreen}
+    >
+      <Maximize2 size={17} aria-hidden="true" />
+      <span>Fullscreen control</span>
+    </button>
+  );
+}
+
 function AudioButton({ audio }: Pick<ToolbarProps, "audio">) {
   if (!audio.show) return null;
   const text = audio.connecting ? "Connecting…" : audio.active ? "Sound on" : "Sound off";
+  const title = audio.awaitingGesture ? "Click to enable sound" : undefined;
   const label = audio.connecting
     ? "Cancel desktop audio"
     : audio.active
@@ -267,7 +321,7 @@ function AudioButton({ audio }: Pick<ToolbarProps, "audio">) {
       data-short-label={text}
       aria-label={label}
       aria-pressed={audio.active}
-      title={label}
+      title={title ?? label}
       disabled={audio.disabled}
       className={audio.active ? "is-active" : ""}
       onClick={audio.onToggle}
@@ -277,7 +331,7 @@ function AudioButton({ audio }: Pick<ToolbarProps, "audio">) {
       ) : (
         <VolumeX size={18} aria-hidden="true" />
       )}
-      <span>{text}</span>
+      <span className="remote-tool-label">{text}</span>
     </button>
   );
 }
@@ -298,7 +352,7 @@ function MaximizeButton({ maximize }: Pick<ToolbarProps, "maximize">) {
       ) : (
         <Maximize2 size={18} aria-hidden="true" />
       )}
-      <span className="remote-fullscreen-label">
+      <span className="remote-tool-label remote-fullscreen-label">
         {maximize.maximized ? "Exit fullscreen" : "Fullscreen"}
       </span>
     </button>
