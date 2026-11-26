@@ -1531,3 +1531,120 @@ it("keeps the Vantyr palette from opening behind a fullscreen desktop it cannot 
   chord(document.body, "k", { ctrlKey: true });
   expect(toggle).not.toHaveBeenCalled();
 });
+
+// ---- Maximized view: controls only on demand ----
+const chromePanel = () => host.querySelector<HTMLElement>(".screen-remote-tools")!;
+const chromeHandle = () =>
+  host.querySelector<HTMLButtonElement>('button[aria-label="View controls"]');
+const chromeShown = () =>
+  chromePanel().classList.contains("is-revealed") && !chromePanel().hasAttribute("inert");
+const wait = (ms: number) =>
+  act(async () => void (await new Promise((done) => setTimeout(done, ms))));
+
+it("keeps the windowed toolbar and Live badge, with no corner handle", async () => {
+  await render();
+  expect(chromeHandle()).toBeNull();
+  expect(chromePanel().classList.contains("is-immersive")).toBe(false);
+  expect(chromePanel().textContent).toContain("Viewing desktop");
+  expect(host.querySelector(".remote-live-badge")).not.toBeNull();
+});
+it("hides the toolbar and Live badge in fullscreen until the corner handle asks for them", async () => {
+  await render();
+  await click("Maximize view");
+  expect(host.querySelector(".remote-live-badge")).toBeNull();
+  expect(chromeHandle()?.getAttribute("aria-expanded")).toBe("false");
+  expect(chromePanel().classList.contains("is-immersive")).toBe(true);
+  expect(chromePanel().hasAttribute("inert")).toBe(true);
+  expect(chromePanel().textContent).not.toContain("Viewing desktop");
+  await act(async () => chromeHandle()!.click());
+  expect(chromeShown()).toBe(true);
+  expect(chromeHandle()?.getAttribute("aria-expanded")).toBe("true");
+  await act(async () => chromeHandle()!.click());
+  expect(chromeShown()).toBe(false);
+});
+it("reveals on a deliberate hover only and hides when the pointer leaves", async () => {
+  await render();
+  await click("Maximize view");
+  const hover = (type: string) =>
+    act(() => {
+      chromeHandle()!.dispatchEvent(
+        Object.assign(new Event(type, { bubbles: type === "pointerleave" ? false : true }), {
+          pointerType: "mouse",
+        }),
+      );
+    });
+  await hover("pointerover");
+  await hover("pointerout");
+  await wait(300);
+  expect(chromeShown()).toBe(false);
+  await hover("pointerover");
+  await wait(300);
+  expect(chromeShown()).toBe(true);
+  await hover("pointerout");
+  await wait(480);
+  expect(chromeShown()).toBe(false);
+});
+it("dismisses with Escape back to the desktop, and a press on the desktop also dismisses", async () => {
+  const overlay = await takeControl();
+  await click("Maximize view");
+  await act(async () => chromeHandle()!.click());
+  act(() => chromePanel().querySelector<HTMLButtonElement>("button:not(:disabled)")!.focus());
+  const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+  act(() => void document.activeElement!.dispatchEvent(escape));
+  expect(escape.defaultPrevented).toBe(true);
+  expect(chromeShown()).toBe(false);
+  expect(document.activeElement).toBe(overlay);
+  await act(async () => chromeHandle()!.click());
+  expect(chromeShown()).toBe(true);
+  act(() => void overlay.dispatchEvent(new Event("pointerdown", { bubbles: true })));
+  expect(chromeShown()).toBe(false);
+});
+it("does not take remote keys while the controls are open", async () => {
+  const overlay = await takeControl();
+  await click("Maximize view");
+  await act(async () => chromeHandle()!.click());
+  chord(overlay, "Escape");
+  expect(commands().slice(-1)).toEqual([{ type: "KeyPress", key: "escape" }]);
+  expect(chromeShown()).toBe(true);
+  chord(overlay, "a");
+  expect(commands().slice(-1)).toEqual([{ type: "TypeText", text: "a" }]);
+});
+it("keeps the toolbar open for its tools sheet and returns focus to it after closing", async () => {
+  await takeControl();
+  await click("Maximize view");
+  await act(async () => chromeHandle()!.click());
+  await click("More tools");
+  expect(host.querySelector(".remote-tools-sheet")).not.toBeNull();
+  act(() => void document.dispatchEvent(new Event("pointerdown", { bubbles: true })));
+  expect(chromeShown()).toBe(true);
+  closeTools();
+  expect(chromeShown()).toBe(true);
+  expect(document.activeElement?.getAttribute("aria-label")).toBe("More tools");
+});
+it("leaves errors visible while the controls are hidden", async () => {
+  await takeControl();
+  await click("Maximize view");
+  await act(async () =>
+    wsBus.emit({
+      event: "command_rejected",
+      agent_id: "device",
+      module: "remote_input",
+      error: "Remote input rejected.",
+    }),
+  );
+  expect(chromeShown()).toBe(false);
+  expect(host.querySelector(".remote-fs-alert [role='alert']")?.textContent).toBe(
+    "Remote input rejected.",
+  );
+  expect(chromePanel().querySelector("[role='alert']")).toBeNull();
+});
+it("drops the handle and hides the controls when leaving fullscreen", async () => {
+  await render();
+  await click("Maximize view");
+  await act(async () => chromeHandle()!.click());
+  await click("Exit fullscreen");
+  expect(chromeHandle()).toBeNull();
+  expect(chromePanel().classList.contains("is-immersive")).toBe(false);
+  await click("Maximize view");
+  expect(chromeShown()).toBe(false);
+});

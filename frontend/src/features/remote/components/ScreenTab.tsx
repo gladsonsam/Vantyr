@@ -20,6 +20,7 @@ import {
 import { useDeviceModuleGrants } from "@/features/agent-settings/useDeviceModuleGrants";
 import { useDesktopAudio } from "@/features/remote/hooks/useDesktopAudio";
 import { useFullscreen } from "@/features/remote/hooks/useFullscreen";
+import { useImmersiveChrome } from "@/features/remote/hooks/useImmersiveChrome";
 import type { DisplayedRemoteFrame } from "@/features/remote/hooks/useMjpegFrames";
 import { useRemoteControlLease } from "@/features/remote/hooks/useRemoteControlLease";
 import { useRemoteKeyboardCapture } from "@/features/remote/hooks/useKeyboardLock";
@@ -254,7 +255,9 @@ export function ScreenTab({
       toolsTrigger={toolsTrigger}
       clipboardTrigger={clipboardTrigger}
       keyboardRef={keyboardRef}
+      overlayRef={overlayRef}
       panels={{
+        showNotificationModal,
         toolsOpen,
         keyboardOpen,
         clipboardOpen,
@@ -514,7 +517,10 @@ interface ScreenToolsProps {
   toolsTrigger: RefObject<HTMLButtonElement | null>;
   clipboardTrigger: RefObject<HTMLButtonElement | null>;
   keyboardRef: RefObject<RemoteKeyboardHandle | null>;
+  /** The desktop input layer; Escape from the maximized toolbar returns focus here. */
+  overlayRef: RefObject<HTMLDivElement | null>;
   panels: {
+    showNotificationModal: boolean;
     toolsOpen: boolean;
     keyboardOpen: boolean;
     clipboardOpen: boolean;
@@ -555,6 +561,7 @@ function ScreenTools({
   toolsTrigger,
   clipboardTrigger,
   keyboardRef,
+  overlayRef,
   panels,
   canReconnect,
   connectionNote,
@@ -565,6 +572,7 @@ function ScreenTools({
   reconnectStream,
 }: ScreenToolsProps) {
   const {
+    showNotificationModal,
     toolsOpen,
     keyboardOpen,
     clipboardOpen,
@@ -575,6 +583,14 @@ function ScreenTools({
     setClipboardTriggerUsed,
     setShowNotificationModal,
   } = panels;
+  const immersive = useImmersiveChrome({
+    active: maximized,
+    held: toolsOpen || keyboardOpen || clipboardOpen || showNotificationModal,
+    restoreFocus: () => {
+      overlayRef.current?.focus();
+      return Boolean(overlayRef.current) && document.activeElement === overlayRef.current;
+    },
+  });
   const { source, monitorIndex } = stream;
   const { ctrl, releaseHeldInput, setInputError, setZoom, setPan, touchAction } = input;
   const closeTools = () => {
@@ -641,6 +657,7 @@ function ScreenTools({
         onReconnect={canReconnect ? reconnectStream : null}
         error={errorText}
         note={connectionNote}
+        immersive={maximized ? immersive : null}
       />
       {toolsOpen && (
         <StreamToolsSheet

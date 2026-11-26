@@ -1,5 +1,6 @@
 import type { RefObject } from "react";
 import {
+  ChevronDown,
   Clipboard,
   Keyboard,
   Maximize2,
@@ -10,6 +11,7 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
+import type { useImmersiveChrome } from "@/features/remote/hooks/useImmersiveChrome";
 import { RemoteSoftwareKeyboard, type RemoteKeyboardHandle } from "./RemoteSoftwareKeyboard";
 
 /**
@@ -47,6 +49,11 @@ type ToolbarProps = {
   error: string;
   /** Why control is unavailable or what the stream is doing. */
   note: string;
+  /**
+   * Maximized view: the toolbar becomes an on-demand overlay behind a corner handle, and only
+   * errors stay visible. Null in the windowed layout.
+   */
+  immersive: ReturnType<typeof useImmersiveChrome> | null;
 };
 
 export function StreamToolbar({
@@ -71,94 +78,153 @@ export function StreamToolbar({
   onReconnect,
   error,
   note,
+  immersive,
 }: ToolbarProps) {
   return (
-    <div className="screen-remote-tools" aria-label="Remote input tools">
-      <div className="remote-session-status">
-        <span className={`remote-session-mode${control.active ? " is-controlling" : ""}`}>
-          {control.active ? "You’re controlling this desktop" : "Viewing desktop"}
-        </span>
-        {hint && (
-          <span className="remote-input-hint" aria-live="polite">
-            {hint}
-          </span>
-        )}
-      </div>
-      <div className="remote-primary-actions">
-        <ControlButton control={control} />
-        <button
-          type="button"
-          data-short-label="Keyboard"
-          aria-label="Software keyboard"
-          title="Software keyboard"
-          disabled={!keyboardEnabled}
-          aria-expanded={keyboardOpen}
-          className={keyboardOpen ? "is-active" : ""}
-          onClick={onToggleKeyboard}
-        >
-          <Keyboard size={18} aria-hidden="true" />
-          <span>Keyboard</span>
-        </button>
-        <button
-          ref={clipboardRef}
-          type="button"
-          data-short-label="Clipboard"
-          aria-label="Open clipboard"
-          title="Transfer text between this browser and the device"
-          aria-haspopup="dialog"
-          aria-expanded={clipboardOpen}
-          disabled={!clipboardEnabled}
-          onClick={onOpenClipboard}
-        >
-          <Clipboard size={18} aria-hidden="true" />
-          <span>Clipboard</span>
-        </button>
-        <AudioButton audio={audio} />
-        {onReconnect && (
-          <button
-            type="button"
-            data-short-label="Reconnect"
-            aria-label="Reconnect live view"
-            onClick={onReconnect}
-          >
-            <RefreshCw size={18} aria-hidden="true" />
-            <span>Reconnect</span>
-          </button>
-        )}
-        <button
-          ref={triggerRef}
-          type="button"
-          data-short-label="Tools"
-          aria-label="More tools"
-          title="More tools"
-          aria-haspopup="dialog"
-          aria-expanded={toolsOpen}
-          onClick={onOpenTools}
-        >
-          <MoreHorizontal size={19} aria-hidden="true" />
-          <span>More tools</span>
-        </button>
-        <MaximizeButton maximize={maximize} />
-      </div>
-      {error ? (
-        <span className="remote-connection-note" role="alert">
-          {error}
-        </span>
-      ) : note ? (
-        <span className="remote-connection-note" role="status">
-          {note}
-        </span>
-      ) : null}
-      {keyboardOpen && (
-        <div className="remote-keyboard-tray">
-          <RemoteSoftwareKeyboard
-            ref={keyboardRef}
-            enabled={keyboardEnabled}
-            onText={onKeyboardText}
-          />
+    <>
+      {immersive && <ImmersiveHandle chrome={immersive} />}
+      {immersive && error && (
+        <div className="remote-fs-alert">
+          <ConnectionNote error={error} note="" />
         </div>
       )}
+      <div
+        {...(immersive?.panel ?? {})}
+        id={immersive ? IMMERSIVE_PANEL_ID : undefined}
+        className={`screen-remote-tools${immersive ? " is-immersive" : ""}${immersive?.visible ? " is-revealed" : ""}`}
+        aria-label="Remote input tools"
+        inert={immersive ? !immersive.visible : undefined}
+      >
+        <SessionStatus active={control.active} hint={hint} immersive={immersive !== null} />
+        <div className="remote-primary-actions">
+          <ControlButton control={control} />
+          <button
+            type="button"
+            data-short-label="Keyboard"
+            aria-label="Software keyboard"
+            title="Software keyboard"
+            disabled={!keyboardEnabled}
+            aria-expanded={keyboardOpen}
+            className={keyboardOpen ? "is-active" : ""}
+            onClick={onToggleKeyboard}
+          >
+            <Keyboard size={18} aria-hidden="true" />
+            <span>Keyboard</span>
+          </button>
+          <button
+            ref={clipboardRef}
+            type="button"
+            data-short-label="Clipboard"
+            aria-label="Open clipboard"
+            title="Transfer text between this browser and the device"
+            aria-haspopup="dialog"
+            aria-expanded={clipboardOpen}
+            disabled={!clipboardEnabled}
+            onClick={onOpenClipboard}
+          >
+            <Clipboard size={18} aria-hidden="true" />
+            <span>Clipboard</span>
+          </button>
+          <AudioButton audio={audio} />
+          {onReconnect && (
+            <button
+              type="button"
+              data-short-label="Reconnect"
+              aria-label="Reconnect live view"
+              onClick={onReconnect}
+            >
+              <RefreshCw size={18} aria-hidden="true" />
+              <span>Reconnect</span>
+            </button>
+          )}
+          <button
+            ref={triggerRef}
+            type="button"
+            data-short-label="Tools"
+            aria-label="More tools"
+            title="More tools"
+            aria-haspopup="dialog"
+            aria-expanded={toolsOpen}
+            onClick={onOpenTools}
+          >
+            <MoreHorizontal size={19} aria-hidden="true" />
+            <span>More tools</span>
+          </button>
+          <MaximizeButton maximize={maximize} />
+        </div>
+        {!immersive && <ConnectionNote error={error} note={note} />}
+        {keyboardOpen && (
+          <div className="remote-keyboard-tray">
+            <RemoteSoftwareKeyboard
+              ref={keyboardRef}
+              enabled={keyboardEnabled}
+              onText={onKeyboardText}
+            />
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** Mode and keyboard hint; maximized, only the hint stays (the desktop itself shows the mode). */
+function SessionStatus({
+  active,
+  hint,
+  immersive,
+}: {
+  active: boolean;
+  hint: string;
+  immersive: boolean;
+}) {
+  if (immersive && !hint) return null;
+  return (
+    <div className="remote-session-status">
+      {!immersive && (
+        <span className={`remote-session-mode${active ? " is-controlling" : ""}`}>
+          {active ? "You’re controlling this desktop" : "Viewing desktop"}
+        </span>
+      )}
+      {hint && (
+        <span className="remote-input-hint" aria-live="polite">
+          {hint}
+        </span>
+      )}
     </div>
+  );
+}
+
+function ConnectionNote({ error, note }: { error: string; note: string }) {
+  if (error) {
+    return (
+      <span className="remote-connection-note" role="alert">
+        {error}
+      </span>
+    );
+  }
+  return note ? (
+    <span className="remote-connection-note" role="status">
+      {note}
+    </span>
+  ) : null;
+}
+
+const IMMERSIVE_PANEL_ID = "remote-fullscreen-controls";
+
+/** Small corner tab that reveals the maximized view's controls; it never covers the top edge. */
+function ImmersiveHandle({ chrome }: { chrome: NonNullable<ToolbarProps["immersive"]> }) {
+  return (
+    <button
+      {...chrome.handle}
+      type="button"
+      className={`remote-fs-handle${chrome.visible ? " is-revealed" : ""}`}
+      aria-label="View controls"
+      title="View controls"
+      aria-expanded={chrome.visible}
+      aria-controls={IMMERSIVE_PANEL_ID}
+    >
+      <ChevronDown size={16} aria-hidden="true" />
+    </button>
   );
 }
 
