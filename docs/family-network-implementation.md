@@ -4,19 +4,30 @@
 
 - Shared policy core: independently accepted; 16 tests.
 - DNS immutable snapshots: independently accepted; no catalog lock across I/O.
-- Vantyr DNS executable: committed with 14 tests, pending independent review;
-  real policy-connected UDP/TCP filtering and CNAME target checks.
-- Network runtime: independently accepted; 22 tests covering local process-restart
-  policy persistence and bounded events with out-of-order expiry. Integration
-  into the DNS executable is still pending.
-- Isolated DNS lab: independently accepted; currently verifies the controlled
-  upstream, not an integrated Vantyr deployment.
-- Management API: inventory and explicit scoped grants under implementation.
+- Vantyr DNS executable and durable configuration/reload: independently accepted;
+  34 baseline tests. Controller-driven HTTPS policy retrieval/application is
+  committed with 47 tests reported passing and awaits independent acceptance.
+- Network runtime: independently accepted; 23 tests covering typed process-restart
+  persistence and bounded events. Persistence is integrated into DNS; event-queue
+  integration into the DNS/query-log pipeline remains unfinished.
+- Isolated DNS lab: independently accepted with actual worker queries, reload,
+  changed-config abrupt-restart recovery, stale-policy behavior and verified
+  cleanup. It makes no household deployment or controller-acknowledgment claim.
+- Management API: inventory, scoped grants, gateway credentials/heartbeat and
+  versioned policy retrieval are independently accepted. BYOD enrollment is
+  under implementation; worker acknowledgment and coverage verification remain.
+- Vantyr Proxy: authenticated HTTP/CONNECT and optional scoped HTTPS inspection
+  are independently accepted; 55 proxy tests and 23 PKI tests. Client credential
+  enrollment, reversible setup and trust installation remain unfinished.
+- UniFi: read-only discovery and a pure setup planner are independently accepted;
+  25 tests. Live-controller validation and server integration remain unfinished.
 - Management UI: proceeds in a separate thread; mobile apps remain deferred.
 - DHCP serving is excluded. The router continues assigning addresses.
 
-The sections below retain the foundation checkpoint and outstanding behavior
-contracts; they are not a claim that all service capabilities are implemented.
+The integration checkpoints at the end of this document record current acceptance
+evidence. The original foundation notes below are historical and must not be used
+as a current capability summary. A granular first-party DNS capability catalog is
+being prepared as the delivery gate; partial implementations do not close a row.
 
 Foundation checkpoint: **step 1 only**. Backend feasibility and durable contracts. No live
 household, DHCP, router, firewall, DNS resolver, proxy, Supabase or React UI
@@ -28,7 +39,7 @@ Related docs: [operations/security runbook](family-network-operations.md) and
 (accepted). The full native DNS behaviour scope is listed neutrally below
 and remains future work; none of it overrides Vantyr's scope/OIDC boundaries.
 
-## What step 1 actually delivers
+## Historical step-1 foundation checkpoint
 
 1. A pure policy crate (`family-policy`) with the shared data contracts and a
    deterministic evaluator, including 16 passing tests.
@@ -45,8 +56,9 @@ and remains future work; none of it overrides Vantyr's scope/OIDC boundaries.
 5. Pinned dependency versions/features in `Cargo.toml` and an updated
    `Cargo.lock`.
 
-It does **not** deliver a running network proxy listener, TLS MITM, the full
-native DNS capability set, or UI. Those are bounded later steps below.
+At that checkpoint there was no running proxy listener or TLS inspection.
+Those capabilities now have separate acceptance evidence below. The full DNS
+capability set and the independently managed frontend remain unfinished.
 
 ## Reproducible commands (run from repo root)
 
