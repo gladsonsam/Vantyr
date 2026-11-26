@@ -26,8 +26,9 @@
 
 The integration checkpoints at the end of this document record current acceptance
 evidence. The original foundation notes below are historical and must not be used
-as a current capability summary. A granular first-party DNS capability catalog is
-being prepared as the delivery gate; partial implementations do not close a row.
+as a current capability summary. The granular first-party
+[DNS capability catalog](network-dns-capabilities.md) is committed and undergoing
+independent review as the delivery gate; partial implementations do not close a row.
 
 Foundation checkpoint: **step 1 only**. Backend feasibility and durable contracts. No live
 household, DHCP, router, firewall, DNS resolver, proxy, Supabase or React UI
@@ -464,7 +465,8 @@ No substantive UI or Supabase changes were made in this step.
 - Controller-driven DNS: bounded authenticated HTTPS retrieval, compatibility
   checks and application through the accepted durable bundle/reload path.
   Implementation is committed with 47 DNS tests reported passing; independent
-  review is pending. It validates scope, schema, revision, publication time and
+  review found a stale-startup-template rollback after local reload; correction
+  is in progress and acceptance remains blocked. It validates scope, schema, revision, publication time and
   content digest, and rejects unsupported policy shapes before application.
   Application acknowledgments and independent coverage verification remain
   separate subsequent integration steps.
