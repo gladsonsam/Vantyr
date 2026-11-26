@@ -801,7 +801,7 @@ async fn concurrent_local_reload_and_controller_pull_stay_monotonic() {
     let committed: Value = serde_json::from_slice(&fs::read(&st.bundle).unwrap()).unwrap();
     assert_eq!(
         committed["policy"]["config"]["local_zones"]["lab.example."][0]["addr"], "192.0.2.20",
-        "the winning controller policy reverted the latest local zone"
+        "the winning controller policy must preserve the latest local zone"
     );
 
     // The controller policy is authoritative and the version is whole.

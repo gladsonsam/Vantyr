@@ -464,10 +464,12 @@ No substantive UI or Supabase changes were made in this step.
 
 - Controller-driven DNS: bounded authenticated HTTPS retrieval, compatibility
   checks and application through the accepted durable bundle/reload path.
-  Implementation is committed with 47 DNS tests reported passing; independent
-  review found a stale-startup-template rollback after local reload; correction
-  is in progress and acceptance remains blocked. It validates scope, schema, revision, publication time and
-  content digest, and rejects unsupported policy shapes before application.
+  Commits `83c7bce3` and `567f1e0e` are independently accepted with all 48 DNS
+  tests passing. Local and controller updates serialize basis capture through
+  persistence/publication; controller pulls preserve the current local zones,
+  device mappings, denial mode and upstreams, including across restart. Scope,
+  schema, revision, publication time and content digest are validated; unsupported
+  policy shapes are rejected before application.
   Application acknowledgments and independent coverage verification remain
   separate subsequent integration steps.
 - BYOD backend: scoped SSO principal bindings, single-use enrollment grants and
