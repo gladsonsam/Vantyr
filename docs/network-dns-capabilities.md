@@ -3,9 +3,9 @@
 This document is the neutral, current-state delivery gate for the Vantyr DNS
 worker and its control plane. It records behavior contracts, honest status and
 the acceptance evidence required to close each row. It is not a roadmap history,
-a product comparison or a deployment claim. State is read from the working tree
-at commit `cd4d4029`; in-flight code is marked accordingly and does not close a
-row. No deploy, release or host-network change follows from this catalog.
+a deployment claim. The initial source audit used commit `cd4d4029`; later
+implementation commits are identified below where relevant. In-flight or
+unreviewed code does not close a row. No deploy, release or host-network change follows from this catalog.
 
 **Status legend.** `AcceptedRuntime` = implemented, tested and independently
 accepted in local source. `PartialRuntime` = some of the contract is served, a
@@ -16,14 +16,17 @@ working-tree work; not accepted. `Missing` = no local implementation.
 = platform/security enhancement requiring an explicit decision before work.
 
 **Non-negotiable boundaries for every row.** No blanket TLS-verification skip
-anywhere; verification failures fail closed on last-known-good. No fail-open
+anywhere; verification failures retain last-known-good policy, while queries
+whose upstream verification fails receive an error rather than an unverified answer. No fail-open
 when trust, policy age or state is unknown: the household baseline stays deny
 and new allows require verified state. No person, adult status or privilege is
 inferred from an IP, a public address or a spoofed client label; device and
 observation identity are weak evidence only. Router DHCP is retained by the
 operator; this work never assigns addresses or edits router/firewall state.
-The UI is user-owned and mobile is deferred; worker auth reuses the same OIDC
-identity and scoped grants, not a separate login or endpoint family. Existing
+The UI is user-owned and mobile is deferred. Dashboard administration uses
+existing OIDC sessions and explicit household grants. Workers use a separate
+audience-scoped Bearer credential and cookie-free `/worker/network` routes;
+worker authentication never establishes a verified person session. Existing
 backup, recovery and package-update flows are reused; no DNS self-updater is
 required and no release is published by this catalog. Library existence is not
 worker acceptance: a stage stays `PartialRuntime` until every row it gates is
@@ -39,13 +42,13 @@ written for a `Missing` row.
 | ID | Behavior contract | Status | Local code | Acceptance test |
 |---|---|---|---|---|
 | LST-01 | Plain UDP and TCP on one configured port; privileged port only by explicit operator decision | `PartialRuntime` | [config.rs](../crates/family-dns/src/config.rs) `BindConfig`, [server.rs](../crates/family-dns/src/server.rs) | One config serves two bind IPs (v4 + v6) on the same port; both answer |
-| LST-02 | IPv4-mapped source canonicalisation and request-derived header flags on allowed, NXDOMAIN, REFUSED and sinkhole paths | `AcceptedRuntime` | [handler.rs](../crates/family-dns/src/handler.rs), [functional.rs](../crates/family-dns/tests/functional.rs) | Mapped source selects the plain-IPv4 device profile; RD/CD echoed on every path |
-| LST-03 | DoT server listener with policy applied to decrypted queries | `Missing` | none in `crates/family-dns` | TLS handshake on configured port; denied query refused; bad chain rejected |
+| LST-02 | IPv4-mapped source canonicalisation and RD/CD request flags on allowed, NXDOMAIN, REFUSED and sinkhole paths | `AcceptedRuntime` | [handler.rs](../crates/family-dns/src/handler.rs), [functional.rs](../crates/family-dns/tests/functional.rs) | Mapped source selects the plain-IPv4 device profile; RD/CD echoed on every path |
+| LST-03 | DoT server listener with policy applied to decrypted queries | `Missing` | none in `crates/family-dns` | Client trusting the configured server CA connects; denied query refused; untrusted client rejects the server chain |
 | LST-04 | DoH server with GET/POST query route and per-client path form | `Missing` | none in `crates/family-dns` | DoH POST and GET answered; per-client route uses the right profile |
 | LST-05 | DoQ server listener | `Missing` | none in `crates/family-dns` | QUIC query answered with policy applied; transport failure fails closed |
 | LST-06 | DNSCrypt server, including disabled state at zero port | `Missing` | none in `crates/family-dns` | DNSCrypt query answered; port zero leaves no listener |
 | LST-07 | HTTP/3 transport for encrypted DNS, with and without fallback | `Missing` | none in `crates/family-dns` | H3 query answered; fallback path behaves as configured |
-| LST-08 | DNS server certificate lifecycle: load, chain/hostname validation, reload without restart, own trust roots; separate from proxy PKI | `Missing` for DNS; proxy custody accepted separately | `crates/network-pki` is proxy-scoped, not a DNS TLS hook | Replace cert file, reload, new handshake succeeds; expired/wrong-host cert rejected with no bypass |
+| LST-08 | DNS server certificate lifecycle: protected key loading, certificate/key consistency, expiry checks and atomic reload; separate from proxy PKI | `Missing` for DNS; proxy custody accepted separately | `crates/network-pki` is proxy-scoped, not a DNS TLS hook | Replace certificate/key, reload, client verifies new server chain and intended hostname; invalid key/cert or expired replacement rejected without replacing the active configuration |
 | LST-09 | Self-loop and public-bind guards reject unsafe listener/upstream combinations | `AcceptedRuntime` | [runtime.rs](../crates/family-dns/src/runtime.rs), [config.rs](../crates/family-dns/src/config.rs) | Mapped and plain self-loop rejected before a listener exists; non-loopback needs opt-in |
 
 ## B. Upstream resolution and routing
@@ -69,7 +72,7 @@ written for a `Missing` row.
 | CAC-01 | Positive/negative cache toggle, size and TTL min/max bounds | `PartialRuntime` | [runtime.rs](../crates/family-dns/src/runtime.rs) uses a fixed 4096-entry cache | Configure bounds; TTL 1s and very large TTL clamped; disabled cache yields no hits |
 | CAC-02 | Optimistic cache serve with bounded answer TTL while refreshing | `Missing` | none | Expired entry served at configured short TTL during refresh |
 | CAC-03 | Cache clear operation | `Missing` | none | Clear then re-query hits upstream, not cache |
-| CAC-04 | DNSSEC request option (DO) configuration, kept separate from response header-flag preservation already accepted in LST-02 and from a validator | `Missing` | no DO configuration; AD/header flags already preserved under LST-02 | DO set on upstream query; AD/header flags asserted under LST-02; no validator claimed |
+| CAC-04 | DNSSEC request option (DO) configuration, kept separate from response header-flag preservation already accepted in LST-02 and from a validator | `Missing` | no DO configuration; allowed responses carry upstream metadata; denial responses construct fresh metadata; only RD/CD specifically asserted | DO set or absent as configured on upstream query; RD/CD regression checks preserved; no AD-specific acceptance or local validator claimed |
 | CAC-05 | Full local DNSSEC validator | `NeedsPlatformDecision` | none | Security enhancement only: if adopted, signed chain validated and bogus refused; decision recorded before work |
 | CAC-06 | EDNS Client Subnet, default off, with explicit opt-in and custom override | `Missing` | none | Default adds no ECS option; opt-in adds real subnet; custom overrides; log records ECS |
 | CAC-07 | Disable IPv6 answers and strip IPv6 hints from related answers | `Missing` | [runtime.rs](../crates/family-dns/src/runtime.rs) always requests IPv4 and IPv6 | AAAA returns empty; HTTPS hints stripped |
@@ -84,22 +87,22 @@ written for a `Missing` row.
 | ID | Behavior contract | Status | Local code | Acceptance test |
 |---|---|---|---|---|
 | FLT-01 | Hosts-file and bare-domain lines; exact, suffix and any matchers with diagnostics | `PartialRuntime` | [config.rs](../crates/family-dns/src/config.rs) `MatchSpec` and its tests | Host/domain lines compile and match; unknown fields rejected |
-| FLT-02 | Maintained-list notation (double-pipe host anchor, exception, regex, wildcard) compiled with honest diagnostics | `LibraryOnly` | `crates/network-filter/src/{hosts,abp}.rs` (untracked, not a worker member) | A maintained list compiles with per-rule diagnostics; regex/path rules rejected honestly, never silently matched |
-| FLT-03 | Full context-modifier scope: client, ctag, denyallow, dnstype, dnsrewrite, important, badfilter | `InProgress` | `crates/network-filter/src/abp.rs` currently accepts only the importance modifier and rejects the rest | Each modifier changes one decision; an unsupported modifier yields a diagnostic, not a silent match; scope is not reduced because the first adapter rejects it |
+| FLT-02 | Maintained-list notation (double-pipe host anchor, exception, regex, wildcard) compiled with honest diagnostics | `LibraryOnly` | `crates/network-filter/src/{hosts,abp}.rs` (2e59e1e0, library under review; no DNS consumer) | Domain anchors, exceptions, regex and wildcards each demonstrate their specified DNS semantics with bounded diagnostics; rejecting regex leaves this row partial, and URL/path semantics remain outside DNS |
+| FLT-03 | Full context-modifier scope: client, ctag, denyallow, dnstype, dnsrewrite, important, badfilter | `InProgress` | `crates/network-filter/src/abp.rs` currently accepts only the importance modifier and rejects the rest | Each listed modifier changes a real worker decision with its required context; unsupported modifiers produce diagnostics but do not satisfy this row; no silent match or reduction of scope |
 | FLT-04 | Deny-over-allow precedence inside a profile, with safety-first tie handling | `AcceptedRuntime` | `crates/family-policy/src/eval.rs`, [functional.rs](../crates/family-dns/tests/functional.rs) | Matching deny wins over allow; no exception silently grants adult access |
 | FLT-05 | Per-client and tag-scoped rule selection | `Missing` | DNS sees source IP only; [policy.rs](../crates/family-dns/src/policy.rs) has no session | Tag rule applies only to tagged device; spoofed label cannot select an adult profile |
 | FLT-06 | Schedules with timezone and DST handling for profiles and rules | `PartialRuntime` | [config.rs](../crates/family-dns/src/config.rs) `ScheduleSpec`, `crates/family-policy/src/eval.rs` | Window enforced in local time including DST fold; service/client schedules remain ungated |
-| FLT-07 | Local wildcard records and RR breadth with keep-upstream values | `PartialRuntime` | [runtime.rs](../crates/family-dns/src/runtime.rs) A/AAAA/CNAME/SOA; no wildcard or keep-upstream | Wildcard rewrite answers with an A keep-upstream value |
-| FLT-08 | Rewrite suppression forms (NODATA, NXDOMAIN, REFUSED) and full RR set | `Missing` | none | TXT/SRV/HTTPS rewrite returned; each suppression form produces the right rcode |
+| FLT-07 | Local wildcard records and explicit A/AAAA/CNAME/SOA/TXT/MX/SRV/NS/PTR/CAA/SVCB/HTTPS RR support with keep-upstream values | `PartialRuntime` | [runtime.rs](../crates/family-dns/src/runtime.rs) A/AAAA/CNAME/SOA; no wildcard or keep-upstream | Wildcard answers tested for each listed RR type; A/AAAA keep-upstream preserves the selected original RRsets and policy |
+| FLT-08 | Rewrite suppression forms (NODATA, NXDOMAIN, REFUSED) and explicit A/AAAA/CNAME/SOA/TXT/MX/SRV/NS/PTR/CAA/SVCB/HTTPS values | `Missing` | none | Every listed RR type rewritten correctly; each suppression form produces the correct rcode and answer/authority shape |
 | FLT-09 | Alias-chain denial for CNAME and differing-owner A/AAAA | `AcceptedRuntime` | [handler.rs](../crates/family-dns/src/handler.rs) | Allowed alias resolving to a denied target becomes the configured denial with evidence |
-| FLT-10 | Alias breadth for SVCB, HTTPS, DNAME and TSIG-signed queries | `Missing` | excluded in [handler.rs](../crates/family-dns/src/handler.rs) header comment | Aliased blocked domain via these forms is denied or the limit is formally accepted |
+| FLT-10 | Alias breadth for SVCB, HTTPS, DNAME and TSIG-signed queries | `Missing` | excluded in [handler.rs](../crates/family-dns/src/handler.rs) header comment | SVCB/HTTPS/DNAME targets cannot bypass denial; TSIG-authenticated queries are verified and handled without invalidating authentication or bypassing policy; unsupported forms leave the row open |
 | FLT-11 | Built-in rebinding protection | `NeedsPlatformDecision` | none | Security enhancement only; explicit decision needed, no parity claim |
 
 ## E. Public list subscriptions, services and SafeSearch
 
 | ID | Behavior contract | Status | Local code | Acceptance test |
 |---|---|---|---|---|
-| SUB-01 | Public list URL add/remove/set and explicit enable/disable | `InProgress` | `crates/network-subscriptions/src/{config,worker}.rs` (untracked) | Operator URL ingested, compiled and enforced by a worker snapshot |
+| SUB-01 | Public list URL add/remove/set and explicit enable/disable | `InProgress` | `crates/network-subscriptions/src/{config,worker}.rs` (f52d069e/f2b5805c, library under review) | Operator URL ingested, compiled and enforced by a worker snapshot |
 | SUB-02 | Interval, manual refresh, conditional GET, last-known-good, count, dedup, freshness, status and declared source/licence | `LibraryOnly` | `crates/network-subscriptions/src/{fetcher,cache,scheduler,status}.rs` | 304 then 200; 500/malformed keeps last-known-good; status reports fresh/error/disabled truthfully |
 | SUB-03 | Worker consumes fetched bytes through compile, validate and atomic swap | `InProgress` | no path from subscription library to DNS snapshot | A refreshed list changes answers; a failed refresh leaves answers unchanged |
 | SUB-04 | Diagnostics and test-host lookup returning reason, rule text and service attributes | `Missing` | in-process decision view only | Endpoint reports why blocked with matched rule text; URL history never stored |
@@ -114,7 +117,7 @@ written for a `Missing` row.
 | CLI-01 | Exact-IP device mapping including IPv4-mapped sources | `AcceptedRuntime` | [config.rs](../crates/family-dns/src/config.rs), [functional.rs](../crates/family-dns/tests/functional.rs) | Mapped and plain source select the same device profile |
 | CLI-02 | Client identity breadth: CIDR ranges, observed MAC, observed client ID, weak labels | `Missing` | [config.rs](../crates/family-dns/src/config.rs) stores exact source IPs | CIDR selects profile; observed MAC selects only when actually observed; no public-IP person inference |
 | CLI-03 | Per-client tags, upstreams, log-ignore, stats-ignore and cache controls | `Missing` | none | Tagged client uses its upstreams and is omitted from log/stats when configured |
-| CLI-04 | Spoofed client ID cannot promote a device to adult profile; person rules need verified state | `AcceptedRuntime` | [compile.rs](../crates/family-dns/src/compile.rs), [policy.rs](../crates/family-dns/src/policy.rs) | Client-ID-shaped header cannot grant; unverified person rule rejected, unknown source stays restricted |
+| CLI-04 | Current IP-mapped DNS path never infers person privileges; person rules require verified state | `AcceptedRuntime` | [compile.rs](../crates/family-dns/src/compile.rs), [policy.rs](../crates/family-dns/src/policy.rs) | Unverified person rule rejected by controller compilation; unknown source stays restricted; future encrypted client IDs/headers require separate end-to-end spoof tests under LST-04/UP-08 |
 | CLI-05 | Global and per-device protection pause with expiring scoped exception | `Missing` | always enforcing; stale policy fails closed | Pause expires and enforcement resumes; baseline deny cannot be silently disabled |
 | CLI-06 | Explicit allow/deny client lists and blocked-host handling | `PartialRuntime` | [config.rs](../crates/family-dns/src/config.rs) only has restrictive unknown default | Explicit allow/deny lists applied; blocked hosts answered or dropped as configured |
 | CLI-07 | BYOD enrollment using existing OIDC identity and scoped grants | `InProgress` | `server/src/network/enroll_*`, migration `0078` (uncommitted) | Single-use grant binds device, asserted person, expiry and purpose; revoke works; no remote privilege |
@@ -141,22 +144,25 @@ written for a `Missing` row.
 | OPS-10 | Kernel `ipset` helper integration as a platform aid, not a user exclusion | `NeedsPlatformDecision` | none | Platform decision recorded first; no host deployment from this work |
 | OPS-11 | DHCP server function | `Excluded` | none | Router keeps assigning addresses; no lease or router change |
 | OPS-12 | Frontend and mobile clients | `Excluded` | none | UI remains user-owned; mobile deferred |
-| OPS-13 | Worker authentication via existing identity and grants | `AcceptedRuntime` | `server/src/network/{authz,gateway_auth}.rs` | Scoped grants drive all worker calls; no separate login or cloned endpoint |
+| OPS-13 | Separate scoped worker Bearer authentication, issued through household-authorized administration | `AcceptedRuntime` | `server/src/network/{authz,gateway_auth}.rs` | Dashboard cookie alone cannot authenticate a worker call; Bearer audience/command/household/gateway/kind/expiry/revocation checked; worker Bearer cannot authenticate dashboard routes |
 | OPS-14 | DNS self-updater and release publication | `Excluded` | none | No DNS self-update path and no release is created by this catalog |
 
 ## Bounded implementation sequence
 
-Stages are ordered by dependency. A stage is `PartialRuntime` until **every**
-row it gates reaches `AcceptedRuntime` with the listed acceptance test passing;
-a `LibraryOnly` or `InProgress` row never closes a stage. Each stage reuses the
-previous one's snapshot and keeps deny-default, no fail-open and no TLS bypass.
+Stages group bounded work; independent groups may run in parallel. A stage stays
+`PartialRuntime` until every required row it gates is `AcceptedRuntime`; rejection
+of an unsupported feature does not close its positive behavior contract.
+Dependencies below identify actual shared contracts, not a mandatory serial order.
+Platform decisions have their own recorded outcomes and cannot silently remove
+required rows. Existing partial operational rows remain open even after a stage
+has delivered its narrower feature group.
 
 | Stage | Rows gated | Depends on | Exit condition |
 |---|---|---|---|
-| 1 | FLT-02, FLT-03, SUB-01, SUB-02, SUB-03 | Accepted snapshot and bundle (OPS-01/02) | One snapshot compiles, validates and atomically swaps list/compiled bytes with last-known-good on failure; full modifier scope retained |
-| 2 | CAC-01, CAC-02, CAC-03, CAC-04, CAC-06, CAC-07, CAC-08, CAC-09, CAC-12 | Stage 1 | Each response-shaping contract tested; CAC-04 explicitly asserts no validator claim; CAC-05/FLT-11 decisions recorded separately |
-| 3 | CLI-02, CLI-03, CLI-05, CLI-06, CLI-09, CLI-10, CLI-11, CLI-12, CLI-13, OPS-04 | Stages 1–2 | Bounded durable log and client breadth pass while deny-default and spoof guards hold; acks verified |
-| 4 | UP-02, UP-03, UP-04, UP-05, UP-06, UP-07, UP-08 | Stage 1 | Each upstream scheme and selection mode tested; TLS failures fail closed |
-| 5 | LST-03, LST-04, LST-05, LST-06, LST-07, LST-08 | Stage 4 and OPS-07 | All server transports, including DNSCrypt, plus separate DNS cert lifecycle pass |
-| 6 | FLT-05, FLT-07, FLT-08, FLT-10, SUB-05, SUB-06, SUB-07, LST-01 | Stages 3–5 | Rewrites, aliases, services and real SafeSearch/feed providers accepted with provenance |
-| 7 | OPS-10 | Explicit platform decision | Helper adopted only after decision; still no host deploy from this work |
+| 1 | FLT-01, FLT-02, FLT-03, SUB-01, SUB-02, SUB-03, SUB-04 | Accepted snapshot and bundle (OPS-01/02) | List refresh compiles, validates and swaps atomically with last-known-good on failure; full required syntax/modifier behavior demonstrated |
+| 2 | CAC-01, CAC-02, CAC-03, CAC-04, CAC-06, CAC-07, CAC-08, CAC-09, CAC-12 | Accepted snapshot and bundle (OPS-01/02) | Every response/cache contract tested; no local DNSSEC-validator claim; independent of list parsing |
+| 3 | CLI-02, CLI-03, CLI-04, CLI-05, CLI-06, CLI-07, CLI-09, CLI-10, CLI-11, CLI-12, CLI-13, OPS-04, OPS-09 | Accepted scoped inventory/auth and snapshot; modifier/tag consumers require the relevant Stage 1 rows | Durable logs/client controls and independent ack/coverage checks pass; transport-header spoof tests also require LST-04/UP-08 |
+| 4 | UP-02, UP-03, UP-04, UP-05, UP-06, UP-07, UP-08 | Accepted snapshot and bundle (OPS-01/02); UP-08 exercised with LST-04 | Each upstream scheme/selection mode tested; verification failures fail closed; no dependency on list-modifier breadth |
+| 5 | LST-01, LST-03, LST-04, LST-05, LST-06, LST-07, LST-08, OPS-07 | Accepted policy handler and snapshot; OPS-07 custody implemented alongside LST-08 | Every listener plus separate DNS key custody, certificate reload and verification health passes; upstream transport work may proceed independently |
+| 6 | FLT-05, FLT-06, FLT-07, FLT-08, FLT-10, SUB-05, SUB-06, SUB-07 | Relevant client/tag context for FLT-05; Stage 1 compiler/source contracts for service/feed consumers; accepted snapshot for rewrites | All enumerated rewrites/aliases, schedules, service coverage and real providers pass with provenance; unrelated listeners are not prerequisites |
+| 7 | OPS-05, OPS-06, OPS-08, OPS-10, CAC-05, FLT-11 | Accepted feature artifacts for recovery/packaging; explicit recorded decisions for the three NeedsPlatformDecision rows | Recovery/update/lifecycle checks pass; each platform decision records adoption or reasoned deferral; required runtime rows cannot be waived through this stage; no host deployment implied |
