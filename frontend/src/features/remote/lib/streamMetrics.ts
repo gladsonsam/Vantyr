@@ -5,7 +5,11 @@
  */
 export interface StreamMetricsSink {
   /** A complete frame arrived: its size and how long its bytes took to arrive. */
-  frame: (bytes: number, transferMs: number, timing?: { sourceMs: number; arrivalMs: number; capture: string }) => void;
+  frame: (
+    bytes: number,
+    transferMs: number,
+    timing?: { sourceMs: number; arrivalMs: number; capture: string },
+  ) => void;
   /** A frame finished decoding after this many milliseconds. */
   decoded: (ms: number) => void;
   /** A received frame was discarded before display because decoding could not keep up. */
@@ -41,23 +45,36 @@ export class AutoStreamController {
   private clear() {
     this.frames = this.bytes = this.transfer = this.decode = this.drops = this.delayed = 0;
   }
-  frame(bytes: number, transferMs: number, timing?: { sourceMs: number; arrivalMs: number; capture: string }) {
+  frame(
+    bytes: number,
+    transferMs: number,
+    timing?: { sourceMs: number; arrivalMs: number; capture: string },
+  ) {
     const previous = this.previousTiming;
     if (timing && previous && timing.capture === previous.capture) {
       const sourceDelta = timing.sourceMs - previous.sourceMs;
       const arrivalDelta = timing.arrivalMs - previous.arrivalMs;
       // Growing delivery lag needs no synchronized agent/browser clock.
       // Ignore duplicates, capture resets and sparse/static source updates.
-      if (sourceDelta > 0 && sourceDelta < 1000 && arrivalDelta < 2000 &&
-          arrivalDelta - sourceDelta > 50) this.delayed++;
+      if (
+        sourceDelta > 0 &&
+        sourceDelta < 1000 &&
+        arrivalDelta < 2000 &&
+        arrivalDelta - sourceDelta > 50
+      )
+        this.delayed++;
     }
     this.previousTiming = timing;
     this.frames++;
     this.bytes += bytes;
     this.transfer += transferMs;
   }
-  decoded(ms: number) { this.decode += ms; }
-  dropped() { this.drops++; }
+  decoded(ms: number) {
+    this.decode += ms;
+  }
+  dropped() {
+    this.drops++;
+  }
   sample(now: number, intervalMs: number): number {
     if (this.frames < 8 && now - this.started > 5000) {
       this.clear();
@@ -65,10 +82,15 @@ export class AutoStreamController {
       this.started = now;
     }
     if (now - this.started < 2000 || this.frames < 8) return this.tier;
-    const pressured = this.delayed / this.frames > 0.3 || this.drops / this.frames > 0.1 ||
+    const pressured =
+      this.delayed / this.frames > 0.3 ||
+      this.drops / this.frames > 0.1 ||
       this.decode / this.frames > intervalMs * 0.8 ||
       (this.bytes > 64_000 && this.transfer / this.frames > intervalMs * 1.3);
-    const healthy = this.delayed === 0 && this.drops === 0 && this.decode / this.frames < intervalMs * 0.4 &&
+    const healthy =
+      this.delayed === 0 &&
+      this.drops === 0 &&
+      this.decode / this.frames < intervalMs * 0.4 &&
       this.transfer / this.frames < intervalMs * 0.6;
     this.bad = pressured ? this.bad + 1 : 0;
     this.good = healthy ? this.good + 1 : 0;

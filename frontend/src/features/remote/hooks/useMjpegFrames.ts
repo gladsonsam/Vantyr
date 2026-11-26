@@ -217,7 +217,10 @@ export function startMjpegStream(
           parser.push(value.subarray(p, p + 256));
           let frame: RemoteFrame | undefined;
           while ((frame = parser.takeFrame()) && active) {
-            options.metrics?.frame(frame.jpeg.byteLength, transferStarted ? performance.now() - transferStarted : 0);
+            options.metrics?.frame(
+              frame.jpeg.byteLength,
+              transferStarted ? performance.now() - transferStarted : 0,
+            );
             transferStarted = 0;
             options.lane.offer({
               metrics: options.metrics,

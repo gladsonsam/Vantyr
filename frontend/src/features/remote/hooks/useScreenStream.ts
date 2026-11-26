@@ -54,12 +54,22 @@ export function useScreenStream({
   const [monitorIndex, setMonitorIndex] = useState<number | null>(null);
 
   const [autoTier, setAutoTier] = useState(2);
-  const controller = useMemo(() => new AutoStreamController(`${session}:${preset}`), [session, preset]);
-  const tuning = useMemo(() => resolveStreamTuning(preset, autoTier, useVideo), [preset, autoTier, useVideo]);
+  const controller = useMemo(
+    () => new AutoStreamController(`${session}:${preset}`),
+    [session, preset],
+  );
+  const tuning = useMemo(
+    () => resolveStreamTuning(preset, autoTier, useVideo),
+    [preset, autoTier, useVideo],
+  );
   // Initial query is stable for the lifetime of the session. All later tuning
   // uses POST, so neither transport cleanup nor lease release runs.
-  const [initial, setInitial] = useState(() => ({ session, tuning: resolveStreamTuning(preset, 2, useVideo) }));
-  if (initial.session !== session) setInitial({ session, tuning: resolveStreamTuning(preset, 2, useVideo) });
+  const [initial, setInitial] = useState(() => ({
+    session,
+    tuning: resolveStreamTuning(preset, 2, useVideo),
+  }));
+  if (initial.session !== session)
+    setInitial({ session, tuning: resolveStreamTuning(preset, 2, useVideo) });
   const initialTuning = initial.tuning;
   const [previousController, setPreviousController] = useState(controller);
   if (previousController !== controller) {
@@ -70,7 +80,12 @@ export function useScreenStream({
     controller.reset(Date.now());
     if (preset !== "auto") return;
     const timer = window.setInterval(() => {
-      setAutoTier(controller.sample(Date.now(), resolveStreamTuning("auto", controller.tier, useVideo).intervalMs));
+      setAutoTier(
+        controller.sample(
+          Date.now(),
+          resolveStreamTuning("auto", controller.tier, useVideo).intervalMs,
+        ),
+      );
     }, 2000);
     return () => window.clearInterval(timer);
   }, [controller, preset, useVideo]);
@@ -78,18 +93,20 @@ export function useScreenStream({
   const appliedTuning = useRef({ session: "", tuning: initialTuning });
   useEffect(() => {
     if (!session || !streamEnabled) return;
-    if (appliedTuning.current.session !== session) appliedTuning.current = { session, tuning: initialTuning };
+    if (appliedTuning.current.session !== session)
+      appliedTuning.current = { session, tuning: initialTuning };
     const applied = appliedTuning.current.tuning;
     if (tuning.jpegQ === applied.jpegQ && tuning.intervalMs === applied.intervalMs) return;
     appliedTuning.current = { session, tuning };
     // Serialize fast manual changes so an older request cannot win last.
-    tuningQueue.current = (tuningQueue.current ?? Promise.resolve()).catch(() => {}).then(() =>
-      tuneScreenStream(agentId, session, tuning),
-    ).catch(() => {
-      // Allow a subsequent render/change to retry instead of remembering a failure.
-      if (appliedTuning.current.session === session && appliedTuning.current.tuning === tuning)
-        appliedTuning.current = { session, tuning: applied };
-    });
+    tuningQueue.current = (tuningQueue.current ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => tuneScreenStream(agentId, session, tuning))
+      .catch(() => {
+        // Allow a subsequent render/change to retry instead of remembering a failure.
+        if (appliedTuning.current.session === session && appliedTuning.current.tuning === tuning)
+          appliedTuning.current = { session, tuning: applied };
+      });
   }, [agentId, session, streamEnabled, tuning, initialTuning]);
   const streamUrl = useMemo(
     () =>
@@ -173,14 +190,10 @@ export function useScreenStream({
   /** Start a fresh capture session (the server rejects a reused session id). */
   const restart = useCallback(() => setSession(crypto.randomUUID()), [setSession]);
 
-  const changePreset = useCallback(
-    (next: StreamPreset) => {
-      setPreset(next);
-      saveStreamPreset(next);
-
-    },
-    [],
-  );
+  const changePreset = useCallback((next: StreamPreset) => {
+    setPreset(next);
+    saveStreamPreset(next);
+  }, []);
 
   const changeMonitor = useCallback(
     (next: number) => {

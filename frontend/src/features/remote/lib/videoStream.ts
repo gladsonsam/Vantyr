@@ -36,9 +36,20 @@ export function startVideoStream(url: string, options: VideoStreamOptions): { ca
   );
   const receive = (packet: VideoPacket) => {
     if (!alive || !decoder || decoder.state === "closed") return;
-    options.metrics?.frame(packet.data.byteLength, transferStarted ? performance.now() - transferStarted : 0, { sourceMs: packet.timestamp / 1000, arrivalMs: Date.now(), capture: packet.geometry.capture_id });
+    options.metrics?.frame(
+      packet.data.byteLength,
+      transferStarted ? performance.now() - transferStarted : 0,
+      {
+        sourceMs: packet.timestamp / 1000,
+        arrivalMs: Date.now(),
+        capture: packet.geometry.capture_id,
+      },
+    );
     transferStarted = 0;
-    if (pending.size >= 3 || decoder.decodeQueueSize >= 2) { options.metrics?.dropped(); return; }
+    if (pending.size >= 3 || decoder.decodeQueueSize >= 2) {
+      options.metrics?.dropped();
+      return;
+    }
     if (configuration !== packet.codec) {
       if (pending.size) return;
       decoder.configure({ codec: packet.codec, optimizeForLatency: true });
@@ -61,7 +72,9 @@ export function startVideoStream(url: string, options: VideoStreamOptions): { ca
           try {
             const packet = pending.get(frame.timestamp);
             pending.delete(frame.timestamp);
-            options.metrics?.decoded(performance.now() - (decodeStarted.get(frame.timestamp) ?? performance.now()));
+            options.metrics?.decoded(
+              performance.now() - (decodeStarted.get(frame.timestamp) ?? performance.now()),
+            );
             decodeStarted.delete(frame.timestamp);
             if (!alive || !packet) return;
             options.present(frame, packet);

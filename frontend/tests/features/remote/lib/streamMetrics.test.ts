@@ -29,7 +29,10 @@ test("decode drops cause backoff even when transfers are fast", () => {
   const c = new AutoStreamController();
   c.reset(0);
   for (let t = 2000; t <= 10000; t += 2000) {
-    for (let i = 0; i < 16; i++) { c.frame(2000, 0); c.dropped(); }
+    for (let i = 0; i < 16; i++) {
+      c.frame(2000, 0);
+      c.dropped();
+    }
     c.sample(t, 33);
   }
   expect(c.tier).toBe(1);
@@ -51,8 +54,7 @@ test("sparse heartbeats do not build healthy or congested windows", () => {
   const c = new AutoStreamController();
   c.reset(0);
   for (let t = 2000; t < 100000; t += 2000) {
-    if (t % 10000 === 0)
-      c.frame(100000, 1, { sourceMs: 1, arrivalMs: t, capture: "static" });
+    if (t % 10000 === 0) c.frame(100000, 1, { sourceMs: 1, arrivalMs: t, capture: "static" });
     expect(c.sample(t, 33)).toBe(2);
   }
 });
