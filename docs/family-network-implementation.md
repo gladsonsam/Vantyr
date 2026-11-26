@@ -533,3 +533,9 @@ No substantive UI or Supabase changes were made in this step.
   gaps. Direct refresh tests do not prove the production scheduler runs. Fixes
   must exercise the actual loop and binary lifecycle, preserve the latest local
   settings, and keep bundle recovery independent of a broken download cache.
+- Management mutations: commit `8a665f08` is implemented and awaiting independent
+  acceptance. It adds household name/timezone and gateway label/enabled PATCH,
+  conservative unreferenced inventory DELETE, and atomic person default-profile
+  selection. The implementer reports 400 passing server tests and clean scoped
+  clippy. Do not hand these routes to the frontend as accepted until the review
+  verifies authorization, reference races and irreversible gateway revocation.
