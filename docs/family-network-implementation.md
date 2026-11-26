@@ -538,15 +538,13 @@ No substantive UI or Supabase changes were made in this step.
   revision remain separate from bundle/filter generations. Downloaded versus
   applied status is distinct, but currently library/CLI only: dashboard HTTP
   management and an isolated scheduled-fetch lab remain subsequent work.
-- Management mutations: commit `8a665f08` is implemented and awaiting independent
-  acceptance. It adds household name/timezone and gateway label/enabled PATCH,
-  conservative unreferenced inventory DELETE, and atomic person default-profile
-  selection. The implementer reports 400 passing server tests and clean scoped
-  clippy. Do not hand these routes to the frontend as accepted until the review
-  verifies authorization, reference races and irreversible gateway revocation.
-  Initial review accepted those boundaries but found a concurrent create could
-  surface a foreign-key failure as HTTP 500 after deletion. Parent correction
-  `daf96446` maps assignment/connection create/PATCH reference failures to 409;
-  all six mutation tests and strict scoped clippy pass, including an HTTP test
-  that observes the insert's lock wait before committing the deletion. Fresh
-  independent acceptance is pending.
+- Management mutations: commits `8a665f08` + `daf96446` independently accepted.
+  Household name/timezone and gateway label/enabled PATCH, conservative inventory
+  DELETE and atomic person default-profile selection are ready for the UI.
+  Both independent review and parent checks passed six mutation tests and strict
+  scoped clippy. The concurrent create/delete regression observes a real HTTP
+  insert's FK lock wait, commits the deletion and receives 409 without leaking
+  constraint details; assignment/connection create and PATCH share the mapping.
+  Retained enrollment/binding references block deletion even when ended/revoked;
+  gateway re-enable never revives a revoked gateway or credential. Exact accepted
+  routes, DTOs, permission rules and limitations have been sent to the frontend.
