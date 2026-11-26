@@ -55,6 +55,19 @@ const NetworkOverviewPage = lazy(() =>
     default: m.NetworkOverviewPage,
   })),
 );
+const NetworkPoliciesPage = lazy(() =>
+  import("@/features/network/policies/NetworkPoliciesPage").then((m) => ({
+    default: m.NetworkPoliciesPage,
+  })),
+);
+const NetworkDnsPage = lazy(() =>
+  import("@/features/network/dns/NetworkDnsPage").then((m) => ({ default: m.NetworkDnsPage })),
+);
+const NetworkProxyPage = lazy(() =>
+  import("@/features/network/proxy/NetworkProxyPage").then((m) => ({
+    default: m.NetworkProxyPage,
+  })),
+);
 const UsersPage = lazy(() =>
   import("@/features/users/UsersPage").then((m) => ({ default: m.UsersPage })),
 );
@@ -175,6 +188,9 @@ export function AppRoutes() {
         </Route>
         <Route path="/network" element={<NetworkLayout />}>
           <Route index element={<NetworkOverviewPage />} />
+          <Route path="policies" element={<NetworkPoliciesPage />} />
+          <Route path="dns" element={<NetworkDnsPage />} />
+          <Route path="proxy" element={<NetworkProxyPage />} />
           <Route path="*" element={<Navigate to="/network" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -16,12 +16,9 @@ import { useNetworkAccess } from "./access/useNetworkAccess";
 
 const TABS = [
   { path: "/network", label: "Overview" },
-  { path: "/network/people", label: "People & devices" },
   { path: "/network/policies", label: "Policies" },
   { path: "/network/dns", label: "DNS" },
   { path: "/network/proxy", label: "Proxy" },
-  { path: "/network/events", label: "Events" },
-  { path: "/network/settings", label: "Settings" },
 ] as const;
 
 function SectionTabs() {

@@ -1,9 +1,11 @@
 import { createContext, useContext } from "react";
 import type {
   Availability,
+  ConnectionCheck,
   Decision,
   DecisionQuery,
   DnsStats,
+  DnsSettingsPatch,
   DnsStatsQuery,
   DnsView,
   EventsPage,
@@ -11,6 +13,7 @@ import type {
   NetworkOverview,
   PolicyEdit,
   PolicyView,
+  ProxyInspection,
   ProxyView,
 } from "./types";
 
@@ -27,7 +30,14 @@ export interface NetworkRuntimeSource {
   explainDecision(query: DecisionQuery): Promise<Availability<Decision>>;
   dns(): Promise<Availability<DnsView>>;
   dnsStats(query: DnsStatsQuery): Promise<Availability<DnsStats>>;
+  /** Changes DNS settings. Like policy, a saved change is not proof a gateway is enforcing it. */
+  updateDns(patch: DnsSettingsPatch): Promise<Availability<DnsView>>;
   proxy(): Promise<Availability<ProxyView>>;
+  revokeProxyCredential(id: string): Promise<Availability<ProxyView>>;
+  /** Turns HTTPS inspection on or off. Turning it on only starts trust setup; it is not "trusted" until devices say so. */
+  setInspection(enabled: boolean): Promise<Availability<ProxyInspection>>;
+  /** Asks the gateway to confirm it can see this device right now. */
+  runCheck(deviceId: string, kind: "dns" | "proxy"): Promise<Availability<ConnectionCheck>>;
   events(query: EventsQuery): Promise<Availability<EventsPage>>;
 }
 
@@ -46,7 +56,11 @@ export const unavailableRuntime: NetworkRuntimeSource = {
   explainDecision: unavailable,
   dns: unavailable,
   dnsStats: unavailable,
+  updateDns: unavailable,
   proxy: unavailable,
+  revokeProxyCredential: unavailable,
+  setInspection: unavailable,
+  runCheck: unavailable,
   events: unavailable,
 };
 

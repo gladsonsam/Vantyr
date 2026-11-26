@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { networkKeys } from "@/api/queries/network";
 import { useNetworkRuntime } from "./NetworkRuntimeSource";
-import type { DecisionQuery, DnsStatsQuery, EventsQuery, PolicyEdit } from "./types";
+import type {
+  DecisionQuery,
+  DnsSettingsPatch,
+  DnsStatsQuery,
+  EventsQuery,
+  PolicyEdit,
+} from "./types";
 
 const runtimeKey = (...parts: unknown[]) => [...networkKeys.all, "runtime", ...parts] as const;
 
@@ -60,5 +66,40 @@ export function useEventsQuery(query: EventsQuery) {
   return useQuery({
     queryKey: runtimeKey("events", query),
     queryFn: () => runtime.events(query),
+  });
+}
+
+export function useUpdateDnsMutation() {
+  const runtime = useNetworkRuntime();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: DnsSettingsPatch) => runtime.updateDns(patch),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey("dns") }),
+  });
+}
+
+export function useRevokeCredentialMutation() {
+  const runtime = useNetworkRuntime();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => runtime.revokeProxyCredential(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey("proxy") }),
+  });
+}
+
+export function useSetInspectionMutation() {
+  const runtime = useNetworkRuntime();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) => runtime.setInspection(enabled),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey("proxy") }),
+  });
+}
+
+export function useRunCheckMutation() {
+  const runtime = useNetworkRuntime();
+  return useMutation({
+    mutationFn: ({ deviceId, kind }: { deviceId: string; kind: "dns" | "proxy" }) =>
+      runtime.runCheck(deviceId, kind),
   });
 }

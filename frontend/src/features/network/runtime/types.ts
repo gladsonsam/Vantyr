@@ -301,3 +301,27 @@ export interface DnsStats {
   topDomains: DomainCount[];
   topBlocked: DomainCount[];
 }
+
+// ── Actions ─────────────────────────────────────────────────────────────────
+
+/** The result of asking a gateway to confirm it can still reach, and decide for, a device. */
+export interface ConnectionCheck {
+  ok: boolean;
+  ms: number;
+  detail: string;
+}
+
+export type DnsResponseMode = "nxdomain" | "refused" | "sinkhole";
+
+export interface DnsSettingsPatch {
+  responseMode?: DnsResponseMode;
+  cache?: Partial<{
+    enabled: boolean;
+    minTtlSeconds: number;
+    maxTtlSeconds: number;
+    negativeTtlSeconds: number;
+    serveStale: boolean;
+  }>;
+  rateLimitPerSecond?: number | null;
+  retentionDays?: number;
+}

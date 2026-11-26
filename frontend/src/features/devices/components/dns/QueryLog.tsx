@@ -4,6 +4,7 @@ import { Button } from "@vantyr/ui/components/button";
 import { Card, CardContent } from "@vantyr/ui/components/card";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@vantyr/ui/components/input-group";
 import RubberSegment from "@/components/react-bits/RubberSegment";
+import SloshGauge from "@/components/react-bits/SloshGauge";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
 import { useEventsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import type { Effect } from "@/features/network/runtime/types";
@@ -27,6 +28,7 @@ export function QueryLog({ deviceId }: { deviceId: string }) {
   });
 
   const events = query.data?.state === "ready" ? query.data.data.events : [];
+  const retention = query.data?.state === "ready" ? query.data.data : null;
   const more = query.data?.state === "ready" ? query.data.data.nextCursor !== null : false;
 
   return (
@@ -112,6 +114,24 @@ export function QueryLog({ deviceId }: { deviceId: string }) {
           </div>
         )}
 
+        {retention ? (
+          <div className="flex items-center gap-4 border-t border-border pt-4">
+            <SloshGauge
+              width={44}
+              height={64}
+              radius={10}
+              showValue={false}
+              interactive={false}
+              value={Math.min(100, (retention.usage.events / retention.retention.maxEvents) * 100)}
+              liquidColor="var(--primary)"
+              ariaLabel="Share of the log storage limit in use"
+            />
+            <p className="text-sm text-muted-foreground">
+              Keeping {retention.retention.days} days. {retention.usage.events.toLocaleString()} of{" "}
+              {retention.retention.maxEvents.toLocaleString()} queries stored.
+            </p>
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
             A DNS decision is about a domain name. It is not a record of the pages someone visited.

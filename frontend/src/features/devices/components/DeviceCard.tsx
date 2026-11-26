@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { Card } from "@vantyr/ui/components/card";
+import SpotlightCard from "@/components/react-bits/SpotlightCard";
 import { cn } from "@/lib/utils";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { DEVICE_TYPE_ICON, DEVICE_TYPE_LABEL } from "@/features/devices/lib/deviceIcons";
@@ -26,7 +26,17 @@ export function DeviceCard({ row }: { row: DeviceRow }) {
   const online = connectedCount(row) > 0;
   const present = CONNECTION_KINDS.filter((kind) => row.connections[kind].state !== "none");
   return (
-    <Card className="gap-0 rounded-lg border border-border/70 bg-[color-mix(in_oklch,var(--ui-card),white_5%)] py-0 shadow-none ring-0 transition-colors hover:border-foreground/20">
+    <SpotlightCard
+      theme="dark"
+      spotlightColor="#2bb6c9"
+      intensity={0.2}
+      className="flex flex-col !rounded-lg !p-0"
+      style={
+        {
+          "--spotlight-card-surface": "color-mix(in oklch, var(--ui-card), white 5%)",
+        } as React.CSSProperties
+      }
+    >
       <Link
         to={`/devices/${row.key}`}
         className="flex flex-1 flex-col outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -100,6 +110,6 @@ export function DeviceCard({ row }: { row: DeviceRow }) {
           View <ArrowRight />
         </Button>
       </div>
-    </Card>
+    </SpotlightCard>
   );
 }

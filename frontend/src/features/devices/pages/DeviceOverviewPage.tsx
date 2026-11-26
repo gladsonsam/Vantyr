@@ -47,7 +47,13 @@ export function DeviceOverviewPage() {
     <div className="space-y-8">
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {present.map((kind) => (
-          <ConnectionCard key={kind} connection={device.connections[kind]} to={`${base}/${kind}`} />
+          <ConnectionCard
+            key={kind}
+            connection={device.connections[kind]}
+            to={`${base}/${kind}`}
+            deviceId={device.deviceId}
+            deviceLabel={device.label}
+          />
         ))}
       </div>
       <div className="grid gap-6 lg:grid-cols-2">

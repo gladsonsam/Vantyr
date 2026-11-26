@@ -4,11 +4,17 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it } from "bun:test";
 import type { Agent } from "@/api/types";
-import { DashboardLayout } from "@/app/DashboardLayout";
 import { AgentsContext, type AgentsContextValue } from "@/app/providers/useAgents";
 import { NotificationsContext, type NotificationsValue } from "@/app/providers/useNotifications";
 import { SessionContext, type SessionContextValue } from "@/app/providers/useSession";
 import { usePageHeader } from "@/app/shell/usePageHeader";
+
+// The shell asks whether to list Network; that has its own tests, so here the server has no Network.
+await vi.mock("@/features/network/access/useNetworkAccess", () => ({
+  useNetworkAccess: () => ({ state: "unavailable" }),
+}));
+
+const { DashboardLayout } = await import("@/app/DashboardLayout");
 
 let el: HTMLDivElement;
 let root: Root;

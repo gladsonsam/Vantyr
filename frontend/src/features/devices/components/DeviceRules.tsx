@@ -1,45 +1,8 @@
 import { Card, CardContent } from "@vantyr/ui/components/card";
+import StatusMark from "@/components/react-bits/StatusMark";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
 import { usePolicyQuery } from "@/features/network/runtime/useRuntimeQueries";
-import type { PolicyRule } from "@/features/network/runtime/types";
-import { matchText } from "@/features/devices/lib/format";
-import { cn } from "@/lib/utils";
-
-function RuleLine({ rule }: { rule: PolicyRule }) {
-  return (
-    <li className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3 text-sm">
-      <span className="flex items-baseline gap-3">
-        <span
-          className={cn(
-            "w-12 font-medium",
-            rule.effect === "deny" ? "text-destructive" : "text-success",
-          )}
-        >
-          {rule.effect === "deny" ? "Block" : "Allow"}
-        </span>
-        <span className="font-mono text-[0.8125rem]">{matchText(rule.match)}</span>
-      </span>
-      <span className="text-muted-foreground">{rule.reason}</span>
-    </li>
-  );
-}
-
-function Group({ title, rules, empty }: { title: string; rules: PolicyRule[]; empty: string }) {
-  return (
-    <div>
-      <h4 className="text-sm font-medium">{title}</h4>
-      {rules.length === 0 ? (
-        <p className="mt-2 text-sm text-muted-foreground">{empty}</p>
-      ) : (
-        <ul className="mt-1 divide-y divide-border">
-          {rules.map((rule) => (
-            <RuleLine key={rule.id} rule={rule} />
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
+import { RuleGroup } from "./RuleList";
 
 /**
  * The rules that apply to this device before anyone is verified on it: the household baseline, then the
@@ -64,6 +27,8 @@ export function DeviceRules({ deviceId }: { deviceId: string }) {
     );
   }
   const deviceRules = applied.deviceDefaults.find((s) => s.scopeId === deviceId)?.rules ?? [];
+  const proposal = query.data.data.proposal;
+  const waiting = proposal && proposal.revision > applied.revision ? proposal : null;
   return (
     <Card className="gap-0 py-0">
       <CardContent className="space-y-6 p-5">
@@ -71,8 +36,21 @@ export function DeviceRules({ deviceId }: { deviceId: string }) {
           <h3 className="font-medium">Rules in effect</h3>
           <span className="text-sm text-muted-foreground">Revision {applied.revision}</span>
         </div>
-        <Group title="Household baseline" rules={applied.baseline} empty="No baseline rules." />
-        <Group title="This device’s defaults" rules={deviceRules} empty="No rules of its own." />
+        {waiting ? (
+          <div className="flex items-start gap-3 rounded-lg bg-muted/60 p-3 text-sm">
+            <StatusMark status="pending" size={20} color="var(--muted-foreground)" />
+            <span className="text-muted-foreground">
+              Revision {waiting.revision} is saved but not applied. It changes nothing for this
+              device until the gateways apply it.
+            </span>
+          </div>
+        ) : null}
+        <RuleGroup title="Household baseline" rules={applied.baseline} empty="No baseline rules." />
+        <RuleGroup
+          title="This device’s defaults"
+          rules={deviceRules}
+          empty="No rules of its own."
+        />
         <p className="text-sm text-muted-foreground">
           Anything else is {applied.defaultEffect === "allow" ? "allowed" : "blocked"} by the
           household default. A person’s own rules apply only once they are verified on the device.

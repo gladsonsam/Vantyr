@@ -1,8 +1,7 @@
-import { testMock as vi } from "@tests/support/mock";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { DeviceRow } from "@/features/devices/lib/deviceModel";
 
 const conn = (kind: "agent" | "dns" | "proxy", state: "connected" | "stale" | "none") => ({
@@ -40,7 +39,7 @@ const rows = [
   device("tv", "Living room TV", ["none", "connected", "none"]),
   device("desktop", "Shared desktop", ["connected", "connected", "stale"]),
 ];
-await vi.mock("@/features/devices/hooks/useDeviceRows", () => ({
+mock.module("@/features/devices/hooks/useDeviceRows", () => ({
   useDeviceRows: () => ({ rows, loading: false, hasHousehold: true }),
 }));
 

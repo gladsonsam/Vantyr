@@ -1,7 +1,10 @@
 import type {
   Availability,
+  ConnectionCheck,
   Decision,
   DecisionQuery,
+  DnsResponseMode,
+  DnsSettingsPatch,
   DnsStats,
   DnsStatsQuery,
   DnsView,
@@ -14,8 +17,10 @@ import type {
   PolicyRule,
   PolicySnapshot,
   PolicyView,
+  ProxyInspection,
   ProxyView,
   ScopedRules,
+  TrustState,
 } from "@/features/network/runtime/types";
 import type { NetworkRuntimeSource } from "@/features/network/runtime/NetworkRuntimeSource";
 
@@ -335,6 +340,40 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
   })();
   const events = buildEvents();
   let nextId = 100;
+  // DNS and proxy settings live here so the controls change what the demo shows.
+  const dnsState = {
+    responseMode: "nxdomain" as DnsResponseMode,
+    cache: {
+      enabled: true,
+      minTtlSeconds: 30,
+      maxTtlSeconds: 3600,
+      negativeTtlSeconds: 300,
+      serveStale: false,
+    },
+    rateLimit: 30 as number | null,
+    retentionDays: 14,
+  };
+  const revokedCredentials = new Set<string>(["c3"]);
+  const inspectionState = { enabled: false, trust: "not_enabled" as TrustState };
+  const inspection = (): ProxyInspection => ({
+    enabled: inspectionState.enabled,
+    trust: inspectionState.trust,
+    // Only the public fingerprint is ever shown. The signing key never reaches the browser.
+    caFingerprint: inspectionState.enabled
+      ? "9F:2C:41:7A:B3:0E:D8:15:66:C2:9A:4B:F0:3D:81:27"
+      : null,
+    caNotAfter: inspectionState.enabled ? ahead(60 * 24 * 365 * 5) : null,
+    trustingDevices: 0,
+    totalDevices: 4,
+    exceptions: [],
+    pinnedApps: [
+      {
+        id: "a1",
+        name: "Banking apps",
+        note: "Pin their certificates and stop working when inspected.",
+      },
+    ],
+  });
 
   const policyView = (): PolicyView => ({ applied, proposal });
 
@@ -451,7 +490,7 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
     async dns() {
       return ready<DnsView>({
         filtering: ready({
-          responseMode: "nxdomain",
+          responseMode: dnsState.responseMode,
           allow: [exact("homework.example")],
           block: [suffix("malware.example"), suffix("phishing.example"), suffix("mature.example")],
         }),
@@ -470,19 +509,23 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
           bootstrap: ["9.9.9.9"],
           fallback: ["1.1.1.1"],
         }),
-        cache: ready({
-          enabled: true,
-          entries: 1840,
-          minTtlSeconds: 30,
-          maxTtlSeconds: 3600,
-          negativeTtlSeconds: 300,
-          serveStale: false,
+        cache: ready({ entries: 1840, ...dnsState.cache }),
+        access: ready({
+          rateLimitPerSecond: dnsState.rateLimit,
+          allowedClients: ["192.168.1.0/24"],
         }),
-        access: ready({ rateLimitPerSecond: 30, allowedClients: ["192.168.1.0/24"] }),
         encrypted: notYet("Encrypted DNS (DoH, DoT, DoQ)"),
-        logging: ready({ retentionDays: 14, keepClientAddress: true }),
+        logging: ready({ retentionDays: dnsState.retentionDays, keepClientAddress: true }),
         services: notYet("Blocked services, safe search and categories"),
       });
+    },
+
+    async updateDns(patch: DnsSettingsPatch) {
+      if (patch.responseMode) dnsState.responseMode = patch.responseMode;
+      if (patch.cache) Object.assign(dnsState.cache, patch.cache);
+      if (patch.rateLimitPerSecond !== undefined) dnsState.rateLimit = patch.rateLimitPerSecond;
+      if (patch.retentionDays !== undefined) dnsState.retentionDays = patch.retentionDays;
+      return this.dns();
     },
 
     async dnsStats(q: DnsStatsQuery) {
@@ -496,46 +539,65 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
           protocols: ["http", "connect"],
           destinationPolicy: "Private, loopback and metadata addresses are refused.",
         }),
-        credentials: ready([
-          {
-            id: "c1",
-            label: "Alex’s laptop",
-            createdAt: ago(60 * 24 * 20),
-            lastUsedAt: ago(60 * 52),
-            revoked: false,
-          },
-          {
-            id: "c2",
-            label: "Shared desktop",
-            createdAt: ago(60 * 24 * 18),
-            lastUsedAt: ago(60 * 48),
-            revoked: false,
-          },
-          {
-            id: "c3",
-            label: "Old phone",
-            createdAt: ago(60 * 24 * 60),
-            lastUsedAt: null,
-            revoked: true,
-          },
-        ]),
-        inspection: ready({
-          enabled: false,
-          trust: "not_enabled",
-          caFingerprint: null,
-          caNotAfter: null,
-          trustingDevices: 0,
-          totalDevices: 4,
-          exceptions: [],
-          pinnedApps: [
+        credentials: ready(
+          [
             {
-              id: "a1",
-              name: "Banking apps",
-              note: "Pin their certificates and stop working when inspected.",
+              id: "c1",
+              label: "Alex’s laptop",
+              createdAt: ago(60 * 24 * 20),
+              lastUsedAt: ago(60 * 52),
+              revoked: false,
             },
-          ],
-        }),
+            {
+              id: "c2",
+              label: "Shared desktop",
+              createdAt: ago(60 * 24 * 18),
+              lastUsedAt: ago(60 * 48),
+              revoked: false,
+            },
+            {
+              id: "c3",
+              label: "Old phone",
+              createdAt: ago(60 * 24 * 60),
+              lastUsedAt: null,
+              revoked: false,
+            },
+          ].map((c) => ({ ...c, revoked: revokedCredentials.has(c.id) })),
+        ),
+        inspection: ready(inspection()),
       });
+    },
+
+    async revokeProxyCredential(id: string) {
+      revokedCredentials.add(id);
+      return this.proxy();
+    },
+
+    async setInspection(enabled: boolean) {
+      inspectionState.enabled = enabled;
+      // Enabling only starts trust setup. It is never "trusted" until devices report that they trust the CA.
+      inspectionState.trust = enabled ? "pending_trust" : "not_enabled";
+      return ready(inspection());
+    },
+
+    async runCheck(deviceId: string, kind: "dns" | "proxy") {
+      await new Promise((resolve) => setTimeout(resolve, 900 + Math.random() * 700));
+      const stale =
+        (kind === "dns" && deviceId === "dev-tablet") ||
+        (kind === "proxy" && deviceId === "dev-desktop");
+      return ready<ConnectionCheck>(
+        stale
+          ? {
+              ok: false,
+              ms: 0,
+              detail: `No ${kind === "dns" ? "query" : "request"} seen from this device recently.`,
+            }
+          : {
+              ok: true,
+              ms: 12 + Math.round(Math.random() * 30),
+              detail: "The gateway sees this device and can decide for it.",
+            },
+      );
     },
 
     async events(q: EventsQuery) {
@@ -552,7 +614,7 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
       return ready<EventsPage>({
         events: slice,
         nextCursor: next,
-        retention: { days: 14, maxEvents: 50_000, maxBytes: 20_000_000 },
+        retention: { days: dnsState.retentionDays, maxEvents: 50_000, maxBytes: 20_000_000 },
         usage: { events: events.length, bytes: events.length * 420 },
       });
     },

@@ -1,10 +1,11 @@
 import { Link } from "react-router-dom";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardContent } from "@vantyr/ui/components/card";
+import SpotlightCard from "@/components/react-bits/SpotlightCard";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { IDENTITY_NOTE, CONNECTION_LABEL } from "@/features/devices/lib/identity";
 import type { ConnectionSummary } from "@/features/devices/lib/deviceModel";
 import { ConnectionStatus } from "./ConnectionStatus";
+import { RunCheck } from "./RunCheck";
 
 const EVIDENCE: Record<string, string> = {
   manual: "Added by hand",
@@ -18,14 +19,24 @@ const EVIDENCE: Record<string, string> = {
 export function ConnectionCard({
   connection,
   to,
+  deviceId,
+  deviceLabel,
 }: {
   connection: ConnectionSummary;
+  deviceId: string | null;
+  deviceLabel: string;
   /** The sub-page for this connection. */
   to: string;
 }) {
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="flex h-full flex-col gap-4 p-5">
+    <SpotlightCard
+      theme="dark"
+      spotlightColor="#2bb6c9"
+      intensity={0.25}
+      className="!rounded-xl !p-0"
+      style={{ "--spotlight-card-surface": "var(--ui-card)" } as React.CSSProperties}
+    >
+      <div className="flex h-full flex-col gap-4 p-5">
         <div className="flex items-center justify-between gap-3">
           <h3 className="font-medium">{CONNECTION_LABEL[connection.kind]}</h3>
           <ConnectionStatus state={connection.state} />
@@ -45,6 +56,9 @@ export function ConnectionCard({
           ) : null}
         </dl>
         <p className="text-sm text-muted-foreground">{IDENTITY_NOTE[connection.kind]}</p>
+        {deviceId && connection.kind !== "agent" ? (
+          <RunCheck deviceId={deviceId} kind={connection.kind} deviceLabel={deviceLabel} />
+        ) : null}
         <Button
           variant="outline"
           size="sm"
@@ -54,7 +68,7 @@ export function ConnectionCard({
         >
           Open {CONNECTION_LABEL[connection.kind]}
         </Button>
-      </CardContent>
-    </Card>
+      </div>
+    </SpotlightCard>
   );
 }
