@@ -23,6 +23,8 @@ use family_policy::{
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::inspection::InspectionConfig;
+
 /// Hard cap on the configuration file itself (bytes).
 pub const MAX_CONFIG_BYTES: usize = 64 * 1024;
 pub const MAX_CLIENTS: usize = 64;
@@ -303,6 +305,9 @@ pub struct Config {
     pub default_device_profile: String,
     #[serde(default)]
     pub destinations: Vec<DestinationConfig>,
+    /// OPTIONAL HTTPS inspection. Off by default; never widens a destination.
+    #[serde(default)]
+    pub inspection: InspectionConfig,
 }
 
 impl Config {
@@ -428,6 +433,7 @@ impl Config {
             bail!("clients must contain 1..={MAX_CLIENTS} entries");
         }
         let mut client_ids = BTreeSet::new();
+        let mut inspection_client_ids = BTreeSet::new();
         let mut tokens = BTreeSet::new();
         for client in &self.clients {
             let id = Uuid::parse_str(&client.id)
@@ -435,6 +441,7 @@ impl Config {
             if !client_ids.insert(id) {
                 bail!("duplicate client id {}", client.id);
             }
+            inspection_client_ids.insert(client.id.clone());
             // Static bootstrap tokens are high-entropy secrets. A 1-byte
             // token invites trial-and-error even behind a loopback listener.
             if client.token.len() < 32 || client.token.len() > MAX_TOKEN_LEN {
@@ -464,6 +471,7 @@ impl Config {
             bail!("at most {MAX_DESTINATIONS} destinations are allowed");
         }
         let mut seen = BTreeSet::new();
+        let mut approved = Vec::new();
         for destination in &self.destinations {
             let host = canonical_host(&destination.host);
             if host.is_empty() || host.len() > MAX_NAME_LEN {
@@ -475,6 +483,7 @@ impl Config {
             if !seen.insert((host.clone(), destination.port)) {
                 bail!("duplicate destination {host}:{}", destination.port);
             }
+            approved.push((host.clone(), destination.port));
             match &destination.pin {
                 Some(pin) => {
                     let addr = SocketAddr::from_str(pin)
@@ -495,6 +504,11 @@ impl Config {
                 }
             }
         }
+
+        // Inspection exceptions may only opt an already approved destination
+        // out of inspection; they can never introduce one.
+        self.inspection
+            .validate(&inspection_client_ids, &approved)?;
         Ok(())
     }
 

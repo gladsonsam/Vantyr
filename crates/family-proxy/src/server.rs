@@ -33,10 +33,13 @@ use rama::http::BodyLimitLayer;
 use rama::http::{Body, HeaderValue, Request, Response, StatusCode, Version};
 use rama::net::client::{ConnectorService, EstablishedClientConnection};
 use rama::net::proxy::{FirstByteTimeoutStart, IoForwardService};
+use rama::net::ConnectorTargetInputExt as _;
 use rama::rt::Executor;
 use rama::service::service_fn;
 use rama::service::BoxService;
 use rama::tcp::server::TcpListener as RamaTcpListener;
+use rama::tls::client::TlsClientConfig;
+use rama::tls::rustls::client::TlsConnector;
 use rama::{Layer, Service};
 use tokio::sync::{oneshot, Semaphore};
 use tokio::task::JoinHandle;
@@ -45,6 +48,10 @@ use crate::auth::{proxy_authentication_required, AuthError, AuthState};
 use crate::bound::{BoundedIngress, IngressTimeoutOff};
 use crate::config::Config;
 use crate::egress::{EgressConnector, EgressPolicy};
+use crate::inspection::{
+    HandshakeTimeoutConnector, InspectRelay, InspectionMode, InspectionModeMarker,
+    InspectionRuntime, PrepareInspection, RelayLimits,
+};
 use crate::timeout_body::deadline_body;
 
 type Upgrade = UpgradeService<rama::service::BoxService<Request, Response, Infallible>, Response>;
@@ -77,6 +84,8 @@ struct ProxyService {
     policy: Arc<Policy>,
     devices: BTreeMap<String, family_policy::Device>,
     upgrade: Upgrade,
+    inspect_upgrade: Option<Upgrade>,
+    inspection: InspectionRuntime,
     forward: Forward,
     heartbeat_ttl_secs: u64,
     max_body_bytes: usize,
@@ -216,6 +225,36 @@ impl ProxyServer {
     where
         R: DnsAddressResolver + Clone + Send + Sync + 'static,
     {
+        let inspection = InspectionRuntime::from_config(&config)?;
+        Self::start_with_upstream_tls(config, resolver, inspection, None).await
+    }
+
+    /// Test-only injection seam: an in-memory inspection signer and explicit
+    /// upstream trust anchors for real loopback TLS tests. The binary and the
+    /// normal `start`/`start_with` paths never reach this; production always
+    /// uses the normal roots and an on-disk encrypted vault.
+    #[doc(hidden)]
+    pub async fn start_with_test_tls<R>(
+        config: Config,
+        resolver: R,
+        inspection: InspectionRuntime,
+        upstream_trust: TlsClientConfig,
+    ) -> Result<Self>
+    where
+        R: DnsAddressResolver + Clone + Send + Sync + 'static,
+    {
+        Self::start_with_upstream_tls(config, resolver, inspection, Some(upstream_trust)).await
+    }
+
+    async fn start_with_upstream_tls<R>(
+        config: Config,
+        resolver: R,
+        inspection: InspectionRuntime,
+        upstream_tls: Option<TlsClientConfig>,
+    ) -> Result<Self>
+    where
+        R: DnsAddressResolver + Clone + Send + Sync + 'static,
+    {
         config.validate()?;
         let limits = config.limits();
         let (trigger, signal) = oneshot::channel::<()>();
@@ -240,8 +279,46 @@ impl ProxyServer {
         let noop =
             service_fn(|_req: Request| async { Ok::<_, Infallible>(Response::new(Body::empty())) })
                 .boxed();
-        let upgrade: Upgrade =
-            UpgradeLayer::new(exec.clone(), MethodMatcher::CONNECT, connect).into_layer(noop);
+        let upgrade: Upgrade = UpgradeLayer::new(exec.clone(), MethodMatcher::CONNECT, connect)
+            .into_layer(noop.clone());
+
+        // OPTIONAL inspection: same validated egress socket, wrapped in normal
+        // upstream TLS with hostname verification before the 200, then a
+        // downstream TLS acceptor over the issued short-lived leaf. There is
+        // no separate dial and no fallback to the opaque upgrade on failure.
+        let inspect_upgrade = match inspection.signer.as_ref() {
+            Some(signer) => {
+                let upstream_config =
+                    upstream_tls.unwrap_or_else(|| TlsClientConfig::new().with_alpn_http_1());
+                let tls_egress = HandshakeTimeoutConnector::new(
+                    TlsConnector::secure(egress.clone()).with_base_config(upstream_config),
+                    inspection.handshake_timeout,
+                );
+                let session_secs = limits
+                    .request_timeout_secs
+                    .max(inspection.handshake_timeout.as_secs());
+                let inspect_relay = InspectRelay::new(
+                    exec.clone(),
+                    RelayLimits {
+                        header_timeout: Duration::from_secs(limits.request_timeout_secs),
+                        body_deadline: Duration::from_secs(limits.request_timeout_secs),
+                        max_body_bytes: limits.max_body_bytes,
+                        session_timeout: Duration::from_secs(session_secs),
+                    },
+                );
+                let eager = EagerHttpProxyConnector::new(tls_egress, inspect_relay);
+                let prepared = UpgradeBypassGuard::new(PrepareInspection::new(
+                    eager,
+                    signer.clone(),
+                    inspection.leaf_validity_secs,
+                ));
+                let inspected: Upgrade =
+                    UpgradeLayer::new(exec.clone(), MethodMatcher::CONNECT, prepared)
+                        .into_layer(noop);
+                Some(inspected)
+            }
+            None => None,
+        };
 
         // Ordinary HTTP: dial only through the same egress policy, strip
         // hop-by-hop credentials and forwarding metadata via Rama layers.
@@ -268,6 +345,8 @@ impl ProxyServer {
             policy,
             devices,
             upgrade,
+            inspect_upgrade,
+            inspection,
             forward,
             heartbeat_ttl_secs: Config::heartbeat_ttl_secs(),
             max_body_bytes: limits.max_body_bytes,
@@ -403,9 +482,34 @@ impl ProxyService {
         }
 
         if request.method().eq(&rama::http::Method::CONNECT) {
-            return match self.upgrade.serve(request).await {
-                Ok(response) => response,
-                Err(never) => match never {},
+            // Choose the path only after credential, policy, body and target
+            // validation above. Both paths use the same egress connector, so
+            // an exception can never widen the destination.
+            let Some(target) = request.connector_target_with_default_port(443) else {
+                return status(StatusCode::BAD_REQUEST, "missing CONNECT authority");
+            };
+            let mode = self.inspection.mode_for(
+                &client.id,
+                &target.host.to_str(),
+                target.port,
+                Utc::now(),
+            );
+            request.extensions().insert(InspectionModeMarker(mode));
+            return match mode {
+                InspectionMode::Opaque => match self.upgrade.serve(request).await {
+                    Ok(response) => response,
+                    Err(never) => match never {},
+                },
+                InspectionMode::Inspect => match self.inspect_upgrade.as_ref() {
+                    Some(upgrade) => match upgrade.serve(request).await {
+                        Ok(response) => response,
+                        Err(never) => match never {},
+                    },
+                    None => status(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "inspection is not available",
+                    ),
+                },
             };
         }
         if matches!(

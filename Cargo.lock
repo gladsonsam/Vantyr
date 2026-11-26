@@ -373,11 +373,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "aws-lc-fips-sys"
+version = "0.14.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b744eed18cd75d814effdf2aba2880f912abe0fe1c327b361341d31aba9a7005"
+dependencies = [
+ "bindgen 0.73.2",
+ "cc",
+ "cmake",
+ "dunce",
+ "fs_extra",
+ "pkg-config",
+ "regex",
+]
+
+[[package]]
 name = "aws-lc-rs"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "048006790404103c488e6c5616b3e7e702a71292aadda08e8f7698a9e0d2eb53"
 dependencies = [
+ "aws-lc-fips-sys",
  "aws-lc-sys",
  "untrusted 0.7.1",
  "zeroize",
@@ -389,6 +405,7 @@ version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bfbe32ac36b3c428696ce315464181bc4029d689fd58e3f2a4e58c252242f52"
 dependencies = [
+ "bindgen 0.73.2",
  "cc",
  "cmake",
  "dunce",
@@ -519,6 +536,25 @@ dependencies = [
  "regex",
  "rustc-hash",
  "shlex 1.3.0",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "bindgen"
+version = "0.73.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "787ef8ef523575546b106a58213d6e6b06198a05c2f757258c68a74273670cfa"
+dependencies = [
+ "bitflags",
+ "cexpr",
+ "clang-sys",
+ "log",
+ "prettyplease 0.2.37",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash",
+ "shlex 2.0.1",
  "syn 2.0.119",
 ]
 
@@ -1552,11 +1588,15 @@ dependencies = [
  "chrono",
  "family-policy",
  "rama",
+ "rustls",
  "serde",
  "serde_json",
+ "time",
  "tokio",
+ "tokio-rustls",
  "tracing",
  "uuid",
+ "vantyr-network-pki",
 ]
 
 [[package]]
@@ -4347,8 +4387,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3803b2144b39cfe1e7ef9ad32c20f7335cc573d6d5739bd7b460fc9444b8e85b"
 dependencies = [
  "ahash",
+ "base64 0.23.1",
  "cc",
  "rama-core",
+ "rama-crypto",
  "rama-dns",
  "rama-fastcgi",
  "rama-grpc",
@@ -4368,6 +4410,7 @@ dependencies = [
  "rama-utils",
  "rama-ws",
  "rustversion",
+ "serde",
  "time",
  "tokio",
  "tokio-util",
@@ -4393,7 +4436,7 @@ version = "0.6.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea17f614cc3eff7c149e8a68a4645fb6f556a31b768f6bbcb4162e6d42a2bba7"
 dependencies = [
- "bindgen",
+ "bindgen 0.72.1",
  "cmake",
  "fs_extra",
  "fslock",
@@ -4442,12 +4485,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edb8d17c58d17301152b3472d11481864a7f37a0b6a3749cd10581d7b27f2444"
 dependencies = [
  "ahash",
+ "aws-lc-rs",
  "base64 0.23.1",
  "openssl-probe",
  "rama-boring",
  "rama-core",
  "rama-net",
  "rama-utils",
+ "rcgen",
  "rustls-pki-types",
  "schannel",
  "security-framework",
@@ -4469,7 +4514,7 @@ dependencies = [
  "ahash",
  "arc-swap",
  "base64 0.23.1",
- "bindgen",
+ "bindgen 0.72.1",
  "hickory-resolver",
  "libc",
  "moka",
@@ -4621,6 +4666,7 @@ dependencies = [
  "rama-http-types",
  "rama-net",
  "rama-tcp",
+ "rama-tls",
  "rama-unix",
  "rama-utils",
  "tokio",
@@ -4722,6 +4768,7 @@ dependencies = [
  "rama-core",
  "rama-json",
  "rama-net",
+ "rama-tls",
  "rama-utils",
  "rand 0.10.4",
  "serde",
@@ -4903,6 +4950,7 @@ dependencies = [
  "rama-net",
  "rama-tls",
  "rama-utils",
+ "rcgen",
  "rustls",
  "tokio",
  "tokio-rustls",
@@ -7018,6 +7066,7 @@ dependencies = [
  "bytes",
  "chrono",
  "chrono-tz",
+ "family-policy",
  "flate2",
  "futures-util",
  "idna",

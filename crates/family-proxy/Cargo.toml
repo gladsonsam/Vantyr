@@ -10,7 +10,8 @@ name = "vantyr-proxy"
 path = "src/bin/vantyr-proxy.rs"
 
 [dependencies]
-family-policy = { path = "../family-policy" }
+family-policy      = { path = "../family-policy" }
+vantyr-network-pki = { path = "../network-pki" }
 anyhow        = "=1.0.105"
 serde         = { version = "=1.0.229", features = ["derive"] }
 serde_json    = "=1.0.154"
@@ -21,12 +22,20 @@ chrono        = { version = "=0.4.45", features = ["clock"] }
 
 # One maintained HTTP engine. Rama 0.4 gives us the HTTP/1 parser, the eager
 # CONNECT upgrade (egress before 200), a resolver-aware TCP connector, and a
-# bounded relay. No custom HTTP/DNS parser and no TLS termination in step5a:
-# upstream TLS inside a raw CONNECT tunnel is validated end to end by the
-# client, not by this proxy. Hudsucker was evaluated and rejected because its
-# CONNECT fallback uses system DNS outside the validated destination path.
-# `ring`/`rustls`/`rcgen` features are deliberately absent: step5a does no MITM
-# and introduces no ring use.
+# bounded relay. No custom HTTP/DNS parser. `tls`/`rustls` add Rama's maintained
+# rustls client connector and TLS server acceptor for the OPTIONAL inspection
+# path; `aws-lc` selects the aws-lc-rs crypto provider (no `ring` feature).
+# Hudsucker was evaluated and rejected because its CONNECT fallback uses
+# system DNS outside the validated destination path.
 rama = { version = "=0.4.0", features = [
   "std", "net", "tcp", "dns", "dns-hickory", "http-full", "proxy",
+  "tls", "rustls", "aws-lc",
 ] }
+
+[dev-dependencies]
+# Real loopback TLS tests: build a test origin CA/leaf via the accepted PKI
+# crate, drive a verifying rustls client, and generate in-memory test CAs.
+# All are already pinned in the shared lock; no new versions are introduced.
+rustls       = "=0.23.46"
+tokio-rustls = "=0.26.6"
+time         = "=0.3.47"
