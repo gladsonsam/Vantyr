@@ -570,6 +570,12 @@ No substantive UI or Supabase changes were made in this step.
   version/expiry on deduplication, prevents false historical delivery evidence,
   pins the latest status's delivered version, bounds numeric casts and corrects
   the database request cap with additive migration 0080 (0079 unchanged).
+  Worker consumer commit `4f47d6d0` is under independent review. The implementer
+  reports 159 affected tests, including eight real-TLS management tests, and
+  clean scoped clippy with no dependency changes. Review checks the actual
+  client/coordinator lifecycle, current-local-state races, automatic refresh
+  after initial apply, failed-candidate isolation and server report compatibility.
+  It is not yet accepted or ready for dashboard handoff.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
   accepted separately from encrypted inbound listeners. Fresh review passed all
   91 DNS tests, including eight real-TLS upstream tests, and strict clippy.
