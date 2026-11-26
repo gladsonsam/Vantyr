@@ -4,8 +4,10 @@ set -euo pipefail
 
 LAB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT="${VANTYR_NETLAB_PROJECT:-vantyr-network-lab}"
-UPSTREAM_IP="${VANTYR_NETLAB_UPSTREAM_IP:-172.26.9.53}"
-UPSTREAM_PORT="${VANTYR_NETLAB_UPSTREAM_PORT:-15353}"
+UPSTREAM_IP="172.26.9.53"
+UPSTREAM_PORT="15353"
+# Stub targets are fixed with the Compose fixture; future worker targets use
+# the separate VANTYR_DNS_* integration contract.
 ZONE="lab.vantyr.test"
 LAB_PREFIX="[vantyr-netlab]"
 
@@ -15,6 +17,11 @@ compose() {
 
 log() { printf '%s %s\n' "${LAB_PREFIX}" "$*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
+
+case "${PROJECT}" in
+  vantyr-network-lab|vantyr-network-lab-*) ;;
+  *) die "refusing unexpected project: ${PROJECT}" ;;
+esac
 
 # Readiness via a real DNS answer from a maintained client tool, not a port ping.
 wait_ready() {
@@ -55,10 +62,4 @@ assert_awk_line() {
     return 1
   fi
   log "PASS: ${label}"
-}
-
-# Only ever removes this Compose project's own containers/networks. There is no
-# global prune, no volume removal and no action on any other Docker project.
-scoped_down() {
-  compose down --timeout 5 >/dev/null 2>&1 || true
 }

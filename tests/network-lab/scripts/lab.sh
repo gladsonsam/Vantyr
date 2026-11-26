@@ -71,7 +71,7 @@ outage() {
 }
 
 down() {
-  compose down --timeout 5
+  compose down --timeout 5 || return 1
   local leftovers
   leftovers="$(docker ps -aq --filter "label=com.docker.compose.project=${PROJECT}" || true)"
   [[ -z "${leftovers}" ]] || die "leftover containers for ${PROJECT}: ${leftovers}"
@@ -89,7 +89,11 @@ smoke() {
     else
       log "cleaning up scoped project ${PROJECT} after successful smoke"
     fi
-    scoped_down
+    if ! down; then
+      log "cleanup failed; inspect project ${PROJECT}"
+      exit 1
+    fi
+    exit "${rc}"
   }
   trap on_exit EXIT
 
