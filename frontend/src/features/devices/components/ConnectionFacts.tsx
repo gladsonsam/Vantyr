@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Info } from "lucide-react";
+import { HelpTip } from "@/components/common/HelpTip";
 import { DetailMetaStrip } from "@/components/common/resource-detail/DetailMetaStrip";
 import { DetailSection } from "@/components/common/resource-detail/DetailSection";
 import { KeyValueCard, KeyValueGrid } from "@/components/common/resource-detail/KeyValueCard";
@@ -22,6 +23,7 @@ export function ConnectionFacts({
   connection,
   seenLabel,
   children,
+  compact = false,
 }: {
   title: string;
   connection: ConnectionSummary;
@@ -29,7 +31,34 @@ export function ConnectionFacts({
   seenLabel: string;
   /** Extra cells, e.g. an action. */
   children?: ReactNode;
+  /** Just the meta strip, with the evidence and the explanation in a help tip beside the status. */
+  compact?: boolean;
 }) {
+  if (compact) {
+    return (
+      <DetailMetaStrip
+        items={[
+          {
+            label: title,
+            value: (
+              <span className="inline-flex items-center gap-1">
+                <ConnectionStatus state={connection.state} />
+                <HelpTip label="About this connection">
+                  {connection.provenance ? (
+                    <span className="mb-1 block font-medium text-foreground">
+                      {EVIDENCE[connection.provenance]}
+                    </span>
+                  ) : null}
+                  {IDENTITY_NOTE[connection.kind]}
+                </HelpTip>
+              </span>
+            ),
+          },
+          { label: seenLabel, value: <TimeAgo iso={connection.lastSeenAt} /> },
+        ]}
+      />
+    );
+  }
   return (
     <>
       <DetailMetaStrip

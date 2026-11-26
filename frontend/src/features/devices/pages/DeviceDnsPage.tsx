@@ -9,8 +9,8 @@ export function DeviceDnsPage() {
   const device = useDevice();
   const dns = device.connections.dns;
   return (
-    <div className="space-y-8">
-      <ConnectionFacts title="Vantyr DNS" connection={dns} seenLabel="Last query" />
+    <div className="space-y-6">
+      <ConnectionFacts title="Vantyr DNS" connection={dns} seenLabel="Last query" compact />
       {device.deviceId ? (
         <>
           <QueriesCard deviceId={device.deviceId} />

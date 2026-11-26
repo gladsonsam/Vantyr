@@ -1,17 +1,16 @@
 import { useState } from "react";
 import { Search } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardContent } from "@vantyr/ui/components/card";
+import { HelpTip } from "@/components/common/HelpTip";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@vantyr/ui/components/input-group";
 import RubberSegment from "@/components/react-bits/RubberSegment";
-import SloshGauge from "@/components/react-bits/SloshGauge";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
 import { useEventsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import type { Effect } from "@/features/network/runtime/types";
 import { fmtDateTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
-const PAGE = 20;
+const PAGE = 8;
 type ResultFilter = "all" | Effect;
 
 /** Every DNS decision for this device, newest first, searchable and filterable. */
@@ -32,10 +31,16 @@ export function QueryLog({ deviceId }: { deviceId: string }) {
   const more = query.data?.state === "ready" ? query.data.data.nextCursor !== null : false;
 
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="space-y-5 p-5">
+    <div className="space-y-5 rounded-xl border border-border/70 bg-card/10 p-5">
+      <div className="space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <h3 className="font-medium">Query log</h3>
+          <h3 className="flex items-center gap-1 font-medium">
+            Recent queries
+            <HelpTip label="About the query log">
+              A DNS decision is about a domain name. It is not a record of the pages someone
+              visited.
+            </HelpTip>
+          </h3>
           <div className="flex flex-wrap items-center gap-3">
             <RubberSegment
               aria-label="Show"
@@ -79,63 +84,49 @@ export function QueryLog({ deviceId }: { deviceId: string }) {
         ) : events.length === 0 && !query.isPending ? (
           <p className="py-6 text-sm text-muted-foreground">No queries match.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[34rem] text-sm">
-              <thead className="text-left text-muted-foreground">
-                <tr className="border-b border-border">
-                  <th className="py-2 pr-4 font-normal">Time</th>
-                  <th className="py-2 pr-4 font-normal">Domain</th>
-                  <th className="py-2 pr-4 font-normal">Result</th>
-                  <th className="py-2 font-normal">Reason</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {events.map((event) => (
-                  <tr key={event.id}>
-                    <td className="py-2.5 pr-4 whitespace-nowrap text-muted-foreground">
-                      {fmtDateTime(event.at)}
-                    </td>
-                    <td className="py-2.5 pr-4 font-mono text-[0.8125rem]">{event.subject}</td>
-                    <td
-                      className={cn(
-                        "py-2.5 pr-4 font-medium",
-                        event.effect === "deny" ? "text-destructive" : "text-success",
-                      )}
-                    >
-                      {event.effect === "deny" ? "Blocked" : "Allowed"}
-                    </td>
-                    <td className="py-2.5 text-muted-foreground">
-                      {event.reason} · r{event.revision}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ul className="divide-y divide-border/60">
+            {events.map((event) => {
+              const blocked = event.effect === "deny";
+              return (
+                <li
+                  key={event.id}
+                  className="grid grid-cols-[auto_1fr_auto] items-center gap-x-4 gap-y-0.5 py-2.5 text-sm sm:grid-cols-[9rem_1fr_6rem_minmax(0,12rem)]"
+                >
+                  <span className="whitespace-nowrap text-muted-foreground">
+                    {fmtDateTime(event.at)}
+                  </span>
+                  <span className="min-w-0 truncate font-mono text-[0.8125rem]">
+                    {event.subject}
+                  </span>
+                  <span
+                    className={cn(
+                      "flex items-center gap-1.5 font-medium",
+                      blocked ? "text-destructive" : "text-success",
+                    )}
+                  >
+                    <span
+                      className={cn("size-1.5 rounded-full", blocked ? "bg-destructive" : "bg-success")}
+                    />
+                    {blocked ? "Blocked" : "Allowed"}
+                  </span>
+                  <span className="col-span-3 truncate text-xs text-muted-foreground sm:col-span-1">
+                    {event.reason} · r{event.revision}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         )}
 
-        {retention ? (
-          <div className="flex items-center gap-4 border-t border-border pt-4">
-            <SloshGauge
-              width={44}
-              height={64}
-              radius={10}
-              showValue={false}
-              interactive={false}
-              value={Math.min(100, (retention.usage.events / retention.retention.maxEvents) * 100)}
-              liquidColor="var(--primary)"
-              ariaLabel="Share of the log storage limit in use"
-            />
-            <p className="text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {retention ? (
+            <p className="text-xs text-muted-foreground">
               Keeping {retention.retention.days} days. {retention.usage.events.toLocaleString()} of{" "}
               {retention.retention.maxEvents.toLocaleString()} queries stored.
             </p>
-          </div>
-        ) : null}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            A DNS decision is about a domain name. It is not a record of the pages someone visited.
-          </p>
+          ) : (
+            <span />
+          )}
           {more ? (
             <Button
               variant="outline"
@@ -146,7 +137,7 @@ export function QueryLog({ deviceId }: { deviceId: string }) {
             </Button>
           ) : null}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
