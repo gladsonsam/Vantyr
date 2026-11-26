@@ -457,5 +457,12 @@ No substantive UI or Supabase changes were made in this step.
   time-bounded verified sessions. This does not install client trust or enable
   endpoint monitoring; worker/client identity integration remains subsequent work.
 - Filtering lists: immutable maintained-parser adapters, bounded list input and
-  explicit supported-rule semantics. Worker integration and subscription refresh
-  follow independently reviewed adapter acceptance.
+  explicit supported-rule semantics, plus bounded named service/domain groups.
+  Service blocking is DNS-domain coverage, not proof of application identity or
+  every feature hosted on a shared CDN.
+- Public list subscriptions: operator-configured HTTPS URLs (including raw
+  GitHub files), per-list refresh intervals, manual refresh, conditional requests,
+  bounded retries/backoff and atomic last-good caches. Failed downloads or parse
+  failures must not discard working filtering data. Freshness, update errors and
+  disabled lists remain visible separately from enforcement. Parser, fetcher and
+  worker integration each require independent acceptance.
