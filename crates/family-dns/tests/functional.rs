@@ -44,6 +44,7 @@ async fn udp_and_tcp_serve_allowed_and_blocked_queries() {
     for tcp in [false, true] {
         let allowed = query(mapped(), addr, "www.lab.example.", RecordType::A, tcp).await;
         assert_code(&allowed, ResponseCode::NoError);
+        assert_flags(&allowed);
         let mut ips = addresses(&allowed);
         ips.sort();
         assert_eq!(
@@ -57,6 +58,7 @@ async fn udp_and_tcp_serve_allowed_and_blocked_queries() {
 
         let denied = query(mapped(), addr, "blocked.lab.example.", RecordType::A, tcp).await;
         assert_code(&denied, ResponseCode::NXDomain);
+        assert_flags(&denied);
         assert!(addresses(&denied).is_empty());
     }
 
@@ -154,10 +156,12 @@ async fn allowed_alias_cannot_chain_to_a_denied_target() {
     for tcp in [false, true] {
         let good = query(mapped(), addr, "alias.lab.example.", RecordType::A, tcp).await;
         assert_code(&good, ResponseCode::NoError);
+        assert_flags(&good);
         assert_eq!(addresses(&good).len(), 2);
 
         let bad = query(mapped(), addr, "badalias.lab.example.", RecordType::A, tcp).await;
         assert_code(&bad, ResponseCode::NXDomain);
+        assert_flags(&bad);
         assert!(
             addresses(&bad).is_empty(),
             "a denied CNAME target must not leak addresses"
@@ -281,6 +285,7 @@ async fn sinkhole_and_refused_denial_modes_are_configurable() {
     )
     .await;
     assert_code(&response, ResponseCode::NoError);
+    assert_flags(&response);
     assert_eq!(
         addresses(&response),
         vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 0))]
@@ -299,5 +304,77 @@ async fn sinkhole_and_refused_denial_modes_are_configurable() {
     )
     .await;
     assert_code(&response, ResponseCode::Refused);
+    assert_flags(&response);
     server.stop().await;
+}
+
+#[tokio::test]
+async fn ipv4_mapped_bind_and_source_share_the_ipv4_device_profile() {
+    // Bind an IPv4-mapped loopback address; the device is configured with the
+    // plain IPv4 spelling. Both native and mapped clients must select it.
+    let json = test_config(0, "")
+        .replace(
+            "\"address\": \"127.0.0.1\"",
+            "\"address\": \"::ffff:127.0.0.1\"",
+        )
+        .replace(
+            "\"source_ips\": [\"127.0.0.2\"]",
+            "\"source_ips\": [\"127.0.0.1\"]",
+        );
+    let server = DnsServer::start(Config::parse(json.as_bytes()).unwrap())
+        .await
+        .unwrap();
+    let addr = server.bind_addr();
+
+    for (label, source) in [
+        ("native IPv4", IpAddr::V4(Ipv4Addr::LOCALHOST)),
+        ("mapped IPv6", ipv4_mapped_loopback()),
+    ] {
+        // The mapped listener is dual-stack; choose the destination family
+        // that matches the client socket.
+        let dest = if source.is_ipv4() {
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), addr.port())
+        } else {
+            SocketAddr::new(ipv4_mapped_loopback(), addr.port())
+        };
+        let response = udp_query(source, dest, "www.lab.example.", RecordType::A).await;
+        assert_code(&response, ResponseCode::NoError);
+        assert_flags(&response);
+        assert_eq!(addresses(&response).len(), 2, "{label} source was denied");
+    }
+    let tcp_response = tcp_query(
+        ipv4_mapped_loopback(),
+        SocketAddr::new(ipv4_mapped_loopback(), addr.port()),
+        "www.lab.example.",
+        RecordType::A,
+    )
+    .await;
+    assert_code(&tcp_response, ResponseCode::NoError);
+    assert_flags(&tcp_response);
+    assert_eq!(addresses(&tcp_response).len(), 2);
+
+    assert!(
+        server.observations().iter().all(|o| o.device_id.is_some()),
+        "mapped sources must not silently fall back to the unknown profile"
+    );
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn mapped_selfloop_is_rejected_before_any_listener_exists() {
+    // Same listener spelled as IPv4-mapped IPv6 on bind and plain IPv4 on the
+    // upstream. Validation must reject it without binding either socket.
+    let probe = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let port = probe.local_addr().unwrap().port();
+    drop(probe);
+    let json = test_config(port, &format!(r#","upstreams":["127.0.0.1:{port}"]"#)).replace(
+        "\"address\": \"127.0.0.1\"",
+        "\"address\": \"::ffff:127.0.0.1\"",
+    );
+    assert!(Config::parse(json.as_bytes()).is_err());
+    let rebound = tokio::net::UdpSocket::bind(("127.0.0.1", port)).await;
+    assert!(
+        rebound.is_ok(),
+        "a rejected self-loop must not leave a listener behind"
+    );
 }

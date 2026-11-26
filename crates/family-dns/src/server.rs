@@ -130,9 +130,10 @@ fn forwarder_handler(upstreams: &[SocketAddr]) -> Result<ForwardZoneHandler<Toki
         .map_err(anyhow::Error::msg)
 }
 
-/// Build a complete catalog atomically. A failure leaves any running snapshot
-/// untouched because callers only swap after this returns successfully.
-pub fn build_catalog(config: &Config) -> Result<Catalog> {
+/// Build a complete catalog atomically. Internal only: construction always
+/// goes through `DnsServer::start`, which validates the configuration first.
+/// A failure leaves any running snapshot untouched.
+pub(crate) fn build_catalog(config: &Config) -> Result<Catalog> {
     let mut catalog = Catalog::new();
     for (origin, records) in &config.local_zones {
         let origin = Name::from_str(origin)?;

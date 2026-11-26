@@ -39,6 +39,35 @@ pub const DEFAULT_PORT: u16 = 15_353;
 pub const HEARTBEAT_TTL_SECS: u64 = 90;
 const EVENT_RETENTION_SECS: u64 = 24 * 60 * 60;
 
+/// Canonicalise only IPv4-mapped IPv6 (`::ffff:a.b.c.d`) to IPv4. Native IPv6
+/// loopback (`::1`) and deprecated IPv4-compatible addresses (`::a.b.c.d`)
+/// stay IPv6 and are never silently reinterpreted as an IPv4 address.
+pub fn normalize_ip(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => {
+            let s = v6.segments();
+            if s[..5].iter().all(|&part| part == 0) && s[5] == 0xffff {
+                IpAddr::V4(Ipv4Addr::new(
+                    (s[6] >> 8) as u8,
+                    s[6] as u8,
+                    (s[7] >> 8) as u8,
+                    s[7] as u8,
+                ))
+            } else {
+                IpAddr::V6(v6)
+            }
+        }
+        v4 => v4,
+    }
+}
+
+/// Parse an IP literal and return its canonical form.
+fn parsed_ip(raw: &str, field: &str) -> Result<IpAddr> {
+    let ip = IpAddr::from_str(raw)
+        .map_err(|_| anyhow::anyhow!("{field} '{raw}' must be an IP literal"))?;
+    Ok(normalize_ip(ip))
+}
+
 fn default_loopback() -> String {
     "127.0.0.1".to_owned()
 }
@@ -258,11 +287,15 @@ impl Config {
     /// Read, size-bound, parse and validate a configuration file. Validation
     /// completes before the caller is allowed to bind any socket.
     pub fn load(path: &Path) -> Result<Self> {
-        let mut file = File::open(path)?;
+        let file = File::open(path)?;
+        // Bound the allocation itself: read at most one byte over the limit,
+        // then reject without ever holding the whole oversized file.
         let mut bytes = Vec::new();
-        let read = file.read_to_end(&mut bytes)?;
+        let read = file
+            .take(MAX_CONFIG_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)?;
         if read > MAX_CONFIG_BYTES {
-            bail!("configuration is {read} bytes; limit is {MAX_CONFIG_BYTES}");
+            bail!("configuration exceeds {MAX_CONFIG_BYTES} bytes");
         }
         Self::parse(&bytes)
     }
@@ -300,7 +333,9 @@ impl Config {
         if bind.is_empty() {
             bail!("bind address is empty");
         }
-        let bind_ip = self.bind.address();
+        // Classify the canonical address: `::ffff:127.0.0.1` is a loopback
+        // bind just like `127.0.0.1`, while native `::1` stays IPv6.
+        let bind_ip = normalize_ip(self.bind.address());
         // Port zero asks the OS for an ephemeral (unprivileged) port, which
         // is how the in-process tests bind. An explicitly chosen privileged
         // port is never accepted.
@@ -329,10 +364,12 @@ impl Config {
             if addr.port() == 0 {
                 bail!("upstream port must not be zero");
             }
-            if !seen_upstreams.insert(addr) {
+            let canonical = SocketAddr::new(normalize_ip(addr.ip()), addr.port());
+            if !seen_upstreams.insert(canonical) {
                 bail!("duplicate upstream {addr}");
             }
-            // A configured port lets us reject the self-loop before binding.
+            // A configured port lets us reject the self-loop before binding,
+            // including the IPv4-mapped/IPv4 direction in either order.
             if self.bind.port != 0 && forwards_to_self(&addr, &self.bind.configured_addr()) {
                 bail!("upstream {addr} points back at the listener");
             }
@@ -443,8 +480,7 @@ impl Config {
                 );
             }
             for raw in &device.source_ips {
-                let ip = IpAddr::from_str(raw)
-                    .map_err(|_| anyhow::anyhow!("source IP '{raw}' must be an IP literal"))?;
+                let ip = parsed_ip(raw, "source IP")?;
                 if !claimed_ips.insert(ip) {
                     bail!("source IP {ip} is assigned to more than one device");
                 }
@@ -525,9 +561,10 @@ impl Config {
     /// explicitly restrictive default device; no owner or current-user
     /// inference is performed anywhere in this path.
     pub fn device_for(&self, source: IpAddr) -> (Option<DeviceId>, Device) {
+        let source = normalize_ip(source);
         for configured in &self.devices {
             for raw in &configured.source_ips {
-                if IpAddr::from_str(raw).ok() == Some(source) {
+                if parsed_ip(raw, "source IP").ok() == Some(source) {
                     let device = Device {
                         id: DeviceId::from_str(&configured.id).expect("device id validated"),
                         household_id: HouseholdId::from_str(&self.household_id)
@@ -565,7 +602,10 @@ impl Config {
     pub fn upstreams(&self) -> Vec<SocketAddr> {
         self.upstreams
             .iter()
-            .map(|raw| SocketAddr::from_str(raw).expect("upstream validated"))
+            .map(|raw| {
+                let addr = SocketAddr::from_str(raw).expect("upstream validated");
+                SocketAddr::new(normalize_ip(addr.ip()), addr.port())
+            })
             .collect()
     }
 }
@@ -574,7 +614,7 @@ impl Config {
 /// standard-library IP helpers: private, loopback, link-local and unspecified
 /// ranges are the only addresses a private lab container may bind.
 fn is_public_address(ip: IpAddr) -> bool {
-    match ip {
+    match normalize_ip(ip) {
         IpAddr::V4(v4) => {
             let [a, b, _, _] = v4.octets();
             !(a == 127
@@ -586,9 +626,9 @@ fn is_public_address(ip: IpAddr) -> bool {
                 || (a == 100 && (64..=127).contains(&b)))
         }
         IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4() {
-                return is_public_address(IpAddr::V4(v4));
-            }
+            // No implicit `to_ipv4()` here: only explicitly mapped addresses
+            // were canonicalised above. Deprecated compatible addresses are
+            // treated as ordinary IPv6 and are not allowed as private binds.
             let first = v6.segments()[0];
             !(v6.is_loopback()
                 || v6.is_unspecified()
@@ -598,13 +638,20 @@ fn is_public_address(ip: IpAddr) -> bool {
     }
 }
 
-/// A loopback alias with the same port is still the same listener, so treat
-/// all loopback addresses as one namespace for the self-loop guard.
+/// Self-loop guard after canonicalising IPv4-mapped addresses. IPv4 loopback
+/// aliases share one namespace; native IPv6 addresses (including `::1`) are
+/// compared exactly and never conflated with IPv4.
 pub fn forwards_to_self(upstream: &SocketAddr, bound: &SocketAddr) -> bool {
     if upstream.port() != bound.port() {
         return false;
     }
-    upstream.ip() == bound.ip() || (upstream.ip().is_loopback() && bound.ip().is_loopback())
+    match (normalize_ip(upstream.ip()), normalize_ip(bound.ip())) {
+        (IpAddr::V4(up), IpAddr::V4(local)) => {
+            up == local || (up.is_loopback() && local.is_loopback())
+        }
+        (IpAddr::V6(up), IpAddr::V6(local)) => up == local,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -687,5 +734,77 @@ mod tests {
         assert!(Config::parse(public.as_bytes()).is_err());
         let privileged = VALID.replace("\"port\": 15353", "\"port\": 53");
         assert!(Config::parse(privileged.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn mapped_ipv4_selfloop_is_rejected_in_both_directions() {
+        let mapped_bind = VALID
+            .replace(
+                "\"address\": \"127.0.0.1\"",
+                "\"address\": \"::ffff:127.0.0.1\"",
+            )
+            .replace("127.0.0.1:5353", "127.0.0.1:15353");
+        assert!(
+            Config::parse(mapped_bind.as_bytes()).is_err(),
+            "mapped bind + IPv4 upstream on the same port is a self-loop"
+        );
+        let mapped_upstream = VALID.replace("127.0.0.1:5353", "[::ffff:127.0.0.1]:15353");
+        assert!(
+            Config::parse(mapped_upstream.as_bytes()).is_err(),
+            "IPv4 bind + mapped upstream on the same port is a self-loop"
+        );
+        // A mapped loopback bind needs no non-loopback opt-in.
+        let mapped_ok = VALID.replace(
+            "\"address\": \"127.0.0.1\"",
+            "\"address\": \"::ffff:127.0.0.1\"",
+        );
+        assert!(Config::parse(mapped_ok.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn mapped_source_selects_the_configured_ipv4_device() {
+        let config = Config::parse(VALID.as_bytes()).unwrap();
+        let (id, device) = config.device_for("::ffff:127.0.0.2".parse().unwrap());
+        assert_eq!(
+            id.unwrap().to_string(),
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        );
+        assert_eq!(device.default_profile, "restricted");
+        // The two spellings are one address for duplicate-detection too.
+        let duplicate = VALID.replace(
+            "\"source_ips\": [\"127.0.0.2\"]",
+            "\"source_ips\": [\"127.0.0.2\", \"::ffff:127.0.0.2\"]",
+        );
+        assert!(Config::parse(duplicate.as_bytes()).is_err());
+        assert!(matches!(
+            normalize_ip("::1".parse().unwrap()),
+            IpAddr::V6(_)
+        ));
+        assert!(matches!(
+            normalize_ip("::127.0.0.1".parse().unwrap()),
+            IpAddr::V6(_)
+        ));
+    }
+
+    #[test]
+    fn native_ipv6_loopback_is_not_conflated_with_ipv4() {
+        let v6_bind = VALID
+            .replace("\"address\": \"127.0.0.1\"", "\"address\": \"::1\"")
+            .replace("127.0.0.1:5353", "127.0.0.1:15353");
+        assert!(
+            Config::parse(v6_bind.as_bytes()).is_ok(),
+            "native ::1 and 127.0.0.1 are distinct sockets at the same port"
+        );
+        let v6_self_loop = v6_bind.replace("127.0.0.1:15353", "[::1]:15353");
+        assert!(Config::parse(v6_self_loop.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn oversized_file_is_rejected_before_parsing_or_binding() {
+        let path =
+            std::env::temp_dir().join(format!("vantyr-dns-oversize-{}.json", std::process::id()));
+        std::fs::write(&path, vec![b'x'; MAX_CONFIG_BYTES + 1]).unwrap();
+        assert!(Config::load(&path).is_err());
+        std::fs::remove_file(&path).unwrap();
     }
 }

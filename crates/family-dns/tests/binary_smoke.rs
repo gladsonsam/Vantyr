@@ -5,11 +5,34 @@ mod support;
 use std::fs;
 use std::net::UdpSocket;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
 use support::test_config;
+
+/// Always kill the spawned worker and remove its config file, even if an
+/// assertion panics mid-test.
+struct SmokeGuard {
+    child: Option<Child>,
+    path: PathBuf,
+}
+
+impl SmokeGuard {
+    fn child(&mut self) -> &mut Child {
+        self.child.as_mut().expect("test child is still running")
+    }
+}
+
+impl Drop for SmokeGuard {
+    fn drop(&mut self) {
+        if let Some(child) = self.child.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        let _ = fs::remove_file(&self.path);
+    }
+}
 
 fn free_port() -> u16 {
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -64,16 +87,20 @@ fn binary_help_check_and_live_query_smoke() {
     assert!(check.status.success(), "check-config failed: {check:?}");
     assert!(String::from_utf8_lossy(&check.stdout).contains("configuration valid"));
 
-    let mut child = Command::new(exe)
+    let child = Command::new(exe)
         .args(["--config", &path.to_string_lossy()])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
+    let mut guard = SmokeGuard {
+        child: Some(child),
+        path,
+    };
 
     let mut allowed = String::new();
     for _ in 0..40 {
-        if let Some(status) = child.try_wait().unwrap() {
+        if let Some(status) = guard.child().try_wait().unwrap() {
             panic!("vantyr-dns exited early with {status}");
         }
         allowed = dig(port, "www.lab.example.");
@@ -92,6 +119,7 @@ fn binary_help_check_and_live_query_smoke() {
         "blocked name leaked an answer: '{blocked}'"
     );
 
+    let mut child = guard.child.take().unwrap();
     let signal = Command::new("kill")
         .arg("-INT")
         .arg(child.id().to_string())
@@ -100,6 +128,29 @@ fn binary_help_check_and_live_query_smoke() {
     assert!(signal.success());
     let status = child.wait().unwrap();
     assert!(status.success(), "orderly Ctrl-C shutdown failed: {status}");
+}
 
-    let _ = fs::remove_file(&path);
+#[test]
+fn binary_rejects_oversized_config_without_starting_a_listener() {
+    let exe = env!("CARGO_BIN_EXE_vantyr-dns");
+    let path =
+        std::env::temp_dir().join(format!("vantyr-dns-oversized-{}.json", std::process::id()));
+    fs::write(&path, vec![b'x'; family_dns::MAX_CONFIG_BYTES + 1]).unwrap();
+    let _guard = SmokeGuard {
+        child: None,
+        path: path.clone(),
+    };
+
+    let output = Command::new(exe)
+        .arg("--config")
+        .arg(&path)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "oversized config was accepted");
+    assert!(stderr.contains("exceeds"), "unexpected error: {stderr}");
+    assert!(
+        !stderr.contains("listening"),
+        "no listener may start before validation: {stderr}"
+    );
 }

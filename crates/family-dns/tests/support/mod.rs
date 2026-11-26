@@ -62,8 +62,30 @@ fn question(name: &str, qtype: RecordType) -> Message {
     let mut message = Message::new(0x4a21, MessageType::Query, OpCode::Query);
     // The forwarding zone refuses queries without the recursion-desired bit.
     message.metadata.recursion_desired = true;
+    // Set CD as well so every response path can be checked for flag echoing.
+    message.metadata.checking_disabled = true;
     message.add_query(Query::query(Name::from_str(name).unwrap(), qtype));
     message
+}
+
+pub fn ipv4_mapped_loopback() -> IpAddr {
+    // Construct explicitly: `IpAddr::to_ipv4()` would also reinterpret
+    // deprecated compatible addresses, which must not be conflated here.
+    IpAddr::V6(std::net::Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x7f00, 1))
+}
+
+/// Every response path (allowed, NXDOMAIN, REFUSED, sinkhole) must echo RD/CD.
+pub fn assert_flags(message: &Message) {
+    assert!(
+        message.recursion_desired,
+        "RD was dropped: code={:?}",
+        message.response_code
+    );
+    assert!(
+        message.checking_disabled,
+        "CD was dropped: code={:?}",
+        message.response_code
+    );
 }
 
 pub async fn udp_query(
@@ -89,10 +111,12 @@ pub async fn tcp_query(
     name: &str,
     qtype: RecordType,
 ) -> Message {
-    let socket = TcpSocket::new_v4().unwrap();
-    socket
-        .bind(SocketAddr::new(source, 0))
-        .expect("test source must be IPv4");
+    let socket = if source.is_ipv4() {
+        TcpSocket::new_v4().unwrap()
+    } else {
+        TcpSocket::new_v6().unwrap()
+    };
+    socket.bind(SocketAddr::new(source, 0)).unwrap();
     let mut stream = socket.connect(server).await.unwrap();
     let bytes = question(name, qtype).to_vec().unwrap();
     stream

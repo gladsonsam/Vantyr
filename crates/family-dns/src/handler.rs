@@ -7,6 +7,13 @@
 //! is replaced with the configured denial. Denied questions are answered
 //! directly with a library-built message. No DNS/TLS wire format is authored
 //! here.
+//!
+//! Scope of alias inspection: only `CNAME` records and `A`/`AAAA` answers at
+//! a different owner are checked. `SVCB`/`HTTPS`, `DNAME` and other alias or
+//! redirection mechanisms are NOT covered in this slice, so this worker makes
+//! no claim that every possible DNS alias form is protected. TSIG-signed
+//! queries are likewise not guaranteed: the capture path does not validate
+//! keys, and signatures are not preserved when an allowed answer is rebuilt.
 
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
@@ -147,11 +154,9 @@ impl FilteringHandler {
                 _ => {}
             }
             if !answers.is_empty() {
-                let mut metadata = Metadata::new(
-                    request.metadata.id,
-                    MessageType::Response,
-                    request.metadata.op_code,
-                );
+                // Derive from the request so RD/CD and the other copied flags
+                // match the NXDOMAIN/REFUSED paths, which use `error_msg`.
+                let mut metadata = Metadata::response_from_request(&request.metadata);
                 metadata.response_code = ResponseCode::NoError;
                 let response = MessageResponseBuilder::new(&request.queries, request.edns.as_ref())
                     .build(
@@ -278,11 +283,7 @@ impl RequestHandler for FilteringHandler {
 }
 
 fn error_response(request: &Request, code: ResponseCode) -> ResponseInfo {
-    let mut metadata = Metadata::new(
-        request.metadata.id,
-        MessageType::Response,
-        request.metadata.op_code,
-    );
+    let mut metadata = Metadata::response_from_request(&request.metadata);
     metadata.response_code = code;
     ResponseInfo::from(hickory_server::proto::op::Header {
         metadata,

@@ -5,8 +5,10 @@
 //! port by default. Every query is evaluated with the accepted policy engine;
 //! allowed queries are answered by an immutable catalog snapshot (local split
 //! zones plus forwarding), while denied queries receive a configured
-//! NXDOMAIN, REFUSED, or sinkhole answer. Alias chains are inspected so an
-//! allowed name cannot resolve through CNAME to a denied target.
+//! NXDOMAIN, REFUSED, or sinkhole answer. Alias inspection currently covers
+//! CNAME and differing-owner A/AAAA answers; SVCB/HTTPS, DNAME and other
+//! redirection mechanisms are explicitly out of scope, as are TSIG-signed
+//! queries (keys are not validated and signatures are not preserved).
 //!
 //! API paths used here (Hickory 0.26.4), recorded to avoid rediscovery:
 //!   `hickory_server::server::{Server, Request, RequestHandler, ResponseHandler, ResponseInfo}`
@@ -24,4 +26,4 @@ pub use config::{
     BindConfig, Config, DenyConfig, DeviceConfig, MatchSpec, RecordSpec, RuleSpec, MAX_CONFIG_BYTES,
 };
 pub use observe::{DecisionObservation, ObservationLog, MAX_OBSERVATIONS};
-pub use server::{build_catalog, DnsServer};
+pub use server::DnsServer;
