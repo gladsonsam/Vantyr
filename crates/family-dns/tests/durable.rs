@@ -512,3 +512,42 @@ fn bootstrap_store(state: PathBuf, now: DateTime<Utc>) -> family_dns::BundleStor
         .unwrap();
     store
 }
+
+#[cfg(unix)]
+#[test]
+fn malformed_bundle_identity_is_rejected_without_panicking_on_load_or_apply() {
+    use family_dns::{Bundle, BundleStore, BundleValidator, Config};
+    let st = new_state(
+        "invalid-identity",
+        &cfg(0, 2, "192.0.2.10", "192.0.2.11", None),
+    );
+    let now = STAMP.parse::<DateTime<Utc>>().unwrap();
+    let store = bootstrap_store(st.state.clone(), now);
+    let original = fs::read(&st.state).unwrap();
+    let config = Config::parse(fs::read(&st.config).unwrap().as_slice()).unwrap();
+    let mut candidate = Bundle::build(&config, now).unwrap();
+    candidate.config.household_id = "NOT-A-UUID".into();
+    assert!(store.apply(candidate, now).is_err());
+    assert_eq!(fs::read(&st.state).unwrap(), original);
+
+    let mut json: serde_json::Value = serde_json::from_slice(&original).unwrap();
+    json["policy"]["config"]["household_id"] = "NOT-A-UUID".into();
+    fs::write(&st.state, serde_json::to_vec(&json).unwrap()).unwrap();
+    assert!(BundleStore::open_from_snapshot(&st.state, WORKER, BundleValidator).is_err());
+}
+
+#[test]
+fn bundle_rejects_divergent_policy_and_future_publication_time() {
+    use family_dns::{Bundle, Config};
+    let config = Config::parse(cfg(0, 2, "192.0.2.10", "192.0.2.11", None).as_bytes()).unwrap();
+    let now = Utc::now();
+    let mut policy = config.policy_at(now);
+    policy.device_profiles.clear();
+    assert!(Bundle::new(config.clone(), policy).is_err());
+
+    let future = now + chrono::Duration::days(365);
+    assert!(Bundle::build(&config, future).is_err());
+    let mut declared_future = config;
+    declared_future.policy_published_at = Some(future);
+    assert!(declared_future.validate().is_err());
+}

@@ -287,6 +287,7 @@ impl<T: Persistable, V: Validator<T>> TypedLkgStore<T, V> {
     /// best-effort parent-directory sync failure after the rename is not
     /// returned — see the module's durability contract.
     pub fn apply(&self, candidate: T, now: DateTime<Utc>) -> Result<(), LkgError> {
+        check_payload(&candidate, &self.validator)?;
         let mut state = self.state.lock().unwrap();
         if candidate.household_id() != self.household_id {
             return Err(LkgError::WrongHousehold);
@@ -296,8 +297,6 @@ impl<T: Persistable, V: Validator<T>> TypedLkgStore<T, V> {
                 return Err(LkgError::StaleRevision);
             }
         }
-        check_payload(&candidate, &self.validator)?;
-
         let snapshot = TypedSnapshot {
             schema: SNAPSHOT_SCHEMA,
             household_id: self.household_id,
@@ -382,6 +381,9 @@ fn validate_snapshot<T: Persistable, V: Validator<T>>(
             expected: SNAPSHOT_SCHEMA,
         });
     }
+    // Deserialized payloads have not passed their shape checks yet. Accessors
+    // may rely on those invariants (for example a validated UUID string).
+    check_payload(&snapshot.policy, validator)?;
     match household_id {
         Some(expected)
             if snapshot.household_id != *expected
@@ -400,7 +402,6 @@ fn validate_snapshot<T: Persistable, V: Validator<T>>(
     if snapshot.highwater != snapshot.policy.revision() {
         return Err(LkgError::RevisionMismatch);
     }
-    check_payload(&snapshot.policy, validator)?;
     Ok(snapshot)
 }
 

@@ -317,6 +317,12 @@ impl Config {
         if self.policy_revision == 0 {
             bail!("policy_revision must be greater than zero");
         }
+        if self
+            .policy_published_at
+            .is_some_and(|published| published > Utc::now() + chrono::Duration::seconds(60))
+        {
+            bail!("policy_published_at exceeds the permitted 60-second clock skew");
+        }
         if self.timezone.is_empty() || self.timezone.len() > MAX_TIMEZONE_LEN {
             bail!("timezone must be 1..={MAX_TIMEZONE_LEN} characters");
         }

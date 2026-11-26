@@ -56,6 +56,11 @@ fn consistency(config: &Config, policy: &Policy) -> std::result::Result<(), LkgE
         .validate()
         .map_err(|e| LkgError::Malformed(e.to_string()))?;
     check_policy_shape(policy)?;
+    if policy.published_at > Utc::now() + chrono::Duration::seconds(60) {
+        return Err(LkgError::Malformed(
+            "policy publication time exceeds the permitted clock skew".into(),
+        ));
+    }
     if policy.revision == 0 || config.policy_revision != policy.revision {
         return Err(LkgError::RevisionMismatch);
     }
@@ -79,6 +84,11 @@ fn consistency(config: &Config, policy: &Policy) -> std::result::Result<(), LkgE
     {
         return Err(LkgError::Unsupported(
             "DNS bundle must keep deny-by-default and no person/exception rules".into(),
+        ));
+    }
+    if config.policy_at(policy.published_at) != *policy {
+        return Err(LkgError::Malformed(
+            "policy content disagrees with its DNS configuration".into(),
         ));
     }
     Ok(())
