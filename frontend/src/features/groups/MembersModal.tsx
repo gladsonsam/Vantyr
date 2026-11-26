@@ -475,7 +475,7 @@ function DeviceName({ person }: { person: Person }) {
         {person.known ? person.name : "Unknown device"}
       </p>
       {(person.duplicate || !person.known) && (
-        <p className="truncate font-mono text-xs text-muted-foreground">{person.id.slice(0, 8)}…</p>
+        <p className="truncate font-sans text-xs text-muted-foreground">{person.id.slice(0, 8)}…</p>
       )}
     </div>
   );

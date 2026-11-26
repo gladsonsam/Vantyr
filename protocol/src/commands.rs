@@ -535,6 +535,9 @@ impl SetRecallSettings {
 /// records presence: the first alias present wins even if its value is unusable.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct StartCapture {
+    /// Capability-gated update of the running capture; never starts or replaces it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub live_tuning: bool,
     /// Optional live video codec. Absent means legacy JPEG; `h264` requires capability.
     #[serde(
         default,

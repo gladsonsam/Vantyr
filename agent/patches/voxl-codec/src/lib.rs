@@ -10,6 +10,7 @@ pub struct DesktopEncoder {
     bgrx: Vec<u8>,
     width: u32,
     height: u32,
+    quality: u8,
 }
 impl DesktopEncoder {
     pub fn new(width: u32, height: u32, fps: u32, quality: u8) -> Result<Self, String> {
@@ -34,7 +35,19 @@ impl DesktopEncoder {
             bgrx: vec![0; w as usize * h as usize * 4],
             width,
             height,
+            quality,
         })
+    }
+    /// Rate-control reconfiguration keeps the encoder and SPS geometry intact.
+    /// Packets already repeat SPS/PPS and force IDR for latest-frame delivery.
+    pub fn set_quality(&mut self, quality: u8) -> Result<(), String> {
+        if self.quality == quality {
+            return Ok(());
+        }
+        self.encoder
+            .set_rate(38.0 - quality.clamp(1, 100) as f32 * 0.24, 12000)?;
+        self.quality = quality;
+        Ok(())
     }
     pub fn dimensions(&self) -> (u32, u32) {
         (self.width, self.height)
@@ -83,6 +96,8 @@ mod tests {
         let mut encoder = DesktopEncoder::new(65, 33, 30, 70).unwrap();
         assert!(encoder.encode_rgba(&[0; 4], 0).is_err());
         for n in 0..3 {
+            encoder.set_quality(55 + n as u8 * 15).unwrap();
+            assert_eq!(encoder.dimensions(), (65, 33));
             let data = encoder
                 .encode_rgba(&vec![160; 65 * 33 * 4], n * 33)
                 .unwrap();

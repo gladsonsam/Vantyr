@@ -220,7 +220,19 @@ async fn dispatch_val(
                 .await
             }
         }
-        AgentMessage::AgentInfo => agents_db::upsert_agent_info(&state.db, agent_id, &val).await,
+        AgentMessage::AgentInfo => {
+            if let Some(connection) = state
+                .agents
+                .connections
+                .lock()
+                .get_mut(&agent_id)
+                .filter(|c| c.conn_id == conn_id)
+            {
+                connection.screen_live_tuning =
+                    val["capabilities"]["screen_live_tuning"].as_str() == Some("supported");
+            }
+            agents_db::upsert_agent_info(&state.db, agent_id, &val).await
+        }
         AgentMessage::Metrics => {
             telemetry_db::metrics::insert_agent_metrics(
                 &state.db,

@@ -71,7 +71,7 @@ function DefaultFallback({ error, onReset }: { error: Error; onReset: () => void
           retry or reload.
         </EmptyDescription>
       </EmptyHeader>
-      <p className="max-w-[560px] font-mono text-xs text-muted-foreground/70 [overflow-wrap:anywhere]">
+      <p className="max-w-[560px] font-sans text-xs text-muted-foreground/70 [overflow-wrap:anywhere]">
         {error.message}
       </p>
       <EmptyContent>

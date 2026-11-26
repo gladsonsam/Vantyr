@@ -142,6 +142,10 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
                 ) else {
                     continue;
                 };
+                if request.live_tuning {
+                    crate::capture::screen::tune(&request, generation, capture_stop.as_ref());
+                    continue;
+                }
                 let mut settings = CaptureSettings::from_request(&request);
                 // The whole point of this process: follow the input desktop.
                 settings.follow_input_desktop = true;

@@ -54,7 +54,7 @@ export function Ut1CategoryTable({
     >
       <h3 id="list-categories-heading" className="font-heading text-base font-medium">
         List categories{" "}
-        <span className="font-mono text-sm font-normal text-muted-foreground tabular-nums">
+        <span className="font-sans text-sm font-normal text-muted-foreground tabular-nums">
           ({ut1Cats.length})
         </span>
       </h3>
@@ -150,7 +150,7 @@ function CategoryRow({
   return (
     <li className={`${ROW_GRID} py-3`}>
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-        <span className="font-mono text-xs break-all">{r.key}</span>
+        <span className="font-sans text-xs break-all">{r.key}</span>
         {r.dirty ? <span className="text-xs text-primary">Edited</span> : null}
       </div>
       <div className="flex items-center gap-2 md:order-last">

@@ -35,6 +35,7 @@ fn connect(state: &AppState, id: Uuid) -> (Uuid, tokio::sync::mpsc::Receiver<Age
             session_id: 1,
             shutdown,
             legacy_policy_delivery: false,
+            screen_live_tuning: false,
         },
     );
     state.agents.cmds.lock().insert(id, tx);

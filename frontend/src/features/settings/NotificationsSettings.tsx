@@ -17,7 +17,7 @@ interface NotificationsSettingsProps {
 
 function EnvKey({ name }: { name: string }) {
   return (
-    <code className="rounded bg-muted/70 px-1.5 py-px font-mono text-[11px] break-all text-muted-foreground">
+    <code className="rounded bg-muted/70 px-1.5 py-px font-sans text-[11px] break-all text-muted-foreground">
       {name}
     </code>
   );
@@ -238,7 +238,7 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
           <HelpTip>
             Fired alert rules (URL, keystroke, resource threshold, agent offline) are delivered to
             every channel configured here. Set a channel&apos;s variables in the server environment
-            (see <code className="font-mono">.env.example</code>), then restart. Secrets stay on the
+            (see <code className="font-sans">.env.example</code>), then restart. Secrets stay on the
             server.
           </HelpTip>
         </CardTitle>

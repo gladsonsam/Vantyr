@@ -132,7 +132,7 @@ function WindowFrame({
             marginLeft: 12,
             fontSize: 12.5,
             color: C.dim,
-            fontFamily: "var(--mono, monospace)",
+            fontFamily: "var(--font-sans, sans-serif)",
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -194,7 +194,7 @@ function Taskbar() {
           marginLeft: "auto",
           fontSize: 12,
           color: C.dim,
-          fontFamily: "var(--mono, monospace)",
+          fontFamily: "var(--font-sans, sans-serif)",
         }}
       >
         {clock}
@@ -225,7 +225,7 @@ function TerminalScene() {
         inset: 0,
         background: "#0c0e12",
         padding: 16,
-        fontFamily: "var(--mono, monospace)",
+        fontFamily: "var(--font-sans, sans-serif)",
         fontSize: 14,
         lineHeight: 1.7,
         overflow: "hidden",
@@ -307,7 +307,7 @@ function CodeScene() {
         inset: 0,
         background: "#0e1014",
         display: "flex",
-        fontFamily: "var(--mono, monospace)",
+        fontFamily: "var(--font-sans, sans-serif)",
         fontSize: 14,
         lineHeight: 1.85,
       }}
@@ -423,7 +423,7 @@ function DesignScene() {
               fontSize: 12,
               color: C.dim,
               marginBottom: 8,
-              fontFamily: "var(--mono, monospace)",
+              fontFamily: "var(--font-sans, sans-serif)",
             }}
           >
             {t}
@@ -527,7 +527,7 @@ function BrowserScene() {
           gap: 8,
         }}
       >
-        <span style={{ fontSize: 12, color: C.dim, fontFamily: "var(--mono, monospace)" }}>
+        <span style={{ fontSize: 12, color: C.dim, fontFamily: "var(--font-sans, sans-serif)" }}>
           ⌂ github.com/example/vantyr/pull/482
         </span>
       </div>

@@ -109,7 +109,7 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
         <Textarea
           aria-label="Script"
           rows={10}
-          className="min-h-40 font-mono text-[13px]"
+          className="min-h-40 font-sans text-[13px]"
           value={script}
           placeholder={exampleScriptForShell(shell.value)}
           onChange={(e) => setScript(e.target.value)}
@@ -236,7 +236,7 @@ function OutputBlock({ label, text, tone }: { label: string; text: string; tone?
         tabIndex={0}
         aria-label={label}
         className={cn(
-          "max-h-80 overflow-auto rounded-lg bg-muted/50 p-3 font-mono text-xs whitespace-pre-wrap break-words focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
+          "max-h-80 overflow-auto rounded-lg bg-muted/50 p-3 font-sans text-xs whitespace-pre-wrap break-words focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
           tone === "error" && "text-destructive",
         )}
       >

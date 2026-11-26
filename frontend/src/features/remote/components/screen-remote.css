@@ -566,3 +566,108 @@
     margin: auto auto max(12px, env(safe-area-inset-bottom));
   }
 }
+
+/* Maximized view: the desktop owns every pixel. A small corner tab reveals the controls as an
+   overlay on a deliberate hover, a click/tap or keyboard focus; nothing reserves screen space. */
+.screen-remote-maximized {
+  position: relative;
+}
+.remote-fs-handle {
+  position: absolute;
+  z-index: 12;
+  top: env(safe-area-inset-top);
+  left: env(safe-area-inset-left);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 0 0 10px 0;
+  color: #fff;
+  background: #0b0f14b3;
+  opacity: 0.35;
+  cursor: pointer;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease;
+}
+.remote-fs-handle:hover,
+.remote-fs-handle.is-revealed,
+.remote-fs-handle:focus-visible {
+  opacity: 1;
+  background: #0b0f14ee;
+}
+.remote-fs-handle svg {
+  transition: transform 0.15s ease;
+}
+.remote-fs-handle.is-revealed svg {
+  transform: rotate(180deg);
+}
+.remote-fs-handle:focus-visible {
+  outline: 2px solid var(--gr);
+  outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .remote-fs-handle {
+    width: 56px;
+    height: 32px;
+  }
+}
+.screen-remote-tools.is-immersive {
+  position: absolute;
+  z-index: 11;
+  top: calc(env(safe-area-inset-top) + 28px);
+  left: max(8px, env(safe-area-inset-left));
+  right: auto;
+  width: min(760px, calc(100% - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  max-height: calc(var(--remote-viewport-height, 100dvh) - 56px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  box-shadow: 0 16px 48px #000a;
+  box-sizing: border-box;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease,
+    visibility 0s linear 0.14s;
+}
+.screen-remote-tools.is-immersive.is-revealed {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition-delay: 0s;
+}
+.screen-remote-tools.is-immersive .remote-session-status {
+  padding-top: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .remote-fs-handle,
+  .remote-fs-handle svg,
+  .screen-remote-tools.is-immersive {
+    transition: none;
+  }
+}
+/* Errors stay visible while the controls are tucked away; they never take pointer input. */
+.remote-fs-alert {
+  position: absolute;
+  z-index: 10;
+  top: max(10px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(560px, calc(100% - 140px));
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
+  border-radius: 10px;
+  background: #0b0f14ee;
+  pointer-events: none;
+}
+.remote-fs-alert .remote-connection-note {
+  margin: 0;
+  font-size: 12px;
+  color: #ffb4b4;
+}

@@ -130,7 +130,7 @@ export function RecallFilmstrip({
               style={{ display: "block", width: "100%", aspectRatio: "16 / 9", objectFit: "cover" }}
             />
             <span
-              className={`block py-[3px] font-mono text-[10px] tabular-nums ${active ? "text-foreground" : "text-muted-foreground"}`}
+              className={`block py-[3px] font-sans text-[10px] tabular-nums ${active ? "text-foreground" : "text-muted-foreground"}`}
             >
               {timeIn(timezone, c.frame.captured_at)}
             </span>

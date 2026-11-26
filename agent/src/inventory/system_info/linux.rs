@@ -189,6 +189,7 @@ pub(super) fn capabilities() -> serde_json::Value {
         "unsupported"
     };
     json!({
+        "screen_live_tuning": "supported",
         "screen_h264": if h264 { "supported" } else { "unsupported" },
         "clipboard": if crate::input::clipboard::available() { "supported" } else { "unavailable" },
         "platform": "linux",

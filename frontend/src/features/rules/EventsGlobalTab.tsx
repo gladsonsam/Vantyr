@@ -124,7 +124,7 @@ export function EventsGlobalTab() {
             <TabsTrigger key={tab.value} value={tab.value} className="h-8! flex-none">
               {tab.label}
               {!feed.firstLoad && (
-                <span className="ml-1.5 font-mono text-xs text-muted-foreground tabular-nums">
+                <span className="ml-1.5 font-sans text-xs text-muted-foreground tabular-nums">
                   {feed.failedFilters.has(tab.value) ? "?" : countLabel(feed.counts[tab.value])}
                 </span>
               )}
@@ -222,7 +222,7 @@ function EventRow({
         <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
           <span className="min-w-0 truncate">{r.agent_name || "Unknown agent"}</span>
           <span aria-hidden>·</span>
-          <time dateTime={r.time} className="font-mono tabular-nums">
+          <time dateTime={r.time} className="font-sans tabular-nums">
             {when}
           </time>
         </p>
@@ -273,7 +273,7 @@ function EventDetail({ text }: { text: string }) {
   return (
     <div className="mt-1.5 text-xs">
       <p
-        className={`font-mono break-words whitespace-pre-wrap [overflow-wrap:anywhere] ${open || !long ? "" : "line-clamp-2"}`}
+        className={`font-sans break-words whitespace-pre-wrap [overflow-wrap:anywhere] ${open || !long ? "" : "line-clamp-2"}`}
       >
         {text}
       </p>

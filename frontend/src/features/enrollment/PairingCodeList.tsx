@@ -368,7 +368,7 @@ function CodeRow({
                     </span>
                   </span>
                   {r.agent_id ? (
-                    <span className="font-mono text-xs break-all text-muted-foreground">
+                    <span className="font-sans text-xs break-all text-muted-foreground">
                       {r.agent_id}
                     </span>
                   ) : null}

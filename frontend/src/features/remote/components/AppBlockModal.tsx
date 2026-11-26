@@ -174,7 +174,7 @@ function AppBlockForm({
                       className="flex w-full cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left text-[13px] hover:bg-muted"
                     >
                       <AppIcon agentId={agentId} exeName={s} size={16} />
-                      <span className="font-mono">{s}</span>
+                      <span className="font-sans">{s}</span>
                     </button>
                   ))}
                 </div>

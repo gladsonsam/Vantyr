@@ -93,7 +93,7 @@ function AlertRuleItem({
           <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground">
             <span className="font-medium text-foreground/80">{channelLabel(r.channel)}</span>
             {r.name.trim() && match && (
-              <span className="min-w-0 truncate font-mono text-xs" title={match}>
+              <span className="min-w-0 truncate font-sans text-xs" title={match}>
                 {match}
               </span>
             )}

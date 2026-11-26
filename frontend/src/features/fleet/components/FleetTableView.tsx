@@ -124,7 +124,7 @@ export function FleetTableView({
                         </span>
                         <span aria-hidden="true">·</span>
                         {hasValue(row.ip) ? (
-                          <span className="truncate font-mono">{row.ip}</span>
+                          <span className="truncate font-sans">{row.ip}</span>
                         ) : (
                           <span className="truncate">No IP reported</span>
                         )}
@@ -156,7 +156,7 @@ export function FleetTableView({
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="hidden font-mono text-xs tabular-nums @4xl:table-cell">
+                <TableCell className="hidden font-sans text-xs tabular-nums @4xl:table-cell">
                   <div className="flex items-center gap-1.5">
                     {row.version ? (
                       `v${normalizeVersion(row.version)}`

@@ -665,3 +665,78 @@ async fn video_http_framing_lease_and_revocation(db: sqlx::PgPool) -> anyhow::Re
     assert!(s.control.lock().capture.is_empty());
     Ok(())
 }
+
+#[sqlx::test]
+async fn retune_keeps_session_capture_and_control_lease_under_control(
+    db: sqlx::PgPool,
+) -> anyhow::Result<()> {
+    let (s, agent, _) = crate::test_support::state(db).await?;
+    let (_, mut queue, _) = connect(&s, agent, 32);
+    let session = Uuid::new_v4();
+    let viewer = Uuid::new_v4();
+    s.begin_mjpeg_session(agent, session, user().user_id, prefs(Some(0), 80), Some(0))
+        .unwrap();
+    queue.try_recv().unwrap();
+    s.media.store_frame(agent, tagged_frame(0));
+    assert_eq!(acquire(&s, agent, session, viewer)["status"], "granted");
+    let old = s.media.mjpeg_active_capture.lock()[&agent];
+    assert!(s
+        .tune_mjpeg_session(agent, session, Uuid::new_v4(), 55, 100)
+        .await
+        .is_err());
+    s.tune_mjpeg_session(agent, session, user().user_id, 55, 100)
+        .await
+        .unwrap();
+    assert_eq!(s.media.mjpeg_active_capture.lock()[&agent], old);
+    assert_eq!(
+        s.media.mjpeg_sessions.lock()[&session].prefs.interval_ms,
+        100
+    );
+    assert_eq!(s.control.lock().capture[&agent].session_id, session);
+    assert!(queue.try_recv().is_err());
+    sqlx::query("INSERT INTO agent_info(agent_id,info) VALUES($1,$2)")
+        .bind(agent)
+        .bind(json!({"capabilities":{"screen_live_tuning":"supported"}}))
+        .execute(&s.db)
+        .await?;
+    // Persisted capability is not a current-connection negotiation (e.g. after rollback).
+    s.tune_mjpeg_session(agent, session, user().user_id, 55, 120)
+        .await
+        .unwrap();
+    assert_eq!(s.media.mjpeg_active_capture.lock()[&agent], old);
+    assert!(queue.try_recv().is_err());
+    s.agents
+        .connections
+        .lock()
+        .get_mut(&agent)
+        .unwrap()
+        .screen_live_tuning = true;
+    s.tune_mjpeg_session(agent, session, user().user_id, 50, 150)
+        .await
+        .unwrap();
+    let tuned = s.media.mjpeg_active_capture.lock()[&agent];
+    assert_eq!(tuned.generation, old.generation);
+    assert_eq!(tuned.retired_capture_ids, old.retired_capture_ids);
+    assert_eq!(tuned.prefs.interval_ms, 150);
+    assert_eq!(tuned.prefs.jpeg_quality, 50);
+    let command = queue.try_recv().unwrap();
+    let AgentControl::Text(command) = command else {
+        panic!("expected tuning command")
+    };
+    let command: Value = serde_json::from_str(&command)?;
+    assert_eq!(command["type"], "start_capture");
+    assert_eq!(command["live_tuning"], true);
+    assert_eq!(command["jpeg_quality"], 50);
+    assert_eq!(command["interval_ms"], 150);
+    assert!(queue.try_recv().is_err());
+    assert_eq!(s.control.lock().capture[&agent].session_id, session);
+    s.revoke_viewer_control(viewer);
+    assert_eq!(
+        s.media.mjpeg_active_capture.lock()[&agent]
+            .prefs
+            .jpeg_quality,
+        50
+    );
+    assert!(s.media.mjpeg_sessions.lock().contains_key(&session));
+    Ok(())
+}

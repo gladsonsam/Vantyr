@@ -335,3 +335,35 @@ describe("canvas/display identity atomicity", () => {
     expect(b.cancel).toHaveBeenCalled();
   });
 });
+
+it("split, per-frame and coalesced chunks report the same unknown transfer evidence", async () => {
+  const results: unknown[] = [];
+  const parts = [framePart(frameJpeg(frameGeometry(1))), framePart(frameJpeg(frameGeometry(2)))];
+  for (const chunks of [
+    parts,
+    [concat(...parts)],
+    Array.from(concat(...parts), (byte) => new Uint8Array([byte])),
+  ]) {
+    const c = connection();
+    const measurements: unknown[] = [];
+    const stream = startMjpegStream("/mjpeg", {
+      lane: new MjpegDecodeLane(async () => bitmap()),
+      present: () => {},
+      stopped: () => {},
+      fetcher: async () => c.response,
+      metrics: {
+        frame: (bytes, ms) => measurements.push([bytes, ms]),
+        decoded: () => {},
+        dropped: () => {},
+      },
+    });
+    await settle();
+    for (const chunk of chunks) c.controller.enqueue(chunk);
+    c.controller.close();
+    await stream.done;
+    expect(measurements).toHaveLength(2);
+    results.push(measurements);
+  }
+  expect(results[0]).toEqual(results[1]);
+  expect(results[1]).toEqual(results[2]);
+});

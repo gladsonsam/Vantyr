@@ -486,7 +486,7 @@ function SiteRow({
     <TableRow>
       <TableCell className="w-full max-w-0">
         <div className="flex min-w-0 flex-col gap-1.5">
-          <span title={name} className="truncate font-mono text-xs">
+          <span title={name} className="truncate font-sans text-xs">
             {name}
           </span>
           <div aria-hidden className="h-1 overflow-hidden rounded-full bg-muted">

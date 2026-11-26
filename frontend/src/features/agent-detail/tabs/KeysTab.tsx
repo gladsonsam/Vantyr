@@ -168,7 +168,7 @@ function keystrokeColumns(agentId: string, showCorrected: boolean) {
       ),
       meta: {
         className:
-          "min-w-64 max-w-xl font-mono text-xs whitespace-normal wrap-break-word max-sm:order-first max-sm:basis-full",
+          "min-w-64 max-w-xl font-sans text-xs whitespace-normal wrap-break-word max-sm:order-first max-sm:basis-full",
       },
     }),
   ]);

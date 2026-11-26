@@ -162,7 +162,7 @@ export function AgentEnrollmentSettings({
             <Alert>
               <AlertTitle className="text-success">Pairing code</AlertTitle>
               <AlertDescription>
-                <span className="mt-1 block font-mono text-2xl font-bold tracking-widest text-foreground">
+                <span className="mt-1 block font-sans text-2xl font-bold tracking-widest text-foreground">
                   {formatEnrollmentOtp6(enrollResult.token)}
                 </span>
                 <span className="mt-2 block text-sm">

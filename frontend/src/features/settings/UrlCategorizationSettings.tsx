@@ -196,7 +196,7 @@ function CategorizationBody({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Category lists: UT1 (<code className="font-mono">olbat/ut1-blacklists</code>), CC BY-SA 4.0.
+        Category lists: UT1 (<code className="font-sans">olbat/ut1-blacklists</code>), CC BY-SA 4.0.
       </p>
     </div>
   );
@@ -282,7 +282,7 @@ function ListStatus({ status }: { status: UrlCategorizationStatus }) {
       {release.sha256 ? (
         <details className="text-xs text-muted-foreground">
           <summary className="cursor-pointer">Release checksum</summary>
-          <code className="mt-1 block font-mono break-all">{release.sha256}</code>
+          <code className="mt-1 block font-sans break-all">{release.sha256}</code>
         </details>
       ) : null}
     </div>

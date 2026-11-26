@@ -172,10 +172,10 @@ export function demoFrameDataUri(frameId: number): string {
     `<rect width='100%' height='100%' fill='#101216'/>` +
     `<rect width='1600' height='56' fill='#171a20'/>` +
     `<circle cx='40' cy='28' r='9' fill='#20dd8f'/>` +
-    `<text x='68' y='37' fill='#e6e6e6' font-family='monospace' font-size='24'>Demo desktop &#183; frame ${frameId}</text>` +
+    `<text x='68' y='37' fill='#e6e6e6' font-family='sans-serif' font-size='24'>Demo desktop &#183; frame ${frameId}</text>` +
     `<rect x='120' y='150' width='1360' height='620' rx='14' fill='hsl(${hue},12%,13%)' stroke='rgba(255,255,255,0.09)' stroke-width='2'/>` +
-    `<text x='160' y='230' fill='#9fb3ad' font-family='monospace' font-size='30'>Recall keyframe (mock preview)</text>` +
-    `<text x='160' y='290' fill='#6b7d78' font-family='monospace' font-size='22'>1600 &#215; 900 &#183; monitor 0</text>` +
+    `<text x='160' y='230' fill='#9fb3ad' font-family='sans-serif' font-size='30'>Recall keyframe (mock preview)</text>` +
+    `<text x='160' y='290' fill='#6b7d78' font-family='sans-serif' font-size='22'>1600 &#215; 900 &#183; monitor 0</text>` +
     `</svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }

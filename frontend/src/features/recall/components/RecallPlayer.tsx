@@ -344,7 +344,7 @@ function PlayerControls({
             value={s.id}
             aria-label={s.label}
             title={s.label}
-            className="rounded-md! px-2.5 font-mono aria-pressed:bg-background"
+            className="rounded-md! px-2.5 font-sans aria-pressed:bg-background"
           >
             {s.text}
           </ToggleGroupItem>
@@ -694,7 +694,7 @@ function PlaybackClock({
             color: "#eceef1",
             pointerEvents: "none",
           }}
-          className="font-mono tabular-nums"
+          className="font-sans tabular-nums"
         >
           <div>
             Captured {shortDateIn(timezone, Date.parse(current!.captured_at))} ·{" "}

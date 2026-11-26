@@ -1,3 +1,4 @@
+import type { StreamMetricsSink } from "./streamMetrics";
 import type { ReactNode } from "react";
 import type { DisplayedRemoteFrame } from "@/features/remote/hooks/useMjpegFrames";
 import type { CaptureGeometry } from "@/features/remote/lib/remoteFrame";
@@ -19,6 +20,7 @@ export interface FrameReport {
 }
 
 export interface FrameSourceOptions {
+  metrics?: StreamMetricsSink;
   agentId: string;
   /** Agent advertises the maintained voxl video encoder. */
   videoEnabled?: boolean;

@@ -132,7 +132,7 @@ function alertEventColumns(onPreview: (id: number) => void, onViewTimeline?: (ts
         ),
       meta: {
         className:
-          "w-full max-w-0 font-mono text-xs whitespace-normal wrap-break-word max-sm:max-w-full max-sm:basis-full",
+          "w-full max-w-0 font-sans text-xs whitespace-normal wrap-break-word max-sm:max-w-full max-sm:basis-full",
       },
     }),
     alertColumnHelper.display({
@@ -425,7 +425,7 @@ function AlertRulesTable({ rules }: { rules: AlertRuleRow[] }) {
           {rules.map((r) => (
             <TableRow key={r.id}>
               <TableCell className="whitespace-normal">{r.name}</TableCell>
-              <TableCell className="font-mono text-xs whitespace-normal break-all">
+              <TableCell className="font-sans text-xs whitespace-normal break-all">
                 {r.pattern}
               </TableCell>
               <TableCell>
@@ -458,7 +458,7 @@ function AppRulesTable({ agentId, rules }: { agentId: string; rules: AppBlockRul
               <TableCell>
                 <div className="flex items-center gap-2">
                   <AppIcon agentId={agentId} exeName={r.exe_pattern} size={16} />
-                  <span className="font-mono text-xs">{r.exe_pattern}</span>
+                  <span className="font-sans text-xs">{r.exe_pattern}</span>
                 </div>
               </TableCell>
               <TableCell className="text-muted-foreground">{r.match_mode}</TableCell>

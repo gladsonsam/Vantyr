@@ -174,7 +174,7 @@ export function FileTable({
         ) : (
           formatFileSize(row.original.size)
         ),
-      meta: { className: "whitespace-nowrap font-mono text-xs text-muted-foreground" },
+      meta: { className: "whitespace-nowrap font-sans text-xs text-muted-foreground" },
     }),
     columnHelper.display({
       id: "actions",

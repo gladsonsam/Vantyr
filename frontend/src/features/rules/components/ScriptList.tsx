@@ -48,7 +48,7 @@ export function ScriptList({
             switchDisabled={switchesDisabled}
             onToggle={() => onToggle(r)}
             title={title}
-            lead={<span className="font-mono text-xs">{shellLabel(r.shell)}</span>}
+            lead={<span className="font-sans text-xs">{shellLabel(r.shell)}</span>}
             state={!r.enabled && "Off, won’t run on its schedule"}
             facts={
               <>

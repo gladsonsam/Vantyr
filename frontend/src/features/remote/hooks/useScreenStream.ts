@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { mjpegStreamUrl } from "@/api";
+import { tuneScreenStream } from "@/api/endpoints/remote";
+import { StreamTuningQueue } from "../lib/streamTuningQueue";
+import { AutoStreamController } from "../lib/streamMetrics";
 import type { DisplayedRemoteFrame } from "@/features/remote/hooks/useMjpegFrames";
 import { useScreenStreamSource } from "@/features/remote/hooks/useScreenStreamSource";
 import type { FrameReport } from "@/features/remote/lib/screenStreamSource";
 import {
-  STREAM_PRESET_TUNING,
+  resolveStreamTuning,
   loadStreamPreset,
   saveStreamPreset,
   type StreamPreset,
@@ -15,7 +18,7 @@ const STALL_AFTER_MS = 15_000;
 
 /**
  * The live screen stream's lifecycle: a capture session per visit (rotated on reconnect,
- * quality/monitor change and return from a hidden tab), the viewer's quality preset
+ * monitor change and return from a hidden tab), the viewer's quality preset
  * (remembered per browser) and monitor choice, frame status and stall detection. Frames come
  * from the injected {@link useScreenStreamSource} source.
  */
@@ -51,23 +54,79 @@ export function useScreenStream({
   /** Explicit monitor selection (0-based). `null` = let the agent pick its primary. */
   const [monitorIndex, setMonitorIndex] = useState<number | null>(null);
 
-  const presetTuning = STREAM_PRESET_TUNING[preset];
-  const tuning = useMemo(
-    () =>
-      useVideo
-        ? {
-            ...presetTuning,
-            intervalMs: preset === "saver" ? 100 : preset === "balanced" ? 50 : 33,
-          }
-        : presetTuning,
-    [useVideo, presetTuning, preset],
+  const [autoTier, setAutoTier] = useState(2);
+  const controller = useMemo(
+    () => new AutoStreamController(`${session}:${preset}`),
+    [session, preset],
   );
+  const tuning = useMemo(
+    () => resolveStreamTuning(preset, autoTier, useVideo),
+    [preset, autoTier, useVideo],
+  );
+  // Initial query is stable for the lifetime of the session. All later tuning
+  // uses POST, so neither transport cleanup nor lease release runs.
+  const [initial, setInitial] = useState(() => ({
+    session,
+    tuning: resolveStreamTuning(preset, 2, useVideo),
+  }));
+  if (initial.session !== session)
+    setInitial({ session, tuning: resolveStreamTuning(preset, 2, useVideo) });
+  const initialTuning = initial.tuning;
+  const [previousController, setPreviousController] = useState(controller);
+  if (previousController !== controller) {
+    setPreviousController(controller);
+    setAutoTier(2);
+  }
+  useEffect(() => {
+    controller.reset(Date.now());
+    if (preset !== "auto") return;
+    const timer = window.setInterval(() => {
+      setAutoTier(
+        controller.sample(
+          Date.now(),
+          resolveStreamTuning("auto", controller.tier, useVideo).intervalMs,
+        ),
+      );
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [controller, preset, useVideo]);
+  const tuningQueue = useMemo(() => new StreamTuningQueue(), []);
+  const [failedTuning, setFailedTuning] = useState<{
+    session: string;
+    tuning: typeof tuning;
+  } | null>(null);
+  const tuningError = failedTuning?.session === session && failedTuning.tuning === tuning;
+  const appliedTuning = useRef({ session: "", tuning: initialTuning });
+  useEffect(() => {
+    if (!session || !streamEnabled || !online || blockedByRole) return;
+    if (appliedTuning.current.session !== session)
+      appliedTuning.current = { session, tuning: initialTuning };
+    // Always queue the latest value: an earlier in-flight request may still settle.
+    return tuningQueue.enqueue(
+      async (signal) => {
+        const applied = appliedTuning.current;
+        if (
+          applied.session === session &&
+          tuning.jpegQ === applied.tuning.jpegQ &&
+          tuning.intervalMs === applied.tuning.intervalMs
+        )
+          return;
+        await tuneScreenStream(agentId, session, tuning, signal);
+        if (signal.aborted) return;
+        setFailedTuning((current) =>
+          current?.session === session && current.tuning === tuning ? null : current,
+        );
+        if (appliedTuning.current.session === session) appliedTuning.current = { session, tuning };
+      },
+      () => setFailedTuning({ session, tuning }),
+    );
+  }, [agentId, session, streamEnabled, online, blockedByRole, tuning, initialTuning, tuningQueue]);
   const streamUrl = useMemo(
     () =>
       streamEnabled && session
-        ? mjpegStreamUrl(agentId, session, tuning, monitorIndex ?? undefined)
+        ? mjpegStreamUrl(agentId, session, initialTuning, monitorIndex ?? undefined)
         : "",
-    [streamEnabled, agentId, session, tuning, monitorIndex],
+    [streamEnabled, agentId, session, initialTuning, monitorIndex],
   );
 
   const source = useScreenStreamSource();
@@ -91,6 +150,7 @@ export function useScreenStream({
     online,
     onBeforeDisplay,
     report,
+    metrics: controller,
   });
 
   useStreamStall(streamEnabled, frames.detectsStalls, lastFrameAtMsRef, setStalled);
@@ -143,15 +203,10 @@ export function useScreenStream({
   /** Start a fresh capture session (the server rejects a reused session id). */
   const restart = useCallback(() => setSession(crypto.randomUUID()), [setSession]);
 
-  const changePreset = useCallback(
-    (next: StreamPreset) => {
-      setPreset(next);
-      saveStreamPreset(next);
-      // Rotate the session so the GET request picks up new tuning query params immediately.
-      if (streamEnabled) restart();
-    },
-    [streamEnabled, restart],
-  );
+  const changePreset = useCallback((next: StreamPreset) => {
+    setPreset(next);
+    saveStreamPreset(next);
+  }, []);
 
   const changeMonitor = useCallback(
     (next: number) => {
@@ -169,7 +224,8 @@ export function useScreenStream({
     session,
     streaming,
     everLoaded,
-    error,
+    error: error || tuningError,
+    tuningError,
     aspectRatio,
     stalled,
     preset,

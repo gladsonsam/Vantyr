@@ -123,7 +123,7 @@ function ScheduledScriptFormBody({
           id="script-code"
           label="Script"
           rows={8}
-          className="font-mono"
+          className="font-sans"
           description="Runs on each device in scope, as typed."
         />
         <InputField

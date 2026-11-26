@@ -305,6 +305,7 @@ pub(crate) fn sanitize_fleet_info(raw: &serde_json::Value) -> Option<serde_json:
                     "session_type",
                     "desktop",
                     "screen_capture",
+                    "screen_live_tuning",
                     "audio_capture",
                     "remote_input",
                     "keyboard_monitor",

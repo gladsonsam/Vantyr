@@ -46,7 +46,7 @@ export function LogViewer({
         onFollowingChange(el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX);
       }}
       className={cn(
-        "block h-full w-full resize-none border-0 bg-transparent p-3 font-mono text-xs leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50",
+        "block h-full w-full resize-none border-0 bg-transparent p-3 font-sans text-xs leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50",
         wrap ? "whitespace-pre-wrap" : "whitespace-pre",
       )}
     />

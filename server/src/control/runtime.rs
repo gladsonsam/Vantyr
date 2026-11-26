@@ -103,6 +103,13 @@ impl AppState {
                 }
             }
             drop(agents);
+            // Apply pending viewer tuning only after held input has been released.
+            if self
+                .sync_capture_locked(control, batch.agent_id, None)
+                .is_err()
+            {
+                safe = false;
+            }
             if batch.reason == crate::control::sessions::TeardownReason::Released {
                 continue;
             }

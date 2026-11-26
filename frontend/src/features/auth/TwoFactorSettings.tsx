@@ -99,7 +99,7 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
           Each works once if you lose your authenticator. They will not be shown again.
         </p>
       </div>
-      <ul className="grid grid-cols-1 gap-1.5 font-mono text-[13px] select-all min-[400px]:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-1.5 font-sans text-[13px] select-all min-[400px]:grid-cols-2">
         {codes.map((code) => (
           <li key={code}>{code}</li>
         ))}
@@ -135,7 +135,7 @@ function SetupSteps({
           <p ref={focusOnMount} tabIndex={-1} className="text-sm font-medium outline-none">
             Add this key to your authenticator app
           </p>
-          <p className="rounded-lg bg-muted/50 p-3 font-mono text-[15px] break-all select-all">
+          <p className="rounded-lg bg-muted/50 p-3 font-sans text-[15px] break-all select-all">
             {setup.secret}
           </p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">

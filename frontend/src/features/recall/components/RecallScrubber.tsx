@@ -350,7 +350,7 @@ export function RecallScrubber({
                 style={{ display: "block", width: "100%", borderRadius: 5 }}
               />
             ) : null}
-            <div className="pt-[3px] text-center font-mono text-[10.5px] text-muted-foreground">
+            <div className="pt-[3px] text-center font-sans text-[10.5px] text-muted-foreground">
               Playhead {timeWithSecondsIn(timezone, hover.ms)}
               {hover.frame && (
                 <div>
@@ -363,7 +363,7 @@ export function RecallScrubber({
       )}
 
       {/* Range bounds, with what the bar means: green is captured, blank is not. */}
-      <div className="flex justify-between gap-2 pt-1 font-mono text-[10.5px] text-muted-foreground">
+      <div className="flex justify-between gap-2 pt-1 font-sans text-[10.5px] text-muted-foreground">
         <span>
           {shortDateIn(timezone, fromMs)} {timeWithSecondsIn(timezone, fromMs)}
         </span>

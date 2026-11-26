@@ -176,7 +176,7 @@ function DayPanelHeader({ context, model }: PanelSectionProps) {
           {dayLabel}
           {timezone && (
             <span
-              className="ml-2.5 font-mono text-xs font-normal text-muted-foreground"
+              className="ml-2.5 font-sans text-xs font-normal text-muted-foreground"
               title="Days are bucketed in the agent's timezone"
             >
               {timezone}
@@ -206,7 +206,7 @@ function DayPanelHeader({ context, model }: PanelSectionProps) {
         </div>
       ) : (
         !empty && (
-          <p className="pt-3 font-mono text-xs text-muted-foreground">
+          <p className="pt-3 font-sans text-xs text-muted-foreground">
             {formatDuration(activeSecs)} active · {totals?.segment_count ?? segments.length}{" "}
             sessions
             {byCategory.rows[0]
@@ -267,7 +267,7 @@ function DayBreakdown({ model }: { model: DayPanelModel }) {
                         />
                         {catLabel(r.cat)}
                       </span>
-                      <span className="font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+                      <span className="font-sans text-xs whitespace-nowrap text-muted-foreground tabular-nums">
                         {formatDuration(r.secs)} · {Math.round(r.pct)}%
                       </span>
                     </div>
@@ -295,11 +295,11 @@ function DayBreakdown({ model }: { model: DayPanelModel }) {
                     <div className="mb-1.5 flex items-baseline justify-between gap-2.5">
                       <span
                         title={a.app}
-                        className="max-w-[60%] overflow-hidden font-mono text-xs text-ellipsis whitespace-nowrap"
+                        className="max-w-[60%] overflow-hidden font-sans text-xs text-ellipsis whitespace-nowrap"
                       >
                         {a.app}
                       </span>
-                      <span className="font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+                      <span className="font-sans text-xs whitespace-nowrap text-muted-foreground tabular-nums">
                         {formatDuration(a.seconds)} · {Math.round(a.pct)}%
                       </span>
                     </div>
@@ -344,10 +344,10 @@ function DayHighlights({ context, model }: PanelSectionProps) {
                   style={{ borderLeft: `3px solid ${catColor(h.category)}` }}
                 >
                   <span className="flex items-center gap-2">
-                    <span className="rounded-md bg-muted/70 px-2 py-0.5 font-mono text-[11.5px] whitespace-nowrap text-muted-foreground">
+                    <span className="rounded-md bg-muted/70 px-2 py-0.5 font-sans text-[11.5px] whitespace-nowrap text-muted-foreground">
                       {timeIn(timezone, h.start_ts)}
                     </span>
-                    <span className="font-mono text-[11.5px] whitespace-nowrap text-muted-foreground">
+                    <span className="font-sans text-[11.5px] whitespace-nowrap text-muted-foreground">
                       {formatDuration(secs)}
                     </span>
                   </span>
@@ -433,7 +433,7 @@ function DayTimeline({ context, model }: PanelSectionProps) {
               />
             ))}
           </div>
-          <div className="mt-1.5 flex justify-between gap-2 font-mono text-[11px] text-muted-foreground">
+          <div className="mt-1.5 flex justify-between gap-2 font-sans text-[11px] text-muted-foreground">
             <span>{timeIn(timezone, sourceSegments[0].start_ts)}</span>
             <span>{timeIn(timezone, sourceSegments[sourceSegments.length - 1].end_ts)}</span>
           </div>
@@ -479,7 +479,7 @@ function DaySessions({ context, model }: PanelSectionProps) {
                 <select
                   value={filterValue}
                   onChange={(e) => setAppFilter(e.target.value)}
-                  className="h-9 max-w-full min-w-0 rounded-lg bg-muted/70 px-2.5 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="h-9 max-w-full min-w-0 rounded-lg bg-muted/70 px-2.5 font-sans text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <option value="all">All apps</option>
                   {appOptions.map((a) => (
@@ -504,10 +504,10 @@ function DaySessions({ context, model }: PanelSectionProps) {
                   className="flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-lg px-2 py-3 text-left hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 >
                   <span className="w-19 shrink-0">
-                    <span className="block font-mono text-xs whitespace-nowrap tabular-nums">
+                    <span className="block font-sans text-xs whitespace-nowrap tabular-nums">
                       {timeIn(timezone, seg.start_ts)}
                     </span>
-                    <span className="mt-0.5 block font-mono text-[11px] whitespace-nowrap text-muted-foreground">
+                    <span className="mt-0.5 block font-sans text-[11px] whitespace-nowrap text-muted-foreground">
                       {formatDuration(durationMs(seg.start_ts, seg.end_ts) / 1000)}
                     </span>
                   </span>
@@ -526,7 +526,7 @@ function DaySessions({ context, model }: PanelSectionProps) {
                     <span className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground">
                       <span>{seg.source === "rule" ? "Rule-derived" : "Derived activity"}</span>
                       {seg.app && (
-                        <span className="max-w-55 overflow-hidden rounded-md bg-muted/70 px-1.5 py-px font-mono text-ellipsis whitespace-nowrap">
+                        <span className="max-w-55 overflow-hidden rounded-md bg-muted/70 px-1.5 py-px font-sans text-ellipsis whitespace-nowrap">
                           {seg.app}
                         </span>
                       )}
@@ -558,7 +558,7 @@ function CardTitle({ title, sub }: { title: string; sub?: string }) {
   return (
     <div className="flex flex-wrap items-baseline gap-2.5">
       <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
-      {sub && <div className="font-mono text-[11.5px] text-muted-foreground">{sub}</div>}
+      {sub && <div className="font-sans text-[11.5px] text-muted-foreground">{sub}</div>}
     </div>
   );
 }

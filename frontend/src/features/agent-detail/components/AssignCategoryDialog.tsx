@@ -140,7 +140,7 @@ function AssignCategoryForm({
         </div>
         <div className="flex flex-col gap-0.5 text-sm">
           <span className="text-muted-foreground">Match value</span>
-          <span className="font-mono text-[13px] wrap-break-word">{target.value}</span>
+          <span className="font-sans text-[13px] wrap-break-word">{target.value}</span>
         </div>
         <FormField
           control={form.control}

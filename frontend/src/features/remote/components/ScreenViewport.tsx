@@ -126,8 +126,8 @@ export function ScreenViewport({
         />
         {frames.render({ layout: "embedded", streamEnabled, visible: frameVisible, transform })}
 
-        {/* A quiet live dot; the placeholder below already explains connecting and offline. */}
-        {online && (frameVisible || selfLive) && (
+        {/* A quiet live dot while windowed; maximized, the desktop gets every pixel. The placeholder below already explains connecting and offline. */}
+        {online && !isMaximized && (frameVisible || selfLive) && (
           <span title="Live desktop" className="remote-live-badge">
             Live
           </span>
