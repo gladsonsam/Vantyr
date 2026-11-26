@@ -1,0 +1,33 @@
+[package]
+name = "vantyr-network-subscriptions"
+version = "0.1.0"
+edition = "2021"
+description = "Bounded, SSRF-safe HTTPS public-list subscription fetcher with conditional GET and last-known-good cache"
+license = "MIT"
+publish = false
+
+[dependencies]
+# All versions are already pinned in the workspace Cargo.lock by sibling
+# crates. This crate introduces no new protocol/parser/crypto dependency and
+# does not hand-roll TLS: reqwest's maintained rustls stack does the work.
+reqwest     = { version = "=0.13.5", default-features = false, features = ["rustls"] }
+tokio       = { version = "=1.54.1", features = ["net", "time", "sync", "rt"] }
+url         = "=2.5.9"
+serde       = { version = "=1.0.229", features = ["derive"] }
+serde_json  = "=1.0.154"
+chrono      = { version = "=0.4.45", default-features = false, features = ["clock", "serde"] }
+sha2        = "=0.10.9"
+base64      = "=0.22.1"
+tempfile    = "=3.27.0"
+thiserror   = "=1.0.69"
+async-trait = "=0.1.92"
+
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.191"
+
+[dev-dependencies]
+tokio        = { version = "=1.54.1", features = ["macros", "rt", "rt-multi-thread", "net", "time", "sync"] }
+axum         = "=0.8.9"
+rustls       = { version = "=0.23.46", default-features = false, features = ["std", "aws_lc_rs", "tls12"] }
+rcgen        = { version = "=0.14.10", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["aws_lc_rs"] }
