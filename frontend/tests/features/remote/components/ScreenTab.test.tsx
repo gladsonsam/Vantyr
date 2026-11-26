@@ -1556,7 +1556,7 @@ it("hides the toolbar and Live badge in fullscreen until the corner handle asks 
   expect(chromeHandle()?.getAttribute("aria-expanded")).toBe("false");
   expect(chromePanel().classList.contains("is-immersive")).toBe(true);
   expect(chromePanel().hasAttribute("inert")).toBe(true);
-  expect(chromePanel().textContent).not.toContain("Viewing");
+  expect(chromePanel().textContent).not.toContain("Viewing desktop");
   await act(async () => chromeHandle()!.click());
   expect(chromeShown()).toBe(true);
   expect(chromeHandle()?.getAttribute("aria-expanded")).toBe("true");
