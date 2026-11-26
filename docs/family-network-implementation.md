@@ -381,9 +381,12 @@ No substantive UI or Supabase changes were made in this step.
   Worker-reported revisions remain unverified and unenforced; no real policy
   distribution or canary is delivered by this increment. Report-history
   retention and concurrent credential revocation are explicit review checks.
-- Review pending: authenticated HTTP/CONNECT worker with destination
-  filtering, deadlines and graceful shutdown. Static bootstrap credentials
-  remain separate from controller enrollment; TLS inspection is not available.
+- Accepted: authenticated HTTP/CONNECT worker with destination filtering,
+  streamed-body and socket progress budgets, and graceful shutdown. Independent
+  review passed 36 tests and additional slow-client, keepalive and backpressure
+  probes. These are idle/progress budgets rather than a total transfer time
+  limit. Static bootstrap credentials remain separate from controller
+  enrollment; TLS inspection is not available.
 - Accepted: unique inspection CA generation, encrypted key custody,
   memory-only signer unlock, public certificate export and validation tests;
   23 tests include a real TLS handshake and certificate rejection paths.
