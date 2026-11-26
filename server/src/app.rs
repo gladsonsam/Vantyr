@@ -159,6 +159,7 @@ pub(crate) fn api_routes() -> Router<Arc<AppState>> {
         .merge(crate::control::routes())
         .merge(integration::routes())
         .merge(crate::notify::routes())
+        .merge(crate::network::routes())
         .merge(auth::routes())
         .merge(crate::platform::routes())
         .merge(crate::policy::routes())

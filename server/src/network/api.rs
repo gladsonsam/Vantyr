@@ -1,0 +1,686 @@
+//! HTTP handlers. Every household id comes from the URL path and is authorized
+//! against the caller's explicit grants before any row is read or written.
+//! Request bodies never carry a household id.
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use axum::{
+    extract::{ConnectInfo, Extension, Path, Query, State},
+    http::HeaderMap,
+    Json,
+};
+use serde::Deserialize;
+use serde_json::{json, Value};
+use uuid::Uuid;
+
+use crate::error::{ApiError, ApiResult};
+use crate::http::pagination::{validate_page_params, PageParams};
+use crate::http::{audit_ip, AuthUser, RequireAdmin};
+use crate::network::{authz, db, dto, service};
+use crate::state::AppState;
+
+async fn audit_ok(
+    state: &AppState,
+    user: &AuthUser,
+    ip: Option<&str>,
+    action: &str,
+    detail: Value,
+) {
+    crate::platform::audit::insert_audit_log_traced(
+        &state.db,
+        user.username.as_str(),
+        None,
+        action,
+        "ok",
+        &detail,
+        ip,
+    )
+    .await;
+}
+
+fn bounds(params: &PageParams) -> ApiResult<(i64, i64)> {
+    validate_page_params(params).map_err(ApiError::bad_request)?;
+    Ok((params.limit, params.offset))
+}
+
+// ─── Bootstrap / households ──────────────────────────────────────────────────
+
+/// One-time, admin-only creation of the single default household and the
+/// caller's explicit network_admin grant. No role elsewhere implies this grant.
+pub async fn bootstrap(
+    State(s): State<Arc<AppState>>,
+    RequireAdmin(user): RequireAdmin,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<dto::BootstrapBody>,
+) -> ApiResult<Json<Value>> {
+    let name = dto::normalize_text(&body.name, "name", 120).map_err(ApiError::bad_request)?;
+    let household_id = service::bootstrap_default_household(&s.db, &user, &name).await?;
+    audit_ok(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        "network_bootstrap",
+        json!({ "household_id": household_id, "name": name }),
+    )
+    .await;
+    Ok(Json(json!({ "household_id": household_id })))
+}
+
+pub async fn households_list(
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Query(page): Query<PageParams>,
+) -> ApiResult<Json<Value>> {
+    let (limit, offset) = bounds(&page)?;
+    let rows = db::list_admin_households(&s.db, user.user_id, limit, offset).await?;
+    Ok(Json(json!({ "households": rows })))
+}
+
+/// Create an additional household. Requires an explicit admin grant somewhere
+/// already; the creator receives an explicit grant on the new household only.
+pub async fn household_create(
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<dto::CreateHouseholdBody>,
+) -> ApiResult<Json<Value>> {
+    match authz::has_any_admin(&s.db, user.user_id).await {
+        Ok(true) => {}
+        Ok(false) => return Err(ApiError::forbidden()),
+        Err(e) => return Err(ApiError::Internal(e.into())),
+    }
+    let name = dto::normalize_text(&body.name, "name", 120).map_err(ApiError::bad_request)?;
+    let household_id = service::create_household(&s.db, &user, &name).await?;
+    audit_ok(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        "network_household_create",
+        json!({ "household_id": household_id, "name": name }),
+    )
+    .await;
+    Ok(Json(json!({ "household_id": household_id })))
+}
+
+// ─── Persons ─────────────────────────────────────────────────────────────────
+
+pub async fn persons_list(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Query(page): Query<PageParams>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    let (limit, offset) = bounds(&page)?;
+    let rows = db::list_persons(&s.db, hid, limit, offset).await?;
+    Ok(Json(json!({ "persons": rows })))
+}
+
+pub async fn person_create(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<dto::CreatePersonBody>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    let name = dto::normalize_text(&body.display_name, "display_name", 120)
+        .map_err(ApiError::bad_request)?;
+    let note =
+        dto::normalize_optional_text(&body.note, "note", 1000).map_err(ApiError::bad_request)?;
+    let id = db::insert_person(&s.db, hid, &name, note.as_deref()).await?;
+    audit_ok(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        "network_person_create",
+        json!({ "household_id": hid, "person_id": id }),
+    )
+    .await;
+    Ok(Json(json!({ "id": id })))
+}
+
+pub async fn person_patch(
+    Path((hid, pid)): Path<(Uuid, Uuid)>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<dto::PatchPersonBody>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    if body.display_name.is_none() && body.note.is_none() {
+        return Err(ApiError::bad_request("No fields to update"));
+    }
+    let name = body
+        .display_name
+        .as_deref()
+        .map(|v| dto::normalize_text(v, "display_name", 120))
+        .transpose()
+        .map_err(ApiError::bad_request)?;
+    let note = dto::normalize_note_patch(&body.note).map_err(ApiError::bad_request)?;
+    let note_refs = note.as_ref().map(|n| n.as_deref());
+    if !db::update_person(
+        &s.db,
+        hid,
+        pid,
+        name.as_deref(),
+        note_refs.as_ref().copied(),
+    )
+    .await?
+    {
+        return Err(ApiError::not_found("person not found in this household"));
+    }
+    audit_ok(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        "network_person_update",
+        json!({ "household_id": hid, "person_id": pid }),
+    )
+    .await;
+    Ok(Json(json!({ "ok": true })))
+}
+
+// ─── Devices ─────────────────────────────────────────────────────────────────
+
+pub async fn devices_list(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Query(page): Query<PageParams>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    let (limit, offset) = bounds(&page)?;
+    let rows = db::list_devices(&s.db, hid, limit, offset).await?;
+    Ok(Json(json!({ "devices": rows })))
+}
+
+pub async fn device_create(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<dto::CreateDeviceBody>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    let key = dto::normalize_canonical_key(&body.canonical_key).map_err(ApiError::bad_request)?;
+    let label = dto::normalize_text(&body.label, "label", 120).map_err(ApiError::bad_request)?;
+    let device_type = dto::normalize_enum(
+        &body.device_type,
+        dto::DEVICE_TYPES,
+        "unknown",
+        "device_type",
+    )
+    .map_err(ApiError::bad_request)?;
+    let id = match db::insert_device(&s.db, &key, &label, &device_type).await {
+        Ok(id) => id,
+        Err(e) if crate::db::pg_is_unique_violation(&e) => {
+            return Err(ApiError::conflict(
+                "A device with that canonical_key already exists",
+            ))
+        }
+        Err(e) => return Err(e.into()),
+    };
+    audit_ok(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        "network_device_create",
+        json!({ "household_id": hid, "device_id": id, "canonical_key": key }),
+    )
+    .await;
+    Ok(Json(json!({ "id": id })))
+}
+
+pub async fn device_patch(
+    Path((hid, did)): Path<(Uuid, Uuid)>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<dto::PatchDeviceBody>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    if body.label.is_none() && body.device_type.is_none() {
+        return Err(ApiError::bad_request("No fields to update"));
+    }
+    let label = body
+        .label
+        .as_deref()
+        .map(|v| dto::normalize_text(v, "label", 120))
+        .transpose()
+        .map_err(ApiError::bad_request)?;
+    let device_type = body
+        .device_type
+        .as_deref()
+        .map(|v| {
+            dto::normalize_enum(
+                &Some(v.to_string()),
+                dto::DEVICE_TYPES,
+                "unknown",
+                "device_type",
+            )
+        })
+        .transpose()
+        .map_err(ApiError::bad_request)?;
+    if !db::update_device_in_household(&s.db, hid, did, label.as_deref(), device_type.as_deref())
+        .await?
+    {
+        return Err(ApiError::not_found("device not assigned in this household"));
+    }
+    audit_ok(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        "network_device_update",
+        json!({ "household_id": hid, "device_id": did }),
+    )
+    .await;
+    Ok(Json(json!({ "ok": true })))
+}
+
+// ─── Assignments ─────────────────────────────────────────────────────────────
+
+pub async fn assignments_list(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Query(page): Query<PageParams>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    let (limit, offset) = bounds(&page)?;
+    let rows = db::list_assignments(&s.db, hid, limit, offset).await?;
+    Ok(Json(json!({ "assignments": rows })))
+}
+
+pub async fn assignment_create(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<dto::CreateAssignmentBody>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    if !db::person_in_household(&s.db, hid, body.person_id).await? {
+        return Err(ApiError::not_found("person not found in this household"));
+    }
+    if !db::device_exists(&s.db, body.device_id).await? {
+        return Err(ApiError::not_found("device not found"));
+    }
+    // An agent may be linked only by explicit enrollment in this household.
+    if let Some(agent_id) = body.agent_id {
+        if !db::agent_enrolled_in_household(&s.db, hid, agent_id).await? {
+            return Err(ApiError::bad_request(
+                "agent is not enrolled in this household",
+            ));
+        }
+    }
+    let role = dto::normalize_enum(&body.role, dto::ASSIGNMENT_ROLES, "member", "role")
+        .map_err(ApiError::bad_request)?;
+    let note =
+        dto::normalize_optional_text(&body.note, "note", 1000).map_err(ApiError::bad_request)?;
+    let id = db::insert_assignment(
+        &s.db,
+        hid,
+        body.person_id,
+        body.device_id,
+        body.agent_id,
+        &role,
+        note.as_deref(),
+    )
+    .await?;
+    audit_ok(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        "network_assignment_create",
+        json!({ "household_id": hid, "assignment_id": id, "agent_id": body.agent_id }),
+    )
+    .await;
+    Ok(Json(json!({ "id": id })))
+}
+
+pub async fn assignment_patch(
+    Path((hid, aid)): Path<(Uuid, Uuid)>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<dto::PatchAssignmentBody>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    if body.agent_id.is_none() && body.role.is_none() && body.note.is_none() {
+        return Err(ApiError::bad_request("No fields to update"));
+    }
+    if let Some(Some(agent_id)) = body.agent_id {
+        if !db::agent_enrolled_in_household(&s.db, hid, agent_id).await? {
+            return Err(ApiError::bad_request(
+                "agent is not enrolled in this household",
+            ));
+        }
+    }
+    let role = body
+        .role
+        .as_deref()
+        .map(|v| {
+            dto::normalize_enum(
+                &Some(v.to_string()),
+                dto::ASSIGNMENT_ROLES,
+                "member",
+                "role",
+            )
+        })
+        .transpose()
+        .map_err(ApiError::bad_request)?;
+    let note = dto::normalize_note_patch(&body.note).map_err(ApiError::bad_request)?;
+    let note_refs = note.as_ref().map(|n| n.as_deref());
+    if !db::update_assignment(
+        &s.db,
+        hid,
+        aid,
+        body.agent_id,
+        role.as_deref(),
+        note_refs.as_ref().copied(),
+    )
+    .await?
+    {
+        return Err(ApiError::not_found(
+            "assignment not found in this household",
+        ));
+    }
+    audit_ok(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        "network_assignment_update",
+        json!({ "household_id": hid, "assignment_id": aid }),
+    )
+    .await;
+    Ok(Json(json!({ "ok": true })))
+}
+
+// ─── Connections ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct ConnectionParams {
+    kind: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+pub async fn connections_list(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Query(params): Query<ConnectionParams>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    let page = PageParams {
+        limit: params.limit.unwrap_or(50),
+        offset: params.offset.unwrap_or(0),
+    };
+    let (limit, offset) = bounds(&page)?;
+    let kind = match &params.kind {
+        Some(k) => Some(
+            dto::normalize_enum(&Some(k.clone()), dto::CONNECTION_KINDS, "agent", "kind")
+                .map_err(ApiError::bad_request)?,
+        ),
+        None => None,
+    };
+    let rows = db::list_connections(&s.db, hid, kind.as_deref(), limit, offset).await?;
+    Ok(Json(json!({ "connections": rows })))
+}
+
+pub async fn connection_create(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<dto::CreateConnectionBody>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    if !db::assignment_in_household(&s.db, hid, body.assignment_id).await? {
+        return Err(ApiError::not_found(
+            "assignment not found in this household",
+        ));
+    }
+    let kind = dto::normalize_enum(&Some(body.kind), dto::CONNECTION_KINDS, "agent", "kind")
+        .map_err(ApiError::bad_request)?;
+    let provenance =
+        dto::normalize_enum(&body.provenance, dto::PROVENANCES, "manual", "provenance")
+            .map_err(ApiError::bad_request)?;
+    let status = dto::normalize_enum(&body.status, dto::CONNECTION_STATUSES, "unknown", "status")
+        .map_err(ApiError::bad_request)?;
+    let capabilities =
+        dto::normalize_capabilities(&body.capabilities).map_err(ApiError::bad_request)?;
+    let caps_json = Value::Array(capabilities.into_iter().map(Value::String).collect());
+    let note =
+        dto::normalize_optional_text(&body.note, "note", 1000).map_err(ApiError::bad_request)?;
+    let id = db::insert_connection(
+        &s.db,
+        hid,
+        body.assignment_id,
+        &kind,
+        &provenance,
+        &caps_json,
+        &status,
+        body.observed_at,
+        note.as_deref(),
+    )
+    .await?;
+    audit_ok(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        "network_connection_create",
+        json!({ "household_id": hid, "connection_id": id, "kind": kind }),
+    )
+    .await;
+    Ok(Json(json!({ "id": id })))
+}
+
+pub async fn connection_patch(
+    Path((hid, cid)): Path<(Uuid, Uuid)>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<dto::PatchConnectionBody>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    if body.provenance.is_none()
+        && body.capabilities.is_none()
+        && body.status.is_none()
+        && body.observed_at.is_none()
+        && body.note.is_none()
+    {
+        return Err(ApiError::bad_request("No fields to update"));
+    }
+    let provenance = body
+        .provenance
+        .as_deref()
+        .map(|v| {
+            dto::normalize_enum(
+                &Some(v.to_string()),
+                dto::PROVENANCES,
+                "manual",
+                "provenance",
+            )
+        })
+        .transpose()
+        .map_err(ApiError::bad_request)?;
+    let status = body
+        .status
+        .as_deref()
+        .map(|v| {
+            dto::normalize_enum(
+                &Some(v.to_string()),
+                dto::CONNECTION_STATUSES,
+                "unknown",
+                "status",
+            )
+        })
+        .transpose()
+        .map_err(ApiError::bad_request)?;
+    let caps_json = body
+        .capabilities
+        .as_ref()
+        .map(|v| {
+            dto::normalize_capabilities(&Some(v.clone()))
+                .map(|items| Value::Array(items.into_iter().map(Value::String).collect()))
+        })
+        .transpose()
+        .map_err(ApiError::bad_request)?;
+    let note = dto::normalize_note_patch(&body.note).map_err(ApiError::bad_request)?;
+    let note_refs = note.as_ref().map(|n| n.as_deref());
+    if !db::update_connection(
+        &s.db,
+        hid,
+        cid,
+        provenance.as_deref(),
+        caps_json.as_ref(),
+        status.as_deref(),
+        body.observed_at,
+        note_refs.as_ref().copied(),
+    )
+    .await?
+    {
+        return Err(ApiError::not_found(
+            "connection not found in this household",
+        ));
+    }
+    audit_ok(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        "network_connection_update",
+        json!({ "household_id": hid, "connection_id": cid }),
+    )
+    .await;
+    Ok(Json(json!({ "ok": true })))
+}
+
+// ─── Explicit agent enrollment ───────────────────────────────────────────────
+
+pub async fn enrollments_list(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Query(page): Query<PageParams>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    let (limit, offset) = bounds(&page)?;
+    let rows = db::list_enrollments(&s.db, hid, limit, offset).await?;
+    Ok(Json(json!({ "enrollments": rows })))
+}
+
+pub async fn enrollment_create(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<dto::EnrollAgentBody>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    if !db::agent_exists(&s.db, body.agent_id).await? {
+        return Err(ApiError::not_found("agent not found"));
+    }
+    if !db::insert_enrollment(&s.db, hid, body.agent_id, user.user_id).await? {
+        return Err(ApiError::conflict(
+            "agent is already enrolled in a household",
+        ));
+    }
+    audit_ok(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        "network_agent_enroll",
+        json!({ "household_id": hid, "agent_id": body.agent_id }),
+    )
+    .await;
+    Ok(Json(json!({ "ok": true })))
+}
+
+// ─── Grants ──────────────────────────────────────────────────────────────────
+
+pub async fn grants_list(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Query(page): Query<PageParams>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    let (limit, offset) = bounds(&page)?;
+    let rows = db::list_grants(&s.db, hid, limit, offset).await?;
+    Ok(Json(json!({ "grants": rows })))
+}
+
+pub async fn grant_create(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<dto::GrantBody>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    let Some(grant) = authz::NetworkGrant::parse(&body.grant) else {
+        return Err(ApiError::bad_request(
+            "grant must be network_admin or network_events",
+        ));
+    };
+    if !db::dashboard_user_exists(&s.db, body.user_id).await? {
+        return Err(ApiError::not_found("dashboard user not found"));
+    }
+    let created = db::insert_grant(&s.db, hid, body.user_id, grant, user.user_id).await?;
+    audit_ok(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        "network_grant_set",
+        json!({
+            "household_id": hid,
+            "user_id": body.user_id,
+            "grant": grant.as_str(),
+            "created": created,
+        }),
+    )
+    .await;
+    Ok(Json(json!({ "ok": true, "created": created })))
+}
+
+pub async fn grant_delete(
+    Path((hid, uid, grant_name)): Path<(Uuid, Uuid, String)>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    let Some(grant) = authz::NetworkGrant::parse(&grant_name) else {
+        return Err(ApiError::bad_request(
+            "grant must be network_admin or network_events",
+        ));
+    };
+    if !db::delete_grant(&s.db, hid, uid, grant).await? {
+        return Err(ApiError::not_found("grant not found"));
+    }
+    audit_ok(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        "network_grant_revoke",
+        json!({ "household_id": hid, "user_id": uid, "grant": grant.as_str() }),
+    )
+    .await;
+    Ok(Json(json!({ "ok": true })))
+}

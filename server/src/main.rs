@@ -12,6 +12,7 @@ mod db;
 mod error;
 mod http;
 mod integration;
+mod network;
 mod notify;
 mod platform;
 mod policy;
