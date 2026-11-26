@@ -490,6 +490,8 @@ export function EditConnectionForm({
                 ...(status === "revoked" && !connection.revoked_at
                   ? { revoked_at: new Date().toISOString() }
                   : {}),
+                // Explicit null clears the stored revocation time; omitting it would keep it.
+                ...(status !== "revoked" && connection.revoked_at ? { revoked_at: null } : {}),
               }
             : {}),
           ...(agent !== current ? { enrolled_agent_id: agent === NONE ? null : agent } : {}),
@@ -503,11 +505,7 @@ export function EditConnectionForm({
       <Field
         label="Status"
         id={`conn-status-${connection.id}`}
-        help={
-          connection.status === "revoked"
-            ? "A revoked connection can’t be reinstated from here yet."
-            : "Revoking records that this connection should no longer be trusted. It does not revoke gateway credentials."
-        }
+        help="This is a reported inventory status. Revoking or restoring it does not revoke or reinstate any gateway credential, and it is not a check of the device."
       >
         <Select value={status} onValueChange={(v) => setStatus(v as NetworkConnectionStatus)}>
           <SelectTrigger id={`conn-status-${connection.id}`} className="w-full">
@@ -515,11 +513,7 @@ export function EditConnectionForm({
           </SelectTrigger>
           <SelectContent>
             {NETWORK_CONNECTION_STATUSES.map((s) => (
-              <SelectItem
-                key={s}
-                value={s}
-                disabled={connection.status === "revoked" && s !== "revoked"}
-              >
+              <SelectItem key={s} value={s}>
                 {STATUS_TONE[s].label}
               </SelectItem>
             ))}
