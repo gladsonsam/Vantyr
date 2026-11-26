@@ -223,7 +223,10 @@ pub async fn delivery_pins_on_conn(
 ) -> sqlx::Result<(Option<i64>, Option<i64>, Vec<i64>)> {
     let pins = sqlx::query_scalar::<_, i64>(
         r"
-        SELECT DISTINCT config_version FROM network_dns_refresh_delivery
+        SELECT config_version FROM network_dns_refresh_delivery
+        WHERE household_id = $1 AND gateway_id = $2
+        UNION
+        SELECT config_version FROM network_dns_status
         WHERE household_id = $1 AND gateway_id = $2
         ",
     )
@@ -356,6 +359,8 @@ pub async fn delivery_pins_view(
 #[derive(Debug, Clone, Copy)]
 pub struct RefreshOutcome {
     pub refresh_seq: i64,
+    pub config_version: i64,
+    pub expires_at: DateTime<Utc>,
     pub created: bool,
 }
 
@@ -369,10 +374,10 @@ pub async fn request_refresh_on_conn(
     config_version: i64,
     cooldown_secs: i64,
     ttl_secs: i64,
-) -> sqlx::Result<RefreshOutcome> {
-    let existing: Option<(i64, DateTime<Utc>)> = sqlx::query_as(
+) -> crate::error::ApiResult<RefreshOutcome> {
+    let existing: Option<(i64, DateTime<Utc>, i64, DateTime<Utc>)> = sqlx::query_as(
         r"
-        SELECT refresh_seq, requested_at FROM network_dns_refresh_request
+        SELECT refresh_seq, requested_at, config_version, expires_at FROM network_dns_refresh_request
         WHERE household_id = $1 AND source_id = $2
         ",
     )
@@ -380,7 +385,12 @@ pub async fn request_refresh_on_conn(
     .bind(source_id)
     .fetch_optional(&mut *conn)
     .await?;
-    let expires_at = now + chrono::Duration::seconds(ttl_secs);
+    let expires_at = DateTime::<Utc>::from_timestamp_micros(
+        (now + chrono::Duration::seconds(ttl_secs)).timestamp_micros(),
+    )
+    .ok_or_else(|| {
+        crate::error::ApiError::bad_request("refresh expiry is outside the storage range")
+    })?;
     match existing {
         None => {
             sqlx::query(
@@ -401,13 +411,22 @@ pub async fn request_refresh_on_conn(
             .await?;
             Ok(RefreshOutcome {
                 refresh_seq: 1,
+                config_version,
+                expires_at,
                 created: true,
             })
         }
-        Some((seq, requested_at))
+        Some((seq, requested_at, _, _))
             if requested_at <= now - chrono::Duration::seconds(cooldown_secs) =>
         {
-            let next = seq.checked_add(1).unwrap_or(seq);
+            let next = seq
+                .checked_add(1)
+                .ok_or_else(|| crate::error::ApiError::conflict("refresh sequence is exhausted"))?;
+            // A new token invalidates the previous gateway deliveries and their
+            // cascading acknowledgments. The household lock serializes this
+            // with worker reads/reports, so the next cycle starts independently.
+            sqlx::query("DELETE FROM network_dns_refresh_delivery WHERE household_id = $1 AND source_id = $2")
+                .bind(household_id).bind(source_id).execute(&mut *conn).await?;
             sqlx::query(
                 r"
                 UPDATE network_dns_refresh_request
@@ -427,11 +446,15 @@ pub async fn request_refresh_on_conn(
             .await?;
             Ok(RefreshOutcome {
                 refresh_seq: next,
+                config_version,
+                expires_at,
                 created: true,
             })
         }
-        Some((seq, _)) => Ok(RefreshOutcome {
+        Some((seq, _, stored_version, stored_expiry)) => Ok(RefreshOutcome {
             refresh_seq: seq,
+            config_version: stored_version,
+            expires_at: stored_expiry,
             created: false,
         }),
     }

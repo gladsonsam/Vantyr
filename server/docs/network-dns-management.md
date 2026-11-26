@@ -103,10 +103,15 @@ missing runtime feature.
 
 One pending token per `(household, source_id)`: monotonically increasing
 `refresh_seq`, bound to the `config_version` at request time, 60 s cooldown
-(repeat returns the same token with `created:false`), 10 min expiry and a hard
-cap of 32 requests per household (migration trigger). Unknown source → 404,
+(repeat returns the same stored token version and expiry with `created:false`),
+10 min expiry and a hard cap of 32 requests per household (corrected by migration
+0080 without changing 0079). A new sequence clears the previous gateway delivery
+and ack receipts before delivery of the new token. Unknown source → 404,
 disabled source → 409. Config mutation deletes tokens for removed/disabled
 sources and their delivery/ack rows by cascade.
+Worker reads expose refreshes only for the current config version. A token from
+before a config edit retains its original identity during cooldown but is not
+rebound to the new config or delivered with invented historical evidence.
 
 A token is only visible to a gateway inside its scoped manager read, which
 records per-gateway delivery. Acks are keyed `(household, gateway, source_id)`
@@ -118,7 +123,8 @@ replay is idempotent; a different, future, foreign or never-delivered token is
 
 `network_dns_delivery` is a **bounded ledger of version + digest only** (no
 config bytes), newest 16 per gateway plus fixed pins: the current delivered
-version, the latest reported-applied version and every version with an
+version, the latest status's delivered version, the latest reported-applied
+version and every version with an
 outstanding refresh delivery. Cleanup runs on each read/status ingest. There is
 no recursive provenance pin. A report's top-level `config_version` and digest
 must match a delivered ledger row; `applied.config_version` may lag but must
@@ -130,7 +136,11 @@ never from the report body. If evidence was pruned, the server returns 409
 append-only history), keyed by report UUID for idempotent replay. It stores
 bounded source arrays (<=32) and bounded sanitized error text — no URLs, raw
 ETags or secret material. `reported_at` and `received_at` are separate from
-source timestamps; far-future and unbounded times are rejected. No
+source timestamps. The report itself must be recent (five minutes, with 60 s
+future skew). Historical content/check/apply timestamps retain their original
+age, from Unix epoch through now + 60 s; they are not freshened on restart.
+Scheduling timestamps allow seven days + 60 s into the future to match accepted
+interval/backoff limits. Far-future or pre-epoch values are rejected. No
 `verified`/`enforced` field exists. The `network_events` grant can read source
 ids and states only, never config metadata or URLs.
 

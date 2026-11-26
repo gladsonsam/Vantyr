@@ -213,7 +213,7 @@ async fn worker_read(http: &Http, token: &str, hid: Uuid, gid: Uuid) -> (u16, Va
 /// The worker router keeps its original 5/s governor; a long ledger test can
 /// outrun it even with pacing. Retry only on 429, never on other statuses.
 async fn worker_read_paced(http: &Http, token: &str, hid: Uuid, gid: Uuid) -> (u16, Value) {
-    for _ in 0..12 {
+    for _ in 0..20 {
         let result = worker_read(http, token, hid, gid).await;
         if result.0 != 429 {
             return result;
@@ -224,7 +224,7 @@ async fn worker_read_paced(http: &Http, token: &str, hid: Uuid, gid: Uuid) -> (u
 }
 
 async fn worker_status_paced(http: &Http, token: &str, body: Value) -> (u16, Value) {
-    for _ in 0..12 {
+    for _ in 0..20 {
         let result = http
             .worker("/worker/network/dns/status", token, body.clone())
             .await;
@@ -814,6 +814,8 @@ async fn refresh_is_per_gateway_idempotent_and_version_bound(pool: PgPool) {
     let (_, second) = http.post(&refresh_path, json!({})).await;
     assert_eq!(second["refresh_seq"], seq);
     assert_eq!(second["created"], false);
+    assert_eq!(second["expires_at"], first["expires_at"]);
+    assert_eq!(second["config_version"], first["config_version"]);
     // Missing and disabled sources.
     assert_eq!(
         http.post(
@@ -907,6 +909,31 @@ async fn refresh_is_per_gateway_idempotent_and_version_bound(pool: PgPool) {
             .0,
         409
     );
+    // Subsequent complete cycles for both gateways must replace stale delivery
+    // and ack evidence, not make a new sequence permanently unacknowledgeable.
+    let mut previous = seq2;
+    for _ in 0..2 {
+        sqlx::query("UPDATE network_dns_refresh_request SET requested_at = NOW() - INTERVAL '61 seconds' WHERE household_id = $1 AND source_id = 'list1'")
+            .bind(hid).execute(&pool).await.unwrap();
+        let (code, next) = http.post(&refresh_path, json!({})).await;
+        assert_eq!(code, 200, "{next}");
+        let seq = next["refresh_seq"].as_u64().unwrap();
+        assert!(seq > previous);
+        previous = seq;
+        for (gid, cred) in [(gid_a, &cred_a), (gid_b, &cred_b)] {
+            let (code, view) = worker_read_paced(&http, cred, hid, gid).await;
+            assert_eq!(code, 200, "{view}");
+            assert_eq!(view["pending_refreshes"][0]["refresh_seq"], seq);
+            let mut ack = status_body(hid, gid, 3, &digest3, 3, Uuid::new_v4());
+            ack["refresh_ack"] =
+                json!([{"source_id":"list1","refresh_seq":seq,"config_version":3}]);
+            let (code, body) = worker_status_paced(&http, cred, ack.clone()).await;
+            assert_eq!(code, 200, "{body}");
+            assert_eq!(worker_status_paced(&http, cred, ack).await.0, 200);
+            let view = worker_read_paced(&http, cred, hid, gid).await.1;
+            assert!(view["pending_refreshes"].as_array().unwrap().is_empty());
+        }
+    }
 }
 
 #[sqlx::test]
@@ -1109,6 +1136,27 @@ async fn delivery_pin_survives_pruning_and_pruned_evidence_conflicts(pool: PgPoo
     .await;
     assert_eq!(status, 200, "{body}");
 
+    // A later delivery must not prune the ledger evidence referenced by the
+    // latest status's TOP-LEVEL version (which can differ from its applied one).
+    save_and_deliver(&http, hid, gid, &cred, 13).await;
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        let (delivered, applied, mut pins) =
+            super::dns_management_db::delivery_pins_on_conn(&mut conn, hid, gid)
+                .await
+                .unwrap();
+        assert_eq!(delivered, Some(13));
+        assert!(
+            pins.contains(&12),
+            "latest status version must remain pinned"
+        );
+        pins.extend(delivered);
+        pins.extend(applied);
+        super::dns_management_db::prune_delivery_on_conn(&mut conn, hid, gid, 1, &pins)
+            .await
+            .unwrap();
+    }
+
     // Force the bounded cleanup with a small window. The current delivered
     // (12) and reported-applied (1) pins must survive; older versions do not.
     {
@@ -1287,4 +1335,101 @@ async fn status_rejects_untrusted_fields_timestamps_and_oversize(pool: PgPool) {
             .await
             .unwrap();
     assert_eq!(rows, 0);
+    let mut valid = status_body(hid, gid, 1, &digest_value, 1, Uuid::new_v4());
+    valid["applied"]["applied_at"] = json!(Utc::now() - ChronoDuration::days(400));
+    for field in ["checked_at", "fetched_at", "content_changed_at"] {
+        valid["sources"][0][field] = json!(Utc::now() - ChronoDuration::days(400));
+    }
+    valid["sources"][0]["next_due_at"] = json!(Utc::now() + ChronoDuration::days(7));
+    valid["sources"][0]["cooldown_until"] = json!(Utc::now() + ChronoDuration::days(1));
+    let (status, result) = worker_status_paced(&http, &cred, valid.clone()).await;
+    assert_eq!(status, 200, "{result}");
+    for (field, value) in [
+        ("next_due_at", Utc::now() + ChronoDuration::days(8)),
+        ("checked_at", Utc::now() + ChronoDuration::minutes(2)),
+    ] {
+        let mut invalid = valid.clone();
+        invalid["sources"][0][field] = json!(value);
+        assert_eq!(worker_status_paced(&http, &cred, invalid).await.0, 400);
+    }
+    let mut invalid = valid.clone();
+    invalid["config_version"] = json!(u64::MAX);
+    assert_eq!(worker_status_paced(&http, &cred, invalid).await.0, 400);
+    let mut invalid = valid;
+    invalid["refresh_ack"] =
+        json!([{"source_id":"list1","refresh_seq":u64::MAX,"config_version":1}]);
+    assert_eq!(worker_status_paced(&http, &cred, invalid).await.0, 400);
+}
+
+#[sqlx::test]
+async fn deduped_refresh_keeps_stored_version_expiry_and_checks_overflow(pool: PgPool) {
+    let (base, _task) = spawn_router(pool.clone()).await;
+    let user = insert_user(&pool, "admin", "admin").await;
+    let (token, csrf) = session_for(&pool, user, "admin").await;
+    let http = Http::new(&base, token, csrf);
+    let hid = bootstrap_as(&http, "Home").await;
+    let path = format!("/api/network/households/{hid}/dns/management");
+    assert_eq!(
+        http.patch(
+            &path,
+            patch_with(0, vec![json!({"op":"add_list","source":source("list1")})])
+        )
+        .await
+        .0,
+        200
+    );
+    let gid = create_gateway(&http, hid, "dns").await;
+    let cred = issue_cred(&http, hid, gid, Some(vec!["read_dns_management"])).await;
+    let refresh = format!("/api/network/households/{hid}/dns/lists/list1/refresh");
+    let first = http.post(&refresh, json!({})).await.1;
+    assert_eq!(
+        http.patch(
+            &path,
+            patch_with(
+                1,
+                vec![json!({"op":"set_list","id":"list1","patch":{"interval_secs":3600}})]
+            )
+        )
+        .await
+        .0,
+        200
+    );
+    let second = http.post(&refresh, json!({})).await.1;
+    assert_eq!(second["created"], false);
+    assert_eq!(second["config_version"], first["config_version"]);
+    assert_eq!(second["expires_at"], first["expires_at"]);
+    // This gateway never received config1. Reading current config2 must not
+    // fabricate a config1 delivery or hit the refresh-delivery foreign key.
+    let (code, view) = worker_read_paced(&http, &cred, hid, gid).await;
+    assert_eq!(code, 200, "{view}");
+    assert_eq!(view["config_version"], 2);
+    assert!(view["pending_refreshes"].as_array().unwrap().is_empty());
+    sqlx::query("UPDATE network_dns_refresh_request SET refresh_seq = $2, requested_at = NOW() - INTERVAL '61 seconds' WHERE household_id = $1")
+        .bind(hid).bind(i64::MAX).execute(&pool).await.unwrap();
+    assert_eq!(http.post(&refresh, json!({})).await.0, 409);
+}
+
+#[sqlx::test]
+async fn refresh_database_cap_allows_updates_but_not_a_33rd_insert(pool: PgPool) {
+    let (base, _task) = spawn_router(pool.clone()).await;
+    let user = insert_user(&pool, "admin", "admin").await;
+    let (token, csrf) = session_for(&pool, user, "admin").await;
+    let http = Http::new(&base, token, csrf);
+    let hid = bootstrap_as(&http, "Home").await;
+    for i in 0..32 {
+        sqlx::query("INSERT INTO network_dns_refresh_request (household_id,source_id,refresh_seq,config_version,expires_at) VALUES ($1,$2,1,1,NOW()+INTERVAL '10 minutes')")
+            .bind(hid).bind(format!("s{i}")).execute(&pool).await.unwrap();
+    }
+    sqlx::query("UPDATE network_dns_refresh_request SET expires_at = expires_at + INTERVAL '1 minute' WHERE household_id = $1 AND source_id = 's0'")
+        .bind(hid).execute(&pool).await.unwrap();
+    assert!(sqlx::query("INSERT INTO network_dns_refresh_request (household_id,source_id,refresh_seq,config_version,expires_at) VALUES ($1,'extra',1,1,NOW()+INTERVAL '10 minutes')")
+        .bind(hid).execute(&pool).await.is_err());
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM network_dns_refresh_request WHERE household_id = $1",
+    )
+    .bind(hid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 32);
 }

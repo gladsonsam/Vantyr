@@ -45,8 +45,9 @@ pub const REFRESH_TTL_SECS: i64 = 10 * 60;
 /// A reported timestamp may be this old / this far ahead of the server clock.
 pub const MAX_REPORT_AGE: ChronoDuration = ChronoDuration::minutes(5);
 pub const MAX_FUTURE_SKEW: ChronoDuration = ChronoDuration::seconds(60);
-pub const MAX_OBSERVATION_AGE: ChronoDuration = ChronoDuration::days(30);
-pub const MAX_OBSERVATION_FUTURE: ChronoDuration = ChronoDuration::hours(1);
+// Historical content/apply times describe original age, not report freshness.
+// Scheduling timestamps may span the accepted seven-day interval/backoff cap.
+pub const MAX_SCHEDULE_FUTURE: ChronoDuration = ChronoDuration::days(7);
 
 fn bad(message: &'static str) -> ApiError {
     ApiError::bad_request(message)
@@ -731,11 +732,23 @@ fn bounded_time(
     Ok(())
 }
 
+fn observed_time(
+    value: DateTime<Utc>,
+    now: DateTime<Utc>,
+    future: ChronoDuration,
+    what: &'static str,
+) -> ApiResult<()> {
+    if value < DateTime::<Utc>::UNIX_EPOCH || value > now + future {
+        return Err(bad(what));
+    }
+    Ok(())
+}
+
 /// Validate the whole worker status body before any database work. Every
 /// timestamp is bounded and every untrusted string is sanitized.
 pub fn validate_worker_status(body: &WorkerStatusBody, now: DateTime<Utc>) -> ApiResult<()> {
-    if body.config_version == 0 {
-        return Err(bad("config_version must be >= 1"));
+    if body.config_version == 0 || body.config_version > i64::MAX as u64 {
+        return Err(bad("config_version is outside the storage bound"));
     }
     if !is_digest(&body.body_sha256) {
         return Err(bad("body_sha256 must be 64 lowercase hex chars"));
@@ -762,11 +775,10 @@ pub fn validate_worker_status(body: &WorkerStatusBody, now: DateTime<Utc>) -> Ap
         }
         sanitize_error(applied.last_error.as_deref())?;
         if let Some(at) = applied.applied_at {
-            bounded_time(
+            observed_time(
                 at,
                 now,
-                MAX_OBSERVATION_AGE,
-                MAX_OBSERVATION_FUTURE,
+                MAX_FUTURE_SKEW,
                 "applied_at is outside the observation window",
             )?;
         }
@@ -784,18 +796,26 @@ pub fn validate_worker_status(body: &WorkerStatusBody, now: DateTime<Utc>) -> Ap
             source.checked_at,
             source.fetched_at,
             source.content_changed_at,
-            source.next_due_at,
-            source.cooldown_until,
         ]
         .into_iter()
         .flatten()
         {
-            bounded_time(
+            observed_time(
                 at,
                 now,
-                MAX_OBSERVATION_AGE,
-                MAX_OBSERVATION_FUTURE,
+                MAX_FUTURE_SKEW,
                 "source timestamp is outside the observation window",
+            )?;
+        }
+        for at in [source.next_due_at, source.cooldown_until]
+            .into_iter()
+            .flatten()
+        {
+            observed_time(
+                at,
+                now,
+                MAX_SCHEDULE_FUTURE + MAX_FUTURE_SKEW,
+                "schedule timestamp is outside the supported interval/backoff window",
             )?;
         }
         sanitize_error(source.last_error.as_deref())?;
@@ -816,7 +836,11 @@ pub fn validate_worker_status(body: &WorkerStatusBody, now: DateTime<Utc>) -> Ap
     }
     for ack in &body.refresh_ack {
         validate_source_id(&ack.source_id)?;
-        if ack.refresh_seq == 0 || ack.config_version == 0 {
+        if ack.refresh_seq == 0
+            || ack.config_version == 0
+            || ack.refresh_seq > i64::MAX as u64
+            || ack.config_version > i64::MAX as u64
+        {
             return Err(bad("refresh ack token is out of range"));
         }
     }

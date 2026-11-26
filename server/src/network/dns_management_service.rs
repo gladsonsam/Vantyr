@@ -274,13 +274,12 @@ pub async fn request_refresh(
         REFRESH_TTL_SECS,
     )
     .await?;
-    let expires_at = now + chrono::Duration::seconds(REFRESH_TTL_SECS);
     tx.commit().await?;
     Ok(RefreshResult {
         source_id: source_id.to_owned(),
         refresh_seq: outcome.refresh_seq as u64,
-        config_version: row.config_version as u64,
-        expires_at,
+        config_version: outcome.config_version as u64,
+        expires_at: outcome.expires_at,
         created: outcome.created,
         cooldown_secs: REFRESH_COOLDOWN_SECS,
     })
@@ -355,6 +354,11 @@ pub async fn worker_read(
         )
         .await?;
         for pending in db::all_pending_requests_on_conn(&mut tx, worker.household_id, now).await? {
+            // A read delivers only the current config. Never invent historical
+            // delivery evidence for a token issued before this config changed.
+            if pending.config_version != config_version as i64 {
+                continue;
+            }
             db::mark_refresh_delivered_on_conn(
                 &mut tx,
                 worker.household_id,
@@ -385,7 +389,11 @@ pub async fn worker_read(
     .await?;
 
     let pending_refreshes =
-        db::pending_refreshes_on_conn(&mut tx, worker.household_id, worker.gateway_id, now).await?;
+        db::pending_refreshes_on_conn(&mut tx, worker.household_id, worker.gateway_id, now)
+            .await?
+            .into_iter()
+            .filter(|token| token.config_version == config_version)
+            .collect();
     gateway_db::mark_credential_used(&mut tx, worker.id).await?;
     tx.commit().await?;
 
