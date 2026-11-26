@@ -1,0 +1,43 @@
+{
+  "household_id": "__HOUSEHOLD__",
+  "policy_revision": __REVISION__,
+  "policy_published_at": "__PUBLISHED__",
+  "timezone": "UTC",
+  "stale_after_secs": __STALE__,
+  "bind": {
+    "address": "__BIND_ADDR__",
+    "port": __BIND_PORT__,
+    "allow_non_loopback": true
+  },
+  "deny": {
+    "mode": "sinkhole",
+    "ipv4": "192.0.2.222",
+    "ttl": 30
+  },
+  "upstreams": ["172.26.9.53:15353"],
+  "local_zones": {
+    "local.vantyr.test.": [
+      { "type": "a", "name": "probe.local.vantyr.test.", "ttl": 120, "addr": "__PROBE_ADDR__" },
+      { "type": "cname", "name": "alias.local.vantyr.test.", "ttl": 90, "target": "probe.local.vantyr.test." }
+    ]
+  },
+  "profiles": {
+    "standard": [
+      { "effect": "allow", "match": { "type": "suffix", "value": "vantyr.test" }, "reason": "lab allow" },
+      { "effect": "deny", "match": { "type": "exact", "value": "blocked.lab.vantyr.test" }, "reason": "blocked exact" },
+      { "effect": "deny", "match": { "type": "suffix", "value": "tracker.lab.vantyr.test" }, "reason": "blocked suffix" }
+    ],
+    "restricted": [
+      { "effect": "deny", "match": { "type": "suffix", "value": "vantyr.test" }, "reason": "restricted default" }
+    ]
+  },
+  "default_device_profile": "restricted",
+  "devices": [
+    {
+      "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "label": "Lab durable client",
+      "default_profile": "standard",
+      "source_ips": ["172.26.9.54"]
+    }
+  ]
+}

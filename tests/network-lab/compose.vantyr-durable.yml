@@ -1,0 +1,54 @@
+# Opt-in durable Vantyr DNS override for tests/network-lab.
+#
+# This is active ONLY when passed as an extra `-f` alongside compose.yml. It
+# adds no host publish, no host network, no privileged mode and no Docker socket
+# mount. The worker runs as non-root (65532) from the digest-pinned distroless
+# runtime, reads its config from a read-only bind mount, and keeps its one
+# durable bundle on a project-scoped named volume. The volume root is chowned
+# to 65532 by the lab driver before the worker starts (distroless has no shell).
+#
+# Manual equivalent (from tests/network-lab):
+#   docker compose -f compose.yml -f compose.vantyr-durable.yml \
+#     -p vantyr-network-lab-durable up -d --build
+#   docker compose -f compose.yml -f compose.vantyr-durable.yml \
+#     -p vantyr-network-lab-durable down -v --timeout 5
+
+services:
+  vantyr-durable:
+    build:
+      context: ../..
+      dockerfile: tests/network-lab/Dockerfile.vantyr
+      target: runtime
+    # Same image as the full-stack override: one whitelisted source build.
+    image: "${VANTYR_NETLAB_PROJECT:-vantyr-network-lab}-vantyr-dns:local"
+    command:
+      - --config
+      - /etc/vantyr/config/active.json
+      - --state
+      - /state/vantyr-dns.json
+      - --worker
+      - netlab-durable-worker
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      # Config is read-only in the container; the driver replaces it in this
+      # project-owned host directory (atomic copy) before sending SIGHUP.
+      - ${VANTYR_DURABLE_CONFIG_DIR:-./work/durable/config}:/etc/vantyr/config:ro
+      # One durable bundle; project-scoped and disposable. Never a household
+      # volume, never a bind mount into production data.
+      - state:/state
+    networks:
+      labnet:
+        ipv4_address: 172.26.9.55
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
+
+volumes:
+  state:

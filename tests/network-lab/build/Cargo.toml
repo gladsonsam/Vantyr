@@ -1,9 +1,12 @@
 # Minimal Cargo workspace used ONLY by tests/network-lab/Dockerfile.vantyr.
 #
 # This is deliberately not the repository root manifest: the root workspace also
-# declares the main server, the HTTP proxy and a [patch.crates-io] path into
-# server/, none of which belongs in a DNS-lab build context. The image builder
-# copies exactly the two crates below plus the repository's pinned Cargo.lock.
+# declares the main server, the HTTP proxy, the back-end PKI foundation and a
+# [patch.crates-io] path into server/, none of which belongs in a DNS-lab build
+# context. The image builder copies exactly the three crates below plus the
+# repository's pinned Cargo.lock. `vantyr-network-runtime` is required because
+# the accepted durable `vantyr-dns` worker depends on its typed last-known-good
+# store; no gateway, proxy, inspection or PKI crate is pulled in.
 [workspace]
-members = ["crates/family-policy", "crates/family-dns"]
+members = ["crates/family-policy", "crates/network-runtime", "crates/family-dns"]
 resolver = "2"

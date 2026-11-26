@@ -19,18 +19,26 @@ data is involved.
   TTL forwarding, upstream-outage behaviour, same-config restart equivalence,
   and startup rejection of malformed/wildcard configs. It cleans up only its own
   guarded Compose project.
+- `bash scripts/lab.sh durable-smoke` — the opt-in durable-bundle smoke. It runs
+  the real `--state`/`--worker` worker against a disposable, nonroot-owned state
+  volume and asserts SIGHUP reload, rejection of malformed/stale/foreign/
+  bind-changing candidates, real recovery after an abrupt kill with a changed
+  external config, and stale-age fail-closed across a restart. See below.
 
 The Vantyr DNS worker is a real binary (`crates/family-dns/src/bin/vantyr-dns.rs`)
 with its own accepted real-process and socket tests; its validated configuration
 schema lives in `crates/family-dns/src/config.rs`. No integration hook template
-is needed any more — `compose.vantyr.example.yml` is a working opt-in override.
+is needed any more — `compose.vantyr.example.yml` and `compose.vantyr-durable.yml`
+are working opt-in overrides.
 
-Not integrated and therefore **not claimed here**: durable last-known-good
-policy persistence or reload, controller acknowledgment/API, authentication or
-enrollment, and encrypted DNS (DoT/DoH/DoQ). The restart assertion only re-runs
-the *same process with the same config file*; it is not a reload or LKG claim.
-DHCP serving is out of scope and stays on the user's router — this lab neither
-runs a DHCP server nor changes routes.
+Not integrated and therefore **not claimed here**: controller acknowledgment/
+API/canary, authentication or enrollment, and encrypted DNS (DoT/DoH/DoQ). The
+full-stack restart assertion only re-runs the *same process with the same config
+file*; it is deliberately not a reload or LKG claim. The durable smoke claims
+only unauthenticated **local** persistence across a process restart — no
+signature, controller origin, ack or "verified/protected" assertion. DHCP
+serving is out of scope and stays on the user's router — this lab neither runs a
+DHCP server nor changes routes.
 
 ## Verified toolchain and pins
 
@@ -47,11 +55,17 @@ runs a DHCP server nor changes routes.
 Digests were read from the registry tag listings before pinning. The client
 image is built locally from the digest-pinned base with a pinned package
 version. The worker image build context is the repository root but copies only
-`tests/network-lab/build/Cargo.toml`, the root `Cargo.lock` and the two required
-crate trees (`family-policy`, `family-dns`); it never copies `.`, `.git`,
-`.env*`, `secrets/`, the main server or any production data, and it introduces
-no dependency fork or low-level DNS parser. The root Cargo manifest/lock are
-only *read*, never edited; build output stays in the image's own target scope.
+`tests/network-lab/build/Cargo.toml`, the root `Cargo.lock` and the three
+required crate trees (`family-policy`, `vantyr-network-runtime`, `family-dns`);
+`vantyr-network-runtime` is needed by the accepted durable worker. It never
+copies `.`, `.git`, `.env*`, `secrets/`, the main server, the HTTP proxy, the
+inspection/PKI crates or any production data, and it introduces no dependency
+fork or low-level DNS parser. Cargo resolves from the copied lock inside the
+image (a lock superset is pruned there, but every pinned name/version/checksum
+used by the worker is unchanged). The root Cargo manifest/lock are only *read*,
+never edited; build output stays in the image's own target scope. The same
+digest-pinned Alpine base is reused by a one-off root helper only to `chown`
+the disposable state volume to uid 65532 — the distroless worker has no shell.
 
 ## Run the supported checks
 
@@ -61,6 +75,7 @@ From this directory:
 cd tests/network-lab
 bash scripts/lab.sh smoke            # base, upstream only
 bash scripts/lab.sh fullstack-smoke  # opt-in Vantyr DNS filtering stack
+bash scripts/lab.sh durable-smoke    # opt-in durable bundle / reload / recovery
 ```
 
 `smoke` builds the client, starts the base stack, runs every base assertion,
@@ -86,7 +101,40 @@ successful run ends with:
 [vantyr-netlab] PASS: malformed bind rejected before socket
 [vantyr-netlab] PASS: 0.0.0.0 wildcard rejected before socket
 [vantyr-netlab] FULLSTACK SMOKE PASS — Vantyr DNS answered every filtering assertion
-[vantyr-netlab] scoped cleanup verified: no containers or networks for vantyr-network-lab
+[vantyr-netlab] scoped cleanup verified: no containers, networks or volumes for vantyr-network-lab
+```
+
+`durable-smoke` additionally uses two disposable projects with their own state
+volumes (`vantyr-network-lab-durable` and `vantyr-network-lab-durable-stale`),
+chowns each volume root to 65532, builds the same pinned worker image, and ends
+with (all waits bounded, stale window 16s for a 12s `stale_after`):
+
+```text
+[vantyr-netlab] PASS: corrupt state rejected before any listener (no answer served)
+[vantyr-netlab] PASS: durable bootstrap persisted revision
+[vantyr-netlab] PASS: durable bootstrap persisted published_at
+[vantyr-netlab] PASS: durable bootstrap authored answer
+[vantyr-netlab] PASS: durable bootstrap policy denial
+[vantyr-netlab] PASS: SIGHUP higher revision changed answer
+[vantyr-netlab] PASS: SIGHUP persisted higher revision
+[vantyr-netlab] PASS: malformed config reload: applied answer retained
+[vantyr-netlab] PASS: stale revision reload: applied answer retained
+[vantyr-netlab] PASS: foreign household reload: applied answer retained
+[vantyr-netlab] PASS: bind change reload: applied answer retained
+[vantyr-netlab] PASS: abrupt restart recovers persisted answer (not changed config)
+[vantyr-netlab] PASS: abrupt restart keeps persisted revision
+[vantyr-netlab] PASS: abrupt restart keeps original published_at
+[vantyr-netlab] PASS: real recovery from persisted bundle after abrupt kill + changed external config
+[vantyr-netlab] PASS: stale fixture fresh answer
+[vantyr-netlab] PASS: stale policy fails closed to sinkhole
+[vantyr-netlab] PASS: stale restart kept persisted revision
+[vantyr-netlab] PASS: stale restart kept original published_at
+[vantyr-netlab] PASS: fresh reload clears stale fail-closed
+[vantyr-netlab] PASS: stale deny persisted across restart; a fresh revision recovered the allow
+[vantyr-netlab] DURABLE SMOKE PASS — SIGHUP, rejection, real recovery and stale-age assertions passed
+[vantyr-netlab] scoped cleanup verified: no containers, networks or volumes for vantyr-network-lab-durable
+[vantyr-netlab] scoped cleanup verified: no containers, networks or volumes for vantyr-network-lab-durable-stale
+[vantyr-netlab] state volumes of both disposable projects removed; no resources left
 ```
 
 One step at a time:
@@ -100,6 +148,10 @@ bash scripts/lab.sh fullstack-up        # guarded create + both resolvers ready
 bash scripts/lab.sh fullstack-check     # Vantyr assertions only
 bash scripts/lab.sh fullstack-down      # scoped removal + leftover check
 bash scripts/lab.sh fullstack-smoke     # guarded create + everything + cleanup
+bash scripts/lab.sh durable-up          # guarded durable create + ready
+bash scripts/lab.sh durable-down        # scoped removal incl. state volume
+bash scripts/lab.sh stale-down          # scoped removal of the stale phase
+bash scripts/lab.sh durable-smoke       # guarded create + everything + cleanup
 bash scripts/lab.sh ps
 bash scripts/lab.sh pause-upstream      # optional delay fault
 bash scripts/lab.sh unpause-upstream
@@ -156,7 +208,28 @@ has no such zone, so these answers can only come from Vantyr.
 DNS has no verified identity: no session, person rule, exception or enrollment
 field can select a profile here.
 
-## Assertions made by `fullstack-smoke`
+## Durable config contract
+
+[`configs/vantyr.durable.template.json`](configs/vantyr.durable.template.json)
+is the same validated schema with placeholders filled by the driver (no flag is
+invented). It adds `policy_published_at` and `stale_after_secs` and authors one
+probe answer (`probe.local.vantyr.test.`) so a changed answer is visible only
+from Vantyr. The worker runs as `netlab-durable-worker` with:
+
+```
+--config /etc/vantyr/config/active.json
+--state  /state/vantyr-dns.json
+--worker netlab-durable-worker
+```
+
+The config directory is a read-only bind mount from the disposable project
+work dir; the driver replaces `active.json` by copy and sends `SIGHUP` through
+the Docker API (`docker kill -s HUP`), never by exec'ing a shell in the
+distroless image. `--state-status` runs as a separate `--network none` one-off
+with the volume mounted read-only. The single state file is mode `0600`, owned
+by 65532, on a named volume labelled for the disposable project only.
+
+## Assertions made by `durable-smoke`
 
 - Allowed forwarding from the known client over UDP and TCP (A, AAAA, CNAME).
 - Local multi-record A/AAAA and CNAME answers authored in Vantyr's config.
@@ -180,6 +253,27 @@ field can select a profile here.
   validation error and never print a "listening" line; the one-off containers
   run with `--network none`, so no socket can be bound at all.
 
+## Assertions made by `durable-smoke`
+
+- A corrupt state file is rejected before a listener exists: non-zero exit, no
+  "listening" line, no answer. Only a disposable host fixture is used; recovery
+  is shown with a brand-new project and a brand-new state volume.
+- Bootstrap persists revision 20 and its original `published_at`; the authored
+  probe answer and a policy denial are served from the real worker.
+- `SIGHUP` after replacing the config with revision 21 changes the probe answer
+  and persists revision 21 — one atomic version, no listener restart.
+- A malformed config, a stale/equal revision, a foreign household and a changed
+  bind are each rejected by `SIGHUP`; the previous answer and revision are
+  retained every time (no partial application).
+- Abrupt `docker kill`, then an independently changed external config (revision
+  99, different answers/publication time), then restart: the worker serves the
+  **persisted** revision 21 answer and keeps the original `published_at`. This
+  is real bundle recovery, not the full-stack same-config restart.
+- With a fresh `policy_published_at` and a 12-second `stale_after_secs`, a fresh
+  allow is served, then after a bounded 16-second wait the probe is sinkholed
+  (fail closed). An abrupt restart keeps the original publication time, so the
+  deny persists; a newer revision with a fresh publication time clears it.
+
 ## Isolation, bounds and cleanup
 
 - Single private bridge `172.26.9.0/24`, `internal: true` by default.
@@ -192,15 +286,21 @@ field can select a profile here.
   (15353). It is not granted to the workers or clients.
 - All services are read-only with dropped capabilities, no-new-privileges,
   bounded memory/CPU/PIDs and json-file logs capped at 2 x 1 MiB. One-off
-  validation containers add `--network none`.
-- Readiness is a real DNS answer, not a port ping; all waits are bounded.
+  validation containers (including `--state-status`, the corrupt-state probe
+  and the volume `chown` helper) add `--network none` where no listener is
+  needed.
+- Readiness is a real DNS answer, not a port ping; all waits are bounded
+  (20 x 1s readiness, 20 x 0.5s reload log, 16s stale-age).
 - The project name is guarded to `vantyr-network-lab` or `vantyr-network-lab-*`.
-  `fullstack-smoke` runs a preflight that refuses to proceed if the project
-  already has containers/networks or if `172.26.9.0/24` is in use by any
-  network; it never cleans up a project it did not create.
-- Both smoke drivers install an EXIT trap and verify no containers or networks
-  remain for the project. No global prune, no volume removal, no action on any
-  other project.
+  Every smoke runs a preflight that refuses to proceed if its project already
+  has containers, networks **or volumes**, or if `172.26.9.0/24` is in use by
+  any network; it never cleans up a project it did not create.
+- All smoke drivers install an EXIT trap and verify no containers, networks or
+  volumes remain for their project(s). `durable-smoke` deletes only its two
+  disposable state volumes via project-scoped `down -v` (no global prune) and
+  removes its generated work dir; no household volume or data is touched.
+  Other projects on the host (for example `vantyr-dev`) are never inspected
+  for deletion.
 
 ## Optional host-side access (loopback only)
 
@@ -221,12 +321,14 @@ docker compose -f compose.yml -f compose.vantyr.example.yml \
 
 ## Out of scope / explicitly unsupported
 
-Authentication, controller API and policy acknowledgment, durable event or
-last-known-good state, reload of a new policy revision, enrollment that claims
-verified identity, and encrypted DNS client/upstream transports (DoT/DoH/DoQ)
-are not exercised here and are not claimed as passing. Person- or
-household-specific rules, competitor/comparison research and public metadata
-collection are not part of this lab. DHCP remains on the router.
+Authentication, controller API and policy acknowledgment/canary, enrollment
+that claims verified identity, a durable event store, and encrypted DNS
+client/upstream transports (DoT/DoH/DoQ) are not exercised here and are not
+claimed as passing. Unauthenticated local last-known-good state and SIGHUP
+reload of a strictly newer revision **are** exercised by `durable-smoke`, with
+the limits stated above. Person- or household-specific rules,
+competitor/comparison research and public metadata collection are not part of
+this lab. DHCP remains on the router.
 
 ## Validation commands
 
@@ -236,7 +338,16 @@ docker compose -f compose.yml -p vantyr-network-lab config -q
 docker compose -f compose.yml -f compose.vantyr.example.yml -p vantyr-network-lab config -q
 docker compose -f compose.yml -f compose.vantyr.example.yml \
   -f compose.vantyr-host-access.yml -p vantyr-network-lab config -q
+docker compose -f compose.yml -f compose.vantyr-durable.yml \
+  -p vantyr-network-lab-durable config -q
 docker run --rm -w /scripts -v "$PWD/scripts:/scripts:ro" \
   koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
   -x lab.sh lib.sh
+bash scripts/lab.sh smoke
+bash scripts/lab.sh fullstack-smoke
+bash scripts/lab.sh durable-smoke
+# Final resource check (replace the project name for the two durable projects):
+docker ps -aq --filter "label=com.docker.compose.project=vantyr-network-lab-durable"
+docker network ls -q --filter "label=com.docker.compose.project=vantyr-network-lab-durable"
+docker volume ls -q --filter "label=com.docker.compose.project=vantyr-network-lab-durable"
 ```

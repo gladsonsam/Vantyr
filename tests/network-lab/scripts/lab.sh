@@ -76,13 +76,7 @@ outage() {
 
 down() {
   compose down --timeout 5 || return 1
-  local leftovers
-  leftovers="$(docker ps -aq --filter "label=com.docker.compose.project=${PROJECT}" || true)"
-  [[ -z "${leftovers}" ]] || die "leftover containers for ${PROJECT}: ${leftovers}"
-  local nets
-  nets="$(docker network ls -q --filter "label=com.docker.compose.project=${PROJECT}" || true)"
-  [[ -z "${nets}" ]] || die "leftover networks for ${PROJECT}: ${nets}"
-  log "scoped cleanup verified: no containers or networks for ${PROJECT}"
+  verify_cleanup_project "${PROJECT}"
 }
 
 smoke() {
@@ -268,13 +262,7 @@ startup_failure_checks() {
 
 fullstack_down() {
   vantyr_compose down --timeout 5 || return 1
-  local leftovers
-  leftovers="$(docker ps -aq --filter "label=com.docker.compose.project=${PROJECT}" || true)"
-  [[ -z "${leftovers}" ]] || die "leftover containers for ${PROJECT}: ${leftovers}"
-  local nets
-  nets="$(docker network ls -q --filter "label=com.docker.compose.project=${PROJECT}" || true)"
-  [[ -z "${nets}" ]] || die "leftover networks for ${PROJECT}: ${nets}"
-  log "scoped cleanup verified: no containers or networks for ${PROJECT}"
+  verify_cleanup_project "${PROJECT}"
 }
 
 fullstack_smoke() {
@@ -303,6 +291,193 @@ fullstack_smoke() {
   log "FULLSTACK SMOKE PASS — Vantyr DNS answered every filtering assertion"
 }
 
+# ---------------------------------------------------------------------------
+# Opt-in durable lab. This is a REAL recovery test, not a same-config restart:
+# the bundle is persisted on a disposable nonroot-owned volume, SIGHUP applies
+# one higher revision at a time, rejected candidates keep the applied version,
+# and an abrupt kill followed by a changed external config must recover the
+# persisted revision/publication time/answers. No controller ack or canary is
+# claimed; local durability is unauthenticated.
+# ---------------------------------------------------------------------------
+
+PUB_A="2026-11-26T10:00:00Z"
+PUB_A_PREFIX="2026-11-26T10:00:00"
+PUB_B="2026-11-26T11:00:00Z"
+
+corrupt_state_check() {
+  local out rc=0 corrupt="${LAB_DIR}/work/durable/corrupt.json"
+  mkdir -p "${DURABLE_CONFIG_DIR}"
+  printf '%s' '{"schema":' >"${corrupt}"
+  make_durable_config "${LAB_DIR}/work/durable/corrupt-config.json" \
+    "${DURABLE_HOUSEHOLD}" 20 "${PUB_A}" 86400 "${VANTYR_IP}" "${VANTYR_PORT}" 192.0.2.10
+  out="$(docker run --rm --network none --read-only --cap-drop ALL \
+    --security-opt no-new-privileges:true --pids-limit 64 --memory 128m \
+    -v "${corrupt}:/state/vantyr-dns.json:ro" \
+    -v "${LAB_DIR}/work/durable/corrupt-config.json:/etc/vantyr/active.json:ro" \
+    "${VANTYR_IMAGE}" --state /state/vantyr-dns.json --worker "${DURABLE_WORKER}" \
+    --config /etc/vantyr/active.json 2>&1)" || rc=$?
+  (( rc != 0 )) || die "corrupt state file was accepted at startup"
+  [[ "${out}" != *"listening"* ]] || die "corrupt state still started a listener: ${out}"
+  assert_has_line "corrupt state rejected before any listener (no answer served)" \
+    "Vantyr DNS:" "${out}"
+}
+
+durable_bootstrap() {
+  preflight_project "${DURABLE_PROJECT}"
+  mkdir -p "${DURABLE_CONFIG_DIR}"
+  init_state_volume "${DURABLE_PROJECT}"
+  make_durable_config "${DURABLE_CONFIG_DIR}/active.json" \
+    "${DURABLE_HOUSEHOLD}" 20 "${PUB_A}" 86400 "${VANTYR_IP}" "${VANTYR_PORT}" 192.0.2.10
+  durable_compose up -d --build
+  wait_vantyr_ready_project "${DURABLE_PROJECT}"
+}
+
+# A rejected SIGHUP must leave both the answer and the persisted bundle on the
+# previously applied version. The caller writes the candidate config first.
+reject_reload() {
+  local label="$1" out status
+  sighup_and_wait "${DURABLE_PROJECT}"
+  out="$(vquery_project "${DURABLE_PROJECT}" +short "${DURABLE_PROBE}" A)"
+  assert_eq "${label} reload: applied answer retained" '192.0.2.30' "${out}"
+  status="$(state_status "${DURABLE_PROJECT}")"
+  assert_has_line "${label} reload: applied revision retained" 'revision 21' "${status}"
+}
+
+durable_lifecycle() {
+  local out status
+  durable_bootstrap
+
+  status="$(state_status "${DURABLE_PROJECT}")"
+  assert_has_line "durable bootstrap persisted revision" 'revision 20' "${status}"
+  assert_has_line "durable bootstrap persisted published_at" \
+    "published_at ${PUB_A_PREFIX}" "${status}"
+  out="$(vquery_project "${DURABLE_PROJECT}" +short "${DURABLE_PROBE}" A)"
+  assert_eq "durable bootstrap authored answer" '192.0.2.10' "${out}"
+  out="$(vquery_project "${DURABLE_PROJECT}" +short blocked.lab.vantyr.test A)"
+  assert_eq "durable bootstrap policy denial" "${SINKHOLE_IP}" "${out}"
+
+  # Higher revision + different author answer, applied by one SIGHUP.
+  make_durable_config "${DURABLE_CONFIG_DIR}/active.json" \
+    "${DURABLE_HOUSEHOLD}" 21 "${PUB_A}" 86400 "${VANTYR_IP}" "${VANTYR_PORT}" 192.0.2.30
+  sighup_and_wait "${DURABLE_PROJECT}"
+  out="$(vquery_project "${DURABLE_PROJECT}" +short "${DURABLE_PROBE}" A)"
+  assert_eq "SIGHUP higher revision changed answer" '192.0.2.30' "${out}"
+  status="$(state_status "${DURABLE_PROJECT}")"
+  assert_has_line "SIGHUP persisted higher revision" 'revision 21' "${status}"
+
+  # Rejected candidates: malformed JSON, stale/equal revision, a foreign
+  # household and a changed bind. Every one keeps the old version.
+  cp "${LAB_DIR}/configs/vantyr.durable.malformed.json" "${DURABLE_CONFIG_DIR}/active.json"
+  reject_reload "malformed config"
+  make_durable_config "${DURABLE_CONFIG_DIR}/active.json" \
+    "${DURABLE_HOUSEHOLD}" 20 "${PUB_A}" 86400 "${VANTYR_IP}" "${VANTYR_PORT}" 192.0.2.50
+  reject_reload "stale revision"
+  make_durable_config "${DURABLE_CONFIG_DIR}/active.json" \
+    "${DURABLE_FOREIGN_HOUSEHOLD}" 22 "${PUB_A}" 86400 "${VANTYR_IP}" "${VANTYR_PORT}" 192.0.2.50
+  reject_reload "foreign household"
+  make_durable_config "${DURABLE_CONFIG_DIR}/active.json" \
+    "${DURABLE_HOUSEHOLD}" 22 "${PUB_A}" 86400 "${VANTYR_IP}" 15354 192.0.2.50
+  reject_reload "bind change"
+
+  # Abrupt kill (no orderly shutdown) while the external config advances
+  # independently. Recovery must come from the persisted bundle, not a fresh
+  # bootstrap off the changed config.
+  docker kill "$(durable_compose ps -q vantyr-durable)" >/dev/null
+  make_durable_config "${DURABLE_CONFIG_DIR}/active.json" \
+    "${DURABLE_HOUSEHOLD}" 99 "${PUB_B}" 86400 "${VANTYR_IP}" "${VANTYR_PORT}" 192.0.2.40
+  durable_compose up -d >/dev/null
+  wait_vantyr_ready_project "${DURABLE_PROJECT}"
+  out="$(vquery_project "${DURABLE_PROJECT}" +short "${DURABLE_PROBE}" A)"
+  assert_eq "abrupt restart recovers persisted answer (not changed config)" \
+    '192.0.2.30' "${out}"
+  status="$(state_status "${DURABLE_PROJECT}")"
+  assert_has_line "abrupt restart keeps persisted revision" 'revision 21' "${status}"
+  assert_has_line "abrupt restart keeps original published_at" \
+    "published_at ${PUB_A_PREFIX}" "${status}"
+  log "PASS: real recovery from persisted bundle after abrupt kill + changed external config"
+}
+
+stale_phase() {
+  local out status now_prefix now_stamp
+  preflight_project "${STALE_PROJECT}"
+  init_state_volume "${STALE_PROJECT}"
+  # Fixture clock only: a small stale_after plus a fresh published_at, never a
+  # host clock/DNS change. The policy ages in a bounded <30s window.
+  now_prefix="$(date -u +%Y-%m-%dT%H:%M:%S)"
+  now_stamp="${now_prefix}Z"
+  make_durable_config "${DURABLE_CONFIG_DIR}/active.json" \
+    "${DURABLE_HOUSEHOLD}" 30 "${now_stamp}" 12 "${VANTYR_IP}" "${VANTYR_PORT}" 192.0.2.10
+  stale_compose up -d --build
+  wait_vantyr_ready_project "${STALE_PROJECT}"
+  out="$(vquery_project "${STALE_PROJECT}" +short "${DURABLE_PROBE}" A)"
+  assert_eq "stale fixture fresh answer" '192.0.2.10' "${out}"
+
+  log "waiting 16s (bounded <30s) for a 12s stale_after policy to age"
+  sleep 16
+  out="$(vquery_project "${STALE_PROJECT}" +short "${DURABLE_PROBE}" A 2>/dev/null)" || true
+  assert_eq "stale policy fails closed to sinkhole" "${SINKHOLE_IP}" "${out}"
+
+  # The persisted publication time must not be refreshed by a restart, so the
+  # deny survives an abrupt kill and restart even with the same external file.
+  docker kill "$(stale_compose ps -q vantyr-durable)" >/dev/null
+  stale_compose up -d >/dev/null
+  wait_sinkhole_project "${STALE_PROJECT}" "${DURABLE_PROBE}"
+  status="$(state_status "${STALE_PROJECT}")"
+  assert_has_line "stale restart kept persisted revision" 'revision 30' "${status}"
+  assert_has_line "stale restart kept original published_at" \
+    "published_at ${now_prefix}" "${status}"
+
+  # A genuinely newer revision carrying a fresh publication time recovers.
+  now_prefix="$(date -u +%Y-%m-%dT%H:%M:%S)"
+  now_stamp="${now_prefix}Z"
+  make_durable_config "${DURABLE_CONFIG_DIR}/active.json" \
+    "${DURABLE_HOUSEHOLD}" 31 "${now_stamp}" 86400 "${VANTYR_IP}" "${VANTYR_PORT}" 192.0.2.10
+  sighup_and_wait "${STALE_PROJECT}"
+  wait_vantyr_ready_project "${STALE_PROJECT}"
+  out="$(vquery_project "${STALE_PROJECT}" +short "${DURABLE_PROBE}" A)"
+  assert_eq "fresh reload clears stale fail-closed" '192.0.2.10' "${out}"
+  log "PASS: stale deny persisted across restart; a fresh revision recovered the allow"
+}
+
+durable_down() {
+  durable_compose down -v --timeout 5 || return 1
+  verify_cleanup_project "${DURABLE_PROJECT}"
+}
+
+stale_down() {
+  stale_compose down -v --timeout 5 || return 1
+  verify_cleanup_project "${STALE_PROJECT}"
+}
+
+durable_smoke() {
+  on_durable_exit() {
+    local rc=$?
+    if (( rc != 0 )); then
+      log "durable smoke FAILED (rc=${rc}); cleaning up scoped disposable projects"
+    else
+      log "cleaning up scoped disposable durable projects after successful smoke"
+    fi
+    durable_compose down -v --timeout 5 >/dev/null 2>&1 || true
+    stale_compose down -v --timeout 5 >/dev/null 2>&1 || true
+    verify_cleanup_project "${DURABLE_PROJECT}" || rc=1
+    verify_cleanup_project "${STALE_PROJECT}" || rc=1
+    rm -rf "${DURABLE_WORK_DIR}"
+    (( rc == 0 )) && log "state volumes of both disposable projects removed; no resources left"
+    exit "${rc}"
+  }
+  trap on_durable_exit EXIT
+
+  # Corrupt state is rejected on a one-off, network-less container (no answer
+  # and no listener). Recovery is then shown by a fresh project/volume below;
+  # no household data is ever mounted.
+  corrupt_state_check
+  durable_lifecycle
+  durable_down
+  stale_phase
+  stale_down
+  log "DURABLE SMOKE PASS — SIGHUP, rejection, real recovery and stale-age assertions passed"
+}
+
 main() {
   case "${1:-}" in
     up) up ;;
@@ -316,6 +491,10 @@ main() {
       ;;
     fullstack-check) vcheck;;
     fullstack-down) fullstack_down ;;
+    durable-smoke) durable_smoke ;;
+    durable-up) durable_bootstrap ;;
+    durable-down) durable_down ;;
+    stale-down) stale_down ;;
     down) down ;;
     ps) compose ps ;;
     pause-upstream)
@@ -327,7 +506,7 @@ main() {
       wait_ready
       ;;
     *)
-      printf 'usage: %s {up|check|outage|smoke|fullstack-smoke|fullstack-up|fullstack-check|fullstack-down|down|ps|pause-upstream|unpause-upstream}\n' "$0" >&2
+      printf 'usage: %s {up|check|outage|smoke|fullstack-smoke|fullstack-up|fullstack-check|fullstack-down|durable-smoke|durable-up|durable-down|stale-down|down|ps|pause-upstream|unpause-upstream}\n' "$0" >&2
       exit 2
       ;;
   esac
