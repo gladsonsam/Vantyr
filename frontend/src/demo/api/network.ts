@@ -600,6 +600,10 @@ export function demoNetworkApi(): Partial<ApiClient> {
         if (typeof b.display_name === "string")
           person.display_name = b.display_name.trim();
         if ("note" in b) person.note = text(b.note) || null;
+        if (typeof b.is_default_profile === "boolean") {
+          if (b.is_default_profile) for (const p of persons) p.is_default_profile = false;
+          person.is_default_profile = b.is_default_profile;
+        }
       }
       return { ok: true };
     },
@@ -659,6 +663,8 @@ export function demoNetworkApi(): Partial<ApiClient> {
       if (assignment) {
         if (typeof b.role === "string")
           assignment.role = b.role as NetworkAssignment["role"];
+        if (typeof b.active === "boolean") assignment.active = b.active;
+        // Omitted keeps; explicit null (or empty) clears.
         if ("agent_id" in b) assignment.agent_id = text(b.agent_id) || null;
         if ("note" in b) assignment.note = text(b.note) || null;
         assignment.updated_at = now();
@@ -668,7 +674,22 @@ export function demoNetworkApi(): Partial<ApiClient> {
 
     networkConnections: async () => ({ connections }),
     networkConnectionCreate: async () => ({ id: id("con") }),
-    networkConnectionUpdate: async () => ({ ok: true }),
+    networkConnectionUpdate: async (_household, connectionId, body) => {
+      const b = asRecord(body);
+      const c = connections.find((x) => x.id === connectionId);
+      if (c) {
+        // Omitted = keep; explicit null = clear; a value = set.
+        if ("assignment_id" in b) c.assignment_id = text(b.assignment_id) || null;
+        if ("enrolled_agent_id" in b) c.enrolled_agent_id = text(b.enrolled_agent_id) || null;
+        if (typeof b.status === "string") c.status = b.status as NetworkConnection["status"];
+        if ("observed_at" in b) c.observed_at = text(b.observed_at) || null;
+        if ("last_seen_at" in b) c.last_seen_at = text(b.last_seen_at) || null;
+        if ("revoked_at" in b) c.revoked_at = text(b.revoked_at) || null;
+        if ("note" in b) c.note = text(b.note) || null;
+        c.updated_at = now();
+      }
+      return { ok: true };
+    },
 
     networkAgentEnrollments: async () => ({ enrollments }),
     networkAgentEnroll: async () => ({ ok: true }),

@@ -49,6 +49,52 @@ function Field({ label, id, help, children }: { label: string; id: string; help?
   );
 }
 
+const UNLINK_HELP =
+  "Unlinking only edits this inventory record. It does not unenroll a monitoring agent, revoke agent or worker credentials, end a BYOD session, or establish or remove verified network coverage.";
+
+/** The note as sent in a PATCH: omitted when untouched, null only when the user emptied a stored note. */
+function notePatch(draft: string, stored: string | null): { note?: string | null } {
+  const next = draft.trim();
+  if (next === (stored ?? "")) return {};
+  return { note: next.length > 0 ? next : null };
+}
+
+function NoteField({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <Field label="Note" id={id} help="Clearing the text and saving removes the stored note.">
+      <Input id={id} value={value} onChange={(event) => onChange(event.target.value)} maxLength={500} />
+    </Field>
+  );
+}
+
+/** An explicit, staged clear: nothing is sent unless it is ticked and the form is saved. */
+function UnlinkOption({
+  id,
+  label,
+  confirm,
+  checked,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  confirm: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="space-y-1.5 text-sm">
+      <div className="flex items-center gap-2">
+        <Checkbox id={id} checked={checked} onCheckedChange={(c) => onChange(c === true)} />
+        <Label htmlFor={id} className="font-normal">
+          {label}
+        </Label>
+        <HelpTip label={`About ${label.toLowerCase()}`}>{UNLINK_HELP}</HelpTip>
+      </div>
+      {checked ? <p className="pl-6 text-destructive">{confirm}</p> : null}
+    </div>
+  );
+}
+
 export function AddPersonForm({ household }: { household: string }) {
   const create = useCreatePersonMutation(household);
   const [name, setName] = useState("");
@@ -280,7 +326,10 @@ export function EditPersonForm({ household, person }: { household: string; perso
   const update = useUpdatePersonMutation(household);
   const [name, setName] = useState(person.display_name);
   const [isDefault, setIsDefault] = useState(person.is_default_profile);
-  const changed = name.trim() !== person.display_name || isDefault !== person.is_default_profile;
+  const [note, setNote] = useState(person.note ?? "");
+  const noteChanged = note.trim() !== (person.note ?? "");
+  const changed =
+    name.trim() !== person.display_name || isDefault !== person.is_default_profile || noteChanged;
   return (
     <FormDialog
       edit
@@ -293,11 +342,13 @@ export function EditPersonForm({ household, person }: { household: string; perso
           id: person.id,
           ...(name.trim() !== person.display_name ? { display_name: name.trim() } : {}),
           ...(isDefault !== person.is_default_profile ? { is_default_profile: isDefault } : {}),
+          ...notePatch(note, person.note),
         })
       }
       onReset={() => {
         setName(person.display_name);
         setIsDefault(person.is_default_profile);
+        setNote(person.note ?? "");
       }}
     >
       <Field label="Name" id={`person-name-${person.id}`}>
@@ -309,6 +360,7 @@ export function EditPersonForm({ household, person }: { household: string; perso
           autoFocus
         />
       </Field>
+      <NoteField id={`person-note-${person.id}`} value={note} onChange={setNote} />
       <div className="flex items-center gap-2 text-sm">
         <Checkbox
           id={`person-default-${person.id}`}
@@ -405,7 +457,13 @@ export function EditAssignmentForm({
   const update = useUpdateAssignmentMutation(household);
   const [role, setRole] = useState<NetworkAssignmentRole>(assignment.role);
   const [active, setActive] = useState(assignment.active);
-  const changed = role !== assignment.role || active !== assignment.active;
+  const [note, setNote] = useState(assignment.note ?? "");
+  const [unlinkAgent, setUnlinkAgent] = useState(false);
+  const changed =
+    role !== assignment.role ||
+    active !== assignment.active ||
+    note.trim() !== (assignment.note ?? "") ||
+    unlinkAgent;
   return (
     <FormDialog
       edit
@@ -419,11 +477,16 @@ export function EditAssignmentForm({
           id: assignment.id,
           ...(role !== assignment.role ? { role } : {}),
           ...(active !== assignment.active ? { active } : {}),
+          ...notePatch(note, assignment.note),
+          // Explicit null unlinks; only sent when the user ticked it and an agent is linked.
+          ...(unlinkAgent && assignment.agent_id ? { agent_id: null } : {}),
         })
       }
       onReset={() => {
         setRole(assignment.role);
         setActive(assignment.active);
+        setNote(assignment.note ?? "");
+        setUnlinkAgent(false);
       }}
     >
       <Field label="Role" id={`assign-role-${assignment.id}`}>
@@ -450,6 +513,16 @@ export function EditAssignmentForm({
           Active
         </Label>
       </div>
+      <NoteField id={`assign-note-${assignment.id}`} value={note} onChange={setNote} />
+      {assignment.agent_id ? (
+        <UnlinkOption
+          id={`assign-unlink-agent-${assignment.id}`}
+          label="Unlink agent"
+          confirm="Saving removes the linked agent from this assignment. The agent itself is not changed."
+          checked={unlinkAgent}
+          onChange={setUnlinkAgent}
+        />
+      ) : null}
     </FormDialog>
   );
 }
@@ -472,7 +545,17 @@ export function EditConnectionForm({
   const [agent, setAgent] = useState<string>(connection.enrolled_agent_id ?? NONE);
   const current = connection.enrolled_agent_id ?? NONE;
   const options = current !== NONE && !agents.includes(current) ? [current, ...agents] : agents;
-  const changed = status !== connection.status || agent !== current;
+  const [note, setNote] = useState(connection.note ?? "");
+  const [unlinkAssignment, setUnlinkAssignment] = useState(false);
+  const [clearObserved, setClearObserved] = useState(false);
+  const [clearLastSeen, setClearLastSeen] = useState(false);
+  const changed =
+    status !== connection.status ||
+    agent !== current ||
+    note.trim() !== (connection.note ?? "") ||
+    (unlinkAssignment && Boolean(connection.assignment_id)) ||
+    (clearObserved && Boolean(connection.observed_at)) ||
+    (clearLastSeen && Boolean(connection.last_seen_at));
   return (
     <FormDialog
       edit
@@ -495,11 +578,19 @@ export function EditConnectionForm({
               }
             : {}),
           ...(agent !== current ? { enrolled_agent_id: agent === NONE ? null : agent } : {}),
+          ...notePatch(note, connection.note),
+          ...(unlinkAssignment && connection.assignment_id ? { assignment_id: null } : {}),
+          ...(clearObserved && connection.observed_at ? { observed_at: null } : {}),
+          ...(clearLastSeen && connection.last_seen_at ? { last_seen_at: null } : {}),
         })
       }
       onReset={() => {
         setStatus(connection.status);
         setAgent(current);
+        setNote(connection.note ?? "");
+        setUnlinkAssignment(false);
+        setClearObserved(false);
+        setClearLastSeen(false);
       }}
     >
       <Field
@@ -539,6 +630,34 @@ export function EditConnectionForm({
           </SelectContent>
         </Select>
       </Field>
+      <NoteField id={`conn-note-${connection.id}`} value={note} onChange={setNote} />
+      {connection.assignment_id ? (
+        <UnlinkOption
+          id={`conn-unlink-assignment-${connection.id}`}
+          label="Unlink assignment"
+          confirm="Saving detaches this connection from its person assignment. The assignment itself stays."
+          checked={unlinkAssignment}
+          onChange={setUnlinkAssignment}
+        />
+      ) : null}
+      {connection.observed_at ? (
+        <UnlinkOption
+          id={`conn-clear-observed-${connection.id}`}
+          label="Clear observed time"
+          confirm="Saving erases the recorded observation time."
+          checked={clearObserved}
+          onChange={setClearObserved}
+        />
+      ) : null}
+      {connection.last_seen_at ? (
+        <UnlinkOption
+          id={`conn-clear-seen-${connection.id}`}
+          label="Clear last seen"
+          confirm="Saving erases the recorded last-seen time."
+          checked={clearLastSeen}
+          onChange={setClearLastSeen}
+        />
+      ) : null}
     </FormDialog>
   );
 }
