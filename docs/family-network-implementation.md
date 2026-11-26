@@ -575,6 +575,9 @@ No substantive UI or Supabase changes were made in this step.
   clean scoped clippy with no dependency changes. Review checks the actual
   client/coordinator lifecycle, current-local-state races, automatic refresh
   after initial apply, failed-candidate isolation and server report compatibility.
+  Follow-up `590aacc1` adds coordinator-loop, current-token and unchanged-age
+  coverage plus an enabled-only fetch correction; the implementer reports 162
+  affected tests. These additions are included as context for the active review.
   It is not yet accepted or ready for dashboard handoff.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
   accepted separately from encrypted inbound listeners. Fresh review passed all
