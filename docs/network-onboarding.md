@@ -73,6 +73,49 @@ separate from changing a root trust anchor. Record both operations accurately.
 
 ## Integration constraints
 
+## Network-controller integration roadmap
+
+UniFi is the first optional network adapter. The native DNS and Proxy workers
+must remain usable without a controller integration. Credentials and live
+controller testing are not available yet; initial acceptance uses documented
+API contracts and isolated simulated controllers.
+
+- [ ] Discover application version, site scope and supported API capabilities
+  through the official versioned Network API; distinguish missing permissions,
+  unsupported operations and unavailable controllers.
+- [ ] Import bounded network/client observations, including IPv4/IPv6 and VLAN
+  context, without treating MAC/IP associations as authenticated person identity.
+- [ ] Build a deterministic setup plan for explicitly selected networks. Include
+  current values, proposed DNS settings, dependencies, conflicts, verification
+  steps and restoration values. Preserve split DNS and unrelated settings.
+- [ ] Detect gateway-managed, switch-managed and externally managed networks;
+  report manual steps when the installed API does not support a requested change.
+- [ ] Exercise preview, stale-plan rejection, idempotency, verification and
+  conflict-aware rollback against simulated controllers before live testing.
+- [ ] Add explicitly authorized controller writes only for supported operations;
+  never assume creating a network, changing VLANs or changing firewall policy is
+  necessary to enable DNS. Router DHCP remains the DHCP service.
+- [ ] Test read-only discovery with operator-provided credentials, then review a
+  concrete network-specific plan before any live configuration changes.
+
+Network credentials are distinct from gateway-worker and user credentials, and
+are encrypted, redacted and scoped to the selected controller/site. Controller
+HTTPS must be verified; an explicitly trusted local certificate is preferable
+to disabling verification. Discovery is read-only by default. Unknown versions
+or schema fields must never trigger speculative configuration writes.
+
+Wi-Fi admission, proxy setup and inspection trust remain separate operations:
+controller automation does not install a CA on BYOD devices. Drift detection
+reports changes; unattended reconciliation requires a separate explicit opt-in.
+
+Primary API guidance:
+[official API overview](https://help.ui.com/hc/en-us/articles/30076656117655-Getting-Started-with-the-Official-UniFi-API)
+and [versioned Network API documentation](https://developer.ui.com/network/v10.6.109/gettingstarted).
+The actual controller's documentation and capabilities are authoritative; the
+linked example version is a scoping reference, not a minimum-version promise.
+
+## Identity integration constraints
+
 The existing identity provider's RADIUS protocol compatibility must be validated
 against the chosen Wi-Fi authentication method. Username/password Wi-Fi login,
 OIDC browser login and proxy authentication are different protocols even when
