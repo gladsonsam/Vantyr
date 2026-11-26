@@ -5,8 +5,8 @@
 - Shared policy core: independently accepted; 16 tests.
 - DNS immutable snapshots: independently accepted; no catalog lock across I/O.
 - Vantyr DNS executable and durable configuration/reload: independently accepted;
-  34 baseline tests. Controller-driven HTTPS policy retrieval/application is
-  committed with 47 tests reported passing and awaits independent acceptance.
+  controller-driven HTTPS policy retrieval/application, local and scheduled list
+  filtering, and verified DoT/DoH upstreams are independently accepted.
 - Network runtime: independently accepted; 23 tests covering typed process-restart
   persistence and bounded events. Persistence is integrated into DNS; event-queue
   integration into the DNS/query-log pipeline remains unfinished.
@@ -14,21 +14,24 @@
   changed-config abrupt-restart recovery, stale-policy behavior and verified
   cleanup. It makes no household deployment or controller-acknowledgment claim.
 - Management API: inventory, scoped grants, gateway credentials/heartbeat and
-  versioned policy retrieval are independently accepted. BYOD enrollment is
-  under implementation; worker acknowledgment and coverage verification remain.
+  versioned policy retrieval, BYOD enrollment and DNS list/service management are
+  independently accepted. DNS management includes authenticated worker-reported
+  applied state; independent coverage verification remains unfinished.
 - Vantyr Proxy: authenticated HTTP/CONNECT and optional scoped HTTPS inspection
   are independently accepted; 55 proxy tests and 23 PKI tests. Client credential
   enrollment, reversible setup and trust installation remain unfinished.
 - UniFi: read-only discovery and a pure setup planner are independently accepted;
   25 tests. Live-controller validation and server integration remain unfinished.
-- Management UI: proceeds in a separate thread; mobile apps remain deferred.
+- Management UI: accepted inventory, BYOD, policy and audit routes are wired in a
+  separate thread. DNS list/service management wiring is underway; mobile apps
+  remain deferred.
 - DHCP serving is excluded. The router continues assigning addresses.
 
 The integration checkpoints at the end of this document record current acceptance
 evidence. The original foundation notes below are historical and must not be used
 as a current capability summary. The granular first-party
-[DNS capability catalog](network-dns-capabilities.md) is committed and undergoing
-independent review as the delivery gate; partial implementations do not close a row.
+[DNS capability catalog](network-dns-capabilities.md) is independently accepted as
+the delivery gate; partial implementations do not close a row.
 
 Foundation checkpoint: **step 1 only**. Backend feasibility and durable contracts. No live
 household, DHCP, router, firewall, DNS resolver, proxy, Supabase or React UI
@@ -581,6 +584,12 @@ No substantive UI or Supabase changes were made in this step.
   slice is accepted and its contract is ready for dashboard wiring. Software
   support is marked `worker_consumer: opt_in`; actual gateway configuration and
   worker-reported applied status remain separate.
+  Full server regression on the accepted combined source also passes:
+  `SQLX_OFFLINE=true cargo test --locked --offline -p vantyr-server -- --test-threads=2`
+  ran 422 tests with zero failures against the dedicated throwaway PostgreSQL
+  container, including the real server/worker integration test (403.33 s total).
+  `SQLX_OFFLINE=true cargo check --workspace --all-targets --locked --offline`
+  also passes on the same source, covering workspace dependency integration.
   Existing cache/rate/retention controls, statistics and verified coverage remain
   separate open requirements; the service catalogue is operator-declared.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
