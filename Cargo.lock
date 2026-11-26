@@ -1369,9 +1369,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "family-policy",
  "hickory-resolver",
  "hickory-server",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-util",
  "tracing",
