@@ -3,11 +3,13 @@
 # Build context is the REPOSITORY ROOT by default (see `context: ../..` in the
 # Compose overrides; an operator may point VANTYR_NETLAB_BUILD_CONTEXT at a
 # read-only frozen source input). Only the minimal lab workspace manifest, the
-# pinned root Cargo.lock and the four crates that produce `vantyr-dns` are
+# pinned root Cargo.lock and the five crates that produce `vantyr-dns` are
 # copied: family-policy, vantyr-network-runtime (the durable bundle store),
 # vantyr-network-filter (the bounded hosts/ABP + service-list compiler since
-# commit c21da216) and family-dns. A third-party attribution notice is copied
-# into the runtime layer. This context deliberately NEVER includes '.', .git,
+# c21da216), vantyr-network-subscriptions (required by the 39c467e9 config
+# schema/worker; no fetcher is activated without --subscriptions) and
+# family-dns. A third-party attribution notice is copied into the runtime
+# layer. This context deliberately NEVER includes '.', .git,
 # .env*, secrets/, the main server, the HTTP proxy, the inspection/PKI crates
 # or any production data. No Docker socket, host networking or privileged mode
 # is used at build or run time; no fork of any dependency and no hand-written
@@ -25,6 +27,7 @@ COPY Cargo.lock ./Cargo.lock
 COPY crates/family-policy ./crates/family-policy
 COPY crates/network-runtime ./crates/network-runtime
 COPY crates/network-filter ./crates/network-filter
+COPY crates/network-subscriptions ./crates/network-subscriptions
 COPY crates/family-dns ./crates/family-dns
 RUN cargo build --release -p family-dns --bin vantyr-dns \
  && cp /src/target/release/vantyr-dns /usr/local/bin/vantyr-dns \

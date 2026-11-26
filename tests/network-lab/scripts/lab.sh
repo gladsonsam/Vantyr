@@ -11,6 +11,19 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 SINKHOLE_IP="192.0.2.222"
 VANTYR_IMAGE="${PROJECT}-vantyr-dns:local"
 
+# Since 39c467e9 one `--state-status` line reports three INDEPENDENT counters.
+# Always inspect them by their exact labels: a bare "revision" substring would
+# silently conflate the policy revision with the bundle generation.
+assert_state_counters() {
+  local label="$1" status="$2" generation="$3" policy="$4" filter="$5"
+  assert_has_line "${label}: bundle_generation ${generation}" \
+    "bundle_generation ${generation}" "${status}"
+  assert_has_line "${label}: policy_revision ${policy}" \
+    "policy_revision ${policy}" "${status}"
+  assert_has_line "${label}: filter_generation ${filter}" \
+    "filter_generation ${filter}" "${status}"
+}
+
 up() {
   compose up -d --build
   wait_ready
@@ -342,7 +355,9 @@ reject_reload() {
   out="$(vquery_project "${DURABLE_PROJECT}" +short "${DURABLE_PROBE}" A)"
   assert_eq "${label} reload: applied answer retained" '192.0.2.30' "${out}"
   status="$(state_status "${DURABLE_PROJECT}")"
-  assert_has_line "${label} reload: applied revision retained" 'revision 21' "${status}"
+  # No filter material in this fixture: filter_generation stays 0, while both
+  # the policy revision and the whole-bundle generation remain at 21.
+  assert_state_counters "${label} reload retained counters" "${status}" 21 21 0
 }
 
 durable_lifecycle() {
@@ -350,7 +365,7 @@ durable_lifecycle() {
   durable_bootstrap
 
   status="$(state_status "${DURABLE_PROJECT}")"
-  assert_has_line "durable bootstrap persisted revision" 'revision 20' "${status}"
+  assert_state_counters "durable bootstrap counters" "${status}" 20 20 0
   assert_has_line "durable bootstrap persisted published_at" \
     "published_at ${PUB_A_PREFIX}" "${status}"
   out="$(vquery_project "${DURABLE_PROJECT}" +short "${DURABLE_PROBE}" A)"
@@ -365,7 +380,7 @@ durable_lifecycle() {
   out="$(vquery_project "${DURABLE_PROJECT}" +short "${DURABLE_PROBE}" A)"
   assert_eq "SIGHUP higher revision changed answer" '192.0.2.30' "${out}"
   status="$(state_status "${DURABLE_PROJECT}")"
-  assert_has_line "SIGHUP persisted higher revision" 'revision 21' "${status}"
+  assert_state_counters "SIGHUP applied counters" "${status}" 21 21 0
 
   # Rejected candidates: malformed JSON, stale/equal revision, a foreign
   # household and a changed bind. Every one keeps the old version.
@@ -393,7 +408,7 @@ durable_lifecycle() {
   assert_eq "abrupt restart recovers persisted answer (not changed config)" \
     '192.0.2.30' "${out}"
   status="$(state_status "${DURABLE_PROJECT}")"
-  assert_has_line "abrupt restart keeps persisted revision" 'revision 21' "${status}"
+  assert_state_counters "abrupt restart persisted counters" "${status}" 21 21 0
   assert_has_line "abrupt restart keeps original published_at" \
     "published_at ${PUB_A_PREFIX}" "${status}"
   log "PASS: real recovery from persisted bundle after abrupt kill + changed external config"
@@ -425,7 +440,7 @@ stale_phase() {
   stale_compose up -d >/dev/null
   wait_sinkhole_project "${STALE_PROJECT}" "${DURABLE_PROBE}"
   status="$(state_status "${STALE_PROJECT}")"
-  assert_has_line "stale restart kept persisted revision" 'revision 30' "${status}"
+  assert_state_counters "stale restart persisted counters" "${status}" 30 30 0
   assert_has_line "stale restart kept original published_at" \
     "published_at ${now_prefix}" "${status}"
 
@@ -438,6 +453,8 @@ stale_phase() {
   wait_vantyr_ready_project "${STALE_PROJECT}"
   out="$(vquery_project "${STALE_PROJECT}" +short "${DURABLE_PROBE}" A)"
   assert_eq "fresh reload clears stale fail-closed" '192.0.2.10' "${out}"
+  assert_state_counters "fresh recovery reload counters" \
+    "$(state_status "${STALE_PROJECT}")" 31 31 0
   log "PASS: stale deny persisted across restart; a fresh revision recovered the allow"
 }
 
@@ -584,7 +601,9 @@ list_reload_change() {
   out="$(list_query +short probe.${LIST_FIXTURE_ZONE} A)"
   assert_eq "higher-revision reload applied authored answer" '192.0.2.30' "${out}"
   status="$(list_state_status)"
-  assert_has_line "higher-revision reload persisted revision" 'revision 21' "${status}"
+  # Material bytes changed, so filter_generation advances independently of the
+  # policy revision; the whole-bundle generation advances on every commit.
+  assert_state_counters "higher-revision reload counters" "${status}" 21 21 2
   assert_has_line "higher-revision reload persisted publication time" \
     "published_at ${LIST_PUB_B_PREFIX}" "${status}"
 }
@@ -598,7 +617,7 @@ list_bad_candidates() {
     "${LIST_HOUSEHOLD}" 192.0.2.30 vanished
   list_sighup_and_wait
   status="$(list_state_status)"
-  assert_has_line "missing-source candidate keeps applied revision" 'revision 21' "${status}"
+  assert_state_counters "missing-source candidate retained counters" "${status}" 21 21 2
   assert_eq "missing-source candidate keeps disk bytes" "${sha}" "$(list_state_sha)"
   out="$(list_query +short newblocked.${LIST_FIXTURE_ZONE} A)"
   assert_eq "missing-source candidate keeps prior answer" "${SINKHOLE_IP}" "${out}"
@@ -609,7 +628,7 @@ list_bad_candidates() {
     "${LIST_HOUSEHOLD}" 192.0.2.30 on
   list_sighup_and_wait
   status="$(list_state_status)"
-  assert_has_line "unsupported-rule candidate keeps applied revision" 'revision 21' "${status}"
+  assert_state_counters "unsupported-rule candidate retained counters" "${status}" 21 21 2
   assert_eq "unsupported-rule candidate keeps disk bytes" "${sha}" "$(list_state_sha)"
   out="$(list_query +short ads.${LIST_FIXTURE_ZONE} A)"
   assert_eq "unsupported-rule candidate keeps prior list answer" "${SINKHOLE_IP}" "${out}"
@@ -634,7 +653,7 @@ list_restart_persisted() {
   out="$(list_query +short probe.${LIST_FIXTURE_ZONE} A)"
   assert_eq "abrupt restart ignores changed external answer" '192.0.2.30' "${out}"
   status="$(list_state_status)"
-  assert_has_line "abrupt restart keeps persisted revision" 'revision 21' "${status}"
+  assert_state_counters "abrupt restart persisted counters" "${status}" 21 21 2
   assert_has_line "abrupt restart keeps original policy age" \
     "published_at ${LIST_PUB_B_PREFIX}" "${status}"
   assert_eq "abrupt restart keeps persisted disk bytes" "${sha}" "$(list_state_sha)"
@@ -659,6 +678,10 @@ list_disabled_removed() {
   assert_eq "disabled source is not re-read from its changed file" '192.0.2.62' "${out}"
   out="$(list_query +short ads.${LIST_FIXTURE_ZONE} A)"
   assert_eq "other enabled source still blocks after disable" "${SINKHOLE_IP}" "${out}"
+  # Dropping a list changes the material identity: policy revision and bundle
+  # generation both become 22 and filter_generation advances to 3.
+  assert_state_counters "disabled-source reload counters" \
+    "$(list_state_status)" 22 22 3
 
   # Removing the entry from `sources` is equally explicit and unambiguous.
   make_list_config "${LIST_CONFIG_DIR}/active.json" 23 "${LIST_PUB_B}" \
@@ -668,6 +691,10 @@ list_disabled_removed() {
   assert_eq "removed source no longer blocks" '192.0.2.52' "${out}"
   out="$(list_query +short ads.${LIST_FIXTURE_ZONE} A)"
   assert_eq "remaining source still blocks after removal" "${SINKHOLE_IP}" "${out}"
+  # The enabled list set is unchanged from the disabled case, so the material
+  # identity and filter_generation stay at 3 while both other counters advance.
+  assert_state_counters "removed-source reload counters" \
+    "$(list_state_status)" 23 23 3
   log "PASS: disabled and removed sources are explicit; no implicit revocation"
 }
 

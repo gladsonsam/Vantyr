@@ -10,6 +10,7 @@ adblock parser is reimplemented in this lab.
 | DNS catalog, in-memory/forwarding zones, hosts/bare/wildcard blocklists | Hickory DNS `hickory-server` 0.26.4 | MIT OR Apache-2.0 | zone serving and operators' hosts lists |
 | DNS-representable ABP domain rules (`||host^`, `@@||host^`, `$important`) | `adblock` 0.13.6 (Brave `adblock-rust`, <https://github.com/brave/adblock-rust>) | **MPL-2.0** | compiled via `vantyr-network-filter`'s default `abp` feature |
 | Durable typed last-known-good bundle | `vantyr-network-runtime` (this repository) | MIT | local, unauthenticated bundle persistence |
+| Bounded scheduled public-list fetcher | `vantyr-network-subscriptions` (this repository) | MIT | compiled into the DNS worker since 39c467e9; no fetch without an explicit `--subscriptions` opt-in, which this lab never supplies |
 
 The full licence texts ship with the pinned crate sources in the Cargo
 registry used by the builder layer; this file records attribution in the

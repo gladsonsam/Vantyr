@@ -14,7 +14,8 @@ data is involved.
   it verifies the stub's UDP/TCP, AAAA, CNAME, NXDOMAIN and TTL behaviour plus a
   controlled outage and recovery.
 - `bash scripts/lab.sh fullstack-smoke` — the opt-in full-stack smoke. It builds
-  the accepted `vantyr-dns` worker from source, starts it against the same stub,
+  the real `vantyr-dns` worker from the frozen source described above (39c is
+  under review, not accepted), starts it against the same stub,
   and asserts real filtering, per-source profiles, alias-chain denial, negative
   TTL forwarding, upstream-outage behaviour, same-config restart equivalence,
   and startup rejection of malformed/wildcard configs. It cleans up only its own
@@ -33,14 +34,26 @@ data is involved.
   runtime or disk, restart from persisted validated material when the on-disk
   files change or vanish, and explicit disabled/removal. See below.
 
-The list smoke is built from a **read-only `git archive` of accepted commit
-`c21da216d7f5cb778014a9ae16da4b9939c43d86`** (the DNS local-list/service commit),
-never from a concurrently edited working tree. Only the four accepted crates,
-the pinned root `Cargo.lock` and the lab-owned build manifest/notices are placed
-in that disposable build input; the root manifest/lock are read-only and no
-registry or version is changed. Set `VANTYR_NETLAB_BUILD_CONTEXT` to that input
-to reproduce the frozen build; the committed default is the repository root so
-the script works normally once dependencies are ready.
+The list smoke was originally accepted on commit
+`c21da216d7f5cb778014a9ae16da4b9939c43d86` (the DNS local-list/service commit).
+This maintenance round re-ran **all four smokes** against a **read-only `git
+archive` of `39c467e9a75b3c2acef5e513328f6503f61ca369`** — the scheduled
+subscription integration, which is **committed but still under security review
+and NOT accepted**. Evidence below is therefore 39c implementation evidence,
+not acceptance of 39c. Only the five relevant committed crate trees, the pinned
+root `Cargo.lock` and the lab-owned build manifest/notices are placed in that
+disposable build input; no working-tree WIP, review fix, `.git`, `secrets/`,
+`server/`, proxy, PKI or full checkout is used. The root manifest/lock are
+read-only and no registry, version or image pin is changed. Set
+`VANTYR_NETLAB_BUILD_CONTEXT` to that input to reproduce the frozen build; the
+committed default is the repository root so the scripts work normally once
+dependencies are ready. No `--subscriptions` flag is ever supplied: the
+fetcher is compiled in only to satisfy the dependency graph, and **no remote
+subscription smoke is claimed at this stage**. The 39c review subsequently
+found production blockers in the scheduled runtime (shutdown/stale basis,
+manual IDs, cache startup); those fixes are owned by the DNS implementer and
+are deliberately neither adopted nor exercised here. A scheduled-fetch smoke
+comes only after a fresh acceptance and a rebased source basis.
 
 The Vantyr DNS worker is a real binary (`crates/family-dns/src/bin/vantyr-dns.rs`)
 with its own accepted real-process and socket tests; its validated configuration
@@ -74,11 +87,15 @@ image is built locally from the digest-pinned base with a pinned package
 version. The worker image build context defaults to the repository root but copies only
 `tests/network-lab/build/Cargo.toml`, the root `Cargo.lock`, the four required
 crate trees (`family-policy`, `vantyr-network-runtime`, `vantyr-network-filter`,
-`family-dns`) and the lab-owned `THIRD_PARTY_NOTICES.md` attribution file.
+`vantyr-network-subscriptions`, `family-dns`) and the lab-owned
+`THIRD_PARTY_NOTICES.md` attribution file.
 `vantyr-network-runtime` is needed by the durable worker;
 `vantyr-network-filter` is needed since c21 for the bounded hosts/ABP and
 service-list compiler, whose MPL-2.0 `adblock-rust` dependency is attributed in
-the runtime layer. It never copies `.`, `.git`, `.env*`, `secrets/`, the main
+the runtime layer; `vantyr-network-subscriptions` is needed since 39c because
+the DNS config schema and worker reference its types (MIT, attributed in the
+same notice). It is compiled in but never activated here. It never copies `.`,
+`.git`, `.env*`, `secrets/`, the main
 server, the HTTP proxy, the inspection/PKI crates or any production data, and it
 introduces no dependency fork or low-level DNS parser. Cargo resolves from the
 copied lock inside the image (a lock superset is pruned there, but every pinned
@@ -257,6 +274,28 @@ distroless image. `--state-status` runs as a separate `--network none` one-off
 with the volume mounted read-only. The single state file is mode `0600`, owned
 by 65532, on a named volume labelled for the disposable project only.
 
+## Durable state counters (39c basis)
+
+`--state-status` reports three **independent** spaces on one line; the driver
+checks each by its exact label rather than by a bare `revision` substring:
+
+- `bundle_generation` — every durable commit advances it (policy change **or**
+  list refresh). The envelope high-water mark is this generation, not a policy
+  revision.
+- `policy_revision` — the policy's own revision space; a list refresh never
+  changes it. Local reloads require a strictly newer policy revision.
+- `filter_generation` — advances only when the compiled filter *material*
+  identity changes. No list material means `0`; the first material is `1`.
+
+For the fixture sequences here the expected values are: durable fixture (no
+material) bootstrap `20/20/0`, reload and all retained/restart states `21/21/0`,
+stale bootstrap/restart `30/30/0`, fresh recovery reload `31/31/0`; list fixture
+(with material) bootstrap `20/20/1`, changed-file reload and retained/restart
+states `21/21/2`, disabling a list `22/22/3`, removing the already-disabled
+entry `23/23/3` (material identity unchanged, so `filter_generation` does not
+advance). The original answer assertions and exact state-file sha256 checks are
+kept intact alongside these counter checks.
+
 ## Local-list config contract
 
 [`configs/vantyr.list.template.json`](configs/vantyr.list.template.json) is a
@@ -287,10 +326,11 @@ identity is claimed by a source IP.
   cannot beat the non-overridable safety baseline.
 - A local CNAME to a hosts-listed target is denied; no target address leaks.
 - A higher-revision reload after changing the hosts file removes the old block
-  and blocks the new name; it persists the new revision and publication time.
+  and blocks the new name; it persists the labelled policy revision, the
+  independent bundle/material counters and the original publication time.
 - A higher-revision candidate with a missing source file, and one with an
-  unsupported ABP modifier, are rejected: revision, answer and the exact bytes
-  of the persisted bundle are unchanged.
+  unsupported ABP modifier, are rejected: all three labelled counters, the
+  answer and the exact bytes of the persisted bundle are unchanged.
 - An abrupt kill followed by an independently changed external config (new
   revision, different publication time, vanished source path and a bad ABP
   file on disk) still serves the persisted validated list bytes and the
