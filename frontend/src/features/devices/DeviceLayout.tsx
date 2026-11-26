@@ -27,10 +27,6 @@ export function DeviceLayout() {
     description: row ? DEVICE_TYPE_LABEL[row.type] : undefined,
   });
 
-  // An agent that is not in a household has no device page of its own: it is just an agent.
-  if (deviceKey.startsWith("agent:")) {
-    return <Navigate to={`/agents/${deviceKey.slice("agent:".length)}`} replace />;
-  }
   if (!row) {
     return loading ? (
       <div className="flex items-center justify-center gap-2 rounded-xl bg-card py-12 text-sm text-muted-foreground">

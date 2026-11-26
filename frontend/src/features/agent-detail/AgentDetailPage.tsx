@@ -19,6 +19,7 @@ import { AGENT_TAB_META, type TabKey } from "@/features/agent-detail/lib/agentTa
 import { api } from "@/api";
 import { AgentDetailTabContent } from "@/features/agent-detail/components/AgentDetailTabContent";
 import { AgentSectionNav } from "@/features/agent-detail/components/AgentSectionNav";
+import { AgentDetailActions } from "@/features/agent-detail/components/AgentDetailActions";
 import { AgentDetailHeader } from "@/features/agent-detail/components/AgentDetailHeader";
 import { AgentVitals } from "@/features/agent-detail/components/AgentVitals";
 import { ScreenTab } from "@/features/remote/components/ScreenTab";
@@ -58,6 +59,8 @@ interface AgentDetailPageProps {
   onOpenAgentGroups?: () => void;
   dashboardRole?: DashboardRole | null;
   dashboardAccountId?: string | null;
+  /** Inside a device page: the device header replaces this page's own header and back button. */
+  embedded?: boolean;
 }
 
 export function AgentDetailPage({
@@ -76,6 +79,7 @@ export function AgentDetailPage({
   onOpenAgentGroups,
   dashboardRole = null,
   dashboardAccountId = null,
+  embedded = false,
 }: AgentDetailPageProps) {
   const [timelineHighlight, setTimelineHighlight] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<AgentAction | null>(null);
@@ -285,27 +289,54 @@ export function AgentDetailPage({
   const grants = useDeviceModuleGrants(agent.id, canOperate && agent.online);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-      <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-        {/* Own header — the AppShell top bar stays hidden on this route. */}
-        <AgentDetailHeader
-          agent={agent}
-          resolvedInfo={resolvedInfo}
-          statusLabel={currentStatus.label}
-          statusTextClass={tone.text}
-          statusDotColor={tone.dot}
-          openMobileNav={openMobileNav}
-          onBackToOverview={onBackToOverview}
-          isViewer={isViewer}
-          systemControlAvailable={systemControlAvailable}
-          pendingAction={pendingAction}
-          onAction={runAgentAction}
-        />
+    <div
+      className={
+        embedded
+          ? "flex min-w-0 flex-col"
+          : "flex min-h-0 min-w-0 flex-1 flex-col bg-background"
+      }
+    >
+      <main
+        className={
+          embedded
+            ? "flex min-w-0 flex-col"
+            : "flex h-full min-h-0 min-w-0 flex-1 flex-col"
+        }
+      >
+        {embedded ? (
+          // The device header already names the device; only the power actions need a place.
+          !isViewer && (
+            <div className="mb-3 flex justify-end">
+              <AgentDetailActions
+                agent={agent}
+                isViewer={isViewer}
+                systemControlAvailable={systemControlAvailable}
+                pendingAction={pendingAction}
+                onAction={runAgentAction}
+              />
+            </div>
+          )
+        ) : (
+          // Own header — the AppShell top bar stays hidden on this route.
+          <AgentDetailHeader
+            agent={agent}
+            resolvedInfo={resolvedInfo}
+            statusLabel={currentStatus.label}
+            statusTextClass={tone.text}
+            statusDotColor={tone.dot}
+            openMobileNav={openMobileNav}
+            onBackToOverview={onBackToOverview}
+            isViewer={isViewer}
+            systemControlAvailable={systemControlAvailable}
+            pendingAction={pendingAction}
+            onAction={runAgentAction}
+          />
+        )}
 
         {/* Body: the shell scrolls it, so the nav bar below can stick to the top of that scroller. */}
-        <div ref={scrollContainerRef} className="min-h-0 flex-1">
+        <div ref={scrollContainerRef} className={embedded ? "min-w-0" : "min-h-0 flex-1"}>
           {grants.noneGranted && (
-            <div className="px-3 pt-3 sm:px-5 sm:pt-4 md:px-8">
+            <div className={embedded ? "" : "px-3 pt-3 sm:px-5 sm:pt-4 md:px-8"}>
               <Alert>
                 <AlertTitle>Nothing is turned on for {agent.name} yet</AlertTitle>
                 <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
@@ -318,7 +349,7 @@ export function AgentDetailPage({
             </div>
           )}
           {/* Live desktop first, full width; the device facts are a slim strip underneath. */}
-          <div className="flex flex-col gap-3 px-3 pt-3 sm:px-5 sm:pt-4 md:px-8 [&>.screen-remote-panel]:flex-[0_0_auto]!">
+          <div className={`flex flex-col gap-3 ${embedded ? "" : "px-3 pt-3 sm:px-5 sm:pt-4 md:px-8"} [&>.screen-remote-panel]:flex-[0_0_auto]!`}>
             {/* Offline: no live panel to show, just the device facts. */}
             {agent.online && (
               <ScreenTab
@@ -344,12 +375,17 @@ export function AgentDetailPage({
             />
           </div>
 
-          <AgentSectionNav agentName={agent.name} activeTab={activeTab} onTabChange={goToTool} />
+          <AgentSectionNav
+            agentName={agent.name}
+            activeTab={activeTab}
+            onTabChange={goToTool}
+            flush={embedded}
+          />
 
           {/* Tool content. At least a screen tall, so even a short tool can scroll up under the pinned bar. */}
           <div
             data-agent-tool-content
-            className="min-h-[calc(100svh-4rem)] px-3 pt-4 pb-8 sm:px-5 md:px-8 md:py-6"
+            className={`min-h-[calc(100svh-4rem)] ${embedded ? "pt-4 pb-8" : "px-3 pt-4 pb-8 sm:px-5 md:px-8 md:py-6"}`}
           >
             <ErrorBoundary resetKey={shownTab} label={`tab:${shownTab}`}>
               {tabContent}

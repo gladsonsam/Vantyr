@@ -4,6 +4,7 @@ import { ConnectionCard } from "@/features/devices/components/ConnectionCard";
 import { DeviceDecisions } from "@/features/devices/components/DeviceDecisions";
 import { DeviceRules } from "@/features/devices/components/DeviceRules";
 import { OverviewCard } from "@/features/devices/components/OverviewCard";
+import { OverviewAgentFacts, OverviewAgentStats } from "@/features/devices/components/OverviewAgentStats";
 import { OverviewDnsStats } from "@/features/devices/components/OverviewStats";
 import {
   CONNECTION_KINDS,
@@ -34,11 +35,13 @@ export function DeviceOverviewPage() {
     .sort()
     .pop();
   const hasDns = device.connections.dns.state !== "none";
+  const hasAgent = device.connections.agent.state !== "none" && device.agentId !== null;
+  const showDns = hasDns && device.deviceId !== null;
   return (
     <div className="space-y-6">
-      {hasDns && device.deviceId ? (
-        <OverviewDnsStats deviceId={device.deviceId} />
-      ) : (
+      {hasAgent && device.agentId ? <OverviewAgentStats agentId={device.agentId} /> : null}
+      {showDns && device.deviceId ? <OverviewDnsStats deviceId={device.deviceId} /> : null}
+      {!hasAgent && !showDns ? (
         <div className="grid grid-cols-2 gap-5 lg:grid-cols-3">
           <Figure
             label="Reporting"
@@ -52,7 +55,8 @@ export function DeviceOverviewPage() {
             hue="text-warning"
           />
         </div>
-      )}
+      ) : null}
+      {hasAgent && device.agentId ? <OverviewAgentFacts agentId={device.agentId} /> : null}
       <OverviewCard title="Connections">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {present.map((kind) => (

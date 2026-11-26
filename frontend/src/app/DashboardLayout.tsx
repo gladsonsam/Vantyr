@@ -26,7 +26,9 @@ export function DashboardLayout() {
   const agentList = useMemo(() => Object.values(agents), [agents]);
 
   const returnTo: ReturnToState = { from: location.pathname + location.search };
-  const onAgentPage = matchPath("/agents/:agentId", location.pathname) !== null;
+  const onAgentPage =
+    matchPath("/agents/:agentId", location.pathname) !== null ||
+    matchPath("/devices/:deviceKey/agent", location.pathname) !== null;
 
   // Browser tabs and history name the page. A page that draws its own header (a device) names itself.
   const pageTitle = header.hideTopBar ? "" : header.title;

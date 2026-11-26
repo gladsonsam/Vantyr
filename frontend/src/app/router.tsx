@@ -7,8 +7,8 @@ import { usePageHeader, type PageHeader } from "@/app/shell/usePageHeader";
 const OverviewPage = lazy(() =>
   import("@/features/fleet/OverviewPage").then((m) => ({ default: m.OverviewPage })),
 );
-const AgentDetailRoute = lazy(() =>
-  import("@/features/agent-detail/AgentDetailRoute").then((m) => ({ default: m.AgentDetailRoute })),
+const AgentRedirect = lazy(() =>
+  import("@/features/agent-detail/AgentRedirect").then((m) => ({ default: m.AgentRedirect })),
 );
 const AccountSettingsPage = lazy(() =>
   import("@/features/settings/AccountSettingsPage").then((m) => ({
@@ -38,8 +38,8 @@ const DeviceOverviewPage = lazy(() =>
     default: m.DeviceOverviewPage,
   })),
 );
-const DeviceAgentPage = lazy(() =>
-  import("@/features/devices/pages/DeviceAgentPage").then((m) => ({ default: m.DeviceAgentPage })),
+const AgentToolsRoute = lazy(() =>
+  import("@/features/agent-detail/AgentToolsRoute").then((m) => ({ default: m.AgentToolsRoute })),
 );
 const DeviceDnsPage = lazy(() =>
   import("@/features/devices/pages/DeviceDnsPage").then((m) => ({ default: m.DeviceDnsPage })),
@@ -95,7 +95,8 @@ export function AppRoutes() {
     <Routes>
       <Route element={<DashboardLayout />}>
         <Route index element={<OverviewPage />} />
-        <Route path="/agents/:agentId" element={<AgentDetailRoute />} />
+        {/* Legacy: the agent page lives in the device page now. */}
+        <Route path="/agents/:agentId/*" element={<AgentRedirect />} />
         <Route
           path="/account"
           element={
@@ -182,7 +183,7 @@ export function AppRoutes() {
         />
         <Route path="/devices/:deviceKey" element={<DeviceLayout />}>
           <Route index element={<DeviceOverviewPage />} />
-          <Route path="agent" element={<DeviceAgentPage />} />
+          <Route path="agent" element={<AgentToolsRoute />} />
           <Route path="dns" element={<DeviceDnsPage />} />
           <Route path="proxy" element={<DeviceProxyPage />} />
         </Route>

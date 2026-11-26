@@ -21,6 +21,7 @@ import { useAgents } from "@/app/providers/useAgents";
 import { useSession } from "@/app/providers/useSession";
 import { usePageHeader } from "@/app/shell/usePageHeader";
 import { useFleetActions } from "@/features/fleet/hooks/useFleetActions";
+import { deviceHrefForAgent } from "@/features/devices/lib/agentHref";
 import { useDeviceRows } from "@/features/devices/hooks/useDeviceRows";
 
 const NO_CLAIMS: PendingAgentClaim[] = [];
@@ -82,9 +83,14 @@ export function OverviewPage() {
     description: "Every device and the ways it connects to Vantyr.",
   });
 
-  const openAgent = (agentId: string, tab: TabKey = "activity", scroll?: boolean) => {
+  // Opening a device shows its Overview; the quick actions open a tool in its Agent tab.
+  const openAgent = (agentId: string, tab?: TabKey, scroll?: boolean) => {
+    if (!tab) {
+      navigate(deviceHrefForAgent(agentId, deviceRows));
+      return;
+    }
     const q = scroll ? "&scroll=activity" : "";
-    navigate(`/agents/${agentId}?tab=${tab}${q}`);
+    navigate(deviceHrefForAgent(agentId, deviceRows, { search: `?tab=${tab}${q}` }));
   };
 
   return (
@@ -132,7 +138,7 @@ export function OverviewPage() {
         loadingAgents={loadingAgents}
         otherDevices={agentless}
         onSelectAgent={openAgent}
-        onOpenScreen={(agentId) => navigate(`/agents/${agentId}?tab=live`)}
+        onOpenScreen={(agentId) => openAgent(agentId, "live")}
         onRefresh={refresh}
         onBatchWake={(ids) => void fleetActions.wake(ids)}
         onBulkScript={() => {}}

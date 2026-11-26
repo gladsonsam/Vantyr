@@ -13,6 +13,8 @@ interface AgentSectionNavProps {
   agentName: string;
   activeTab: TabKey;
   onTabChange: (tab: TabKey) => void;
+  /** Inside a device page, which already has its own gutters. */
+  flush?: boolean;
 }
 
 /**
@@ -21,7 +23,12 @@ interface AgentSectionNavProps {
  * it (or on a second row when there is no room). It stays pinned while the page scrolls, except on
  * short landscape screens where the desktop needs every pixel of height.
  */
-export function AgentSectionNav({ agentName, activeTab, onTabChange }: AgentSectionNavProps) {
+export function AgentSectionNav({
+  agentName,
+  activeTab,
+  onTabChange,
+  flush = false,
+}: AgentSectionNavProps) {
   const section = agentSectionFromTabKey(activeTab);
   const siblings = AGENT_SECTION_SUBTABS[section];
   const siblingsRef = useRef<HTMLDivElement>(null);
@@ -41,7 +48,9 @@ export function AgentSectionNav({ agentName, activeTab, onTabChange }: AgentSect
       aria-label="Agent tools"
       className="agent-detail-section-tabs sticky top-0 z-20 mt-4 border-b bg-background [@media(max-height:480px)]:static"
     >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 sm:px-5 md:px-8">
+      <div
+        className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2 ${flush ? "" : "px-3 sm:px-5 md:px-8"}`}
+      >
         <AgentToolSwitcher agentName={agentName} activeTab={activeTab} onSelect={onTabChange} />
         {siblings.length > 1 && (
           <div ref={siblingsRef} className="min-w-0 max-w-full">

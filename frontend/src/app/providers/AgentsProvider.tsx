@@ -74,7 +74,12 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
   const handleAgentRemoved = useCallback(
     (id: string) => {
       removeAgent(id);
-      if (location.pathname === `/agents/${id}` || location.pathname.startsWith(`/agents/${id}/`)) {
+      if (
+        location.pathname === `/agents/${id}` ||
+        location.pathname.startsWith(`/agents/${id}/`) ||
+        location.pathname === `/devices/agent:${id}` ||
+        location.pathname.startsWith(`/devices/agent:${id}/`)
+      ) {
         navigate("/", { replace: true });
       }
       // Nothing will show this agent again; drop its cached server state.

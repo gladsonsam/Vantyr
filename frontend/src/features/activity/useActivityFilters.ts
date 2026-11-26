@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState, type SetStateAction } from "react";
+import { useAgentToolsPath } from "@/features/agent-detail/agentToolsPath";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { resolveDateRangeToDayBounds, type ActivityDateValue } from "./activityDateRange";
 import {
@@ -61,6 +62,7 @@ function updateValue<K extends keyof FilterValues>(
 /** The URL owns device filters, so navigation never needs an effect to copy them into state. */
 export function useActivityFilters(agentId: string | undefined) {
   const navigate = useNavigate();
+  const toolsPath = useAgentToolsPath(agentId ?? "");
   const [searchParams, setSearchParams] = useSearchParams();
   const [local, setLocal] = useState(EMPTY_FILTERS);
   const fromUrl = useMemo(() => valuesFromUrl(searchParams), [searchParams]);
@@ -112,10 +114,10 @@ export function useActivityFilters(agentId: string | undefined) {
     (patch: ActivityUrlStateV1) => {
       if (!agentId) return;
       navigate(
-        `/agents/${agentId}?${applyActivityStateToSearchParams(new URLSearchParams(), patch).toString()}`,
+        `${toolsPath}?${applyActivityStateToSearchParams(new URLSearchParams(), patch).toString()}`,
       );
     },
-    [agentId, navigate],
+    [agentId, navigate, toolsPath],
   );
   const isFiltered =
     values.searchQuery.trim().length > 0 ||

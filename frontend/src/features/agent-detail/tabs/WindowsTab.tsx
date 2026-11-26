@@ -12,6 +12,7 @@ import { agentQueries } from "@/api/queries/agents";
 import { prettyAppLabel } from "@/lib/appNames";
 import { AppIcon } from "@/components/common/AppIcon";
 import { applyActivityStateToSearchParams } from "@/features/activity/activityUrl";
+import { useAgentToolsPath } from "@/features/agent-detail/agentToolsPath";
 import { agentRecallHref } from "@/features/recall/lib/recallUrl";
 import type { AgentInfo, WindowEvent as WindowEventRow, WindowTopRow } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
@@ -202,18 +203,19 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
     void topWindowsQuery.refetch();
   };
 
+  const toolsPath = useAgentToolsPath(agentId);
   const openInActivity = useCallback(
     (q: string) => {
       const qs = applyActivityStateToSearchParams(new URLSearchParams(), { v: 1, q });
-      navigate(`/agents/${agentId}?${qs.toString()}`);
+      navigate(`${toolsPath}?${qs.toString()}`);
     },
-    [agentId, navigate],
+    [toolsPath, navigate],
   );
 
   // "What was actually on screen then?" — the question this table could never answer.
   const openInRecall = useCallback(
-    (iso: string) => navigate(agentRecallHref(agentId, iso)),
-    [agentId, navigate],
+    (iso: string) => navigate(agentRecallHref(agentId, iso, toolsPath)),
+    [agentId, toolsPath, navigate],
   );
 
   const columns = useMemo(

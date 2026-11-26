@@ -183,7 +183,7 @@ export function buildDeviceRows(input: DeviceInput): DeviceRow[] {
       deviceId: null,
       agentId: agent.id,
       label: agent.name,
-      type: "unknown",
+      type: "computer",
       people: [],
       shared: false,
       connections: {
