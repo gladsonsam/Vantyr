@@ -33,9 +33,9 @@ pub use execution::{
     PreviewStatus, Rejection, RollbackOutcome, SimulatedController, Verification,
 };
 pub use model::{
-    get_field, remove_field, set_field, ApplicationInfo, BeforeValue, ClientObservation,
-    DnsView, Ipv6View, Management, NetworkObservation, NetworkOverview, Page, SiteOverview,
-    IPV4_DNS_PATH, IPV6_DNS_PATH,
+    get_field, remove_field, set_field, ApplicationInfo, BeforeValue, ClientObservation, DnsView,
+    Ipv6View, Management, NetworkObservation, NetworkOverview, Page, SiteOverview, IPV4_DNS_PATH,
+    IPV6_DNS_PATH,
 };
 pub use planner::{
     identity_matches, plan, plan_integrity_holds, ControllerIdentity, Dependency,

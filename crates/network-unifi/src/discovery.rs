@@ -11,8 +11,7 @@ use crate::{
     config::ControllerConfig,
     error::Error,
     model::{
-        ApplicationInfo, ClientObservation, NetworkObservation, NetworkOverview, Page,
-        SiteOverview,
+        ApplicationInfo, ClientObservation, NetworkObservation, NetworkOverview, Page, SiteOverview,
     },
     transport::{Endpoint, RawResponse, Transport},
 };
@@ -70,7 +69,6 @@ impl PagedTarget<'_> {
             },
         }
     }
-
 }
 
 pub struct Discovery<'a> {
@@ -96,10 +94,7 @@ impl<'a> Discovery<'a> {
         serde_json::from_slice(&raw.body).map_err(|_| Error::Malformed(label))
     }
 
-    async fn collect<T: DeserializeOwned>(
-        &self,
-        target: PagedTarget<'_>,
-    ) -> Result<Vec<T>, Error> {
+    async fn collect<T: DeserializeOwned>(&self, target: PagedTarget<'_>) -> Result<Vec<T>, Error> {
         let label = target.label();
         let page_size = self.config.max_page_size();
         let max_pages = self.config.max_pages();

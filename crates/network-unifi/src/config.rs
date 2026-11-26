@@ -33,7 +33,9 @@ fn is_cloud_base_path(path: &str) -> bool {
 /// accepted so no caller can inject a path segment, query or fragment.
 pub fn validate_resource_id(id: &str) -> Result<(), Error> {
     if id.is_empty() || id.len() > 128 {
-        return Err(Error::InvalidConfig("resource id has invalid length".into()));
+        return Err(Error::InvalidConfig(
+            "resource id has invalid length".into(),
+        ));
     }
     if !id
         .chars()
@@ -155,7 +157,9 @@ impl ControllerConfig {
             .host_str()
             .ok_or_else(|| Error::InvalidConfig("controller URL has no host".into()))?;
         if host.is_empty() {
-            return Err(Error::InvalidConfig("controller URL has an empty host".into()));
+            return Err(Error::InvalidConfig(
+                "controller URL has an empty host".into(),
+            ));
         }
         if host.parse::<IpAddr>().is_err() && !allow_hostname {
             // A hostname introduces resolver-controlled rebinding risk. Require
@@ -190,12 +194,6 @@ impl ControllerConfig {
         self
     }
 
-    /// Explicitly accept a hostname authority instead of a literal IP.
-    pub fn with_allow_hostname(mut self) -> Self {
-        self.allow_hostname = true;
-        self
-    }
-
     pub fn with_limits(
         mut self,
         request_timeout: Duration,
@@ -203,11 +201,15 @@ impl ControllerConfig {
         max_page_size: u32,
         max_pages: u32,
     ) -> Result<Self, Error> {
-        if max_body_bytes < 1024 || max_page_size == 0 || max_page_size > 1000 {
-            return Err(Error::InvalidConfig("limits are outside the bounded range".into()));
+        if max_body_bytes < 1024 || max_page_size == 0 || max_page_size > 200 {
+            return Err(Error::InvalidConfig(
+                "limits are outside the bounded range".into(),
+            ));
         }
         if max_pages == 0 || max_pages > 1000 || request_timeout.is_zero() {
-            return Err(Error::InvalidConfig("limits are outside the bounded range".into()));
+            return Err(Error::InvalidConfig(
+                "limits are outside the bounded range".into(),
+            ));
         }
         self.request_timeout = request_timeout;
         self.max_body_bytes = max_body_bytes;
@@ -310,10 +312,12 @@ mod tests {
         let site = vec!["11111111-1111-4111-8111-111111111111".to_string()];
         let url = "https://localhost:8443/proxy/network/integration";
         assert!(ControllerConfig::from_base_url(url, key(), site.clone()).is_err());
-        assert!(ControllerConfig::from_base_url_allow_hostname(url, key(), site)
-            .unwrap()
-            .authority()
-            .contains("localhost"));
+        assert!(
+            ControllerConfig::from_base_url_allow_hostname(url, key(), site)
+                .unwrap()
+                .authority()
+                .contains("localhost")
+        );
     }
 
     #[test]
@@ -322,5 +326,22 @@ mod tests {
         for bad in ["", "../x", "a/b", "a?b", "a#b", "a b", "a%2f"] {
             assert!(validate_resource_id(bad).is_err(), "accepted {bad}");
         }
+    }
+
+    #[test]
+    fn page_limit_matches_the_official_contract() {
+        let config = ControllerConfig::for_local(
+            "127.0.0.1".parse().unwrap(),
+            key(),
+            vec!["11111111-1111-4111-8111-111111111111".into()],
+        )
+        .unwrap();
+        assert!(config
+            .clone()
+            .with_limits(Duration::from_secs(5), 1024, 200, 1)
+            .is_ok());
+        assert!(config
+            .with_limits(Duration::from_secs(5), 1024, 201, 1)
+            .is_err());
     }
 }

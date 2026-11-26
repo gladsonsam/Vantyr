@@ -17,10 +17,24 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Endpoint<'a> {
     Info,
-    Sites { offset: u64, limit: u32 },
-    Networks { site: &'a str, offset: u64, limit: u32 },
-    Network { site: &'a str, network: &'a str },
-    Clients { site: &'a str, offset: u64, limit: u32 },
+    Sites {
+        offset: u64,
+        limit: u32,
+    },
+    Networks {
+        site: &'a str,
+        offset: u64,
+        limit: u32,
+    },
+    Network {
+        site: &'a str,
+        network: &'a str,
+    },
+    Clients {
+        site: &'a str,
+        offset: u64,
+        limit: u32,
+    },
 }
 
 impl Endpoint<'_> {
@@ -70,6 +84,8 @@ pub struct HttpTransport {
     base_url: String,
     api_key: ApiKey,
     max_body_bytes: usize,
+    site_allowlist: Vec<String>,
+    max_page_size: u32,
 }
 
 impl fmt::Debug for HttpTransport {
@@ -102,6 +118,8 @@ impl HttpTransport {
             base_url: config.base_url().to_owned(),
             api_key: config.api_key().clone(),
             max_body_bytes: config.max_body_bytes(),
+            site_allowlist: config.site_allowlist().to_vec(),
+            max_page_size: config.max_page_size(),
         })
     }
 
@@ -120,6 +138,24 @@ impl HttpTransport {
 #[async_trait]
 impl Transport for HttpTransport {
     async fn get(&self, endpoint: Endpoint<'_>) -> Result<RawResponse, Error> {
+        let site = match &endpoint {
+            Endpoint::Networks { site, .. }
+            | Endpoint::Network { site, .. }
+            | Endpoint::Clients { site, .. } => Some(*site),
+            Endpoint::Info | Endpoint::Sites { .. } => None,
+        };
+        if let Some(site) = site {
+            validate_resource_id(site)?;
+            if !self.site_allowlist.iter().any(|allowed| allowed == site) {
+                return Err(Error::SiteNotAllowed(site.to_owned()));
+            }
+        }
+        if endpoint
+            .paged()
+            .is_some_and(|(_, limit)| limit == 0 || limit > self.max_page_size)
+        {
+            return Err(Error::LimitExceeded(endpoint.label()));
+        }
         match &endpoint {
             Endpoint::Networks { site, .. } | Endpoint::Clients { site, .. } => {
                 validate_resource_id(site)?

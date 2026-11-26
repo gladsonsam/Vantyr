@@ -186,7 +186,11 @@ pub fn apply(
                 fingerprint: plan.fingerprint.clone(),
                 action: "apply",
                 at: now,
-                field_paths: plan.changes.iter().map(|c| c.field_path.to_owned()).collect(),
+                field_paths: plan
+                    .changes
+                    .iter()
+                    .map(|c| c.field_path.to_owned())
+                    .collect(),
             });
             Ok(ApplyOutcome::Applied(plan.fingerprint.clone()))
         }

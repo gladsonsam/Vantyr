@@ -181,18 +181,14 @@ impl NetworkObservation {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_owned();
-        let management = Management::parse(
-            raw.get("management").and_then(Value::as_str).unwrap_or(""),
-        );
+        let management =
+            Management::parse(raw.get("management").and_then(Value::as_str).unwrap_or(""));
         let vlan_id = raw
             .get("vlanId")
             .and_then(Value::as_u64)
             .unwrap_or(0)
             .min(u16::MAX as u64) as u16;
-        let enabled = raw
-            .get("enabled")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
+        let enabled = raw.get("enabled").and_then(Value::as_bool).unwrap_or(false);
 
         let mode = get_field(&raw, "ipv4Configuration.dhcpConfiguration.mode")
             .and_then(Value::as_str)
@@ -217,7 +213,10 @@ impl NetworkObservation {
             .and_then(Value::as_str)
             .map(str::to_owned);
         let shape_known = !configured
-            || matches!(interface_type.as_deref(), Some("STATIC" | "PREFIX_DELEGATION"));
+            || matches!(
+                interface_type.as_deref(),
+                Some("STATIC" | "PREFIX_DELEGATION")
+            );
         let assignment = get_field(&raw, "ipv6Configuration.clientAddressAssignment");
         let ipv6 = Ipv6View {
             configured,
@@ -227,7 +226,8 @@ impl NetworkObservation {
                 None
             },
             dns_overrides: get_field(&raw, IPV6_DNS_PATH).and_then(as_string_list),
-            router_advertisement: get_field(&raw, "ipv6Configuration.routerAdvertisement").is_some(),
+            router_advertisement: get_field(&raw, "ipv6Configuration.routerAdvertisement")
+                .is_some(),
             slaac_enabled: assignment
                 .and_then(|v| v.get("slaacEnabled"))
                 .and_then(Value::as_bool)

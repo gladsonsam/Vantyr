@@ -8,6 +8,7 @@ use std::{
     time::Duration,
 };
 
+use axum::serve::Listener;
 use axum::{
     extract::Request,
     http::StatusCode,
@@ -15,7 +16,6 @@ use axum::{
     routing::get,
     Router,
 };
-use axum::serve::Listener;
 use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType};
 use rustls::{
     pki_types::{CertificateDer, PrivateKeyDer},
@@ -134,6 +134,60 @@ fn page(data: serde_json::Value, offset: i64, total: i64) -> Response {
 
 type Calls = Arc<Mutex<Vec<(String, String, Option<String>)>>>;
 
+#[tokio::test]
+async fn direct_transport_enforces_site_and_page_limits_before_network_io() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let calls = Arc::new(AtomicUsize::new(0));
+    let recorded = calls.clone();
+    let router = Router::new().fallback(move || {
+        recorded.fetch_add(1, Ordering::SeqCst);
+        async { axum::Json(json!({})) }
+    });
+    let (base, ca) = spawn_router(router).await;
+    let transport = HttpTransport::new(&test_config(&base, &ca)).unwrap();
+    let foreign = "99999999-9999-4999-8999-999999999999";
+    for endpoint in [
+        Endpoint::Networks {
+            site: foreign,
+            offset: 0,
+            limit: 100,
+        },
+        Endpoint::Clients {
+            site: foreign,
+            offset: 0,
+            limit: 100,
+        },
+        Endpoint::Network {
+            site: foreign,
+            network: NETWORK,
+        },
+    ] {
+        assert!(matches!(
+            transport.get(endpoint).await,
+            Err(Error::SiteNotAllowed(_))
+        ));
+    }
+    assert!(matches!(
+        transport
+            .get(Endpoint::Sites {
+                offset: 0,
+                limit: 201
+            })
+            .await,
+        Err(Error::LimitExceeded(_))
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    transport
+        .get(Endpoint::Networks {
+            site: SITE,
+            offset: 0,
+            limit: 100,
+        })
+        .await
+        .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
 fn record(calls: &Calls, request: &Request) {
     let method = request.method().to_string();
     let uri = request.uri().to_string();
@@ -150,58 +204,74 @@ async fn discovery_is_read_only_bounded_and_redacts_the_key() {
     let calls: Calls = Arc::new(Mutex::new(Vec::new()));
     let recorded = calls.clone();
     let router = Router::new()
-        .route("/proxy/network/integration/v1/info", get({
-            let calls = recorded.clone();
-            move |request: Request| async move {
-                record(&calls, &request);
-                axum::Json(json!({"applicationVersion": "9.1.0"})).into_response()
-            }
-        }))
-        .route("/proxy/network/integration/v1/sites", get({
-            let calls = recorded.clone();
-            move |request: Request| async move {
-                record(&calls, &request);
-                let offset: i64 = request
-                    .uri()
-                    .query()
-                    .and_then(|query| {
-                        query
-                            .split('&')
-                            .find(|pair| pair.starts_with("offset="))
-                            .and_then(|pair| pair[7..].parse().ok())
-                    })
-                    .unwrap_or(0);
-                if offset == 0 {
-                    page(json!([{"id": SITE, "internalReference": "default", "name": "Home"}]), 0, 1)
-                } else {
-                    page(json!([]), offset, 1)
+        .route(
+            "/proxy/network/integration/v1/info",
+            get({
+                let calls = recorded.clone();
+                move |request: Request| async move {
+                    record(&calls, &request);
+                    axum::Json(json!({"applicationVersion": "9.1.0"})).into_response()
                 }
-            }
-        }))
-        .route("/proxy/network/integration/v1/sites/{siteId}/networks", get({
-            let calls = recorded.clone();
-            move |request: Request| async move {
-                record(&calls, &request);
-                page(
-                    json!([{"id": NETWORK, "name": "Home", "management": "GATEWAY",
+            }),
+        )
+        .route(
+            "/proxy/network/integration/v1/sites",
+            get({
+                let calls = recorded.clone();
+                move |request: Request| async move {
+                    record(&calls, &request);
+                    let offset: i64 = request
+                        .uri()
+                        .query()
+                        .and_then(|query| {
+                            query
+                                .split('&')
+                                .find(|pair| pair.starts_with("offset="))
+                                .and_then(|pair| pair[7..].parse().ok())
+                        })
+                        .unwrap_or(0);
+                    if offset == 0 {
+                        page(
+                            json!([{"id": SITE, "internalReference": "default", "name": "Home"}]),
+                            0,
+                            1,
+                        )
+                    } else {
+                        page(json!([]), offset, 1)
+                    }
+                }
+            }),
+        )
+        .route(
+            "/proxy/network/integration/v1/sites/{siteId}/networks",
+            get({
+                let calls = recorded.clone();
+                move |request: Request| async move {
+                    record(&calls, &request);
+                    page(
+                        json!([{"id": NETWORK, "name": "Home", "management": "GATEWAY",
                             "vlanId": 20, "enabled": true, "default": false}]),
-                    0,
-                    1,
-                )
-            }
-        }))
-        .route("/proxy/network/integration/v1/sites/{siteId}/clients", get({
-            let calls = recorded.clone();
-            move |request: Request| async move {
-                record(&calls, &request);
-                page(
-                    json!([{"id": "client-1", "name": "TV", "type": "WIRED",
+                        0,
+                        1,
+                    )
+                }
+            }),
+        )
+        .route(
+            "/proxy/network/integration/v1/sites/{siteId}/clients",
+            get({
+                let calls = recorded.clone();
+                move |request: Request| async move {
+                    record(&calls, &request);
+                    page(
+                        json!([{"id": "client-1", "name": "TV", "type": "WIRED",
                             "ipAddress": "10.0.0.50"}]),
-                    0,
-                    1,
-                )
-            }
-        }))
+                        0,
+                        1,
+                    )
+                }
+            }),
+        )
         .route(
             "/proxy/network/integration/v1/sites/{siteId}/networks/{networkId}",
             get({
@@ -233,11 +303,17 @@ async fn discovery_is_read_only_bounded_and_redacts_the_key() {
     let discovery = Discovery::new(&config, &transport);
 
     let report = discovery.discover().await.unwrap();
-    assert_eq!(report.capabilities.application_version.as_deref(), Some("9.1.0"));
+    assert_eq!(
+        report.capabilities.application_version.as_deref(),
+        Some("9.1.0")
+    );
     assert_eq!(report.capabilities.api_doc_version, API_DOC_VERSION);
     assert_eq!(report.sites.len(), 1);
     assert_eq!(report.networks[SITE].len(), 1);
-    assert_eq!(report.clients[SITE][0].ip_address.as_deref(), Some("10.0.0.50"));
+    assert_eq!(
+        report.clients[SITE][0].ip_address.as_deref(),
+        Some("10.0.0.50")
+    );
 
     let detail = discovery.network_detail(SITE, NETWORK).await.unwrap();
     assert_eq!(detail.management, Management::Gateway);
@@ -247,9 +323,9 @@ async fn discovery_is_read_only_bounded_and_redacts_the_key() {
     );
 
     let recorded_calls = { calls.lock().unwrap().clone() };
-    assert!(recorded_calls.iter().all(|(method, _, key)| {
-        method == "GET" && key.as_deref() == Some("super-secret-key")
-    }));
+    assert!(recorded_calls
+        .iter()
+        .all(|(method, _, key)| { method == "GET" && key.as_deref() == Some("super-secret-key") }));
     assert!(recorded_calls
         .iter()
         .any(|(_, uri, _)| uri.contains("offset=0&limit=100")));
@@ -282,7 +358,13 @@ async fn unsupported_unavailable_auth_denied_and_missing_are_distinct() {
         let (base, ca) = spawn_router(router).await;
         let config = test_config(&base, &ca);
         let transport = HttpTransport::new(&config).unwrap();
-        let error = format!("{:?}", Discovery::new(&config, &transport).info().await.unwrap_err());
+        let error = format!(
+            "{:?}",
+            Discovery::new(&config, &transport)
+                .info()
+                .await
+                .unwrap_err()
+        );
         assert!(error.contains(expected), "status {status} gave {error}");
         assert!(!error.contains("super-secret-key"));
     }

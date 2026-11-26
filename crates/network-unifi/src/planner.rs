@@ -138,7 +138,9 @@ pub fn plan_integrity_holds(plan: &SetupPlan) -> bool {
 /// field paths may appear in `changes`.
 pub fn plan(inputs: &SetupInputs) -> Result<SetupPlan, Error> {
     if inputs.ttl_secs == 0 || inputs.ttl_secs > MAX_TTL_SECS {
-        return Err(Error::InvalidPlan("plan TTL is outside the bounded range".into()));
+        return Err(Error::InvalidPlan(
+            "plan TTL is outside the bounded range".into(),
+        ));
     }
     if inputs.networks.is_empty() {
         return Err(Error::InvalidPlan("no networks were selected".into()));
@@ -273,8 +275,7 @@ pub fn plan(inputs: &SetupInputs) -> Result<SetupPlan, Error> {
                             network.name, network.id
                         ));
                     } else {
-                        let existing =
-                            network.ipv6.dns_overrides.clone().unwrap_or_default();
+                        let existing = network.ipv6.dns_overrides.clone().unwrap_or_default();
                         if !existing.is_empty()
                             && existing != ipv6
                             && !inputs.operator_approved_dns_override

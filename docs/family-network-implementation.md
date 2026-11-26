@@ -408,6 +408,13 @@ No substantive UI or Supabase changes were made in this step.
 
 ### Integration increments awaiting independent acceptance
 
+- UniFi adapter and setup planner: official versioned API discovery, verified
+  HTTPS, bounded reads, topology-aware DNS previews and simulated rollback.
+  Review requested transport-level site allowlisting, the documented 200-item
+  page maximum and removal of an ineffective hostname builder method. Those
+  corrections pass 24 tests, including zero network contact for denied direct
+  transport calls; fresh acceptance is pending. No live write path exists.
+
 - Versioned policy control API: immutable saved revisions, monotonic historical
   rollback, desired gateway assignment and explicitly scoped worker retrieval.
   Implementation reports 46 network tests passing. This serves typed policy;

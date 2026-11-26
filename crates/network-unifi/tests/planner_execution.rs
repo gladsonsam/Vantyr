@@ -87,10 +87,7 @@ fn gateway_home_vlan_ready_apply_verify_idempotent_rollback() {
     assert_eq!(plan.disposition, PlanDisposition::Ready);
     assert_eq!(plan.changes.len(), 2); // IPv4 + IPv6 only
     assert!(plan_integrity_holds(&plan));
-    assert_eq!(
-        plan.changes[0].field_path,
-        IPV4_DNS_PATH
-    );
+    assert_eq!(plan.changes[0].field_path, IPV4_DNS_PATH);
     assert_eq!(plan.changes[1].field_path, IPV6_DNS_PATH);
     assert!(plan
         .dependencies
@@ -118,7 +115,10 @@ fn gateway_home_vlan_ready_apply_verify_idempotent_rollback() {
     let rolled_back = rollback(&plan, &mut controller).unwrap();
     assert_eq!(rolled_back.restored, 2);
     assert!(!verify(&plan, &controller).verified);
-    assert_eq!(controller.value("n1").unwrap()["unrelatedFutureField"]["keep"], 7);
+    assert_eq!(
+        controller.value("n1").unwrap()["unrelatedFutureField"]["keep"],
+        7
+    );
     assert_eq!(
         rollback(&plan, &mut controller).unwrap().already_at_before,
         2
@@ -132,7 +132,10 @@ fn expired_and_stale_plans_are_rejected_before_any_write() {
     let mut controller = SimulatedController::new(identity(), vec![observation.raw.clone()]);
 
     let expired_now = plan.expires_at;
-    assert_eq!(apply(&plan, &mut controller, expired_now), Err(Rejection::Expired));
+    assert_eq!(
+        apply(&plan, &mut controller, expired_now),
+        Err(Rejection::Expired)
+    );
     assert!(controller.audit.is_empty());
 
     controller
@@ -311,8 +314,14 @@ fn unsupported_installed_api_never_proposes_a_write() {
         .iter()
         .any(|step| step.contains("does not document network updates")));
     let mut controller = SimulatedController::new(identity(), vec![]);
-    assert_eq!(preview(&plan, &controller, now()).status, PreviewStatus::Rejected);
-    assert_eq!(apply(&plan, &mut controller, now()), Err(Rejection::UnsupportedPlan));
+    assert_eq!(
+        preview(&plan, &controller, now()).status,
+        PreviewStatus::Rejected
+    );
+    assert_eq!(
+        apply(&plan, &mut controller, now()),
+        Err(Rejection::UnsupportedPlan)
+    );
 }
 
 #[test]
@@ -322,5 +331,8 @@ fn identity_mismatch_is_rejected() {
     let mut other_identity = identity();
     other_identity.site_id = "site-b".to_owned();
     let mut controller = SimulatedController::new(other_identity, vec![observation.raw]);
-    assert_eq!(apply(&plan, &mut controller, now()), Err(Rejection::IdentityMismatch));
+    assert_eq!(
+        apply(&plan, &mut controller, now()),
+        Err(Rejection::IdentityMismatch)
+    );
 }
