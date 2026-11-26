@@ -202,49 +202,64 @@ worker crate has unrelated in-flight work).
 ## Real-server / real-worker validation note (Stage A + Stage B)
 
 `server/src/network/dns_management_e2e_tests.rs` adds one bounded `#[sqlx::test]`
-intended to run the server and worker together, on a fresh migrated database
-in a dedicated throwaway PostgreSQL only (`vantyr-netinv-test-8bdde55a`,
+that runs the server and worker together, on a fresh migrated database in a
+dedicated throwaway PostgreSQL only (`vantyr-netinv-test-8bdde55a`,
 `127.0.0.1:58743`); no household database, no live provider and no real
-credential is read or printed. The tester reports that an earlier version
-compiled and reached real worker application and server-admitted status. The
-cache-root fidelity correction and full restart/refresh flow have not yet been
-rerun against the pending cache-lifecycle fix. The assertions below describe
-intended coverage, not a passing end-to-end result. Reproduce against the
-committed worker fix with:
+credential is read or printed. Final run basis: worker/family-dns fix
+`4fcac75506760d5cbff27a3e857a682cb8bccbaa`; harness commits `e6db26b0`,
+`a1b7b3e5` and `561d8248` (test file + cfg(test) wiring + six test-only
+dependency edges). The throwaway database password is read from the local
+Docker container environment and is never echoed. Exact command used:
 
 ```sh
 SQLX_OFFLINE=true \
-DATABASE_URL=postgres://<throwaway-user>:<throwaway-pw>@127.0.0.1:58743/<db> \
+DATABASE_URL="postgres://<throwaway-user>:<throwaway-pw>@127.0.0.1:58743/vantyr" \
   cargo test -p vantyr-server --locked --offline \
   network::dns_management_e2e_tests::real_server_and_worker_dns_management_flow \
   -- --exact --nocapture
 ```
+
+**Result on that basis:** `1 passed; 0 failed; 421 filtered out` in ~34.8 s.
+Compile gate `SQLX_OFFLINE=true cargo test -p vantyr-server --locked --offline
+--no-run` passed; `rustfmt --check` and `SQLX_OFFLINE=true cargo clippy -p
+vantyr-server --all-targets --locked --offline -- -D warnings` passed. No full
+420-test workspace suite was run; the worker crate's own suite was run by its
+owner, not by this harness.
 
 It serves the actual `network::routes()` + `network::worker_routes()` behind the
 real session/CSRF middleware and verified TLS with a unique per-run CA, bootstraps
 a household, issues an explicit `read_dns_management`/`report_dns_status`
 credential, and writes the options, credential and CA as owner-0600 files. The
 worker side is the real `ManagementOptions`/`ManagementClient`/`ManagementWorker`
-and the production subscription `Fetcher` and compiler. At least one phase is
-driven by the background coordinator loop (not only `sync_once`). The test
-checks real UDP **and** TCP answers (allowed then blocked), the server's status
-view (delivered/reported version, applied digest, generation, downloaded list
-digest, honest original `applied_at`) and the server-side refresh-ack row. A
-manual refresh carries the server-owned `expires_at`; a changed list fixture
-advances the DNS answer and receipt without changing policy revision or publish
-time. An offline restart from the single bundle preserves applied version,
-digest, bytes and original age; a post-restart manual refresh is checked both
-with the fetch impossible (no ack, no receipt) and after a real fetch (new DNS
-answer, ack only then).
+and the production subscription `Fetcher` and compiler; the factory reuses the
+worker's exported `single_source_config` helper and the runtime-supplied cache
+root. At least one phase is driven by the background coordinator loop (not only
+`sync_once`). The test checks real UDP **and** TCP answers (allowed then
+blocked), the server's status view (delivered/reported version, applied digest,
+generation, downloaded list digest, honest original `applied_at`) and the
+server-side refresh-ack row. A manual refresh carries the server-owned
+`expires_at`; a changed list fixture advances the DNS answer and receipt without
+changing policy revision or publish time. A runtime-free restart from the single
+bundle preserves applied version, digest, bytes and original age; the subsequent
+runtime restart must rehydrate the managed fetcher and report the same
+downloaded hash, `fetched_at`, content-change time, byte count, rule count and
+download state as before the restart (no quarantine, no stale flag). A
+post-restart manual refresh is checked both with the fetch impossible (HTTP 503
+from the local list origin, no server ack and no new receipt) and after a real
+fetch (new origin bytes, changed UDP **and** TCP answer, valid server ack only
+then). The cache directory is deliberately left intact across the runtime
+restart so cache loss cannot be hidden by bundle-only DNS answers.
 
 **Precise limitation.** Production's public-host fetcher resolver rejects
 loopback, so only the subscription fetcher's DNS resolver is injected with a
-loopback resolver. TLS still verifies against the private per-run CA; the
-worker's management client keeps its unchanged verified/no-proxy/no-redirect
-transport. There is no insecure verifier, no production SSRF bypass, no mocked
-wire DTO and no copied auth/serializer logic. A passing run establishes observation
-and application of downloaded list bytes; it does **not** claim a canary,
-enforcement or a `verified` dashboard badge.
+loopback resolver, together with the unique private test CA for verification.
+TLS still verifies against that CA; the worker's management client keeps its
+unchanged verified/no-proxy/no-redirect transport. There is no insecure
+verifier, no production SSRF bypass, no live provider, no mocked wire DTO and no
+copied auth/serializer logic. A passing run establishes observation and
+application of downloaded list bytes; it does **not** claim a canary,
+enforcement or a `verified` dashboard badge, nor independent review of the
+worker fix.
 
 ## Stage B gaps (not claimed here)
 
