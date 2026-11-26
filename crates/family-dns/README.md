@@ -238,6 +238,22 @@ authentication, digest/schema/version errors leave the applied answer, disk
 and original policy age untouched. Status reports download state and applied
 digest/generation separately, with redacted bounded errors.
 
+### Cross-server contract verification
+
+The worker tests use a local HTTPS mock of the accepted wire DTOs. A full
+cross-server run uses the server crate's real router and migrated test database
+with `SQLX_OFFLINE=true DATABASE_URL=<throwaway PG> cargo test -p vantyr-server
+--locked --offline dns_management`. To exercise the worker against it: issue a
+scoped `read_dns_management`/`report_dns_status` credential for one gateway,
+write the worker options file (origin, owner-private credential and CA), patch
+a desired list config through the admin API, then launch
+`vantyr-dns --config <cfg> --state <state> --worker <id> --dns-management
+<options> --subscriptions <settings>` with a reachable HTTPS list URL. Verify
+the answer on UDP/TCP, read the server's status view for the reported applied
+version/digest and refresh receipts, restart the worker offline from its bundle
+and confirm the original age is preserved. No live public provider is needed;
+use a test HTTPS endpoint and the vetted production fetch path.
+
 ## Independent counters and scheduled subscriptions
 
 The one durable bundle carries three independent counter spaces:

@@ -172,7 +172,11 @@ impl ManagementWorker {
             runtime
                 .install_managed(&managed)
                 .map_err(|error| ManagementError::Integrity(error.to_string()))?;
-            let ids: Vec<String> = managed.iter().map(|spec| spec.id.clone()).collect();
+            let ids: Vec<String> = managed
+                .iter()
+                .filter(|spec| spec.enabled)
+                .map(|spec| spec.id.clone())
+                .collect();
             let errors = runtime.refresh_only(&ids, true).await;
             if !errors.is_empty() {
                 return Err(ManagementError::Integrity(redact(&errors.join("; "))));

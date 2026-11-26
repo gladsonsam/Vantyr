@@ -401,10 +401,21 @@ impl Harness {
 
 async fn harness(
     st: &Fixture,
+    list_base: &str,
+    list_ca: &str,
+    mgmt_base: &str,
+    ca_pem: &str,
+) -> Harness {
+    harness_with_poll(st, list_base, list_ca, mgmt_base, ca_pem, 3600).await
+}
+
+async fn harness_with_poll(
+    st: &Fixture,
     _list_base: &str,
     list_ca: &str,
     mgmt_base: &str,
     ca_pem: &str,
+    poll_secs: u64,
 ) -> Harness {
     fs::write(&st.config, dns_config(0, 2)).unwrap();
     let options_json = json!({
@@ -413,7 +424,7 @@ async fn harness(
         "credential_file": st.credential,
         "household_id": HOUSEHOLD,
         "gateway_id": GATEWAY,
-        "poll_interval_secs": 3600,
+        "poll_interval_secs": poll_secs,
         "request_timeout_secs": 5,
         "max_response_bytes": 32768
     });
@@ -814,5 +825,93 @@ async fn background_task_join_is_clean_without_forcing_refresh() {
     worker.shutdown().await;
     worker.shutdown().await; // idempotent
     assert!(!blocked(&h.server, "other.block.test.", false).await);
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn background_coordinator_loop_applies_and_reports_without_direct_sync() {
+    let st = fixture("background-loop");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.0.lock().unwrap() = b"managed.block.test\n".to_vec();
+    let config = desired(&format!("{list}/list"), true);
+    set_desired(&control, 1, &config);
+    let h = harness_with_poll(&st, &list, &list_ca, &mgmt, &ca, 5).await;
+    let worker = h.worker.clone();
+    worker.start(Arc::downgrade(&h.server));
+
+    let mut applied = false;
+    for _ in 0..100 {
+        if blocked(&h.server, "managed.block.test.", false).await {
+            applied = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(applied, "background task never applied the desired config");
+    assert_eq!(h.server.management_state().unwrap().config_version, 1);
+    let report = reports(&control)
+        .pop()
+        .expect("no status report from the loop");
+    assert_eq!(report.applied.unwrap().config_version, 1);
+
+    worker.shutdown().await;
+    assert!(!blocked(&h.server, "other.block.test.", false).await);
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn stale_manual_token_from_a_previous_config_is_not_acknowledged() {
+    let st = fixture("token-version");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.0.lock().unwrap() = b"managed.block.test\n".to_vec();
+    let v1 = desired(&format!("{list}/list"), true);
+    set_desired(&control, 1, &v1);
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    h.sync().await;
+
+    // Desired config moves to v2 with a different list; a token still bound
+    // to v1 must not be delivered, fetched or acknowledged against v2.
+    let mut v2 = desired(&format!("{list}/list"), true);
+    v2.sources[0].interval_secs = Some(600);
+    set_desired(&control, 2, &v2);
+    control.0.lock().unwrap().pending = vec![json!({
+        "source_id":"remote-list","refresh_seq":11,"config_version":1
+    })];
+    h.sync().await;
+    let state = h.server.management_state().unwrap();
+    assert_eq!(state.config_version, 2);
+    assert!(state.receipts.is_empty(), "stale v1 token was acknowledged");
+    let generation = h.server.status().bundle_generation;
+
+    control.0.lock().unwrap().pending = vec![json!({
+        "source_id":"remote-list","refresh_seq":12,"config_version":2
+    })];
+    h.sync().await;
+    let state = h.server.management_state().unwrap();
+    assert_eq!(state.receipts.len(), 1);
+    assert_eq!(state.receipts[0].refresh_seq, 12);
+    assert_eq!(h.server.status().bundle_generation, generation + 1);
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn reports_preserve_original_applied_and_fetched_timestamps() {
+    let st = fixture("original-times");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.0.lock().unwrap() = b"managed.block.test\n".to_vec();
+    set_desired(&control, 1, &desired(&format!("{list}/list"), true));
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    h.sync().await;
+    let first = reports(&control).pop().unwrap();
+    let applied_at = first.applied.unwrap().applied_at.unwrap();
+    let fetched_at = first.sources[0].fetched_at.unwrap();
+
+    h.sync().await;
+    let second = reports(&control).pop().unwrap();
+    assert_eq!(second.applied.unwrap().applied_at.unwrap(), applied_at);
+    assert_eq!(second.sources[0].fetched_at.unwrap(), fetched_at);
     h.stop().await;
 }
