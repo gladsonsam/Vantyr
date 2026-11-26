@@ -1,5 +1,6 @@
 # Secrets (production)
-secrets/*.txt
+secrets/
+.secrets/
 .env
 
 # ── Build output ─────────────────────────────────────────────────────────────

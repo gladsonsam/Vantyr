@@ -63,7 +63,7 @@ ENV STATIC_DIR=/app/static \
 EXPOSE 9000
 
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin app \
- && mkdir -p /app/screen_history \
+ && mkdir -p -m 0700 /app/screen_history \
  && chown -R app:app /app
 
 USER 10001:10001

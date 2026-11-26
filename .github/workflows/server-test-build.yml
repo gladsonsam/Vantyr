@@ -1,0 +1,50 @@
+name: server-test-build
+
+# Publish an explicit candidate image without a release or changing latest.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["server-build/**"]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: server-test-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/login-action@v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image name
+        id: image
+        shell: bash
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/server" >> "$GITHUB_OUTPUT"
+      - name: Build and push candidate
+        id: build
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          file: server/Dockerfile
+          push: true
+          tags: ${{ steps.image.outputs.name }}:test-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=server-candidate
+          cache-to: type=gha,scope=server-candidate,mode=max
+      - name: Record immutable image
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "Candidate image $IMAGE@$DIGEST" >> "$GITHUB_STEP_SUMMARY"

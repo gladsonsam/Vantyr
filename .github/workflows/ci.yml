@@ -220,7 +220,7 @@ jobs:
       - name: Install updater signature verifier
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends minisign
+          sudo apt-get install -y --no-install-recommends minisign age
 
       - name: Test release metadata and asset validation
         run: python -m unittest discover -s tools/tests -t tools
