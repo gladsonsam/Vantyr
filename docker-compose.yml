@@ -28,9 +28,13 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-monitor}:${POSTGRES_PASSWORD}@127.0.0.1:5432/${POSTGRES_DB:-monitor}
       LOG_FORCE_COLOR: "1"
+      SCREEN_HISTORY_DIR: /app/screen_history
+    volumes:
+      - screen_history:/app/screen_history
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   pgdata:
+  screen_history:

@@ -129,7 +129,7 @@ jobs:
       - name: Install updater signature verifier
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends minisign
+          sudo apt-get install -y --no-install-recommends minisign age
 
       - name: Test release tools and stamp versions
         env:

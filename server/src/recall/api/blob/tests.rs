@@ -207,14 +207,14 @@ fn unavailable_root_is_not_a_missing_frame() {
     let reference = format!("{id}/20260101/{}.jpg", Uuid::new_v4());
     let root = std::env::temp_dir().join(format!("vantyr-blob-errors-{}", Uuid::new_v4()));
     assert_eq!(
-        crate::recall::blob_store::read_blob(&root, id, &reference)
+        crate::recall::blob_store::read_blob(&root, id, &reference, None)
             .unwrap_err()
             .kind(),
         std::io::ErrorKind::Other
     );
     std::fs::create_dir(&root).unwrap();
     assert_eq!(
-        crate::recall::blob_store::read_blob(&root, id, &reference)
+        crate::recall::blob_store::read_blob(&root, id, &reference, None)
             .unwrap_err()
             .kind(),
         std::io::ErrorKind::NotFound
@@ -231,11 +231,100 @@ async fn thumbnail_render_error_returns_already_read_original_without_reading_ag
     let gate = Arc::new(tokio::sync::RwLock::new(()));
     let lease = Arc::new(gate.read_owned().await);
     assert_eq!(
-        thumb_response(&root, &reference, 160, original.clone(), &lease).await,
+        thumb_response(&root, &reference, 160, original.clone(), &lease, None).await,
         original,
         "fallback must preserve original bytes even if the source is no longer present"
     );
     assert!(!root.join(&reference).exists());
     assert!(!thumb_path(&root, &reference, 160).unwrap().exists());
     std::fs::remove_dir(&root).unwrap();
+}
+
+#[sqlx::test(migrations = false)]
+async fn encrypted_blob_and_thumbnail_are_private_and_key_errors_preserve_db_rows(
+    db: sqlx::PgPool,
+) {
+    use crate::recall::{blob_store, encryption::test_keyring};
+    let (mut s, id, _, _) = fixture(db).await;
+    let key_id = Uuid::new_v4();
+    let keys = test_keyring(key_id, 11);
+    Arc::get_mut(&mut s).unwrap().settings.recall_keyring = Some(keys.clone());
+    let reference = format!("{id}/20260101/{}.jpg", Uuid::new_v4());
+    let frame = add(&s, id, &reference).await;
+    let root = &s.settings.screen_history_dir;
+    crate::recall::encryption::test_initialize(root, &keys);
+    let path = root.join(&reference);
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new(&mut jpeg)
+        .encode_image(&image::DynamicImage::new_rgb8(640, 320))
+        .unwrap();
+    blob_store::write_path(root, &path, Some(&keys), &jpeg).unwrap();
+    let encrypted = std::fs::read(&path).unwrap();
+    assert_ne!(encrypted, jpeg);
+    let response = request(s.clone(), id, frame).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CACHE_CONTROL],
+        "private, no-store"
+    );
+    assert_eq!(
+        axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap()
+            .as_ref(),
+        jpeg
+    );
+    let response = request_width(s.clone(), id, frame, Some(160)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let thumb = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    assert_eq!(image::load_from_memory(&thumb).unwrap().width(), 160);
+    let cached = thumb_path(root, &reference, 160).unwrap();
+    assert_ne!(std::fs::read(&cached).unwrap(), thumb);
+    assert_eq!(
+        blob_store::read_path(root, &cached, Some(&keys)).unwrap(),
+        thumb
+    );
+
+    // A plaintext cache in encrypted mode is never returned, even if someone
+    // copies one into the cache directory. The authorized full image repairs it.
+    std::fs::write(&cached, b"plaintext cache").unwrap();
+    let response = request_width(s.clone(), id, frame, Some(160)).await;
+    assert_eq!(
+        axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+        thumb
+    );
+    assert_ne!(std::fs::read(&cached).unwrap(), thumb);
+
+    for wrong_keys in [
+        None,
+        Some(test_keyring(key_id, 12)),
+        Some(test_keyring(Uuid::new_v4(), 11)),
+    ] {
+        Arc::get_mut(&mut s).unwrap().settings.recall_keyring = wrong_keys;
+        assert_eq!(
+            request(s.clone(), id, frame).await.status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert!(present(&s, id, frame).await);
+        assert_eq!(std::fs::read(&path).unwrap(), encrypted);
+    }
+    Arc::get_mut(&mut s).unwrap().settings.recall_keyring = Some(keys);
+    std::fs::write(&path, &jpeg).unwrap();
+    assert_eq!(
+        request(s.clone(), id, frame).await.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    assert!(present(&s, id, frame).await);
+    std::fs::remove_file(&path).unwrap();
+    std::fs::remove_file(s.settings.screen_history_dir.join(".recall-encrypted")).unwrap();
+    assert_eq!(
+        request(s.clone(), id, frame).await.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    assert!(present(&s, id, frame).await);
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }

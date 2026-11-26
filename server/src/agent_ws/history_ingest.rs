@@ -207,25 +207,33 @@ pub(super) async fn store_history_frame(
         .join(agent_id.to_string())
         .join(&day);
     let path = dir.join(&file);
+    let root = state.settings.screen_history_dir.clone();
+    let keys = state.settings.recall_keyring.clone();
+    let encrypted = keys.is_some();
 
     // Filesystem writes are blocking; keep them off the async reactor.
     let write_res = spawn_blocking_ingestion(lease, move || {
-        std::fs::create_dir_all(&dir)?;
-        std::fs::write(&path, &jpeg)
+        crate::recall::blob_store::write_path(&root, &path, keys.as_deref(), &jpeg)
     })
     .await;
     match write_res {
         Ok(Ok(())) => {}
         Ok(Err(e)) => {
-            // Disk full / permissions: retrying the same frame won't help, and the
-            // agent's spool is bounded, so let it move on rather than jam.
+            // In encrypted mode an unavailable marker, storage mount or keyring
+            // is recoverable; keep the unacknowledged frame in the agent's
+            // bounded spool rather than discarding it during repair.
             error!("history_frame blob write failed for {agent_id}: {e}");
-            ack_history_frame(agent_id, val, state, Some("blob write failed"));
+            if !encrypted {
+                // Preserve the legacy disk failure behavior.
+                ack_history_frame(agent_id, val, state, Some("blob write failed"));
+            }
             return;
         }
         Err(e) => {
             error!("history_frame blob write task panicked for {agent_id}: {e}");
-            ack_history_frame(agent_id, val, state, Some("blob write panicked"));
+            if !encrypted {
+                ack_history_frame(agent_id, val, state, Some("blob write panicked"));
+            }
             return;
         }
     }

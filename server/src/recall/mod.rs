@@ -11,6 +11,7 @@ mod api;
 pub mod blob_store;
 pub mod context;
 pub mod db;
+pub mod encryption;
 mod local_day;
 pub mod narrative;
 pub mod retention;

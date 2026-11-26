@@ -121,6 +121,13 @@ fn read_env(name: &str) -> Option<String> {
     read_env_or_file(name).filter(|s| !s.trim().is_empty())
 }
 
+/// Resolve the Recall root identically for the server and offline maintenance CLI.
+pub fn screen_history_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(
+        read_env("SCREEN_HISTORY_DIR").unwrap_or_else(|| "./screen_history".to_string()),
+    )
+}
+
 /// Value of `NAME` from the process environment only (no `_FILE` fallback).
 fn env_var(name: &str) -> Option<String> {
     std::env::var(name).ok()
@@ -262,9 +269,7 @@ impl ServerConfig {
             None => Some(90),
         };
 
-        let screen_history_dir = std::path::PathBuf::from(
-            read_env("SCREEN_HISTORY_DIR").unwrap_or_else(|| "./screen_history".to_string()),
-        );
+        let screen_history_dir = screen_history_dir();
 
         // Same convention as metrics/script retention: default ON, `0` opts out.
         // Kept lower (30d) than the 90d telemetry default because frames dominate storage.

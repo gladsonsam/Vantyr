@@ -20,3 +20,10 @@ move.sh
 
 # Optional local junk (e.g. leftover before `git pull`); the real `api` module is `server/src/api/`.
 server/src/api.rs
+
+# Runtime credentials and encryption keyrings never enter a build context.
+.env
+.env.*
+!.env.example
+secrets/
+.secrets/

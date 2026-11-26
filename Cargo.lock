@@ -4468,7 +4468,7 @@ dependencies = [
 
 [[package]]
 name = "vantyr-server"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "argon2",
@@ -4494,6 +4494,7 @@ dependencies = [
  "rand 0.10.4",
  "regex",
  "reqwest",
+ "ring",
  "semver",
  "serde",
  "serde_json",
