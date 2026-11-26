@@ -236,6 +236,29 @@ export interface NetworkAuditRow {
   detail: Record<string, unknown>;
 }
 
+/**
+ * Filters for the household audit. `action` and `actor` are EXACT stored strings (1..=128 chars,
+ * no control characters). `from`/`to` are RFC3339 and inclusive; `from` after `to` is a 400.
+ * `limit` 1..=1000 (server default 50), `offset` 0..=100000.
+ */
+export interface NetworkAuditFilters extends NetworkPageParams {
+  action?: string;
+  actor?: string;
+  from?: string;
+  to?: string;
+}
+
+/** The audit page. `rows` keeps its old shape; the rest makes paging safe under inserts. */
+export interface NetworkAuditResponse {
+  rows: NetworkAuditRow[];
+  /** Rows matching the filters, across all pages. */
+  total: number;
+  has_more: boolean;
+  next_offset: number | null;
+  /** More rows exist but are beyond the offset cap: narrow the filters instead of paging. */
+  pagination_limited: boolean;
+}
+
 // ─── Policy (versioned, saved proposals only) ────────────────────────────────
 
 export type NetworkPolicyEffect = "allow" | "deny";
@@ -299,6 +322,124 @@ export interface NetworkPolicyVersion {
   body_bytes: number;
 }
 
+/**
+ * The core policy body exactly as stored (vantyr_network_policy::Policy). Rules and settings live
+ * here; revision/provenance metadata lives on the enclosing `NetworkPolicyView`.
+ */
+export interface NetworkPolicyBody {
+  household_id: string;
+  revision: number;
+  /** Non-overridable safety rules; deny only. */
+  baseline: NetworkPolicyRule[];
+  /** Keyed by device profile id; a profile may be empty. */
+  device_profiles: Record<string, NetworkPolicyRule[]>;
+  /** Keyed by person id. Not editable in the composer yet. */
+  person_rules: Record<string, NetworkPolicyRule[]>;
+  /** Not editable in the composer yet. */
+  exceptions: NetworkPolicyException[];
+  default_effect: NetworkPolicyEffect;
+  timezone: string;
+  stale_after_secs: number;
+  event_retention_secs: number;
+  published_at: string;
+}
+
+export type NetworkPolicyActionKind = "dns" | "http" | "app" | "screen_time";
+
+/** Externally tagged, snake_case. */
+export type NetworkPolicyExceptionScope =
+  | { device: string }
+  | { person: string }
+  | { device_action: { device_id: string; action: NetworkPolicyActionKind } };
+
+export interface NetworkPolicyException {
+  id: string;
+  approver: string;
+  approved_at: string;
+  scope: NetworkPolicyExceptionScope;
+  rules: NetworkPolicyRule[];
+  expires_at: string;
+  revoked_at: string | null;
+}
+
+/**
+ * One stored revision with its body. Metadata is on this object, the rules and settings on
+ * `.policy`. A stored revision is a saved proposal: never evidence of what any gateway applied.
+ */
+export interface NetworkPolicyView extends NetworkPolicyVersion {
+  policy: NetworkPolicyBody;
+}
+
+/** `GET policies/current` and `GET policies/{revision}`. `current` is the highest stored revision. */
+export interface NetworkPolicyViewResponse {
+  policy: NetworkPolicyView;
+}
+
+/** Revision provenance in a diff. It is never part of the content comparison. */
+export interface NetworkPolicyDiffProvenance {
+  revision: number;
+  schema_version: number;
+  source_kind: string;
+  rolled_back_from_revision: number | null;
+  published_at: string;
+  body_sha256: string;
+}
+
+/** `device_profile_ids` carries sorted names (including empty profiles) as string arrays. */
+export type NetworkPolicySettingField =
+  | "default_effect"
+  | "timezone"
+  | "stale_after_secs"
+  | "event_retention_secs"
+  | "device_profile_ids"
+  | "person_rules"
+  | "exceptions";
+
+export interface NetworkPolicySettingChange {
+  field: NetworkPolicySettingField | (string & {});
+  before: unknown;
+  after: unknown;
+}
+
+export type NetworkPolicyRuleChangeKind = "added" | "removed" | "changed";
+
+export interface NetworkPolicyRuleChange {
+  /** `baseline` or `profile:<name>`. */
+  scope: string;
+  id: string;
+  change: NetworkPolicyRuleChangeKind;
+  before: NetworkPolicyRule | null;
+  after: NetworkPolicyRule | null;
+}
+
+/** Counts describe the FULL diff, even when `rules` was truncated. */
+export interface NetworkPolicyDiffCounts {
+  added_rules: number;
+  removed_rules: number;
+  changed_rules: number;
+  changed_settings: number;
+  total_rules_from: number;
+  total_rules_to: number;
+}
+
+export interface NetworkPolicyDiff {
+  household_id: string;
+  from: NetworkPolicyDiffProvenance;
+  to: NetworkPolicyDiffProvenance;
+  /** False for an identical-content rollback even though revision and digest differ. */
+  content_changed: boolean;
+  settings: NetworkPolicySettingChange[];
+  rules: NetworkPolicyRuleChange[];
+  counts: NetworkPolicyDiffCounts;
+  /** True when `rules` is incomplete; `omitted_changes` says how many were left out. */
+  truncated: boolean;
+  omitted_changes: number;
+}
+
+export interface NetworkPolicyDiffResponse {
+  diff: NetworkPolicyDiff;
+}
+
 /** Explicit desired assignment: a proposal for one gateway, never an applied/enforced claim. */
 export interface NetworkDesiredPolicy {
   household_id: string;
@@ -321,6 +462,10 @@ export interface NetworkBinding {
   active: boolean;
   created_at: string;
   revoked_at: string | null;
+  /** Dashboard login name and display name of the mapped user, and the mapped person's name. */
+  dashboard_username: string;
+  dashboard_display_name: string;
+  person_display_name: string;
 }
 
 export interface NetworkDeviceAuthorization {
@@ -388,6 +533,26 @@ export interface NetworkOwnSession {
   verified_at: string;
   expires_at: string;
   ended_at: string | null;
+  person_display_name: string;
+}
+
+/** One household and person the signed-in user is bound to. `GET /network/enrollment-contexts`. */
+export interface NetworkEnrollmentContext {
+  household_id: string;
+  household_name: string;
+  person_id: string;
+  person_display_name: string;
+  binding_id: string;
+  generation: number;
+}
+
+export interface NetworkEnrollmentContextPage {
+  contexts: NetworkEnrollmentContext[];
+  count: number;
+  total: number;
+  has_more: boolean;
+  next_offset: number | null;
+  pagination_limited: boolean;
 }
 
 export interface NetworkEnrolledDevice {

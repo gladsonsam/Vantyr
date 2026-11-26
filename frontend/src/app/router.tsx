@@ -93,6 +93,9 @@ const NetworkAccessPage = lazy(() =>
     default: m.NetworkAccessPage,
   })),
 );
+const EnrollChooser = lazy(() =>
+  import("@/features/network/enroll/EnrollChooser").then((m) => ({ default: m.EnrollChooser })),
+);
 const EnrollPage = lazy(() =>
   import("@/features/network/enroll/EnrollPage").then((m) => ({ default: m.EnrollPage })),
 );
@@ -216,6 +219,7 @@ export function AppRoutes() {
           <Route path="proxy" element={<DeviceProxyPage />} />
         </Route>
         {/* Self-service BYOD enrollment stays outside the administrator-gated Network layout. */}
+        <Route path="/network/enroll" element={<EnrollChooser />} />
         <Route path="/network/enroll/:householdId" element={<EnrollPage />} />
         <Route path="/network" element={<NetworkLayout />}>
           <Route index element={<NetworkOverviewPage />} />

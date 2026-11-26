@@ -11,18 +11,17 @@ import {
 } from "@vantyr/ui/components/select";
 import { errorText, isApiError } from "@/api";
 import type { NetworkPolicyEffect, NetworkPolicyVersion } from "@/api/types/network";
-import { usePolicyMutations } from "@/api/queries/network";
+import { policyToDraft, usePolicyCurrent, usePolicyMutations } from "@/api/queries/network";
 import SlideCommit from "@/components/react-bits/SlideCommit";
 import { HelpTip } from "@/components/common/HelpTip";
 import { SettingsCardBody, SettingsSection } from "@/features/network/components/SettingsSection";
-import type { PolicySnapshot } from "@/features/network/runtime/types";
 import {
   CONFLICT_MESSAGE,
   LIMITS,
   MATCHER_LABEL,
   countRules,
   draftSizeBytes,
-  editorFromSnapshot,
+  editorFromDraft,
   emptyEditor,
   formatBytes,
   issueList,
@@ -35,6 +34,7 @@ import {
   type EditorState,
   type SupportedMatcherKind,
 } from "./policyDraft";
+import { droppedText, readError } from "./policyViewLib";
 
 const KINDS = Object.keys(MATCHER_LABEL) as SupportedMatcherKind[];
 
@@ -108,7 +108,7 @@ function RuleRow({
       />
       {rule.schedule ? (
         <p className="text-xs text-muted-foreground">
-          Keeps its schedule from the runtime view. Editing schedules is not supported here yet.
+          Keeps the schedule it had in the revision you started from. Editing schedules is not supported here yet.
         </p>
       ) : null}
       {shown ? (
@@ -200,50 +200,48 @@ function NumberField({
 }
 
 /**
- * Compose a NEW revision. The server never sends a policy body to the dashboard, so an existing
- * revision cannot be loaded for editing: what you publish here replaces the content wholesale, as a
- * new revision, and saving it applies it nowhere.
+ * Compose a NEW revision, empty or from the current (highest saved) one. What you publish replaces
+ * the content wholesale as a new revision; content the composer cannot carry over is listed before
+ * you publish, and saving applies it nowhere.
  */
 export function PolicyComposer({
   household,
   timezone,
   latest,
-  runtimeStart,
 }: {
   household: string;
   timezone: string;
   latest: NetworkPolicyVersion | undefined;
-  /** The runtime view's snapshot (demo), offered as a starting point when present. */
-  runtimeStart: PolicySnapshot | null;
 }) {
   const { publish } = usePolicyMutations(household);
   const [state, setState] = useState<EditorState>(() => emptyEditor(timezone));
   const [commitKey, setCommitKey] = useState(0);
-  const [note, setNote] = useState<string | null>(null);
+  const [base, setBase] = useState<{ revision: number; dropped: string[] } | null>(null);
+  const current = usePolicyCurrent(household);
   const [saved, setSaved] = useState<string | null>(null);
 
   const issues = useMemo(() => validateEditor(state), [state]);
   const problems = issueList(issues);
   const total = countRules(state);
 
-  const startFromRuntime = () => {
-    if (!runtimeStart) return;
-    const { state: next, skipped } = editorFromSnapshot(runtimeStart);
-    setState(next);
+  const startFromCurrent = () => {
+    if (!current.data) return;
+    const view = current.data.policy;
+    const { draft, dropped } = policyToDraft(view);
+    setState(editorFromDraft(draft));
     setSaved(null);
-    const dropped = [
-      skipped.people > 0 ? `${skipped.people} person rule${skipped.people === 1 ? "" : "s"}` : null,
-      skipped.exceptions > 0
-        ? `${skipped.exceptions} exception${skipped.exceptions === 1 ? "" : "s"}`
-        : null,
-      skipped.baselineAllow > 0
-        ? `${skipped.baselineAllow} baseline allow rule${skipped.baselineAllow === 1 ? "" : "s"}`
-        : null,
-    ].filter(Boolean);
-    setNote(
-      `Started from r${runtimeStart.revision} of the runtime view.` +
-        (dropped.length > 0 ? ` Left out, not supported yet: ${dropped.join(", ")}.` : ""),
-    );
+    setBase({
+      revision: view.revision,
+      dropped: [
+        ...dropped.map(droppedText),
+        ...(view.policy.default_effect !== "deny" ? ["the household default (it becomes block)"] : []),
+      ],
+    });
+  };
+  const startEmpty = () => {
+    setState(emptyEditor(timezone));
+    setBase(null);
+    setSaved(null);
   };
 
   const setProfiles = (profiles: EditorProfile[]) => setState((s) => ({ ...s, profiles }));
@@ -258,18 +256,29 @@ export function PolicyComposer({
       title="New revision"
       description={
         latest
-          ? `Compose a full replacement. The server does not send r${latest.revision}’s rules, so it can’t be edited in place.`
+          ? `Start from the current revision (r${latest.revision}) or from scratch. Publishing saves a full replacement as a new revision.`
           : "Compose the first revision."
       }
       icon={<FilePlus2 />}
       action={
         <>
-          {runtimeStart ? (
-            <Button variant="outline" size="sm" onClick={startFromRuntime}>
-              Start from r{runtimeStart.revision} (runtime view)
+          {latest ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!current.data}
+              onClick={startFromCurrent}
+            >
+              {current.isPending
+                ? "Loading current…"
+                : `Start from current (r${current.data?.policy.revision ?? latest.revision})`}
             </Button>
           ) : null}
+          <Button variant="outline" size="sm" onClick={startEmpty}>
+            Start empty
+          </Button>
           <HelpTip label="About composing a revision">
+            “Current” is the highest saved revision, not necessarily the one a gateway is using.
             Publishing saves a new revision with exactly the rules listed here; it does not merge
             with the latest one. Saving applies nothing: assign the revision to a gateway from
             History afterwards.
@@ -278,7 +287,21 @@ export function PolicyComposer({
       }
     >
       <SettingsCardBody className="space-y-8">
-        {note ? <p className="text-[0.8125rem] text-muted-foreground">{note}</p> : null}
+        {current.isError && latest ? (
+          <p role="alert" className="text-[0.8125rem] font-medium text-destructive">
+            Couldn’t load the current revision: {readError(current.error, "current revision")}
+          </p>
+        ) : null}
+        {base ? (
+          <div role="status" className="space-y-1 rounded-xl border border-border/70 px-4 py-3 text-[0.8125rem]">
+            <div>Started from r{base.revision}.</div>
+            <div className={base.dropped.length > 0 ? "font-medium text-warning" : "text-muted-foreground"}>
+              {base.dropped.length > 0
+                ? `Publishing replaces r${base.revision} and will not include: ${base.dropped.join(", ")}.`
+                : `Nothing was left out. Publishing still replaces r${base.revision} with exactly what is below.`}
+            </div>
+          </div>
+        ) : null}
 
         <div className="space-y-2">
           <div>
@@ -423,7 +446,7 @@ export function PolicyComposer({
             </div>
             <div className="text-muted-foreground">
               {latest
-                ? `Latest is r${latest.revision} (${formatBytes(latest.body_bytes)}). Only metadata is available, so no rule-level diff. This replaces its content and saves as r${latest.revision + 1}. If someone publishes first, it is refused.`
+                ? `Latest saved is r${latest.revision} (${formatBytes(latest.body_bytes)}). This replaces ${base ? `r${base.revision}` : "its content"} and saves as a new revision. If someone publishes first, it is refused.`
                 : "No revision exists yet, so this becomes the first."}
             </div>
           </div>
@@ -453,7 +476,7 @@ export function PolicyComposer({
             disabled={problems.length > 0 || publish.isPending}
             onConfirm={async () => {
               setSaved(null);
-              const result = await publish.mutateAsync(toDraft(state, latest?.revision));
+              const result = await publish.mutateAsync(toDraft(state, base?.revision ?? latest?.revision));
               setSaved(
                 `Saved as revision ${result.revision}. It is not assigned to any gateway yet; assign it from History.`,
               );
@@ -461,7 +484,7 @@ export function PolicyComposer({
             }}
             onDone={() => {
               setState(emptyEditor(timezone));
-              setNote(null);
+              setBase(null);
               setCommitKey((k) => k + 1);
             }}
           />

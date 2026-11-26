@@ -3,6 +3,17 @@ import type {
   NetworkAgentEnrollment,
   NetworkAssignment,
   NetworkAuditRow,
+  NetworkAuditResponse,
+  NetworkEnrollmentContextPage,
+  NetworkPolicyBody,
+  NetworkPolicyDiff,
+  NetworkPolicyDiffResponse,
+  NetworkPolicyRule,
+  NetworkPolicyRuleChange,
+  NetworkPolicySettingChange,
+  NetworkPolicyView,
+  NetworkPolicyViewResponse,
+  NetworkPolicyDraft,
   NetworkBinding,
   NetworkDeviceAuthorization,
   NetworkGrantName,
@@ -375,6 +386,9 @@ export function demoNetworkApi(): Partial<ApiClient> {
       active: true,
       created_at: ago(60 * 24 * 7),
       revoked_at: null,
+      dashboard_username: "admin",
+      dashboard_display_name: "Demo Admin",
+      person_display_name: "Jo",
     },
   ];
   const deviceAuths: NetworkDeviceAuthorization[] = [
@@ -417,6 +431,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       verified_at: ago(90),
       expires_at: new Date(Date.now() + 6 * 3600_000).toISOString(),
       ended_at: null,
+      person_display_name: "Jo",
     },
   ];
   const activeBinding = () =>
@@ -540,6 +555,137 @@ export function demoNetworkApi(): Partial<ApiClient> {
     policyMeta(14, 60 * 24 * 3),
     policyMeta(13, 60 * 24 * 9),
   ];
+  // Demo policy bodies. r13 baseline malware+phishing; r14 adds two device profiles; r15 adds a
+  // baseline chat block. Content only: metadata comes from `policies`.
+  const demoRule = (
+    ruleId: string,
+    domain: string,
+    reason: string,
+  ): NetworkPolicyRule => ({
+    id: ruleId,
+    effect: "deny",
+    matcher: { domain_suffix: domain },
+    schedule: null,
+    reason,
+  });
+  const r13Baseline = [
+    demoRule("block-malware", "malware.example", "Known malware"),
+    demoRule("block-phishing", "phishing.example", "Known phishing"),
+  ];
+  const r14Profiles: Record<string, NetworkPolicyRule[]> = {
+    "Living room TV": [demoRule("tv-mature", "mature.example", "Not for the living room")],
+    "Kitchen tablet": [demoRule("tablet-social", "social.example", "No social media on the tablet")],
+  };
+  const policyBodies = new Map<number, NetworkPolicyBody>();
+  const setBody = (
+    revision: number,
+    minutes: number,
+    baseline: NetworkPolicyRule[],
+    device_profiles: Record<string, NetworkPolicyRule[]>,
+  ) =>
+    policyBodies.set(revision, {
+      household_id: HOUSEHOLD,
+      revision,
+      baseline,
+      device_profiles,
+      person_rules: {},
+      exceptions: [],
+      default_effect: "deny",
+      timezone: "UTC",
+      stale_after_secs: 3600,
+      event_retention_secs: 14 * 86400,
+      published_at: ago(minutes),
+    });
+  setBody(13, 60 * 24 * 9, r13Baseline, {});
+  setBody(14, 60 * 24 * 3, r13Baseline, r14Profiles);
+  setBody(
+    15,
+    45,
+    [...r13Baseline, demoRule("block-chat", "chat.example", "Unmoderated chat")],
+    r14Profiles,
+  );
+  const policyView = (revision: number): NetworkPolicyView => {
+    const meta = policies.find((p) => p.revision === revision);
+    const body = policyBodies.get(revision);
+    if (!meta || !body) throw new ApiError("policy revision is not readable in this household", 404);
+    return { ...meta, policy: { ...body, published_at: meta.published_at } };
+  };
+  const checkRevision = (value: unknown): number => {
+    const n = typeof value === "number" ? value : Number(value);
+    if (!Number.isInteger(n) || n < 1) throw new ApiError("revision must be a positive integer", 400);
+    return n;
+  };
+  const provenance = (view: NetworkPolicyView) => ({
+    revision: view.revision,
+    schema_version: view.schema_version,
+    source_kind: view.source_kind,
+    rolled_back_from_revision: view.rolled_back_from_revision,
+    published_at: view.published_at,
+    body_sha256: view.body_sha256,
+  });
+  const buildDiff = (from: NetworkPolicyView, to: NetworkPolicyView): NetworkPolicyDiff => {
+    const a = from.policy;
+    const b = to.policy;
+    const settings: NetworkPolicySettingChange[] = [];
+    const compare = (field: string, before: unknown, after: unknown) => {
+      if (JSON.stringify(before) !== JSON.stringify(after)) settings.push({ field, before, after });
+    };
+    compare("default_effect", a.default_effect, b.default_effect);
+    compare("timezone", a.timezone, b.timezone);
+    compare("stale_after_secs", a.stale_after_secs, b.stale_after_secs);
+    compare("event_retention_secs", a.event_retention_secs, b.event_retention_secs);
+    compare("device_profile_ids", Object.keys(a.device_profiles).sort(), Object.keys(b.device_profiles).sort());
+    compare("person_rules", a.person_rules, b.person_rules);
+    compare("exceptions", a.exceptions, b.exceptions);
+    const index = (p: NetworkPolicyBody) => {
+      const out = new Map<string, NetworkPolicyRule>();
+      p.baseline.forEach((r) => out.set(`baseline\u0000${r.id}`, r));
+      for (const [name, rules] of Object.entries(p.device_profiles))
+        rules.forEach((r) => out.set(`profile:${name}\u0000${r.id}`, r));
+      return out;
+    };
+    const before = index(a);
+    const after = index(b);
+    const rules: NetworkPolicyRuleChange[] = [];
+    for (const key of [...new Set([...before.keys(), ...after.keys()])].sort()) {
+      const [scope = "", ruleId = ""] = key.split("\u0000");
+      const x = before.get(key) ?? null;
+      const y = after.get(key) ?? null;
+      if (x && !y) rules.push({ scope, id: ruleId, change: "removed", before: x, after: null });
+      else if (!x && y) rules.push({ scope, id: ruleId, change: "added", before: null, after: y });
+      else if (JSON.stringify(x) !== JSON.stringify(y))
+        rules.push({ scope, id: ruleId, change: "changed", before: x, after: y });
+    }
+    const count = (kind: string) => rules.filter((r) => r.change === kind).length;
+    return {
+      household_id: HOUSEHOLD,
+      from: provenance(from),
+      to: provenance(to),
+      content_changed: settings.length > 0 || rules.length > 0,
+      settings,
+      rules,
+      counts: {
+        added_rules: count("added"),
+        removed_rules: count("removed"),
+        changed_rules: count("changed"),
+        changed_settings: settings.length,
+        total_rules_from: before.size,
+        total_rules_to: after.size,
+      },
+      truncated: false,
+      omitted_changes: 0,
+    };
+  };
+  const extraAudit: [string, number, string, string, Record<string, unknown>][] = [
+    ["network_binding_create", 60 * 24 * 7, "demo-user-admin", "ok", { person_id: "per-jo" }],
+    ["network_device_enroll", 60 * 24 * 6, "demo-user-jo", "ok", { device_id: "dev-tablet" }],
+    ["network_setup_grant_issue", 60 * 24 * 2, "demo-user-jo", "ok", { purpose: "proxy_setup" }],
+    ["network_setup_grant_consume", 60 * 24 * 2 - 5, "demo-user-jo", "denied", { purpose: "proxy_setup" }],
+    ["network_policy_rollback", 60 * 24 * 5, "demo-user-admin", "ok", { source_revision: 13 }],
+    ["network_person_create", 60 * 24 * 21, "demo-user-admin", "ok", { display_name: "Jo" }],
+    ["network_device_create", 60 * 24 * 22, "demo-user-admin", "ok", { label: "Kitchen tablet" }],
+    ["network_grant_create", 60 * 24 * 25, "demo-user-admin", "ok", { grant_name: "network_enroll" }],
+  ];
   const audit: NetworkAuditRow[] = [
     [
       "network_gateway_desired_policy_set",
@@ -569,6 +715,20 @@ export function demoNetworkApi(): Partial<ApiClient> {
     status: "ok",
     detail: detail as Record<string, unknown>,
   }));
+  extraAudit.forEach(([action, minutes, actor, status, detail], i) =>
+    audit.push({
+      id: 90 - i,
+      ts: ago(minutes),
+      household_id: HOUSEHOLD,
+      actor,
+      client_ip: "192.168.1.20",
+      action,
+      status,
+      detail,
+    }),
+  );
+  const minute = (row: NetworkAuditRow) => Math.floor(Date.parse(row.ts) / 60_000);
+  audit.sort((x, y) => minute(y) - minute(x) || y.id - x.id);
 
   const now = () => new Date().toISOString();
   const text = (value: unknown) =>
@@ -729,6 +889,10 @@ export function demoNetworkApi(): Partial<ApiClient> {
         active: true,
         created_at: now(),
         revoked_at: null,
+        dashboard_username: "admin",
+        dashboard_display_name: "Demo Admin",
+        person_display_name:
+          persons.find((p) => p.id === text(b.person_id))?.display_name ?? "",
       });
       return { ok: true, binding_id: created };
     },
@@ -875,6 +1039,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
         verified_at: verified,
         expires_at: expires,
         ended_at: null,
+        person_display_name: activeBinding()?.person_display_name ?? "Jo",
       });
       return {
         session_id: sessionId,
@@ -910,7 +1075,79 @@ export function demoNetworkApi(): Partial<ApiClient> {
       return { ok: true, grants_revoked: 0, scope: "this device and binding only" };
     },
 
-    networkAudit: async (_household, params) => ({ rows: page(audit, params) }),
+    networkAudit: async (_household, params): Promise<NetworkAuditResponse> => {
+      const f = asRecord(params);
+      const str = (v: unknown) => (typeof v === "string" && v ? v : null);
+      const time = (v: unknown, name: string) => {
+        const raw = str(v);
+        if (raw == null) return null;
+        const t = Date.parse(raw);
+        if (Number.isNaN(t)) throw new ApiError(`${name} must be an RFC3339 timestamp`, 400);
+        return t;
+      };
+      const from = time(f.from, "from");
+      const to = time(f.to, "to");
+      if (from != null && to != null && from > to)
+        throw new ApiError("from must not be after to", 400);
+      const limit = typeof f.limit === "number" ? f.limit : 50;
+      const offset = typeof f.offset === "number" ? f.offset : 0;
+      if (limit < 1 || limit > 1000) throw new ApiError("limit must be between 1 and 1000", 400);
+      if (offset < 0 || offset > 100_000)
+        throw new ApiError("offset must be between 0 and 100000", 400);
+      const action = str(f.action);
+      const actor = str(f.actor);
+      const matching = audit.filter((row) => {
+        const t = Date.parse(row.ts);
+        return (
+          (action == null || row.action === action) &&
+          (actor == null || row.actor === actor) &&
+          (from == null || t >= from) &&
+          (to == null || t <= to)
+        );
+      });
+      const rows = matching.slice(offset, offset + limit);
+      const next = offset + rows.length;
+      const hasMore = next < matching.length;
+      return {
+        rows,
+        total: matching.length,
+        has_more: hasMore,
+        next_offset: hasMore ? next : null,
+        pagination_limited: false,
+      };
+    },
+    networkEnrollmentContexts: async (): Promise<NetworkEnrollmentContextPage> => {
+      const binding = activeBinding();
+      const contexts = binding
+        ? [
+            {
+              household_id: HOUSEHOLD,
+              household_name: households[0]?.name ?? "Home",
+              person_id: binding.person_id,
+              person_display_name: binding.person_display_name,
+              binding_id: binding.id,
+              generation: binding.generation,
+            },
+          ]
+        : [];
+      return {
+        contexts,
+        count: contexts.length,
+        total: contexts.length,
+        has_more: false,
+        next_offset: null,
+        pagination_limited: false,
+      };
+    },
+    networkPolicyCurrent: async (): Promise<NetworkPolicyViewResponse> => ({
+      policy: policyView(Math.max(...policies.map((p) => p.revision))),
+    }),
+    networkPolicyRevision: async (_household, revision): Promise<NetworkPolicyViewResponse> => ({
+      policy: policyView(checkRevision(revision)),
+    }),
+    networkPolicyDiff: async (_household, fromRevision, toRevision): Promise<NetworkPolicyDiffResponse> => ({
+      diff: buildDiff(policyView(checkRevision(fromRevision)), policyView(checkRevision(toRevision))),
+    }),
 
     networkGateways: async (_household, params) => ({
       gateways: gateways.filter((g) => !params?.kind || g.kind === params.kind),
@@ -975,7 +1212,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       const rows = page(policies, params);
       return { policies: rows, count: rows.length };
     },
-    networkPolicyPublish: async () => savePolicy(null),
+    networkPolicyPublish: async (_household, body) => savePolicy(null, body),
     networkPolicyRollback: async (_household, body) =>
       savePolicy(asRecord(body).source_revision),
     networkGatewayDesiredPolicy: async (_household, gatewayId) => ({
@@ -1029,7 +1266,10 @@ export function demoNetworkApi(): Partial<ApiClient> {
     };
   }
 
-  function savePolicy(rolledBackFrom: unknown): {
+  function savePolicy(
+    rolledBackFrom: unknown,
+    draft?: NetworkPolicyDraft,
+  ): {
     revision: number;
     body_sha256: string;
     status: "saved";
@@ -1041,6 +1281,31 @@ export function demoNetworkApi(): Partial<ApiClient> {
       typeof rolledBackFrom === "number" ? rolledBackFrom : null,
     );
     policies.unshift(meta);
+    const source =
+      typeof rolledBackFrom === "number" ? policyBodies.get(rolledBackFrom) : undefined;
+    policyBodies.set(revision, {
+      household_id: HOUSEHOLD,
+      person_rules: {},
+      exceptions: [],
+      default_effect: "deny",
+      baseline: [],
+      device_profiles: {},
+      timezone: "UTC",
+      stale_after_secs: 3600,
+      event_retention_secs: 14 * 86400,
+      ...(source ?? {}),
+      ...(draft
+        ? {
+            baseline: draft.baseline,
+            device_profiles: draft.device_profiles,
+            timezone: draft.timezone,
+            stale_after_secs: draft.stale_after_secs,
+            event_retention_secs: draft.event_retention_secs,
+          }
+        : {}),
+      revision,
+      published_at: meta.published_at,
+    });
     return { revision, body_sha256: meta.body_sha256, status: "saved" };
   }
 }

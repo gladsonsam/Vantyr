@@ -30,6 +30,7 @@ import { HelpTip } from "@/components/common/HelpTip";
 import { SettingsSection } from "@/features/network/components/SettingsSection";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { CONFLICT_MESSAGE, formatBytes, shortHash } from "./policyDraft";
+import { CompareRevisionDialog, ViewRevisionDialog } from "./PolicyRevisionDialogs";
 
 interface RevisionFacts {
   desiredFor: GatewayStatus[];
@@ -145,6 +146,8 @@ function RevisionRow({
   rollbackBusy,
   onRollback,
   onAssign,
+  onView,
+  onCompare,
   error,
 }: {
   version: NetworkPolicyVersion;
@@ -153,6 +156,8 @@ function RevisionRow({
   rollbackBusy: boolean;
   onRollback: () => void;
   onAssign: () => void;
+  onView: () => void;
+  onCompare: () => void;
   error: string | null;
 }) {
   const status = statusFor(facts);
@@ -193,6 +198,12 @@ function RevisionRow({
           ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onView}>
+            View
+          </Button>
+          <Button variant="outline" size="sm" onClick={onCompare}>
+            Compare
+          </Button>
           <Button variant="outline" size="sm" onClick={onAssign}>
             Assign to gateway…
           </Button>
@@ -238,6 +249,8 @@ export function PolicyHistoryCard({
 }) {
   const { rollback } = usePolicyMutations(household);
   const [assigning, setAssigning] = useState<number | null>(null);
+  const [viewing, setViewing] = useState<number | null>(null);
+  const [comparing, setComparing] = useState<number | null>(null);
   const [failed, setFailed] = useState<{ revision: number; message: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const latestRevision = versions[0]?.revision;
@@ -293,6 +306,8 @@ export function PolicyHistoryCard({
               rollbackBusy={rollback.isPending}
               onRollback={() => doRollback(v.revision)}
               onAssign={() => setAssigning(v.revision)}
+              onView={() => setViewing(v.revision)}
+              onCompare={() => setComparing(v.revision)}
               error={failed?.revision === v.revision ? failed.message : null}
             />
           ))}
@@ -304,6 +319,21 @@ export function PolicyHistoryCard({
             {loadingMore ? "Loading…" : "Load more"}
           </Button>
         </div>
+      ) : null}
+      {viewing !== null ? (
+        <ViewRevisionDialog
+          household={household}
+          revision={viewing}
+          onClose={() => setViewing(null)}
+        />
+      ) : null}
+      {comparing !== null ? (
+        <CompareRevisionDialog
+          household={household}
+          revision={comparing}
+          versions={versions}
+          onClose={() => setComparing(null)}
+        />
       ) : null}
       {assigning !== null ? (
         <AssignDialog

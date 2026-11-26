@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, UserRoundCheck, UserRoundX } from "lucide-re
 import { useQuery } from "@tanstack/react-query";
 import { errorText } from "@/api";
 import { networkQueries, useBindingMutations, useBindings } from "@/api/queries/network";
+import type { NetworkBinding } from "@/api/types";
 import { userQueries } from "@/api/queries/users";
 import { Button } from "@vantyr/ui/components/button";
 import { Input } from "@vantyr/ui/components/input";
@@ -123,11 +124,10 @@ export function BindingsSection({ household }: { household: string }) {
 
   const personRows = persons.data?.persons ?? [];
   const userRows = users.data?.users ?? null;
-  const personName = (id: string) => personRows.find((p) => p.id === id)?.display_name ?? id;
-  const userName = (id: string) => {
-    const u = userRows?.find((x) => x.id === id);
-    return u ? u.display_name || u.username : id;
-  };
+  // Labels come from the server on each binding; ids are only the fallback.
+  const personName = (b: NetworkBinding) => b.person_display_name || b.person_id;
+  const userName = (b: NetworkBinding) =>
+    b.dashboard_display_name || b.dashboard_username || b.dashboard_user;
   const rows = bindings.data.bindings;
 
   return (
@@ -147,9 +147,13 @@ export function BindingsSection({ household }: { household: string }) {
           <div key={b.id}>
             <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
               <div className="min-w-0">
-                <div className="text-sm font-semibold">{personName(b.person_id)}</div>
+                <div className="text-sm font-semibold">{personName(b)}</div>
                 <div className="text-[0.8125rem] text-muted-foreground">
-                  Dashboard user {userName(b.dashboard_user)} · created <TimeAgo iso={b.created_at} />
+                  Dashboard user {userName(b)}
+                  {b.dashboard_username && b.dashboard_display_name !== b.dashboard_username
+                    ? ` (${b.dashboard_username})`
+                    : ""}{" "}
+                  · created <TimeAgo iso={b.created_at} />
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-4">
@@ -169,7 +173,7 @@ export function BindingsSection({ household }: { household: string }) {
                   <span className="flex items-center gap-1.5">
                     <HoldAction
                       icon={<UserRoundX />}
-                      ariaLabel={`Revoke mapping for ${personName(b.person_id)}`}
+                      ariaLabel={`Revoke mapping for ${personName(b)}`}
                       doneLabel="Revoked"
                       disabled={revoke.isPending}
                       onHold={() => revoke.mutate(b.id)}

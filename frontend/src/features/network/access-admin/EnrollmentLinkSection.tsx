@@ -7,6 +7,8 @@ import { SettingsRow, SettingsSection } from "@/features/settings/components/Set
 export function EnrollmentLinkSection({ household }: { household: string }) {
   const href = useHref(`/network/enroll/${household}`);
   const url = new URL(href, window.location.origin).href;
+  const chooserHref = useHref("/network/enroll");
+  const chooserUrl = new URL(chooserHref, window.location.origin).href;
   return (
     <SettingsSection
       title="Enrollment link"
@@ -20,6 +22,17 @@ export function EnrollmentLinkSection({ household }: { household: string }) {
             {url}
           </code>
           <CopyTextButton text={url} label="Copy link" />
+        </div>
+      </SettingsRow>
+      <SettingsRow
+        label="Chooser link"
+        description="Lists each household a person is mapped to; opens it directly when there is only one."
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <code className="min-w-0 truncate rounded-md border border-border/70 px-2 py-1 text-xs">
+            {chooserUrl}
+          </code>
+          <CopyTextButton text={chooserUrl} label="Copy chooser link" />
         </div>
       </SettingsRow>
     </SettingsSection>

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ShieldOff } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { isApiError } from "@/api";
-import { useConsumeSetupGrant, useOwnEnrollDevices } from "@/api/queries/network";
+import { useConsumeSetupGrant, useEnrollmentContexts, useOwnEnrollDevices } from "@/api/queries/network";
 import type { NetworkSetupGrantIssued } from "@/api/types";
 import { usePageHeader } from "@/app/shell/usePageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -22,9 +22,17 @@ import { SetupSection } from "./SetupSection";
  */
 export function EnrollPage() {
   const { householdId = "" } = useParams();
+  const contexts = useEnrollmentContexts();
+  const context = contexts.data?.contexts.find((c) => c.household_id === householdId);
+  // Labels are display data only; fall back to the id when the context isn't listed.
+  const who = context
+    ? `${context.household_name || householdId} · ${context.person_display_name || context.person_id}`
+    : null;
   usePageHeader({
     title: "Enroll a device",
-    description: "Enroll your own devices and verify them with your dashboard sign-in.",
+    description: who
+      ? `${who}. Enroll your own devices and verify them with your dashboard sign-in.`
+      : "Enroll your own devices and verify them with your dashboard sign-in.",
   });
   const devices = useOwnEnrollDevices(householdId);
   const consume = useConsumeSetupGrant(householdId);

@@ -28,7 +28,6 @@ const PAGE_SIZE = 10;
  */
 function RevisionLifecycle() {
   const household = useNetworkHousehold();
-  const runtimePolicy = usePolicyQuery();
   const [limit, setLimit] = useState(PAGE_SIZE);
   const policies = useQuery({
     ...networkQueries.policies(household.id, { limit }),
@@ -70,7 +69,6 @@ function RevisionLifecycle() {
   }
 
   const versions = [...policies.data.policies].sort((a, b) => b.revision - a.revision);
-  const runtime = runtimePolicy.data?.state === "ready" ? runtimePolicy.data.data : null;
   return (
     <>
       <GatewayAssignmentsStrip
@@ -90,7 +88,6 @@ function RevisionLifecycle() {
         household={household.id}
         timezone={household.timezone}
         latest={versions[0]}
-        runtimeStart={runtime ? (runtime.proposal ?? runtime.applied) : null}
       />
     </>
   );

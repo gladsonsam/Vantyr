@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Outlet } from "react-router-dom";
+import { Link, Outlet } from "react-router-dom";
 import {
   Globe,
   Home,
@@ -17,7 +17,7 @@ import { Button } from "@vantyr/ui/components/button";
 import { Input } from "@vantyr/ui/components/input";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { errorText } from "@/api";
-import { useBootstrapNetworkMutation } from "@/api/queries/network";
+import { useBootstrapNetworkMutation, useEnrollmentContexts } from "@/api/queries/network";
 import { usePageHeader } from "@/app/shell/usePageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadFailedCard } from "@/components/common/LoadFailedCard";
@@ -96,6 +96,19 @@ function SetupCard() {
   );
 }
 
+/** Denied people who can still enroll their own devices get a small way in. */
+function EnrollDeviceLink() {
+  const contexts = useEnrollmentContexts();
+  if (!contexts.data || contexts.data.contexts.length === 0) return null;
+  return (
+    <p className="mt-4 text-center text-sm">
+      <Link to="/network/enroll" className="font-medium text-primary underline-offset-4 hover:underline">
+        Enroll a device
+      </Link>
+    </p>
+  );
+}
+
 /**
  * Layout route for every Network screen. It decides, from what the server returns, whether to show
  * the screens at all, and scopes them to one household.
@@ -125,12 +138,15 @@ export function NetworkLayout() {
       );
     case "denied":
       return (
-        <EmptyState
-          title="You don’t have access to Vantyr Network"
-          description="Network access is granted separately from dashboard roles. Ask a network administrator to grant you access."
-          icon={<ShieldOff className="size-5" />}
-          iconVariant="icon"
-        />
+        <>
+          <EmptyState
+            title="You don’t have access to Vantyr Network"
+            description="Network access is granted separately from dashboard roles. Ask a network administrator to grant you access."
+            icon={<ShieldOff className="size-5" />}
+            iconVariant="icon"
+          />
+          <EnrollDeviceLink />
+        </>
       );
     case "error":
       return (

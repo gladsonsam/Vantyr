@@ -27,7 +27,11 @@ import type {
   NetworkConnectionStatus,
   NetworkDevice,
   NetworkDeviceType,
-  NetworkAuditRow,
+  NetworkAuditFilters,
+  NetworkAuditResponse,
+  NetworkEnrollmentContextPage,
+  NetworkPolicyDiffResponse,
+  NetworkPolicyViewResponse,
   NetworkDesiredPolicy,
   NetworkGateway,
   NetworkGatewayCredential,
@@ -195,12 +199,19 @@ export const networkEndpoints = {
   ): Promise<{ ok: boolean }> =>
     delJson(`${base(household)}/grants/${userId}/${grant}`),
 
-  // ─── Household audit (network_admin; newest first; no server-side filters) ───
+  // ─── Household audit (network_admin; newest first; exact-match filters) ──────
   networkAudit: (
     household: string,
-    page?: NetworkPageParams,
-  ): Promise<{ rows: NetworkAuditRow[] }> =>
-    get(`${base(household)}/audit${limitOffsetQuery(page)}`),
+    filters?: NetworkAuditFilters,
+  ): Promise<NetworkAuditResponse> => {
+    const q = new URLSearchParams(limitOffsetQuery(filters).slice(1));
+    for (const key of ["action", "actor", "from", "to"] as const) {
+      const value = filters?.[key];
+      if (value) q.set(key, value);
+    }
+    const qs = q.toString();
+    return get(`${base(household)}/audit${qs ? `?${qs}` : ""}`);
+  },
 
   // ─── Gateways: DNS / Proxy workers and their scoped credentials ──────────────
   networkGateways: (
@@ -269,6 +280,23 @@ export const networkEndpoints = {
     page?: NetworkPageParams,
   ): Promise<{ policies: NetworkPolicyVersion[]; count: number }> =>
     get(`${base(household)}/policies${limitOffsetQuery(page)}`),
+  /** Highest stored revision (not the desired, applied or verified one). network_admin. */
+  networkPolicyCurrent: (household: string): Promise<NetworkPolicyViewResponse> =>
+    get(`${base(household)}/policies/current`),
+  /** 400 malformed, 404 missing, pruned or foreign. */
+  networkPolicyRevision: (
+    household: string,
+    revision: number,
+  ): Promise<NetworkPolicyViewResponse> =>
+    get(`${base(household)}/policies/${revision}`),
+  networkPolicyDiff: (
+    household: string,
+    fromRevision: number,
+    toRevision: number,
+  ): Promise<NetworkPolicyDiffResponse> =>
+    get(
+      `${base(household)}/policies/diff?from_revision=${fromRevision}&to_revision=${toRevision}`,
+    ),
   networkPolicyPublish: (
     household: string,
     body: NetworkPolicyDraft,
@@ -374,4 +402,10 @@ export const networkEndpoints = {
     session: string,
   ): Promise<NetworkSessionEndResult> =>
     delJson(`${base(household)}/enroll/sessions/${session}`),
+
+  // ─── Enrollment contexts: households and people the signed-in user is bound to ─
+  networkEnrollmentContexts: (
+    page?: NetworkPageParams,
+  ): Promise<NetworkEnrollmentContextPage> =>
+    get(`/network/enrollment-contexts${limitOffsetQuery(page)}`),
 };

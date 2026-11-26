@@ -1,4 +1,5 @@
 import {
+  keepPreviousData,
   queryOptions,
   useInfiniteQuery,
   useMutation,
@@ -8,6 +9,7 @@ import {
 } from "@tanstack/react-query";
 import { api } from "@/api";
 import type {
+  NetworkAuditFilters,
   NetworkDesiredPolicy,
   NetworkGateway,
   NetworkGatewayKind,
@@ -35,8 +37,16 @@ export const networkKeys = {
     [...networkKeys.inventory(household), "enrollments"] as const,
   grants: (household: string) =>
     [...networkKeys.all, household, "grants"] as const,
-  audit: (household: string, page?: NetworkPageParams) =>
-    [...networkKeys.all, household, "audit", page ?? {}] as const,
+  audit: (household: string, filters?: NetworkAuditFilters) =>
+    [...networkKeys.all, household, "audit", filters ?? {}] as const,
+  policyCurrent: (household: string) =>
+    [...networkKeys.policiesRoot(household), "current"] as const,
+  policyRevision: (household: string, revision: number) =>
+    [...networkKeys.policiesRoot(household), "revision", revision] as const,
+  policyDiff: (household: string, from: number, to: number) =>
+    [...networkKeys.policiesRoot(household), "diff", from, to] as const,
+  enrollmentContexts: (page?: NetworkPageParams) =>
+    [...networkKeys.all, "enrollment-contexts", page ?? {}] as const,
   gatewaysRoot: (household: string) =>
     [...networkKeys.all, household, "gateways"] as const,
   gateways: (household: string, kind?: NetworkGatewayKind) =>
@@ -117,10 +127,37 @@ export const networkQueries = {
       queryKey: networkKeys.grants(household),
       queryFn: () => api.networkGrants(household),
     }),
-  audit: (household: string, page?: NetworkPageParams) =>
+  audit: (household: string, filters?: NetworkAuditFilters) =>
     queryOptions({
-      queryKey: networkKeys.audit(household, page),
-      queryFn: () => api.networkAudit(household, page),
+      queryKey: networkKeys.audit(household, filters),
+      queryFn: () => api.networkAudit(household, filters),
+    }),
+  policyCurrent: (household: string) =>
+    queryOptions({
+      queryKey: networkKeys.policyCurrent(household),
+      queryFn: () => api.networkPolicyCurrent(household),
+    }),
+  policyRevision: (household: string, revision: number) =>
+    queryOptions({
+      queryKey: networkKeys.policyRevision(household, revision),
+      queryFn: () => api.networkPolicyRevision(household, revision),
+      // A stored revision is immutable; a 404 (pruned/foreign) is an answer, not a glitch.
+      staleTime: 5 * 60_000,
+      retry: false,
+    }),
+  policyDiff: (household: string, from: number, to: number) =>
+    queryOptions({
+      queryKey: networkKeys.policyDiff(household, from, to),
+      queryFn: () => api.networkPolicyDiff(household, from, to),
+      staleTime: 5 * 60_000,
+      retry: false,
+    }),
+  enrollmentContexts: (page?: NetworkPageParams) =>
+    queryOptions({
+      queryKey: networkKeys.enrollmentContexts(page),
+      queryFn: () => api.networkEnrollmentContexts(page),
+      // Current-user scoped: 401/empty is an answer.
+      retry: false,
     }),
   gateways: (household: string, kind?: NetworkGatewayKind) =>
     queryOptions({
@@ -177,6 +214,46 @@ export const networkQueries = {
       retry: false,
     }),
 };
+
+export { policyToDraft, type DroppedPolicyContent } from "./networkPolicyDraft";
+
+/** Highest stored revision (network_admin). Not the desired, applied or verified one. */
+export function usePolicyCurrent(household: string, enabled = true) {
+  return useQuery({ ...networkQueries.policyCurrent(household), enabled });
+}
+
+/** One stored revision; idle while `revision` is null. */
+export function usePolicyRevision(household: string, revision: number | null) {
+  return useQuery({
+    ...networkQueries.policyRevision(household, revision ?? 0),
+    enabled: revision != null && revision >= 1,
+  });
+}
+
+/** Diff between two stored revisions; idle until both are set. */
+export function usePolicyDiff(
+  household: string,
+  from: number | null,
+  to: number | null,
+) {
+  return useQuery({
+    ...networkQueries.policyDiff(household, from ?? 0, to ?? 0),
+    enabled: from != null && to != null && from >= 1 && to >= 1,
+  });
+}
+
+/** One audit page for the given exact-match filters. Keeps the previous page while paging. */
+export function useAudit(household: string, filters?: NetworkAuditFilters) {
+  return useQuery({
+    ...networkQueries.audit(household, filters),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Households and people the signed-in user is bound to (for self-service enrollment). */
+export function useEnrollmentContexts(page?: NetworkPageParams) {
+  return useQuery(networkQueries.enrollmentContexts(page));
+}
 
 export function useBindings(household: string) {
   return useQuery(networkQueries.bindings(household));

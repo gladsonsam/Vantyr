@@ -3,6 +3,7 @@ import { errorText } from "@/api";
 import { useEndAllSessions, useEndSession, useOwnSessions } from "@/api/queries/network";
 import type { NetworkOwnDevice, NetworkOwnSession } from "@/api/types";
 import { Button } from "@vantyr/ui/components/button";
+import { HelpTip } from "@/components/common/HelpTip";
 import { HoldAction } from "@/features/network/gateways/HoldAction";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { SettingsSection } from "@/features/settings/components/SettingsLayout";
@@ -56,6 +57,15 @@ export function SessionsSection({
                 {devices.find((d) => d.id === s.device_id)?.label ?? "Device no longer enrolled"}
               </div>
               <div className="text-[0.8125rem] text-muted-foreground">
+                {s.person_display_name ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    Signed in as {s.person_display_name}
+                    <HelpTip label="About this label">
+                      A label, not proof of who is using the device or of network coverage.
+                    </HelpTip>
+                  </span>
+                ) : null}
+                {s.person_display_name ? " · " : ""}
                 {purposeLabel(s.purpose)} · verified <TimeAgo iso={s.verified_at} /> · ends{" "}
                 <TimeAgo iso={s.expires_at} />
               </div>

@@ -292,6 +292,37 @@ export function editorFromSnapshot(snapshot: PolicySnapshot): SnapshotImport {
   };
 }
 
+// ── Starting point from a stored revision ───────────────────────────────────
+
+function fromApiRule(rule: NetworkPolicyRule): EditorRule | null {
+  const m = rule.matcher;
+  if (typeof m !== "object") return null;
+  if ("domain_suffix" in m) {
+    return { id: rule.id, kind: "domain_suffix", value: m.domain_suffix, effect: rule.effect, reason: rule.reason, schedule: rule.schedule };
+  }
+  if ("host_exact" in m) {
+    return { id: rule.id, kind: "host_exact", value: m.host_exact, effect: rule.effect, reason: rule.reason, schedule: rule.schedule };
+  }
+  return null;
+}
+
+/** Editor state for a draft built by `policyToDraft` (content only; no revision metadata). */
+export function editorFromDraft(draft: NetworkPolicyDraft): EditorState {
+  const rules = (list: NetworkPolicyRule[]) =>
+    list.map(fromApiRule).filter((r): r is EditorRule => r !== null);
+  return {
+    baseline: rules(draft.baseline),
+    profiles: Object.entries(draft.device_profiles).map(([profileId, list]) => ({
+      key: newRuleId("profile"),
+      profileId,
+      rules: rules(list),
+    })),
+    timezone: draft.timezone,
+    staleAfterMinutes: draft.stale_after_secs / 60,
+    eventRetentionDays: draft.event_retention_secs / 86400,
+  };
+}
+
 // ── Revision helpers ────────────────────────────────────────────────────────
 
 export const CONFLICT_MESSAGE = "Someone published a newer revision; review it and try again.";
