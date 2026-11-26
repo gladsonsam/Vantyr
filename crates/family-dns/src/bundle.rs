@@ -15,29 +15,55 @@ use serde::{Deserialize, Serialize};
 use vantyr_network_runtime::{check_policy_shape, LkgError, Persistable, TypedLkgStore, Validator};
 
 use crate::config::Config;
+use crate::filter::{validate_material_shape, FilterMaterial};
 
-/// One validated config+policy pair. There is no second state file and no
-/// independent policy payload: the bundle is the only thing the runtime
-/// persists, loads and publishes.
+/// One validated config+policy pair plus its self-contained filter material.
+/// There is no second state file and no independent policy or filter payload:
+/// the bundle is the only thing the runtime persists, loads and publishes.
+/// `filter` is `None` for old bundles and for workers with no list settings.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Bundle {
     pub config: Config,
     pub policy: Policy,
+    #[serde(default)]
+    pub filter: Option<FilterMaterial>,
 }
 
 impl Bundle {
     /// Validate the config and derive its policy with an explicit publication
-    /// time. Used for first-run bootstrap and for reload candidates.
+    /// time. Kept for callers that do not use list filtering.
     pub fn build(config: &Config, published_at: DateTime<Utc>) -> Result<Self> {
+        Self::build_with_filter(config, published_at, None)
+    }
+
+    /// Bootstrap/reload candidate with the validated list material actually
+    /// applied. The material carries bytes and derivation metadata, not paths.
+    pub fn build_with_filter(
+        config: &Config,
+        published_at: DateTime<Utc>,
+        filter: Option<FilterMaterial>,
+    ) -> Result<Self> {
         config.validate()?;
         let policy = config.policy_at(published_at);
-        Self::new(config.clone(), policy)
+        Self::new_with_filter(config.clone(), policy, filter)
     }
 
     /// Check that config and policy describe the same version and household.
     pub fn new(config: Config, policy: Policy) -> Result<Self> {
-        consistency(&config, &policy).map_err(anyhow::Error::msg)?;
-        Ok(Self { config, policy })
+        Self::new_with_filter(config, policy, None)
+    }
+
+    pub fn new_with_filter(
+        config: Config,
+        policy: Policy,
+        filter: Option<FilterMaterial>,
+    ) -> Result<Self> {
+        consistency(&config, &policy, filter.as_ref()).map_err(anyhow::Error::msg)?;
+        Ok(Self {
+            config,
+            policy,
+            filter,
+        })
     }
 
     /// The original publication time of the policy in this bundle.
@@ -51,7 +77,11 @@ impl Bundle {
 }
 
 /// Shared consistency checks, used both on disk loads and on new candidates.
-fn consistency(config: &Config, policy: &Policy) -> std::result::Result<(), LkgError> {
+fn consistency(
+    config: &Config,
+    policy: &Policy,
+    filter: Option<&FilterMaterial>,
+) -> std::result::Result<(), LkgError> {
     config
         .validate()
         .map_err(|e| LkgError::Malformed(e.to_string()))?;
@@ -91,6 +121,48 @@ fn consistency(config: &Config, policy: &Policy) -> std::result::Result<(), LkgE
             "policy content disagrees with its DNS configuration".into(),
         ));
     }
+    check_filter_consistency(config, filter)?;
+    Ok(())
+}
+
+/// The bundle is authoritative for what was applied: enabled settings and
+/// durable material must describe exactly the same sources and services. A
+/// missing source file on disk is irrelevant here because no path is reread.
+fn check_filter_consistency(
+    config: &Config,
+    filter: Option<&FilterMaterial>,
+) -> std::result::Result<(), LkgError> {
+    let enabled = config.filter.enabled_source_ids();
+    let selected = config.filter.selected_service_ids();
+    match filter {
+        None => {
+            if !enabled.is_empty() || !selected.is_empty() {
+                return Err(LkgError::Malformed(
+                    "filter settings have no persisted material".into(),
+                ));
+            }
+        }
+        Some(material) => {
+            validate_material_shape(material)
+                .map_err(|error| LkgError::Malformed(error.to_string()))?;
+            let stored_ids: Vec<String> =
+                material.lists.iter().map(|list| list.id.clone()).collect();
+            if stored_ids != enabled
+                || material.derivation.selected_services != selected
+                || material.derivation.catalog_version
+                    != config
+                        .filter
+                        .catalog
+                        .as_ref()
+                        .map(|catalog| catalog.version.clone())
+                        .unwrap_or_default()
+            {
+                return Err(LkgError::Malformed(
+                    "persisted filter material disagrees with local settings".into(),
+                ));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -105,7 +177,7 @@ impl Persistable for Bundle {
     }
 
     fn check(&self) -> std::result::Result<(), LkgError> {
-        consistency(&self.config, &self.policy)
+        consistency(&self.config, &self.policy, self.filter.as_ref())
     }
 }
 
@@ -118,6 +190,9 @@ impl Validator<Bundle> for BundleValidator {
     fn validate(&self, bundle: &Bundle) -> std::result::Result<(), String> {
         if bundle.policy.default_effect != Effect::Deny {
             return Err("DNS policy must deny by default".into());
+        }
+        if let Some(material) = &bundle.filter {
+            validate_material_shape(material).map_err(|error| error.to_string())?;
         }
         Ok(())
     }

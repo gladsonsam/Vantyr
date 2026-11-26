@@ -33,6 +33,19 @@ pub struct DecisionObservation {
     /// Set when the original name was allowed but an answer CNAME pointed at
     /// a denied name, so the response was replaced with a denial.
     pub denied_alias_target: Option<String>,
+    /// True when household policy allowed the name but an accepted list or
+    /// selected service blocked it. `allow` is the final combined answer.
+    pub filter_blocked: bool,
+    /// Source id of the list or selected service, when the filter blocked.
+    /// A raw source URL and per-query URL history are never stored.
+    pub filter_source_id: Option<String>,
+    /// `"list"` or `"service"`; `None` when the filter did not block.
+    pub filter_source_kind: Option<String>,
+    /// Upstream-reported rule, when the backend exposes one (ABP). Hickory
+    /// hosts/service lookups expose no matched entry, so this stays `None`.
+    pub filter_rule: Option<String>,
+    /// Why the backend could not expose a more specific rule.
+    pub filter_note: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -88,6 +101,11 @@ mod tests {
             identity: EffectiveIdentity::Unknown,
             device_id: None,
             denied_alias_target: None,
+            filter_blocked: false,
+            filter_source_id: None,
+            filter_source_kind: None,
+            filter_rule: None,
+            filter_note: None,
         }
     }
 

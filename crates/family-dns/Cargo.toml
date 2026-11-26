@@ -12,6 +12,12 @@ path = "src/bin/vantyr-dns.rs"
 [dependencies]
 family-policy          = { path = "../family-policy" }
 vantyr-network-runtime = { path = "../network-runtime" }
+# Accepted bounded filter compiler (Hickory + maintained adblock, default `abp`
+# feature). Family DNS consumes the immutable snapshot; it never fetches bytes.
+vantyr-network-filter  = { path = "../network-filter" }
+# Durable base64 of validated list material inside the one bundle file. Already
+# pinned in the workspace lock by network-subscriptions; no new version.
+base64           = "=0.22.1"
 anyhow           = "=1.0.105"
 async-trait      = "=0.1.92"
 chrono           = { version = "=0.4.45", features = ["serde"] }

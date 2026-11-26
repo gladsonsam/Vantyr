@@ -95,7 +95,12 @@ impl FilteringHandler {
             if let Some(target) = target {
                 if !snapshot
                     .evaluator
-                    .evaluate_alias(source, &target, qtype)
+                    .evaluate_alias_with_filter(
+                        source,
+                        &target,
+                        qtype,
+                        Some(snapshot.filter.as_ref()),
+                    )
                     .allow
                 {
                     return Some(target.to_string().to_ascii_lowercase());
@@ -233,12 +238,20 @@ impl RequestHandler for FilteringHandler {
         let source = request.src().ip();
         let qname = info.query.original().name().clone();
         let qtype = info.query.query_type();
-        let decision = snapshot.evaluator.evaluate(source, &qname, qtype);
+        let decision = snapshot.evaluator.evaluate_with_filter(
+            source,
+            &qname,
+            qtype,
+            Some(snapshot.filter.as_ref()),
+        );
         debug!(
             %qname,
             revision = decision.policy_revision,
             reason = %decision.reason_code,
             allow = decision.allow,
+            filter_blocked = decision.filter_blocked,
+            filter_source = decision.filter_source_id.as_deref().unwrap_or("none"),
+            filter_rule = decision.filter_rule.as_deref().unwrap_or("none"),
             "policy decision"
         );
         if !decision.allow {

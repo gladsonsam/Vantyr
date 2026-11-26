@@ -42,6 +42,17 @@ pub const DEFAULT_PORT: u16 = 15_353;
 pub const HEARTBEAT_TTL_SECS: u64 = 90;
 const EVENT_RETENTION_SECS: u64 = 24 * 60 * 60;
 
+// Filter configuration is deliberately only *settings*: source ids/formats and
+// bounded regular-file paths, plus an operator-provided service catalog and
+// explicitly selected ids. The validated list bytes live in the durable bundle
+// as typed material, never in this 64 KiB config. These bounds mirror the
+// accepted `vantyr-network-filter` limits.
+pub const MAX_FILTER_SOURCES: usize = 32;
+pub const MAX_FILTER_PATH_LEN: usize = 512;
+pub const MAX_FILTER_FIELD_LEN: usize = 200;
+pub const MAX_SELECTED_SERVICES: usize = 64;
+pub const MAX_SERVICE_DOMAINS: usize = 512;
+
 /// Canonicalise only IPv4-mapped IPv6 (`::ffff:a.b.c.d`) to IPv4. Native IPv6
 /// loopback (`::1`) and deprecated IPv4-compatible addresses (`::a.b.c.d`)
 /// stay IPv6 and are never silently reinterpreted as an IPv4 address.
@@ -390,6 +401,187 @@ pub struct DeviceConfig {
     pub source_ips: Vec<String>,
 }
 
+/// Which maintained parser owns an operator-supplied list. Not
+/// interchangeable: hosts files carry bare/address-prefixed domains, ABP files
+/// carry domain-anchored network rules.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ListFormatSpec {
+    Hosts,
+    Abp,
+}
+
+/// One bounded local list source. The path is read once at bootstrap/reload;
+/// the validated bytes are then persisted in the bundle. `source_url` is
+/// attribution metadata only — it is never dereferenced by this worker.
+/// `enabled = false` (or removal from `sources`) explicitly drops the list.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilterSourceSpec {
+    pub id: String,
+    pub format: ListFormatSpec,
+    pub path: String,
+    #[serde(default)]
+    pub source_url: Option<String>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+/// Exact host or suffix (host plus subdomains) in an operator-provided service.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ServiceDomainSpec {
+    Exact { value: String },
+    Suffix { value: String },
+}
+
+/// A typed service definition. It is a domain set, not an app identity, URL or
+/// browser category. `source`/`evidence` are optional operator provenance
+/// carried as metadata; no popular-service catalog is bundled or fetched.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServiceSpec {
+    pub id: String,
+    pub label: String,
+    pub version: String,
+    pub domains: Vec<ServiceDomainSpec>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub evidence: Option<String>,
+}
+
+/// Operator-provided catalog. Empty by default; only IDs in
+/// `FilterConfig::selected_services` are compiled and can block.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServiceCatalogSpec {
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub services: Vec<ServiceSpec>,
+}
+
+/// Small, validated filter *settings*. No bytes and no fetcher live here.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilterConfig {
+    #[serde(default)]
+    pub sources: Vec<FilterSourceSpec>,
+    #[serde(default)]
+    pub catalog: Option<ServiceCatalogSpec>,
+    #[serde(default)]
+    pub selected_services: Vec<String>,
+}
+
+impl FilterConfig {
+    /// Canonical ids of sources that actually contribute. Disabled sources and
+    /// removed sources are absent, so removal is explicit and unambiguous.
+    pub fn enabled_source_ids(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self
+            .sources
+            .iter()
+            .filter(|source| source.enabled)
+            .map(|source| source.id.clone())
+            .collect();
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+
+    /// Canonical selected service ids (sorted, deduplicated).
+    pub fn selected_service_ids(&self) -> Vec<String> {
+        let mut ids = self.selected_services.clone();
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+
+    fn validate(&self, place: &str) -> Result<()> {
+        if self.sources.len() > MAX_FILTER_SOURCES {
+            bail!("{place} has more than {MAX_FILTER_SOURCES} sources");
+        }
+        let mut seen = BTreeSet::new();
+        for source in &self.sources {
+            check_filter_field(&source.id, "filter source id", place)?;
+            if !seen.insert(source.id.clone()) {
+                bail!("{place} has a duplicate source id {}", source.id);
+            }
+            if source.path.is_empty()
+                || source.path.len() > MAX_FILTER_PATH_LEN
+                || source.path.chars().any(|c| c.is_control())
+            {
+                bail!(
+                    "{place} source {} path is empty, unbounded or malformed",
+                    source.id
+                );
+            }
+            if let Some(url) = &source.source_url {
+                check_filter_field(url, "filter source_url", place)?;
+            }
+        }
+        if self.selected_services.len() > MAX_SELECTED_SERVICES {
+            bail!("{place} selects more than {MAX_SELECTED_SERVICES} services");
+        }
+        let catalog = match &self.catalog {
+            Some(catalog) => catalog,
+            None if self.selected_services.is_empty() => return Ok(()),
+            None => bail!("{place} selects services without a catalog"),
+        };
+        check_filter_field(&catalog.version, "catalog version", place)?;
+        if catalog.services.len() > MAX_SELECTED_SERVICES {
+            bail!("{place} catalog has more than {MAX_SELECTED_SERVICES} services");
+        }
+        let mut service_ids = BTreeSet::new();
+        for service in &catalog.services {
+            check_filter_field(&service.id, "service id", place)?;
+            if !service_ids.insert(service.id.clone()) {
+                bail!("{place} has a duplicate service id {}", service.id);
+            }
+            check_filter_field(&service.label, "service label", place)?;
+            check_filter_field(&service.version, "service version", place)?;
+            if let Some(value) = &service.source {
+                check_filter_field(value, "service source", place)?;
+            }
+            if let Some(value) = &service.evidence {
+                check_filter_field(value, "service evidence", place)?;
+            }
+            if service.domains.is_empty() || service.domains.len() > MAX_SERVICE_DOMAINS {
+                bail!(
+                    "{place} service {} has 0 or more than {MAX_SERVICE_DOMAINS} domains",
+                    service.id
+                );
+            }
+            for domain in &service.domains {
+                let value = match domain {
+                    ServiceDomainSpec::Exact { value } | ServiceDomainSpec::Suffix { value } => {
+                        value
+                    }
+                };
+                check_filter_field(value, "service domain", place)?;
+                if value.contains('*') {
+                    bail!("{place} service {} domain contains a wildcard", service.id);
+                }
+            }
+        }
+        for id in &self.selected_services {
+            check_filter_field(id, "selected service id", place)?;
+            if !service_ids.contains(id) {
+                bail!("{place} selects unknown service {id}");
+            }
+        }
+        Ok(())
+    }
+}
+
+fn check_filter_field(value: &str, what: &str, place: &str) -> Result<()> {
+    if value.is_empty() || value.len() > MAX_FILTER_FIELD_LEN || value.chars().any(char::is_control)
+    {
+        bail!("{place} {what} is empty, unbounded or malformed");
+    }
+    Ok(())
+}
+
 /// Complete, validated worker configuration. Deserialized values are kept
 /// private to the module's methods after validation so callers cannot bypass
 /// validation by mutating a field.
@@ -428,6 +620,10 @@ pub struct Config {
     pub default_device_profile: String,
     #[serde(default)]
     pub devices: Vec<DeviceConfig>,
+    /// Bounded filter settings. Absent in older configs; an empty value keeps
+    /// the worker exactly as it was before list filtering existed.
+    #[serde(default)]
+    pub filter: FilterConfig,
 }
 
 impl Config {
@@ -471,6 +667,7 @@ impl Config {
         if !(1..=MAX_STALE_SECS).contains(&self.stale_after_secs) {
             bail!("stale_after_secs must be 1..={MAX_STALE_SECS}");
         }
+        self.filter.validate("filter")?;
 
         // Parse fallibly before any accessor that assumes validation.
         parsed_ip(&self.bind.address, "bind address")?;
@@ -968,5 +1165,52 @@ mod tests {
         std::fs::write(&path, vec![b'x'; MAX_CONFIG_BYTES + 1]).unwrap();
         assert!(Config::load(&path).is_err());
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn filter_settings_are_bounded_and_selected_ids_must_exist() {
+        let base = VALID.to_owned();
+        let with_filter = base.replace(
+            "\"household_id\":",
+            r#""filter": {
+              "sources": [{"id":"hosts","format":"hosts","path":"/tmp/hosts.txt"}],
+              "catalog": {"version":"v1","services":[{"id":"video","label":"Video","version":"1","domains":[{"type":"exact","value":"video.example"}]}]},
+              "selected_services": ["video"]
+            },
+            "household_id":"#,
+        );
+        let config = Config::parse(with_filter.as_bytes()).unwrap();
+        assert_eq!(config.filter.enabled_source_ids(), vec!["hosts".to_owned()]);
+        assert_eq!(
+            config.filter.selected_service_ids(),
+            vec!["video".to_owned()]
+        );
+
+        let unknown = with_filter.replace(
+            "\"selected_services\": [\"video\"]",
+            "\"selected_services\": [\"absent\"]",
+        );
+        assert!(Config::parse(unknown.as_bytes()).is_err());
+        let duplicate = with_filter.replace(
+            "\"sources\": [{\"id\":\"hosts\",\"format\":\"hosts\",\"path\":\"/tmp/hosts.txt\"}]",
+            "\"sources\": [{\"id\":\"hosts\",\"format\":\"hosts\",\"path\":\"/tmp/hosts.txt\"},{\"id\":\"hosts\",\"format\":\"abp\",\"path\":\"/tmp/ads.txt\"}]",
+        );
+        assert!(Config::parse(duplicate.as_bytes()).is_err());
+        let unbounded = with_filter.replace(
+            "\"id\":\"hosts\"",
+            &format!("\"id\":\"{}\"", "x".repeat(MAX_FILTER_FIELD_LEN + 1)),
+        );
+        assert!(Config::parse(unbounded.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn disabled_sources_are_not_effective() {
+        let with_filter = VALID.replace(
+            "\"household_id\":",
+            r#""filter": {"sources":[{"id":"off","format":"hosts","path":"/tmp/hosts.txt","enabled":false}]},
+            "household_id":"#,
+        );
+        let config = Config::parse(with_filter.as_bytes()).unwrap();
+        assert!(config.filter.enabled_source_ids().is_empty());
     }
 }

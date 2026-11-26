@@ -43,8 +43,12 @@ use vantyr_network_policy::{HouseholdId, Policy, PolicyRevision};
 /// Bumped only with an explicit migration. A snapshot from another schema is
 /// rejected rather than guessed at.
 pub const SNAPSHOT_SCHEMA: u32 = 1;
-/// Hard read/write bound; a larger snapshot is rejected before it is parsed or
-/// written. Config snapshots are small, so 1 MiB is generous.
+/// Default hard read/write bound; a larger snapshot is rejected before it is
+/// parsed or written. Policy-only and small config+policy snapshots are small,
+/// so 1 MiB is generous. A store carrying a larger *typed* payload (for
+/// example bounded filter material) can raise this via
+/// [`TypedLkgStore::open_with_limit`] without changing the default or any
+/// other store.
 pub const MAX_SNAPSHOT_BYTES: u64 = 1 << 20;
 
 /// One typed payload that can be kept as last-known-good. The payload may be a
@@ -217,6 +221,9 @@ pub struct TypedLkgStore<T: Persistable, V> {
     validator: V,
     state: Mutex<Option<TypedSnapshot<T>>>,
     hooks: WriteHooks,
+    /// Per-store serialization ceiling. Defaults to [`MAX_SNAPSHOT_BYTES`];
+    /// a worker with a genuinely larger typed payload can opt in explicitly.
+    max_bytes: u64,
 }
 
 impl<T: Persistable, V: Validator<T>> TypedLkgStore<T, V> {
@@ -229,9 +236,26 @@ impl<T: Persistable, V: Validator<T>> TypedLkgStore<T, V> {
         worker_id: impl Into<String>,
         validator: V,
     ) -> Result<Self, LkgError> {
+        Self::open_with_limit(path, household_id, worker_id, validator, MAX_SNAPSHOT_BYTES)
+    }
+
+    /// Same protocol as [`Self::open`] with an explicit per-store byte ceiling.
+    /// The limit is applied to the on-disk file *before* it is allocated and to
+    /// the serialized candidate before it is written. A payload that does not
+    /// need more than the default should keep using [`Self::open`].
+    pub fn open_with_limit(
+        path: impl Into<PathBuf>,
+        household_id: HouseholdId,
+        worker_id: impl Into<String>,
+        validator: V,
+        max_bytes: u64,
+    ) -> Result<Self, LkgError> {
+        if max_bytes == 0 {
+            return Err(LkgError::Malformed("max_bytes must be positive".into()));
+        }
         let path = path.into();
         let worker_id = worker_id.into();
-        let loaded = match read_snapshot(&path)? {
+        let loaded = match read_snapshot(&path, max_bytes)? {
             Some(bytes) => Some(validate_snapshot(
                 &bytes,
                 Some(&household_id),
@@ -247,6 +271,7 @@ impl<T: Persistable, V: Validator<T>> TypedLkgStore<T, V> {
             validator,
             state: Mutex::new(loaded),
             hooks: WriteHooks::default(),
+            max_bytes,
         })
     }
 
@@ -260,9 +285,24 @@ impl<T: Persistable, V: Validator<T>> TypedLkgStore<T, V> {
         worker_id: impl Into<String>,
         validator: V,
     ) -> Result<Self, LkgError> {
+        Self::open_from_snapshot_with_limit(path, worker_id, validator, MAX_SNAPSHOT_BYTES)
+    }
+
+    /// Restart variant of [`Self::open_with_limit`]: household identity still
+    /// comes from the one durable file, but the read is bounded by the caller's
+    /// payload size rather than the policy-only default.
+    pub fn open_from_snapshot_with_limit(
+        path: impl Into<PathBuf>,
+        worker_id: impl Into<String>,
+        validator: V,
+        max_bytes: u64,
+    ) -> Result<Self, LkgError> {
+        if max_bytes == 0 {
+            return Err(LkgError::Malformed("max_bytes must be positive".into()));
+        }
         let path = path.into();
         let worker_id = worker_id.into();
-        let bytes = read_snapshot(&path)?.ok_or(LkgError::Missing)?;
+        let bytes = read_snapshot(&path, max_bytes)?.ok_or(LkgError::Missing)?;
         let loaded = validate_snapshot(&bytes, None, &worker_id, &validator)?;
         let household_id = loaded.household_id;
         Ok(Self {
@@ -272,6 +312,7 @@ impl<T: Persistable, V: Validator<T>> TypedLkgStore<T, V> {
             validator,
             state: Mutex::new(Some(loaded)),
             hooks: WriteHooks::default(),
+            max_bytes,
         })
     }
 
@@ -307,10 +348,10 @@ impl<T: Persistable, V: Validator<T>> TypedLkgStore<T, V> {
         };
         let bytes =
             serde_json::to_vec(&snapshot).map_err(|e| LkgError::WriteFailed(e.to_string()))?;
-        if bytes.len() as u64 > MAX_SNAPSHOT_BYTES {
+        if bytes.len() as u64 > self.max_bytes {
             return Err(LkgError::TooLarge {
                 bytes: bytes.len() as u64,
-                limit: MAX_SNAPSHOT_BYTES,
+                limit: self.max_bytes,
             });
         }
 
@@ -408,7 +449,7 @@ fn validate_snapshot<T: Persistable, V: Validator<T>>(
 /// Bounded, symlink-refusing read. Metadata is checked first so a symlink is
 /// reported precisely, then the open uses `O_NOFOLLOW` on Unix to avoid a
 /// last-moment swap between check and open.
-fn read_snapshot(path: &Path) -> Result<Option<Vec<u8>>, LkgError> {
+fn read_snapshot(path: &Path, max_bytes: u64) -> Result<Option<Vec<u8>>, LkgError> {
     let meta = match fs::symlink_metadata(path) {
         Ok(meta) => meta,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -420,22 +461,24 @@ fn read_snapshot(path: &Path) -> Result<Option<Vec<u8>>, LkgError> {
     if !meta.file_type().is_file() {
         return Err(LkgError::NotRegularFile);
     }
-    if meta.len() > MAX_SNAPSHOT_BYTES {
+    // Check the metadata bound before allocating, so an oversized file is
+    // rejected without ever holding it in memory.
+    if meta.len() > max_bytes {
         return Err(LkgError::TooLarge {
             bytes: meta.len(),
-            limit: MAX_SNAPSHOT_BYTES,
+            limit: max_bytes,
         });
     }
 
     let file = open_snapshot(path)?;
     let mut bytes = Vec::with_capacity(meta.len() as usize);
-    file.take(MAX_SNAPSHOT_BYTES + 1)
+    file.take(max_bytes.saturating_add(1))
         .read_to_end(&mut bytes)
         .map_err(|e| LkgError::ReadFailed(e.to_string()))?;
-    if bytes.len() as u64 > MAX_SNAPSHOT_BYTES {
+    if bytes.len() as u64 > max_bytes {
         return Err(LkgError::TooLarge {
             bytes: bytes.len() as u64,
-            limit: MAX_SNAPSHOT_BYTES,
+            limit: max_bytes,
         });
     }
     Ok(Some(bytes))
@@ -1020,5 +1063,47 @@ mod tests {
             1,
             "one file for one typed bundle"
         );
+    }
+
+    #[test]
+    fn per_store_limit_raises_the_ceiling_without_changing_the_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("larger.json");
+        let h = household();
+        let now = ts("2026-11-26T10:00:00Z");
+        let mut bigger = policy(h, 1, "base");
+        bigger.baseline[0].reason = "x".repeat(MAX_SNAPSHOT_BYTES as usize + 1);
+
+        // The default store still rejects the oversized candidate.
+        let fresh = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        assert!(matches!(
+            fresh.apply(bigger.clone(), now),
+            Err(LkgError::TooLarge { .. })
+        ));
+        assert!(!path.exists());
+
+        // An explicitly opted-in store accepts the same typed payload...
+        let raised =
+            LkgStore::open_with_limit(path.clone(), h, WORKER, accepting(), MAX_SNAPSHOT_BYTES * 2)
+                .unwrap();
+        raised.apply(bigger, now).unwrap();
+        let on_disk = fs::read(&path).unwrap().len() as u64;
+        assert!(on_disk > MAX_SNAPSHOT_BYTES);
+        assert!(on_disk <= MAX_SNAPSHOT_BYTES * 2);
+        drop(raised);
+
+        // ...and a restart reads it only when the same raised limit is given.
+        assert!(matches!(
+            LkgStore::open_from_snapshot(&path, WORKER, accepting()),
+            Err(LkgError::TooLarge { .. })
+        ));
+        let reopened = LkgStore::open_from_snapshot_with_limit(
+            &path,
+            WORKER,
+            accepting(),
+            MAX_SNAPSHOT_BYTES * 2,
+        )
+        .unwrap();
+        assert_eq!(reopened.highwater(), 1);
     }
 }

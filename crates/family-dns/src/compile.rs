@@ -142,6 +142,9 @@ pub fn compile(base: &Config, policy: &Policy) -> Result<Config, CompileError> {
         local_zones: base.local_zones.clone(),
         default_device_profile: base.default_device_profile.clone(),
         devices: base.devices.clone(),
+        // Current local filtering settings travel with every other local
+        // field. A controller pull must never revert a local filter change.
+        filter: base.filter.clone(),
         baseline,
         profiles,
     };

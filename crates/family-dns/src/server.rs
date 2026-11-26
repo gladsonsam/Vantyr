@@ -25,6 +25,10 @@ use crate::bundle::{Bundle, BundleStore, BundleValidator};
 use crate::compile::compile;
 use crate::config::{read_bounded, Config};
 use crate::controller::{ControllerError, SyncCapability};
+use crate::filter::{
+    compile_from_material, empty_filter, prepare as prepare_filter, FilterMaterial,
+    MAX_FILTER_BUNDLE_BYTES,
+};
 use crate::handler::FilteringHandler;
 use crate::observe::{DecisionObservation, ObservationLog};
 use crate::runtime::{
@@ -53,7 +57,13 @@ pub struct DurableOptions {
 pub enum ReloadError {
     InvalidConfig(String),
     TransportChange(String),
-    NotNewer { found: u64, highwater: u64 },
+    NotNewer {
+        found: u64,
+        highwater: u64,
+    },
+    /// A list source could not be read, or the filter candidate was rejected.
+    /// No snapshot is swapped and no file is written on this path.
+    FilterFailed(String),
     BuildFailed(String),
     PersistFailed(String),
 }
@@ -69,6 +79,7 @@ impl fmt::Display for ReloadError {
                 f,
                 "revision {found} is not newer than the applied revision {highwater}"
             ),
+            Self::FilterFailed(detail) => write!(f, "filter candidate failed: {detail}"),
             Self::BuildFailed(detail) => write!(f, "candidate build failed: {detail}"),
             Self::PersistFailed(detail) => write!(f, "candidate persistence failed: {detail}"),
         }
@@ -105,11 +116,19 @@ impl DnsServer {
     /// No socket exists until configuration has passed full validation.
     pub async fn start(config: Config) -> Result<Self> {
         config.validate()?;
+        let (material, filter) = prepare_filter(&config.filter, config.policy_revision)
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .map_or_else(
+                || (None, empty_filter()),
+                |(material, filter)| (Some(material), filter),
+            );
         let observations = ObservationLog::default();
         let snapshot = build_snapshot(
             config.clone(),
             config.policy(Utc::now()),
             observations.clone(),
+            filter,
+            material,
         )?;
         Self::serve(config, snapshot, observations, None).await
     }
@@ -120,10 +139,14 @@ impl DnsServer {
     /// A config is read only for first-run bootstrap.
     pub async fn start_durable(options: DurableOptions) -> Result<Self> {
         let validator = BundleValidator;
-        let store = match BundleStore::open_from_snapshot(
+        // The one bundle now carries bounded filter material as well as small
+        // settings. Raise this store's serialization ceiling explicitly; the
+        // runtime default (1 MiB) and every other store stay unchanged.
+        let store = match BundleStore::open_from_snapshot_with_limit(
             &options.state_path,
             &options.worker_id,
             validator,
+            MAX_FILTER_BUNDLE_BYTES,
         ) {
             Ok(store) => {
                 let household = store.household_id();
@@ -142,14 +165,18 @@ impl DnsServer {
                     .ok_or_else(|| anyhow::anyhow!("no state file and no bootstrap config"))?;
                 let config = Config::parse(&read_bounded(path)?)?;
                 let household = config.household_id.clone();
-                let store = BundleStore::open(
+                let store = BundleStore::open_with_limit(
                     &options.state_path,
                     uuid_from_household(&household)?,
                     &options.worker_id,
                     validator,
+                    MAX_FILTER_BUNDLE_BYTES,
                 )?;
                 let published_at = config.policy_published_at.unwrap_or(options.now);
-                let bundle = Bundle::build(&config, published_at)?;
+                let material = prepare_filter(&config.filter, config.policy_revision)
+                    .map_err(|error| anyhow::anyhow!(error.to_string()))?
+                    .map(|(material, _snapshot)| material);
+                let bundle = Bundle::build_with_filter(&config, published_at, material)?;
                 // Persist before the listener exists. A failure here leaves no
                 // listener and no partly written state.
                 store.apply(bundle, options.now)?;
@@ -166,10 +193,18 @@ impl DnsServer {
             .current()
             .expect("a durable store always has a loaded or bootstrapped bundle");
         let observations = ObservationLog::default();
+        // Recompile from the persisted bytes, never from the source paths. A
+        // source file that changed or vanished while the worker was down does
+        // not silently change the filter that was actually applied.
+        let filter = compile_from_material(bundle.filter.as_ref(), &bundle.config.filter)
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .unwrap_or_else(empty_filter);
         let snapshot = build_snapshot(
             bundle.config.clone(),
             bundle.policy.clone(),
             observations.clone(),
+            filter,
+            bundle.filter.clone(),
         )?;
         Self::serve(bundle.config, snapshot, observations, Some(store)).await
     }
@@ -239,10 +274,19 @@ impl DnsServer {
         use ReloadError::*;
         let config = Config::parse(candidate).map_err(|e| InvalidConfig(e.to_string()))?;
         self.check_candidate(&config)?;
+        // Source files are read and the filter compiled here, off the query
+        // path and before any persistence or swap. A missing, oversized or
+        // malformed candidate file rejects the whole candidate.
+        let (material, filter) = prepare_filter(&config.filter, config.policy_revision)
+            .map_err(|error| FilterFailed(error.to_string()))?
+            .map_or_else(
+                || (None, empty_filter()),
+                |(material, filter)| (Some(material), filter),
+            );
         let published_at = config.policy_published_at.unwrap_or(now);
-        let bundle =
-            Bundle::build(&config, published_at).map_err(|e| InvalidConfig(e.to_string()))?;
-        self.publish_bundle(config, bundle, now)
+        let bundle = Bundle::build_with_filter(&config, published_at, material.clone())
+            .map_err(|e| InvalidConfig(e.to_string()))?;
+        self.publish_bundle(config, bundle, now, filter, material)
     }
 
     /// Validate the replayable local-control preconditions shared by SIGHUP
@@ -293,12 +337,20 @@ impl DnsServer {
         config: Config,
         bundle: Bundle,
         now: DateTime<Utc>,
+        filter: std::sync::Arc<vantyr_network_filter::FilterSnapshot>,
+        material: Option<FilterMaterial>,
     ) -> Result<ReloadOutcome, ReloadError> {
         use ReloadError::*;
         let revision = bundle.revision();
         let published_at = bundle.published_at();
-        let snapshot = build_snapshot(config, bundle.policy.clone(), self.observations.clone())
-            .map_err(|e| BuildFailed(e.to_string()))?;
+        let snapshot = build_snapshot(
+            config,
+            bundle.policy.clone(),
+            self.observations.clone(),
+            filter,
+            material,
+        )
+        .map_err(|e| BuildFailed(e.to_string()))?;
 
         if let Some(store) = &self.store {
             store
@@ -353,7 +405,13 @@ impl DnsServer {
             ));
         }
         let published_at = candidate.policy_published_at.unwrap_or(now);
-        let bundle = Bundle::build(&candidate, published_at)
+        // `compile` carries every local field, including the filter settings,
+        // and the active material/snapshot are reused verbatim. A pull can
+        // therefore neither drop filtering nor restore a startup filter after
+        // a newer local filter change.
+        let filter = active.filter.clone();
+        let material = active.filter_material.clone();
+        let bundle = Bundle::build_with_filter(&candidate, published_at, material.clone())
             .map_err(|error| ControllerError::Unsupported(error.to_string()))?;
         let revision = candidate.policy_revision;
         let highwater = self.highwater(active.revision);
@@ -371,7 +429,7 @@ impl DnsServer {
             });
         }
         let outcome = self
-            .publish_bundle(candidate, bundle, now)
+            .publish_bundle(candidate, bundle, now, filter, material)
             .map_err(|error| match error {
                 ReloadError::NotNewer { found, highwater } => {
                     ControllerError::StaleRevision { found, highwater }
@@ -382,6 +440,40 @@ impl DnsServer {
         Ok(SyncCapability::AppliedLocally {
             revision: outcome.revision,
         })
+    }
+
+    /// Apply already validated, typed list material through the *same*
+    /// compile -> persist -> publish path as a local reload. This is the sole
+    /// seam a future fetch layer uses; it introduces no second filter state,
+    /// store or error-swallowing path. No URL is fetched or retained here and
+    /// the policy's original publication age is preserved.
+    ///
+    /// The caller supplies a strictly newer policy revision (the store's
+    /// monotonic high-water mark applies) and material whose source ids and
+    /// selected services match the current local filter settings.
+    pub fn apply_filter_material(
+        &self,
+        revision: u64,
+        material: FilterMaterial,
+        now: DateTime<Utc>,
+    ) -> Result<ReloadOutcome, ReloadError> {
+        let _update = self
+            .update
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        use ReloadError::*;
+        let active = self.active_snapshot();
+        let mut config = active.config.clone();
+        config.policy_revision = revision;
+        config.policy_published_at = Some(active.policy.published_at);
+        self.check_candidate(&config)?;
+        let filter = compile_from_material(Some(&material), &config.filter)
+            .map_err(|error| FilterFailed(error.to_string()))?
+            .unwrap_or_else(empty_filter);
+        let bundle =
+            Bundle::build_with_filter(&config, active.policy.published_at, Some(material.clone()))
+                .map_err(|error| InvalidConfig(error.to_string()))?;
+        self.publish_bundle(config, bundle, now, filter, Some(material))
     }
 
     /// Local worker config currently serving. Kept read-only: callers must go

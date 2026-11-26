@@ -13,11 +13,14 @@ use family_policy::{
     EffectiveIdentity, EvaluationContext, Policy,
 };
 use hickory_server::proto::rr::{Name, RecordType};
+use vantyr_network_filter::{FilterOutcome, FilterSnapshot, SourceKind};
 
 use crate::config::{Config, HEARTBEAT_TTL_SECS};
 use crate::observe::{DecisionObservation, ObservationLog};
 
-/// Compact view of one policy decision, returned to the query handler.
+/// Compact view of one combined policy+filter decision, returned to the query
+/// handler. Household policy is authoritative: `allow` is false when either
+/// the policy denies or an accepted list/selected service blocks.
 #[derive(Clone, Debug)]
 pub struct DecisionView {
     pub allow: bool,
@@ -26,6 +29,11 @@ pub struct DecisionView {
     pub source: DecisionSource,
     pub identity: EffectiveIdentity,
     pub applied_rule: Option<String>,
+    pub filter_blocked: bool,
+    pub filter_source_id: Option<String>,
+    pub filter_source_kind: Option<String>,
+    pub filter_rule: Option<String>,
+    pub filter_note: Option<String>,
 }
 
 /// Immutable, locked-once policy state. No mutex is held while a query is in
@@ -57,7 +65,19 @@ impl PolicyEvaluator {
 
     /// Evaluate one DNS question and append exactly one bounded observation.
     pub fn evaluate(&self, source: IpAddr, qname: &Name, qtype: RecordType) -> DecisionView {
-        self.decide(source, qname, qtype, None)
+        self.decide(source, qname, qtype, None, None)
+    }
+
+    /// Evaluate a question with an immutable filter snapshot. The filter is
+    /// consulted only after household policy has allowed the name.
+    pub fn evaluate_with_filter(
+        &self,
+        source: IpAddr,
+        qname: &Name,
+        qtype: RecordType,
+        filter: Option<&FilterSnapshot>,
+    ) -> DecisionView {
+        self.decide(source, qname, qtype, None, filter)
     }
 
     /// Evaluate an alias target found in an answer. The observation records
@@ -69,6 +89,24 @@ impl PolicyEvaluator {
             target,
             qtype,
             Some(target.to_string().to_ascii_lowercase()),
+            None,
+        )
+    }
+
+    /// Alias evaluation with the same filter snapshot as the original answer.
+    pub fn evaluate_alias_with_filter(
+        &self,
+        source: IpAddr,
+        target: &Name,
+        qtype: RecordType,
+        filter: Option<&FilterSnapshot>,
+    ) -> DecisionView {
+        self.decide(
+            source,
+            target,
+            qtype,
+            Some(target.to_string().to_ascii_lowercase()),
+            filter,
         )
     }
 
@@ -78,6 +116,7 @@ impl PolicyEvaluator {
         qname: &Name,
         qtype: RecordType,
         denied_alias_target: Option<String>,
+        filter: Option<&FilterSnapshot>,
     ) -> DecisionView {
         let now = Utc::now();
         let (device_id, device) = self.config.device_for(source);
@@ -102,30 +141,63 @@ impl PolicyEvaluator {
             heartbeat_ttl_secs: HEARTBEAT_TTL_SECS,
         };
         let decision = evaluate(&self.policy, &context);
+        let mut allow = decision.allow;
+        let mut filter_blocked = false;
+        let mut filter_source_id = None;
+        let mut filter_source_kind = None;
+        let mut filter_rule = None;
+        let mut filter_note = None;
+        // Household policy is authoritative. A list exception is a list-layer
+        // signal only: it can never grant an allow against a policy deny, so
+        // lists are consulted exclusively for names policy already allowed.
+        if allow {
+            if let Some(filter) = filter {
+                if let FilterOutcome::Block { evidence } = filter.evaluate(qname, qtype) {
+                    allow = false;
+                    filter_blocked = true;
+                    filter_source_id = Some(evidence.source_id);
+                    filter_source_kind = Some(
+                        match evidence.source_kind {
+                            SourceKind::List => "list",
+                            SourceKind::Service => "service",
+                        }
+                        .to_owned(),
+                    );
+                    filter_rule = evidence.rule;
+                    filter_note = Some(evidence.note.to_owned());
+                }
+            }
+        }
         self.observe.push(DecisionObservation {
             at: now,
             source_ip: source,
             name,
             query_type: qtype,
-            allow: decision.allow,
+            allow,
             policy_revision: decision.policy_revision,
             reason_code: decision.reason_code.clone(),
             source: decision.source,
             identity: decision.effective_identity.clone(),
             device_id,
-            denied_alias_target: if decision.allow {
-                None
-            } else {
-                denied_alias_target
-            },
+            denied_alias_target: if allow { None } else { denied_alias_target },
+            filter_blocked,
+            filter_source_id: filter_source_id.clone(),
+            filter_source_kind: filter_source_kind.clone(),
+            filter_rule: filter_rule.clone(),
+            filter_note: filter_note.clone(),
         });
         DecisionView {
-            allow: decision.allow,
+            allow,
             reason_code: decision.reason_code,
             policy_revision: decision.policy_revision,
             source: decision.source,
             identity: decision.effective_identity,
             applied_rule: decision.applied_rule,
+            filter_blocked,
+            filter_source_id,
+            filter_source_kind,
+            filter_rule,
+            filter_note,
         }
     }
 

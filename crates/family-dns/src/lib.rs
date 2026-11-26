@@ -25,6 +25,7 @@ pub mod bundle;
 pub mod compile;
 pub mod config;
 pub mod controller;
+pub mod filter;
 pub mod handler;
 pub mod observe;
 pub mod policy;
@@ -34,13 +35,19 @@ pub mod server;
 pub use bundle::{Bundle, BundleStore, BundleValidator};
 pub use compile::{compile, CompileError};
 pub use config::{
-    read_bounded, BindConfig, Config, DenyConfig, DeviceConfig, MatchSpec, RecordSpec, RuleSpec,
-    ScheduleSpec, MAX_CONFIG_BYTES,
+    read_bounded, BindConfig, Config, DenyConfig, DeviceConfig, FilterConfig, FilterSourceSpec,
+    ListFormatSpec, MatchSpec, RecordSpec, RuleSpec, ScheduleSpec, ServiceCatalogSpec,
+    ServiceDomainSpec, ServiceSpec, MAX_CONFIG_BYTES,
 };
 pub use controller::{
     policy_digest, sync_once, ControllerClient, ControllerError, ControllerOptions,
     ControllerPoller, PolicyReadResponse, SyncCapability, CONTROLLER_AUDIENCE, CONTROLLER_COMMAND,
     CONTROLLER_KIND, CONTROLLER_POLICY_SCHEMA_VERSION, READ_PATH,
+};
+pub use filter::{
+    compile_from_material, empty_filter, prepare as prepare_filter_material,
+    validate_material_shape, FilterDerivation, FilterError, FilterMaterial, StoredList,
+    StoredListDerivation, StoredServiceDerivation, MAX_FILTER_BUNDLE_BYTES,
 };
 pub use observe::{DecisionObservation, ObservationLog, MAX_OBSERVATIONS};
 pub use server::{DnsServer, DurableOptions, ReloadError, ReloadOutcome};

@@ -22,8 +22,10 @@ use hickory_server::proto::rr::{Name, RData, Record, RecordSet, RecordType, RrKe
 use hickory_server::store::forwarder::{ForwardConfig, ForwardZoneHandler};
 use hickory_server::store::in_memory::InMemoryZoneHandler;
 use hickory_server::zone_handler::{AxfrPolicy, Catalog, ZoneType};
+use vantyr_network_filter::FilterSnapshot;
 
 use crate::config::{forwards_to_self, Config, DenyConfig, RecordSpec};
+use crate::filter::FilterMaterial;
 use crate::observe::ObservationLog;
 use crate::policy::PolicyEvaluator;
 
@@ -154,6 +156,13 @@ pub(crate) struct RuntimeSnapshot {
     pub(crate) deny: DenyConfig,
     pub(crate) catalog: Arc<Catalog>,
     pub(crate) evaluator: Arc<PolicyEvaluator>,
+    /// Immutable compiled filter state. Blocking is applied only after the
+    /// household evaluator has allowed the question; a list exception can
+    /// never grant an allow against household policy.
+    pub(crate) filter: Arc<FilterSnapshot>,
+    /// The validated material behind `filter`, reused verbatim by a controller
+    /// pull so it cannot restore a startup filter after a local filter change.
+    pub(crate) filter_material: Option<FilterMaterial>,
 }
 
 /// Shared handle to the current snapshot. The lock is held only for an `Arc`
@@ -165,6 +174,8 @@ pub(crate) fn build_snapshot(
     config: Config,
     policy: Policy,
     observations: ObservationLog,
+    filter: Arc<FilterSnapshot>,
+    filter_material: Option<FilterMaterial>,
 ) -> Result<Arc<RuntimeSnapshot>> {
     let revision = policy.revision;
     let published_at = policy.published_at;
@@ -182,6 +193,8 @@ pub(crate) fn build_snapshot(
         policy,
         catalog,
         evaluator,
+        filter,
+        filter_material,
     }))
 }
 
@@ -206,6 +219,7 @@ pub(crate) fn reject_upstream_self_loop(config: &Config, bound: SocketAddr) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::filter::empty_filter;
     use chrono::TimeZone;
 
     #[test]
@@ -226,12 +240,16 @@ mod tests {
             config.clone(),
             config.policy_at(now),
             ObservationLog::default(),
+            empty_filter(),
+            None,
         )
         .unwrap();
         let second = build_snapshot(
             config.clone(),
             config.policy_at(now),
             ObservationLog::default(),
+            empty_filter(),
+            None,
         )
         .unwrap();
         assert_eq!(first.revision, second.revision);

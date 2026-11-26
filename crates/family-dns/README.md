@@ -133,6 +133,64 @@ struct here — there is no second policy model.
   `available()` means the local pull path works. There is **no** controller
   acknowledgement, applied receipt, canary or verified/enforced claim.
 
+## Local list and selected-service filtering
+
+An optional top-level `filter` object adds bounded **settings** to the 64 KiB
+config; the validated list **bytes** never live in that config:
+
+```json
+"filter": {
+  "sources": [
+    { "id": "hosts-local", "format": "hosts", "path": "/etc/vantyr/hosts.txt" },
+    { "id": "ads-local", "format": "abp", "path": "/etc/vantyr/ads.txt",
+      "source_url": "operator attribution (metadata only, never fetched)" }
+  ],
+  "catalog": { "version": "v1", "services": [
+    { "id": "video", "label": "Video", "version": "1", "evidence": "operator selection",
+      "domains": [{"type":"exact","value":"video.example"},
+                  {"type":"suffix","value":"social.example"}] }
+  ]},
+  "selected_services": ["video"]
+}
+```
+
+- `hosts` sources use Hickory's maintained blocklist parser (bare domains,
+  address prefixes, leading wildcards, IDNA canonicalisation); `abp` sources
+  use the maintained adblock engine for `||host^`, `@@||host^`, `$important`.
+  Regex, paths, cosmetic rules and context modifiers are rejected with
+  diagnostics. A future subscription layer can hand validated bytes to the
+  same compiler; this worker never fetches a URL.
+- Only `enabled: true` sources are read. Setting `enabled: false` or removing a
+  source removes its rules on the next reload; only service ids listed in
+  `selected_services` can block. The catalog is operator-supplied domain sets,
+  not an exhaustive feed or an app-identity claim.
+- Bootstrap/reload reads each configured source as a bounded, regular,
+  non-symlink file **before** binding or publishing, then compiles the
+  immutable `FilterSnapshot` and persists its bytes plus derivation metadata
+  (per-list SHA-256, accepted/rejected counts, selected services, totals) in
+  the **one** bundle. Source paths are never re-read: an abrupt restart after
+  a source file changed or vanished still serves the filter that was actually
+  applied, with the original policy age.
+- The one bundle store is explicitly raised to a 16 MiB serialization ceiling
+  so the accepted 8 MiB raw aggregate fits after base64 + JSON overhead. The
+  runtime default remains 1 MiB for every other store and all prior payloads;
+  old bundles without `filter` stay valid.
+- Household policy is authoritative. A query is checked against lists only
+  after policy allowed it, so an `@@` `AllowException` is *list-layer only* and
+  can never override a baseline, stale/core or household deny. Blocks apply to
+  the initial question and to supported CNAME/differing-owner A/AAAA alias
+  targets; only A/AAAA/CNAME are evaluated.
+- Observations carry source id, list/service kind and an upstream rule only
+  when the backend exposes one. Hickory lookups expose no matched entry, so no
+  per-line hosts evidence is fabricated. `source_url` is attribution metadata
+  and never appears in per-query observations or URL history.
+- `DnsServer::apply_filter_material(revision, material, now)` is the small
+  typed seam for a future fetch layer: validated material goes through the
+  same compile -> persist -> publish path with no second filter store and no
+  swallowed errors. Controller pulls preserve the current settings and
+  material under the updates mutex, so a local filter change cannot be
+  reverted to the startup filter by a later pull.
+
 ## Scope and limits (honest)
 
 - Local-disk state is unauthenticated local durability. No gateway credential,
@@ -144,6 +202,10 @@ struct here — there is no second policy model.
 - Bounded runtime events exist in `vantyr-network-runtime` but are **not**
   wired into this worker in this slice; decision observations are a small
   in-process ring, not a durable event store.
+- No list subscription/fetch is wired here. A fetch layer must supply already
+  validated bytes through the typed material seam; ABP Unicode/IDN rules are
+  rejected by the accepted upstream adapter with a diagnostic (hosts-source
+  IDNA is supported), and no exhaustive service catalog is shipped.
 - Alias inspection covers CNAME and differing-owner A/AAAA answers only.
   SVCB/HTTPS, DNAME, other redirection mechanisms and TSIG-signed queries are
   out of scope. RD/CD are preserved on every response path; multiple A/AAAA
@@ -160,6 +222,12 @@ answers and revisions, whole-version reads under concurrent queries/reloads,
 rejection of invalid/stale/foreign/bind-changing candidates, injected
 persistence failure, bundle restart with unchanged publication age, stale-age
 fail-closed, no-listener-on-corrupt-state, and real-process restart/SIGHUP.
+`cargo test -p family-dns --test filter_runtime` adds real UDP/TCP tests for
+hosts/ABP blocks and exceptions, `$important`, selected service exact/suffix
+coverage, truthful evidence, alias-target blocking, explicit unsupported query
+types, whole-version concurrent reload, missing/malformed/unsupported/oversized
+candidate rejection, restart from persisted bytes, controller-pull material
+preservation, and the typed material seam.
 `cargo test -p family-dns --test controller` adds real-TLS mock-controller
 tests: the exact read-policy request/contract, scoped bearer custody, digest
 and outer-field mismatch rejection, bad-CA/plain-HTTP rejection, 401/404
