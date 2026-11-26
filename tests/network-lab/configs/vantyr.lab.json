@@ -1,0 +1,46 @@
+{
+  "household_id": "11111111-2222-3333-4444-555555555555",
+  "policy_revision": 11,
+  "timezone": "UTC",
+  "stale_after_secs": 86400,
+  "bind": {
+    "address": "172.26.9.55",
+    "port": 15353,
+    "allow_non_loopback": true
+  },
+  "deny": {
+    "mode": "sinkhole",
+    "ipv4": "192.0.2.222",
+    "ttl": 30
+  },
+  "upstreams": ["172.26.9.53:15353"],
+  "local_zones": {
+    "local.vantyr.test.": [
+      { "type": "a", "name": "multi.local.vantyr.test.", "ttl": 120, "addr": "192.0.2.10" },
+      { "type": "a", "name": "multi.local.vantyr.test.", "ttl": 120, "addr": "192.0.2.11" },
+      { "type": "aaaa", "name": "multi.local.vantyr.test.", "ttl": 120, "addr": "2001:db8::20" },
+      { "type": "aaaa", "name": "multi.local.vantyr.test.", "ttl": 120, "addr": "2001:db8::21" },
+      { "type": "cname", "name": "localias.local.vantyr.test.", "ttl": 90, "target": "multi.local.vantyr.test." },
+      { "type": "cname", "name": "badalias.local.vantyr.test.", "ttl": 90, "target": "blocked.lab.vantyr.test." }
+    ]
+  },
+  "profiles": {
+    "standard": [
+      { "effect": "allow", "match": { "type": "suffix", "value": "vantyr.test" }, "reason": "lab allow" },
+      { "effect": "deny", "match": { "type": "exact", "value": "blocked.lab.vantyr.test" }, "reason": "blocked exact" },
+      { "effect": "deny", "match": { "type": "suffix", "value": "tracker.lab.vantyr.test" }, "reason": "blocked suffix" }
+    ],
+    "restricted": [
+      { "effect": "deny", "match": { "type": "suffix", "value": "vantyr.test" }, "reason": "restricted default" }
+    ]
+  },
+  "default_device_profile": "restricted",
+  "devices": [
+    {
+      "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "label": "Lab known client",
+      "default_profile": "standard",
+      "source_ips": ["172.26.9.54"]
+    }
+  ]
+}

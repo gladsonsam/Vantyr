@@ -1,0 +1,9 @@
+# Minimal Cargo workspace used ONLY by tests/network-lab/Dockerfile.vantyr.
+#
+# This is deliberately not the repository root manifest: the root workspace also
+# declares the main server, the HTTP proxy and a [patch.crates-io] path into
+# server/, none of which belongs in a DNS-lab build context. The image builder
+# copies exactly the two crates below plus the repository's pinned Cargo.lock.
+[workspace]
+members = ["crates/family-policy", "crates/family-dns"]
+resolver = "2"

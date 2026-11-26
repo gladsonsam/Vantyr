@@ -19,5 +19,13 @@ www     300 IN  AAAA  2001:db8::10
 alias    90 IN  CNAME www.lab.vantyr.test.
 ttl     123 IN  A     198.51.100.7
 
-; Sinkhole-shaped answer for the future filtering assertion.
+; Sinkhole-shaped answer retained from the upstream-only smoke fixture.
 sink     60 IN  A     192.0.2.0
+
+; Contrast records for the opt-in Vantyr filtering smoke. The base assertions
+; (www / alias / ttl / missing) are deliberately untouched. Direct stub
+; queries return these answers; the Vantyr worker must return its own policy
+; denial instead, which proves the answer came from Vantyr and not this stub.
+blocked    60 IN  A     198.51.100.99
+ads.tracker 60 IN A     198.51.100.98
+forwardalias 60 IN CNAME blocked.lab.vantyr.test.

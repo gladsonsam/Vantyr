@@ -1,0 +1,18 @@
+# Optional, loopback-only exposure of the Vantyr DNS worker for host-side tools.
+# Use ONLY as a third -f file, together with compose.yml and
+# compose.vantyr.example.yml. Never on its own. No 0.0.0.0 bind, no host
+# networking, no privileged port and no host DNS/DHCP/router/firewall change.
+#
+# Docker does not publish ports from an internal bridge, so this override also
+# relaxes that one property for this run. Without it the default lab network
+# stays internal: true. With it the only published ports are the two loopback
+# binds below, and the worker still listens on unprivileged port 15353.
+services:
+  vantyr-dns:
+    ports:
+      - "127.0.0.1:15554:15353/udp"
+      - "127.0.0.1:15554:15353/tcp"
+
+networks:
+  labnet:
+    internal: false

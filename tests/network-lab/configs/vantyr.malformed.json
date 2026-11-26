@@ -1,0 +1,10 @@
+{
+  "household_id": "11111111-2222-3333-4444-555555555555",
+  "policy_revision": 11,
+  "bind": {
+    "address": "not-an-ip",
+    "port": 15353,
+    "allow_non_loopback": true
+  },
+  "upstreams": ["172.26.9.53:15353"]
+}

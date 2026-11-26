@@ -1,37 +1,73 @@
-# INTEGRATION HOOK TEMPLATE — UNSUPPORTED TODAY.
+# WORKING opt-in override for the Vantyr DNS worker.
 #
-# The Vantyr DNS worker currently exists as a library crate only
-# (crates/family-dns). There is no worker executable and no policy-to-DNS
-# wiring, so this override cannot be started today and proves no filtering
-# behaviour. It records the exact contract for when an executable lands.
+# This is no longer a placeholder: it builds the accepted `vantyr-dns` binary
+# from a whitelisted root context and runs it with its real `--config` path.
+# It is opt-in only because it is active solely when this file is passed as an
+# extra `-f`; the base `compose.yml` upstream-only smoke is unchanged.
 #
-# Usage once a worker executable exists:
-#   cp compose.vantyr.example.yml compose.vantyr.override.yml
-#   # uncomment and complete the service below, then:
-#   VANTYR_DNS_IMAGE=<locally built worker image> \
-#     docker compose -f compose.yml -f compose.vantyr.override.yml \
-#       -p vantyr-network-lab up -d
+# Usage (from tests/network-lab):
+#   bash scripts/lab.sh fullstack-smoke
 #
-# The worker then uses the same upstream as this lab: 172.26.9.53:15353 on the
-# private labnet. Host DNS/DHCP/router/firewall stay untouched.
-services: {}
+# Manual equivalent:
+#   docker compose -f compose.yml -f compose.vantyr.example.yml \
+#     -p vantyr-network-lab up -d --build
+#   docker compose -f compose.yml -f compose.vantyr.example.yml \
+#     -p vantyr-network-lab down --timeout 5
 #
-#  vantyr-dns:
-#    profiles: ["vantyr"]
-#    image: "${VANTYR_DNS_IMAGE:?set VANTYR_DNS_IMAGE to a locally built worker image}"
-#    environment:
-#      VANTYR_DNS_UPSTREAM_HOST: "${VANTYR_DNS_UPSTREAM_HOST:-172.26.9.53}"
-#      VANTYR_DNS_UPSTREAM_PORT: "${VANTYR_DNS_UPSTREAM_PORT:-15353}"
-#      VANTYR_DNS_LISTEN_HOST: "${VANTYR_DNS_LISTEN_HOST:-172.26.9.55}"
-#      VANTYR_DNS_LISTEN_PORT: "${VANTYR_DNS_LISTEN_PORT:-15353}"
-#    networks:
-#      labnet:
-#        ipv4_address: 172.26.9.55
-#    mem_limit: 128m
-#    cpus: 0.25
-#    pids_limit: 64
-#    logging:
-#      driver: json-file
-#      options:
-#        max-size: "1m"
-#        max-file: "2"
+# The worker joins the private internal labnet at 172.26.9.55, forwards only to
+# the deterministic stub at 172.26.9.53:15353 and binds the high port 15353 on
+# that specific private address (allow_non_loopback is an explicit opt-in in
+# the config; a 0.0.0.0 wildcard is intentionally rejected by the worker).
+# No host DNS/DHCP/router/firewall/CA change, no host network, no privileged
+# port, no Docker socket and no production data is involved.
+
+services:
+  vantyr-dns:
+    build:
+      context: ../..
+      dockerfile: tests/network-lab/Dockerfile.vantyr
+      target: runtime
+    # Explicit name so the driver can also run one-off --check-config /
+    # startup-failure checks with `docker run --network none`.
+    image: "${VANTYR_NETLAB_PROJECT:-vantyr-network-lab}-vantyr-dns:local"
+    command: ["--config", "/etc/vantyr/vantyr.lab.json"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ./configs/vantyr.lab.json:/etc/vantyr/vantyr.lab.json:ro
+    networks:
+      labnet:
+        ipv4_address: 172.26.9.55
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
+
+  # Second assertion client whose source IP is deliberately NOT mapped to a
+  # device in the config. It must be answered by the restrictive default
+  # profile. It exists only in this opt-in override.
+  client-unknown:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    command: ["sleep", "infinity"]
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      labnet:
+        ipv4_address: 172.26.9.56
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
