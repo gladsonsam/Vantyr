@@ -621,6 +621,12 @@ No substantive UI or Supabase changes were made in this step.
   The tester reports an earlier successful compile and real worker application
   with server-admitted status; the final corrected restart/refresh flow has not
   yet been rerun and is not claimed as passing.
+  Fix `4fcac755` is under fresh independent review. It adds a validated active
+  cache locator, retained quarantine specs, per-instance staged ownership,
+  portable process liveness and production-root-faithful tests. The implementer
+  reports 120 DNS tests passing and old-code failures for five new lifecycle
+  tests. The real-server harness has been resumed on this exact committed fix;
+  neither its final pass nor cache-lifecycle acceptance is claimed yet.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
   accepted separately from encrypted inbound listeners. Fresh review passed all
   91 DNS tests, including eight real-TLS upstream tests, and strict clippy.
