@@ -46,7 +46,7 @@ export function AgentSectionNav({
   return (
     <nav
       aria-label="Agent tools"
-      className="agent-detail-section-tabs sticky top-0 z-20 mt-4 border-b bg-background [@media(max-height:480px)]:static"
+      className="agent-detail-section-tabs sticky top-0 z-20 mt-4 border-b bg-(--shell-glass) [@media(max-height:480px)]:static"
     >
       <div
         className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2 ${flush ? "" : "px-3 sm:px-5 md:px-8"}`}

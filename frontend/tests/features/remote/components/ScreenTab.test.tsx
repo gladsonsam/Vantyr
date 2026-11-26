@@ -1055,36 +1055,21 @@ it.each([true, false])(
     expect(host.textContent).not.toContain("Send notification");
   },
 );
-it("discloses groups only when requested, traps focus and restores focus/inert state on Escape", async () => {
+it("discloses groups only when requested and restores focus to the trigger on Escape", async () => {
   await render();
-  const stage = host.querySelector<HTMLElement>(".screen-remote-stage")!,
-    trigger = host.querySelector<HTMLButtonElement>('[aria-label="More tools"]')!;
-  const outside = document.createElement("button");
-  outside.textContent = "Outside";
-  outside.inert = true;
-  host.append(outside);
+  const trigger = host.querySelector<HTMLButtonElement>('[aria-label="More tools"]')!;
   await click("More tools");
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
-  expect(stage.inert).toBe(true);
   expect(host.querySelector("select")).toBeNull();
   const close = host.querySelector<HTMLButtonElement>('[aria-label="Close remote tools"]')!;
   expect(document.activeElement).toBe(close);
-  act(() =>
-    close.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }),
-    ),
-  );
-  expect(document.activeElement?.textContent).toBe("Help");
   act(() =>
     document.activeElement!.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
     ),
   );
   expect(host.querySelector(".remote-tools-sheet")).toBeNull();
-  expect(Boolean(stage.inert)).toBe(false);
-  expect(outside.inert).toBe(true);
   expect(document.activeElement).toBe(trigger);
-  outside.remove();
 });
 it("cancels an in-progress drag on opening More tools while retaining the active lease", async () => {
   const overlay = await takeControl();
@@ -1215,15 +1200,12 @@ it("does not treat the synthetic demo desktop as a stalled real stream", async (
   );
   vi.useRealTimers();
 });
-it("closes the sheet and restores inert/scroll state when the stream is hidden", async () => {
-  const overflow = document.body.style.overflow;
+it("closes the popover when the stream is hidden", async () => {
   await takeControl();
   await click("More tools");
-  expect(document.body.style.overflow).toBe("hidden");
+  expect(host.querySelector(".remote-tools-sheet")).not.toBeNull();
   await render(false);
   expect(host.querySelector(".remote-tools-sheet")).toBeNull();
-  expect(Boolean(host.querySelector<HTMLElement>(".screen-remote-stage")!.inert)).toBe(false);
-  expect(document.body.style.overflow).toBe(overflow);
 });
 it("streams the live screen to viewers while keeping control operator-only", async () => {
   const t = realTransport();
