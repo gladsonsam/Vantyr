@@ -329,10 +329,8 @@ impl Config {
             bail!("stale_after_secs must be 1..={MAX_STALE_SECS}");
         }
 
-        let bind = self.bind.address().to_string();
-        if bind.is_empty() {
-            bail!("bind address is empty");
-        }
+        // Parse fallibly before any accessor that assumes validation.
+        parsed_ip(&self.bind.address, "bind address")?;
         // Classify the canonical address: `::ffff:127.0.0.1` is a loopback
         // bind just like `127.0.0.1`, while native `::1` stays IPv6.
         let bind_ip = normalize_ip(self.bind.address());
@@ -709,6 +707,9 @@ mod tests {
             br#"{"household_id":"11111111-2222-3333-4444-555555555555","policy_revision":1,"bogus":true}"#
         )
         .is_err());
+        let invalid_bind =
+            VALID.replace("\"address\": \"127.0.0.1\"", "\"address\": \"not-an-ip\"");
+        assert!(Config::parse(invalid_bind.as_bytes()).is_err());
         let self_loop = VALID.replace("127.0.0.1:5353", "127.0.0.1:15353");
         assert!(Config::parse(self_loop.as_bytes()).is_err());
         let alias_loop = VALID.replace("127.0.0.1:5353", "127.0.0.2:15353");
