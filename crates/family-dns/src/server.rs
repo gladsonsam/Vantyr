@@ -205,6 +205,19 @@ impl DnsServer {
         subscriptions: Option<Arc<SubscriptionRuntime>>,
     ) -> Result<Arc<Self>> {
         let (server, bootstrap_errors) = Self::start_durable_inner(options, subscriptions).await?;
+        // Rehydrate managed fetchers from the applied bundle BEFORE the
+        // coordinator polls. No network: a cache fault quarantines only.
+        if let (Some(runtime), Some(management)) =
+            (server.subscriptions.clone(), server.management_state())
+        {
+            let specs: Vec<_> = management
+                .config
+                .sources
+                .iter()
+                .map(crate::management_worker::to_source_spec)
+                .collect();
+            runtime.rehydrate_managed(&specs);
+        }
         let shared = Arc::new(server);
         if let Some(runtime) = &shared.subscriptions {
             runtime.initialize(&shared.status());

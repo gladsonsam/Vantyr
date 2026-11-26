@@ -255,9 +255,11 @@ async fn start_control() -> (String, String, Control, Guard) {
 struct ListState {
     body: Mutex<Vec<u8>>,
     delay: Mutex<Duration>,
+    hits: AtomicU64,
 }
 
 async fn list_handler(State(state): State<Arc<ListState>>) -> Response {
+    state.hits.fetch_add(1, Ordering::SeqCst);
     let delay = *state.delay.lock().unwrap();
     if !delay.is_zero() {
         tokio::time::sleep(delay).await;
@@ -283,6 +285,7 @@ async fn start_list_server() -> (String, String, Arc<ListState>, Guard) {
     let state = Arc::new(ListState {
         body: Mutex::new(Vec::new()),
         delay: Mutex::new(Duration::ZERO),
+        hits: AtomicU64::new(0),
     });
     let router = Router::new()
         .route("/list", get(list_handler))
@@ -444,6 +447,70 @@ async fn harness_with_poll(
     poll_secs: u64,
 ) -> Harness {
     harness_with_timing(st, list_base, list_ca, mgmt_base, ca_pem, poll_secs, 60_000).await
+}
+
+fn build_runtime(st: &Fixture, list_ca: &str, tick_ms: u64) -> Arc<SubscriptionRuntime> {
+    let settings = SubscriptionSettings {
+        cache_path: st.cache.to_string_lossy().into_owned(),
+        trusted_ca_pem: None,
+        sources: Vec::new(),
+    };
+    Arc::new(
+        SubscriptionRuntime::new(&settings, None)
+            .unwrap()
+            .with_tick(Duration::from_millis(tick_ms))
+            .with_fetcher_factory({
+                let list_ca = list_ca.to_owned();
+                let cache = st.cache.clone();
+                move |spec, _root, _ca| {
+                    let limits = Limits::default();
+                    let url = reqwest::Url::parse(&spec.url).map_err(|e| {
+                        vantyr_network_subscriptions::error::Error::InvalidConfig(e.to_string())
+                    })?;
+                    let addr =
+                        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), url.port().unwrap_or(443));
+                    let cert = reqwest::Certificate::from_pem(list_ca.as_bytes()).map_err(|e| {
+                        vantyr_network_subscriptions::error::Error::InvalidConfig(e.to_string())
+                    })?;
+                    let client = reqwest::Client::builder()
+                        .no_proxy()
+                        .redirect(reqwest::redirect::Policy::none())
+                        .dns_resolver(Arc::new(LoopbackResolver(addr)) as Arc<dyn Resolve>)
+                        .tls_certs_merge([cert])
+                        .build()
+                        .map_err(|e| {
+                            vantyr_network_subscriptions::error::Error::InvalidConfig(e.to_string())
+                        })?;
+                    let cfg = vantyr_network_subscriptions::config::SubscriptionConfig {
+                        sources: vec![vantyr_network_subscriptions::config::SubscriptionSource {
+                            id: spec.id.clone(),
+                            url: spec.url.clone(),
+                            enabled: spec.enabled,
+                            interval_secs: spec.interval_secs,
+                            max_stale_secs: spec.max_stale_secs,
+                            metadata: SourceMetadata {
+                                title: spec.metadata.title.clone(),
+                                publisher: spec.metadata.publisher.clone(),
+                                license: spec.metadata.license.clone(),
+                            },
+                        }],
+                        limits: limits.clone(),
+                        query_policy: QueryPolicy::Reject,
+                    };
+                    let transport = Arc::new(ReqwestTransport::from_client(
+                        client,
+                        limits.max_header_bytes,
+                        limits.request_timeout(),
+                    )) as Arc<dyn HttpTransport>;
+                    Fetcher::with_transport(
+                        cache.clone(),
+                        &cfg,
+                        family_dns::FormatValidator::new(spec.format),
+                        transport,
+                    )
+                }
+            }),
+    )
 }
 
 async fn harness_with_timing(
@@ -1186,4 +1253,345 @@ async fn delayed_fetch_cannot_restore_stale_local_bytes_after_concurrent_reload(
     assert!(blocked(&h.server, "new.block.test.", false).await);
     assert_eq!(h.server.management_state().unwrap().config_version, 1);
     h.stop().await;
+}
+
+#[tokio::test]
+async fn restart_rehydrates_managed_fetcher_and_actual_manual_refresh_hits_origin() {
+    let st = fixture("restart-fetcher");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    let config = desired(&format!("{list}/list"), true);
+    set_desired(&control, 1, &config);
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    h.sync().await;
+    let original_state = h.server.management_state().unwrap();
+    let original_status = h.server.status();
+    let hits_before = lists.hits.load(Ordering::SeqCst);
+    assert!(hits_before > 0);
+    h.stop().await;
+
+    // The list changes while the worker is down. A fresh runtime is built via
+    // production settings; no manual install call is used.
+    *lists.body.lock().unwrap() = b"changed.block.test\n".to_vec();
+    let runtime = build_runtime(&st, &list_ca, 100);
+    let options = ManagementOptions::load(&st.options).unwrap();
+    let client = Arc::new(ManagementClient::new(&options).unwrap());
+    let server = Arc::new(
+        DnsServer::start_durable_with_subscriptions(
+            DurableOptions {
+                state_path: st.state.clone(),
+                worker_id: WORKER.to_owned(),
+                config_path: Some(st.config.clone()),
+                now: Utc::now(),
+                hooks: None,
+            },
+            Some(runtime.clone()),
+        )
+        .await
+        .unwrap(),
+    );
+    assert!(blocked(&server, "managed.block.test.", false).await);
+    control.0.lock().unwrap().pending = vec![json!({
+        "source_id":"remote-list","refresh_seq":9,"config_version":1,
+        "expires_at":"2027-01-01T00:00:00Z"
+    })];
+    let worker = Arc::new(ManagementWorker::new(options, client, Some(runtime)));
+    worker.sync_once(&server).await;
+    assert!(
+        lists.hits.load(Ordering::SeqCst) > hits_before,
+        "restarted source never contacted its origin"
+    );
+    let mut changed = false;
+    for _ in 0..60 {
+        if blocked(&server, "changed.block.test.", false).await {
+            changed = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        changed,
+        "restarted manual refresh did not update the answer"
+    );
+    let after = server.status();
+    assert_eq!(after.policy_revision, original_status.policy_revision);
+    assert_eq!(
+        after.policy_published_at,
+        original_status.policy_published_at
+    );
+    assert!(after.bundle_generation > original_status.bundle_generation);
+    assert!(after.filter_generation > original_status.filter_generation);
+    let state = server.management_state().unwrap();
+    assert_eq!(state.config_version, original_state.config_version);
+    assert_eq!(state.digest, original_state.digest);
+    assert_eq!(state.applied_at, original_state.applied_at);
+    assert_eq!(state.receipts.len(), 1);
+    worker.shutdown().await;
+    server.stop_shared().await;
+}
+
+#[tokio::test]
+async fn manual_request_without_a_fetcher_never_writes_a_receipt() {
+    let st = fixture("no-fetcher-ack");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    set_desired(&control, 1, &desired(&format!("{list}/list"), true));
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    h.sync().await;
+    let before = h.server.management_state().unwrap();
+    let disk = fs::read(&st.state).unwrap();
+    let hits = lists.hits.load(Ordering::SeqCst);
+    h.stop().await;
+
+    // Restart WITHOUT a subscriptions runtime: the applied bundle still binds.
+    let server = Arc::new(
+        DnsServer::start_durable(DurableOptions {
+            state_path: st.state.clone(),
+            worker_id: WORKER.to_owned(),
+            config_path: Some(st.config.clone()),
+            now: Utc::now(),
+            hooks: None,
+        })
+        .await
+        .unwrap(),
+    );
+    assert!(blocked(&server, "managed.block.test.", false).await);
+    control.0.lock().unwrap().pending = vec![json!({
+        "source_id":"remote-list","refresh_seq":3,"config_version":1,
+        "expires_at":"2027-01-01T00:00:00Z"
+    })];
+    let options = ManagementOptions::load(&st.options).unwrap();
+    let client = Arc::new(ManagementClient::new(&options).unwrap());
+    let worker = ManagementWorker::new(options, client, None);
+    worker.sync_once(&server).await;
+    assert_eq!(
+        server.management_state().unwrap(),
+        before,
+        "no-attempt ack was written"
+    );
+    assert_eq!(
+        fs::read(&st.state).unwrap(),
+        disk,
+        "receipt-only write changed disk"
+    );
+    assert_eq!(lists.hits.load(Ordering::SeqCst), hits);
+    server.stop_shared().await;
+}
+
+#[tokio::test]
+async fn status_report_is_scoped_and_never_attributes_an_unapplied_url() {
+    let st = fixture("scope");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    let mut local = Config::parse(support::test_config(0, "").as_bytes()).unwrap();
+    local.filter.subscriptions = Some(SubscriptionSettings {
+        cache_path: st.cache.to_string_lossy().into_owned(),
+        trusted_ca_pem: None,
+        sources: (0..30)
+            .map(|index| family_dns::SubscriptionSourceSpec {
+                id: format!("unused-{index}"),
+                url: format!("{list}/list"),
+                format: ListFormatSpec::Hosts,
+                enabled: false,
+                interval_secs: None,
+                max_stale_secs: None,
+                metadata: SourceMetadata {
+                    title: "Unused".to_owned(),
+                    publisher: "Local".to_owned(),
+                    license: "local".to_owned(),
+                },
+            })
+            .collect(),
+    });
+    fs::write(&st.config, serde_json::to_vec(&local).unwrap()).unwrap();
+    let mut managed = desired(&format!("{list}/list"), true);
+    let mut second = managed.sources[0].clone();
+    second.id = "remote-list-b".to_owned();
+    managed.sources.push(second);
+    set_desired(&control, 1, &managed);
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    // harness rewrites config; install the extra local sources afterwards.
+    fs::write(&st.config, serde_json::to_vec(&local).unwrap()).unwrap();
+    h.server
+        .reload(&fs::read(&st.config).unwrap(), Utc::now())
+        .unwrap();
+    h.sync().await;
+    let extras: Vec<_> = (0..40)
+        .map(|index| family_dns::SubscriptionSourceSpec {
+            id: format!("extra-{index}"),
+            url: format!("{list}/list"),
+            format: ListFormatSpec::Hosts,
+            enabled: false,
+            interval_secs: None,
+            max_stale_secs: None,
+            metadata: SourceMetadata {
+                title: "Unused".to_owned(),
+                publisher: "Local".to_owned(),
+                license: "local".to_owned(),
+            },
+        })
+        .collect();
+    h.runtime.install_managed(&extras).unwrap();
+    let report = reports(&control).pop().unwrap();
+    assert_eq!(
+        report.sources.len(),
+        2,
+        "unrelated local sources leaked into report"
+    );
+    assert!(report
+        .sources
+        .iter()
+        .all(|source| source.id.starts_with("remote-list")));
+    assert!(report.sources[0].downloaded_sha256.is_some());
+
+    // Same source id, different URL that cannot apply: no old-hash attribution.
+    let mut changed = desired("https://localhost:1/dead", true);
+    let mut second_changed = changed.sources[0].clone();
+    second_changed.id = "remote-list-b".to_owned();
+    changed.sources.push(second_changed);
+    set_desired(&control, 2, &changed);
+    h.sync().await;
+    let report = reports(&control).pop().unwrap();
+    assert_eq!(report.sources.len(), 2);
+    assert_eq!(report.applied.as_ref().unwrap().config_version, 1);
+    assert_eq!(report.sources[0].downloaded_sha256, None);
+    assert!(report.sources[0]
+        .last_error
+        .as_deref()
+        .is_some_and(|error| error.contains("not applied")));
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn staging_cleanup_only_reclaims_worker_owned_inactive_directories() {
+    let st = fixture("cache-cleanup");
+    let old = st.cache.join("staging-old");
+    let foreign = st.cache.join("staging-foreign");
+    let local_file = st.cache.join("local-cache.json");
+    fs::create_dir_all(&old).unwrap();
+    fs::create_dir_all(&foreign).unwrap();
+    fs::write(old.join(".vantyr-managed-cache"), "v1\n999999\n").unwrap();
+    fs::write(foreign.join("data.json"), "operator data").unwrap();
+    fs::write(&local_file, "local").unwrap();
+    let outside = st.dir.join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside, st.cache.join("staging-link")).unwrap();
+
+    let runtime = build_runtime(&st, "unused", 60_000);
+    let staged = runtime.stage_managed(&[]).unwrap();
+    assert!(
+        !old.exists(),
+        "owned inactive staging dir was not reclaimed"
+    );
+    assert!(foreign.exists(), "unmarked directory was removed");
+    assert!(local_file.exists(), "local cache file was removed");
+    assert!(
+        st.cache.join("staging-link").exists(),
+        "symlink was followed/removed"
+    );
+    drop(staged);
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn corrupt_cache_restart_binds_and_recovers_after_manual_retry() {
+    let st = fixture("corrupt-cache");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    set_desired(&control, 1, &desired(&format!("{list}/list"), true));
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    h.sync().await;
+    let original = h.server.status();
+    h.stop().await;
+
+    let active_file = fs::read_dir(&st.cache)
+        .unwrap()
+        .flat_map(|entry| {
+            let dir = entry.unwrap().path();
+            if dir.is_dir() {
+                fs::read_dir(dir)
+                    .unwrap()
+                    .map(|inner| inner.unwrap().path())
+                    .collect::<Vec<_>>()
+            } else {
+                vec![dir]
+            }
+        })
+        .find(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .expect("activated managed cache");
+    fs::write(&active_file, b"{corrupt").unwrap();
+    let runtime = build_runtime(&st, &list_ca, 100);
+    let options = ManagementOptions::load(&st.options).unwrap();
+    let client = Arc::new(ManagementClient::new(&options).unwrap());
+    let server = Arc::new(
+        DnsServer::start_durable_with_subscriptions(
+            DurableOptions {
+                state_path: st.state.clone(),
+                worker_id: WORKER.to_owned(),
+                config_path: Some(st.config.clone()),
+                now: Utc::now(),
+                hooks: None,
+            },
+            Some(runtime.clone()),
+        )
+        .await
+        .unwrap(),
+    );
+    assert_eq!(server.status(), original);
+    assert!(blocked(&server, "managed.block.test.", false).await);
+    let (sources, _) = runtime.status();
+    assert_eq!(sources[0].download, "quarantined");
+
+    // Operator removes the corrupt cache; the next manual request attempts a
+    // real fetch and only then writes a receipt.
+    for path in fs::read_dir(&st.cache).unwrap().flat_map(|entry| {
+        let dir = entry.unwrap().path();
+        if dir.is_dir() {
+            fs::read_dir(dir)
+                .unwrap()
+                .map(|inner| inner.unwrap().path())
+                .collect::<Vec<_>>()
+        } else {
+            vec![dir]
+        }
+    }) {
+        if path.extension().is_some_and(|ext| ext == "json") {
+            fs::remove_file(path).unwrap();
+        }
+    }
+    let hits = lists.hits.load(Ordering::SeqCst);
+    control.0.lock().unwrap().pending = vec![json!({
+        "source_id":"remote-list","refresh_seq":5,"config_version":1,
+        "expires_at":"2027-01-01T00:00:00Z"
+    })];
+    let worker = Arc::new(ManagementWorker::new(
+        options,
+        client,
+        Some(runtime.clone()),
+    ));
+    // Reconcile after the operator repaired the cache (no network here).
+    let spec = family_dns::SubscriptionSourceSpec {
+        id: "remote-list".to_owned(),
+        url: format!("{list}/list"),
+        format: ListFormatSpec::Hosts,
+        enabled: true,
+        interval_secs: Some(300),
+        max_stale_secs: Some(3600),
+        metadata: SourceMetadata {
+            title: "Operator list".to_owned(),
+            publisher: "Operator".to_owned(),
+            license: "asserted".to_owned(),
+        },
+    };
+    runtime.rehydrate_managed(&[spec]);
+    worker.sync_once(&server).await;
+    assert!(lists.hits.load(Ordering::SeqCst) > hits);
+    assert_eq!(server.management_state().unwrap().receipts.len(), 1);
+    worker.shutdown().await;
+    server.stop_shared().await;
 }

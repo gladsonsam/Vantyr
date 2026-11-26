@@ -128,6 +128,12 @@ impl ManagementWorker {
         };
 
         let applied = server.management_state();
+        // Equal-version polls still reconcile missing fetchers after restart;
+        // healthy fetchers keep their due/backoff state.
+        if let (Some(runtime), Some(applied)) = (&self.subscriptions, &applied) {
+            let specs: Vec<_> = applied.config.sources.iter().map(to_source_spec).collect();
+            runtime.ensure_managed(&specs);
+        }
         match admit_version(applied.as_ref(), response.config_version, &desired_digest) {
             Ok(Admission::Idempotent) => {
                 // Still report observations, but never rewrite applied state.
@@ -152,7 +158,7 @@ impl ManagementWorker {
         self.handle_manual_tokens(server, desired, &response.pending_refreshes)
             .await;
         let _ = self
-            .report_status(server, response.config_version, &desired_digest)
+            .report_status(server, response.config_version, &desired_digest, desired)
             .await;
     }
 
@@ -347,32 +353,65 @@ impl ManagementWorker {
         server: &DnsServer,
         desired_version: u64,
         desired_digest: &str,
+        desired: &ManagementConfig,
     ) -> Result<(), ManagementError> {
         let state = server.management_state();
         let status = server.status();
-        let (sources, _) = match &self.subscriptions {
+        let (all_sources, _) = match &self.subscriptions {
             Some(runtime) => runtime.status(),
             None => (Vec::new(), Default::default()),
         };
-        let sources = sources
+        let scoped_ids: BTreeSet<&str> = desired
+            .sources
+            .iter()
+            .take(crate::management::MAX_RECEIPTS)
+            .map(|source| source.id.as_str())
+            .collect();
+        let applied_this_version = state
+            .as_ref()
+            .is_some_and(|applied| applied.config_version == desired_version);
+        let sources = all_sources
             .into_iter()
-            .map(|source| SourceStatusDto {
-                id: source.id,
-                download: source
-                    .download
-                    .parse::<DownloadState>()
-                    .unwrap_or(DownloadState::Unavailable),
-                checked_at: source.checked_at,
-                fetched_at: source.fetched_at,
-                content_changed_at: source.content_changed_at,
-                next_due_at: source.next_due_at,
-                stale: source.stale,
-                failure_count: source.failure_count,
-                cooldown_until: source.cooldown_until,
-                last_error: source.last_error.map(|value| redact(&value)),
-                bytes: source.bytes,
-                rule_count: source.rule_count,
-                downloaded_sha256: source.content_version,
+            .filter(|source| scoped_ids.contains(source.id.as_str()))
+            .take(crate::management::MAX_RECEIPTS)
+            .map(|source| {
+                if !applied_this_version {
+                    // The active cache belongs to an older applied URL. Never
+                    // attribute it to the newer desired config.
+                    return SourceStatusDto {
+                        id: source.id,
+                        download: DownloadState::Unavailable,
+                        checked_at: None,
+                        fetched_at: None,
+                        content_changed_at: None,
+                        next_due_at: None,
+                        stale: true,
+                        failure_count: source.failure_count,
+                        cooldown_until: None,
+                        last_error: Some("desired config is not applied".to_owned()),
+                        bytes: 0,
+                        rule_count: None,
+                        downloaded_sha256: None,
+                    };
+                }
+                SourceStatusDto {
+                    id: source.id,
+                    download: source
+                        .download
+                        .parse::<DownloadState>()
+                        .unwrap_or(DownloadState::Unavailable),
+                    checked_at: source.checked_at,
+                    fetched_at: source.fetched_at,
+                    content_changed_at: source.content_changed_at,
+                    next_due_at: source.next_due_at,
+                    stale: source.stale,
+                    failure_count: source.failure_count,
+                    cooldown_until: source.cooldown_until,
+                    last_error: source.last_error.map(|value| redact(&value)),
+                    bytes: source.bytes,
+                    rule_count: source.rule_count,
+                    downloaded_sha256: source.content_version,
+                }
             })
             .collect();
         let applied = state.as_ref().map(|state| AppliedStatusDto {
@@ -489,7 +528,9 @@ pub(crate) fn redact(detail: &str) -> String {
     }
 }
 
-fn to_source_spec(source: &crate::management_dto::SubscriptionSourceDto) -> SubscriptionSourceSpec {
+pub(crate) fn to_source_spec(
+    source: &crate::management_dto::SubscriptionSourceDto,
+) -> SubscriptionSourceSpec {
     SubscriptionSourceSpec {
         id: source.id.clone(),
         url: source.url.clone(),

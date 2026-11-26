@@ -181,6 +181,9 @@ impl SubscriptionHandle {
 struct FetcherEntry {
     id: String,
     fetcher: Arc<Fetcher<FormatValidator>>,
+    /// Owned cache root, so inactive staging directories can be reclaimed
+    /// without touching active/local/external paths.
+    cache_root: PathBuf,
 }
 
 struct StagedInner {
@@ -205,6 +208,7 @@ pub struct StagedManaged {
 }
 
 static STAGE_SEQ: AtomicU64 = AtomicU64::new(0);
+const STAGE_MARKER: &str = ".vantyr-managed-cache";
 
 #[derive(Clone, Debug)]
 struct FaultedSource {
@@ -246,6 +250,8 @@ pub struct SubscriptionRuntime {
     tick: Duration,
     ticks: AtomicU64,
     factory: FetcherFactory,
+    /// Worker-owned staging cache roots that must never be reclaimed.
+    active_caches: Mutex<BTreeSet<PathBuf>>,
 }
 
 impl SubscriptionRuntime {
@@ -273,6 +279,7 @@ impl SubscriptionRuntime {
                 Ok(fetcher) => entries.push(FetcherEntry {
                     id: source.id.clone(),
                     fetcher: Arc::new(fetcher),
+                    cache_root: root.clone(),
                 }),
                 Err(error) => faults.push(FaultedSource {
                     id: source.id.clone(),
@@ -302,6 +309,7 @@ impl SubscriptionRuntime {
             tick: DEFAULT_TICK,
             ticks: AtomicU64::new(0),
             factory,
+            active_caches: Mutex::new(BTreeSet::new()),
         })
     }
 
@@ -345,6 +353,7 @@ impl SubscriptionRuntime {
             entries.push(FetcherEntry {
                 id: spec.id.clone(),
                 fetcher: Arc::new(fetcher),
+                cache_root: self.root.clone(),
             });
             managed.insert(spec.id.clone());
         }
@@ -371,14 +380,70 @@ impl SubscriptionRuntime {
         self
     }
 
+    /// Reclaim only directories this worker created and marked, that are no
+    /// longer active, and whose owning process is gone. Never follows a
+    /// symlink, never touches unmarked (possibly operator/external) paths.
+    fn reclaim_owned_inactive(&self) {
+        let Ok(entries) = std::fs::read_dir(&self.root) else {
+            return;
+        };
+        let mut active = self.active_caches.lock().unwrap().clone();
+        active.extend(
+            self.entries
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|entry| entry.cache_root.clone()),
+        );
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(meta) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if !meta.is_dir() || active.contains(&path) {
+                continue;
+            }
+            let marker = path.join(STAGE_MARKER);
+            let Ok(contents) = std::fs::read_to_string(&marker) else {
+                continue; // unmarked: never guessed at
+            };
+            let mut lines = contents.lines();
+            if lines.next() != Some("v1") {
+                continue;
+            }
+            let owner = lines.next().and_then(|line| line.parse::<u32>().ok());
+            let owner_active = owner.is_some_and(|pid| {
+                #[cfg(unix)]
+                {
+                    std::path::Path::new(&format!("/proc/{pid}")).exists()
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = pid;
+                    true
+                }
+            });
+            if owner_active && owner != Some(std::process::id()) {
+                continue;
+            }
+            let _ = std::fs::remove_dir_all(&path);
+        }
+    }
+
     /// Build candidate fetchers in an isolated cache. No active state changes.
     pub fn stage_managed(
         &self,
         specs: &[SubscriptionSourceSpec],
     ) -> Result<StagedManaged, FilterError> {
+        self.reclaim_owned_inactive();
         let serial = STAGE_SEQ.fetch_add(1, Ordering::SeqCst);
         let cache = self.root.join(format!("staging-{serial}"));
         std::fs::create_dir_all(&cache).map_err(|error| FilterError::Io(error.to_string()))?;
+        std::fs::write(
+            cache.join(STAGE_MARKER),
+            format!("v1\n{}\n", std::process::id()),
+        )
+        .map_err(|error| FilterError::Io(error.to_string()))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -406,10 +471,16 @@ impl SubscriptionRuntime {
         force: bool,
     ) -> Vec<String> {
         let mut errors = Vec::new();
-        for (id, fetcher) in &staged.inner.entries {
-            if !ids.contains(id) {
+        for id in ids {
+            let Some((_, fetcher)) = staged
+                .inner
+                .entries
+                .iter()
+                .find(|(candidate, _)| candidate == id)
+            else {
+                errors.push(format!("{id}: staged source is absent"));
                 continue;
-            }
+            };
             if let Err(error) = fetcher.refresh(id, force).await {
                 errors.push(format!("{id}: {error}"));
             }
@@ -448,15 +519,72 @@ impl SubscriptionRuntime {
             entries.push(FetcherEntry {
                 id: id.clone(),
                 fetcher: fetcher.clone(),
+                cache_root: staged.inner.cache.clone(),
             });
             managed.insert(id.clone());
         }
+        self.active_caches
+            .lock()
+            .unwrap()
+            .insert(staged.inner.cache.clone());
         for spec in specs {
             specs_map.insert(spec.id.clone(), spec.clone());
         }
         let all: BTreeSet<String> = entries.iter().map(|entry| entry.id.clone()).collect();
         *self.handle.ids.lock().unwrap() = all;
         staged.inner.activated.store(true, Ordering::SeqCst);
+    }
+
+    /// Rebuild managed fetchers from durable applied settings with NO network
+    /// I/O. A bad/mismatched cache is quarantined; a valid bundle still binds.
+    pub fn rehydrate_managed(&self, sources: &[SubscriptionSourceSpec]) {
+        self.reclaim_owned_inactive();
+        let mut managed = self.managed_ids.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap();
+        let mut faults = self.faults.lock().unwrap();
+        let mut specs_map = self.specs.lock().unwrap();
+        entries.retain(|entry| !managed.contains(&entry.id));
+        faults.retain(|fault| !managed.contains(&fault.id));
+        managed.clear();
+        for spec in sources {
+            match (self.factory)(spec, &self.root, self.trusted_ca_pem.as_deref()) {
+                Ok(fetcher) => {
+                    entries.push(FetcherEntry {
+                        id: spec.id.clone(),
+                        fetcher: Arc::new(fetcher),
+                        cache_root: self.root.clone(),
+                    });
+                    managed.insert(spec.id.clone());
+                    specs_map.insert(spec.id.clone(), spec.clone());
+                }
+                Err(error) => faults.push(FaultedSource {
+                    id: spec.id.clone(),
+                    error: bounded(error.to_string()),
+                    attempts: 1,
+                }),
+            }
+        }
+        // Quarantined ids remain addressable so a manual retry can rebuild a
+        // fetcher after the operator repairs the cache. No ack without a fetch.
+        let mut all: BTreeSet<String> = entries.iter().map(|entry| entry.id.clone()).collect();
+        all.extend(faults.iter().map(|fault| fault.id.clone()));
+        *self.handle.ids.lock().unwrap() = all;
+    }
+
+    /// No-op when every applied managed source already has an active fetcher
+    /// or a truthful quarantine. Healthy fetchers keep their due/backoff state.
+    pub fn ensure_managed(&self, sources: &[SubscriptionSourceSpec]) {
+        let covered = {
+            let entries = self.entries.lock().unwrap();
+            let faults = self.faults.lock().unwrap();
+            sources.iter().all(|spec| {
+                entries.iter().any(|entry| entry.id == spec.id)
+                    || faults.iter().any(|fault| fault.id == spec.id)
+            })
+        };
+        if !covered {
+            self.rehydrate_managed(sources);
+        }
     }
 
     /// Bounded reaction tick for an embedding that needs faster polling. This
@@ -631,6 +759,7 @@ impl SubscriptionRuntime {
                 self.entries.lock().unwrap().push(FetcherEntry {
                     id: id.to_owned(),
                     fetcher: Arc::new(fetcher),
+                    cache_root: self.root.clone(),
                 });
                 true
             }
@@ -678,6 +807,7 @@ impl SubscriptionRuntime {
         let mut errors = Vec::new();
         for id in ids {
             if !self.handle.ids.lock().unwrap().contains(id) {
+                errors.push(format!("{id}: no configured fetcher"));
                 continue;
             }
             let fetcher = {
@@ -688,8 +818,24 @@ impl SubscriptionRuntime {
                     .find(|entry| entry.id == *id)
                     .map(|entry| entry.fetcher.clone())
             };
+            let fetcher = match fetcher {
+                Some(fetcher) => Some(fetcher),
+                None => {
+                    if !self.retry_faulted(id, &mut errors) {
+                        errors.push(format!("{id}: quarantined, no fetch attempt"));
+                        continue;
+                    }
+                    // A recovered source performs a REAL fetch; no ack without it.
+                    self.entries
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .find(|entry| entry.id == *id)
+                        .map(|entry| entry.fetcher.clone())
+                }
+            };
             let Some(fetcher) = fetcher else {
-                self.retry_faulted(id, &mut errors);
+                errors.push(format!("{id}: recovered source has no fetcher"));
                 continue;
             };
             if let Err(error) = fetcher.refresh(id, force).await {
@@ -866,7 +1012,11 @@ impl SubscriptionRuntime {
             entries: Mutex::new(
                 entries
                     .into_iter()
-                    .map(|(id, fetcher)| FetcherEntry { id, fetcher })
+                    .map(|(id, fetcher)| FetcherEntry {
+                        id,
+                        fetcher,
+                        cache_root: PathBuf::new(),
+                    })
                     .collect(),
             ),
             faults: Mutex::new(Vec::new()),
@@ -886,6 +1036,7 @@ impl SubscriptionRuntime {
             tick: DEFAULT_TICK,
             ticks: AtomicU64::new(0),
             factory: Arc::new(default_fetcher_factory),
+            active_caches: Mutex::new(BTreeSet::new()),
         }
     }
 }
