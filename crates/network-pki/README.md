@@ -113,6 +113,15 @@ are much slower because age's work-factor calibration is unoptimized.
 
 ## Known gaps (out of scope for this slice)
 
+Secret wrappers zeroize their owned values on drop. Temporary serialization,
+decryption, passphrase-read buffers and the plaintext vault payload also hold
+secret copies that are not guaranteed to be zeroized. This is not a claim of
+complete process-memory erasure. Recovery validates the encrypted envelope and
+key fingerprint but does not independently bind all certificate metadata to
+the recovered signing key; adding that consistency check remains hardening
+work. The maximum accepted scrypt work factor of 20 can require about 1 GiB
+of memory, so operators on constrained hosts should choose a lower factor.
+
 No client trust bundle installation, no enrollment agent, no CRL/OCSP, no
 interception pipeline, no certificate cache, no rotation of client trusts, and
 no HTTP surface. A retired root remains trusted by any device that was already

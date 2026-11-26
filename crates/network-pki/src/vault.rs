@@ -108,7 +108,9 @@ fn validate_name(name: &str) -> Result<()> {
 }
 
 /// Read an operator passphrase from a 0600 regular file. The bytes never go to
-/// stdout, a log or a tool result; the in-memory copy is zeroized on drop.
+/// stdout, a log or a tool result. The returned `SecretString` is zeroized on
+/// drop; temporary file-read and UTF-8 conversion buffers are not guaranteed
+/// to be zeroized.
 pub fn read_secret_file(path: &Path) -> Result<SecretString> {
     let bytes = read_bounded_private(path, MAX_SECRET_BYTES)?;
     let without_newline = match bytes.strip_suffix(b"\n") {

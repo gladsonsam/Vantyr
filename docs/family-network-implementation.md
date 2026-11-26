@@ -384,8 +384,12 @@ No substantive UI or Supabase changes were made in this step.
 - Review pending: authenticated HTTP/CONNECT worker with destination
   filtering, deadlines and graceful shutdown. Static bootstrap credentials
   remain separate from controller enrollment; TLS inspection is not available.
-- In progress: unique inspection CA generation, encrypted key custody,
-  memory-only signer unlock, public certificate export and validation tests.
+- Accepted: unique inspection CA generation, encrypted key custody,
+  memory-only signer unlock, public certificate export and validation tests;
+  23 tests include a real TLS handshake and certificate rejection paths.
+  Temporary plaintext buffer erasure and recovered certificate/key metadata
+  consistency remain explicit hardening limitations. Client trust setup and
+  live inspection are separate, unfinished capabilities.
 - Next integration: persist and reload one complete validated DNS configuration
   and policy bundle atomically, preserving revision and policy age across a
   restart. Do not couple independently written configuration and policy files.
