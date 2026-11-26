@@ -4,16 +4,16 @@ import { useDnsStatsQuery } from "@/features/network/runtime/useRuntimeQueries";
 const pct = (part: number, total: number) =>
   total === 0 ? "0%" : `${Math.round((part / total) * 100)}%`;
 
-/** Four coloured figures with a trend line each: this device's DNS over the last day. Nothing if it can't load. */
+/** Coloured figures with a trend line each: this device's DNS over the last day. Nothing if it can't load. */
 export function OverviewDnsStats({ deviceId }: { deviceId: string }) {
   const query = useDnsStatsQuery({ deviceId, range: "24h" });
-  if (query.isPending) return <div className="h-32" />;
+  if (query.isPending) return <div className="h-40" />;
   if (query.isError || query.data.state === "unavailable") return null;
   const stats = query.data.data;
   const allowed = stats.total - stats.blocked;
-  const share = stats.total === 0 ? 0 : (stats.blocked / stats.total) * 100;
+  const top = stats.topBlocked[0];
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div className={top ? "grid grid-cols-2 gap-5 lg:grid-cols-4" : "grid grid-cols-2 gap-5 lg:grid-cols-3"}>
       <StatCard
         label="Queries"
         value={stats.total.toLocaleString()}
@@ -34,13 +34,15 @@ export function OverviewDnsStats({ deviceId }: { deviceId: string }) {
         trend={stats.series.map((b) => b.blocked)}
         hue="text-destructive"
       />
-      <StatCard
-        label="Share blocked"
-        value={`${share.toFixed(1)}%`}
-        trend={stats.series.map((b) => (b.total === 0 ? 0 : (b.blocked / b.total) * 100))}
-        trendMax={100}
-        hue="text-warning"
-      />
+      {top ? (
+        <StatCard
+          label="Top blocked"
+          value={<span title={top.domain} className="block truncate text-xl leading-9">{top.domain}</span>}
+          delta={`${top.count.toLocaleString()}×`}
+          trend={stats.series.map((b) => b.blocked)}
+          hue="text-warning"
+        />
+      ) : null}
     </div>
   );
 }

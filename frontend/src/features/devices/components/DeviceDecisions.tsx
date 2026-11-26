@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { ListChecks } from "lucide-react";
 import { HelpTip } from "@/components/common/HelpTip";
+import { OverviewCard } from "./OverviewCard";
 import { DetailSection } from "@/components/common/resource-detail/DetailSection";
 import AnimatedList from "@/components/react-bits/AnimatedList";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
@@ -19,15 +20,17 @@ export function DeviceDecisions({
   title = "Recent decisions",
   compact = false,
   viewAllTo,
+  className,
 }: {
   deviceId: string;
   source?: EventSource;
   limit?: number;
   title?: string;
-  /** A short list of dot, domain and time, with no frame. */
+  /** A short card of dot, domain and time; blocked rows are coloured. */
   compact?: boolean;
   /** Where "View all" goes, in compact mode. */
   viewAllTo?: string;
+  className?: string;
 }) {
   const query = useEventsQuery({ deviceId, source, limit });
   if (query.isPending) return null;
@@ -40,42 +43,54 @@ export function DeviceDecisions({
   const { events } = query.data.data;
   if (compact) {
     return (
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="flex items-center gap-1.5 text-sm font-medium">
-            {title}
-            <HelpTip label="About decisions">
-              A DNS decision is about a domain name. It is not a record of the pages someone
-              visited.
-            </HelpTip>
-          </h3>
-          {viewAllTo ? (
-            <Link to={viewAllTo} className="text-sm text-muted-foreground hover:text-foreground">
+      <OverviewCard
+        title={title}
+        help={
+          <HelpTip label="About decisions">
+            A DNS decision is about a domain name. It is not a record of the pages someone
+            visited.
+          </HelpTip>
+        }
+        action={
+          viewAllTo ? (
+            <Link
+              to={viewAllTo}
+              className="inline-flex h-8 items-center rounded-md px-2 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
               View all
             </Link>
-          ) : null}
-        </div>
+          ) : null
+        }
+        className={className}
+      >
         {events.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing recorded for this device yet.</p>
+          <p className="text-base text-muted-foreground">Nothing recorded for this device yet.</p>
         ) : (
-          <ul className="space-y-2.5">
+          <ul className="divide-y divide-border/60">
             {events.map((event) => {
               const blocked = event.effect === "deny";
               return (
-                <li key={event.id} className="flex items-center gap-3 text-sm">
+                <li
+                  key={event.id}
+                  aria-label={`${blocked ? "Blocked" : "Allowed"} ${event.subject}`}
+                  className="flex items-center gap-3 py-3 text-base first:pt-0 last:pb-0"
+                >
                   <span
                     className={cn(
-                      "inline-flex w-20 shrink-0 items-center gap-1.5 font-medium",
-                      blocked ? "text-destructive" : "text-success",
+                      "size-2 shrink-0 rounded-full",
+                      blocked ? "bg-destructive" : "bg-success",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate font-mono text-sm",
+                      blocked && "text-destructive",
                     )}
                   >
-                    <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
-                    {blocked ? "Blocked" : "Allowed"}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-[0.8125rem]">
                     {event.subject}
                   </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
+                  <span className="shrink-0 text-sm text-muted-foreground">
                     <TimeAgo iso={event.at} />
                   </span>
                 </li>
@@ -83,7 +98,7 @@ export function DeviceDecisions({
             })}
           </ul>
         )}
-      </section>
+      </OverviewCard>
     );
   }
   return (

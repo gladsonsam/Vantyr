@@ -22,21 +22,21 @@ export function StatCard({
   hue: string;
 }) {
   return (
-    <div className="min-w-0 space-y-2">
+    <div className="min-w-0 space-y-3">
       <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
-        <div className={cn("flex items-start justify-between gap-2 px-4 pt-4", hue)}>
-          <div className="text-2xl font-semibold tabular-nums tracking-tight text-foreground">
+        <div className={cn("flex items-start justify-between gap-2 px-5 pt-5", hue)}>
+          <div className="min-w-0 truncate text-3xl font-semibold tabular-nums tracking-tight text-foreground">
             {value}
           </div>
-          {delta ? <span className="text-xs font-medium tabular-nums">{delta}</span> : null}
+          {delta ? <span className="text-sm font-medium tabular-nums">{delta}</span> : null}
         </div>
         <Sparkline
           values={trend}
           max={trendMax}
-          className={cn("mt-3 block h-12 w-full", hue)}
+          className={cn("mt-4 block h-16 w-full", hue)}
         />
       </div>
-      <div className={cn("px-1 text-sm font-medium", hue)}>{label}</div>
+      <div className={cn("px-1 text-base font-medium", hue)}>{label}</div>
     </div>
   );
 }

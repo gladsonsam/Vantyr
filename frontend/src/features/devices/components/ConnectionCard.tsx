@@ -29,13 +29,13 @@ export function ConnectionCard({
 }) {
   const label = CONNECTION_LABEL[connection.kind];
   return (
-    <div className="relative flex min-w-0 items-start justify-between gap-2 rounded-xl border border-border/70 bg-card/10 p-4">
-      <div className="min-w-0 space-y-1.5">
+    <div className="relative flex min-w-0 items-start justify-between gap-2 rounded-lg bg-muted/30 p-5">
+      <div className="min-w-0 space-y-2">
         <div className="flex items-center gap-1">
           <Link
             to={to}
             aria-label={`Open ${label}`}
-            className="font-medium outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-2 focus-visible:after:ring-ring/50"
+            className="text-base font-semibold outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring/50"
           >
             {label}
           </Link>
@@ -49,7 +49,7 @@ export function ConnectionCard({
           </HelpTip>
         </div>
         <ConnectionStatus state={connection.state} />
-        <div className="text-xs text-muted-foreground">
+        <div className="text-sm text-muted-foreground">
           Last seen <TimeAgo iso={connection.lastSeenAt} />
         </div>
       </div>

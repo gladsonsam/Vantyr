@@ -5,6 +5,7 @@ import { DetailSection } from "@/components/common/resource-detail/DetailSection
 import StatusMark from "@/components/react-bits/StatusMark";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
 import { usePolicyQuery } from "@/features/network/runtime/useRuntimeQueries";
+import { OverviewCard } from "./OverviewCard";
 import { RuleGroup } from "./RuleList";
 
 /**
@@ -15,12 +16,14 @@ export function DeviceRules({
   deviceId,
   summary = false,
   personIds = [],
+  className,
 }: {
   deviceId: string;
   /** Counts and the one-line note, with the full list behind "Show rules". */
   summary?: boolean;
   /** The people assigned to this device, so their rules can be counted. */
   personIds?: string[];
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const query = usePolicyQuery();
@@ -48,20 +51,22 @@ export function DeviceRules({
       .filter((s) => personIds.includes(s.scopeId))
       .reduce((n, s) => n + s.rules.length, 0);
     return (
-      <section className="space-y-3">
-        <h3 className="flex items-center gap-1.5 text-sm font-medium">
-          Rules in effect
+      <OverviewCard
+        title="Rules in effect"
+        help={
           <HelpTip label="About rules">
             Anything else is {applied.defaultEffect === "allow" ? "allowed" : "blocked"} by the
             household default. A person’s own rules apply only once they are verified on the
             device.
           </HelpTip>
-        </h3>
-        <p className="text-sm">
+        }
+        className={className}
+      >
+        <p className="text-base">
           {applied.baseline.length} baseline · {deviceRules.length} device · {personCount} person
         </p>
         {waiting ? (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <p className="flex items-center gap-2 text-base text-muted-foreground">
             <StatusMark status="pending" size={16} color="var(--muted-foreground)" />
             Revision {waiting.revision} is saved but not applied.
           </p>
@@ -70,7 +75,7 @@ export function DeviceRules({
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="inline-flex h-9 w-fit items-center gap-1 rounded-md text-base text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           {open ? "Hide rules" : "Show rules"}
           <ChevronDown className={open ? "size-4 rotate-180" : "size-4"} />
@@ -89,7 +94,7 @@ export function DeviceRules({
             />
           </div>
         ) : null}
-      </section>
+      </OverviewCard>
     );
   }
   return (

@@ -4,6 +4,7 @@ import { Button } from "@vantyr/ui/components/button";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { usePageHeader } from "@/app/shell/usePageHeader";
+import { DevicePeople } from "./components/DevicePeople";
 import { DeviceContext } from "./deviceContext";
 import { useDeviceRows } from "./hooks/useDeviceRows";
 import { DEVICE_TYPE_ICON, DEVICE_TYPE_LABEL } from "./lib/deviceIcons";
@@ -21,12 +22,9 @@ export function DeviceLayout() {
   const navigate = useNavigate();
   const row = rows.find((candidate) => candidate.key === deviceKey);
 
-  const people = row?.people.map((p) => p.person.display_name).join(", ");
   usePageHeader({
     title: row?.label ?? "Device",
-    description: row
-      ? [DEVICE_TYPE_LABEL[row.type], people].filter(Boolean).join(" · ")
-      : undefined,
+    description: row ? DEVICE_TYPE_LABEL[row.type] : undefined,
   });
 
   // An agent that is not in a household has no device page of its own: it is just an agent.
@@ -58,7 +56,7 @@ export function DeviceLayout() {
     <DeviceContext.Provider value={row}>
       <div className="space-y-6">
         <header className="border-b" aria-label="Device header">
-          <div className="flex flex-wrap items-start gap-3">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
             <Button
               variant="ghost"
               size="sm"
@@ -71,31 +69,26 @@ export function DeviceLayout() {
               <div
                 className={
                   online
-                    ? "flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/70 text-success"
-                    : "flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/70 text-muted-foreground"
+                    ? "flex size-11 shrink-0 items-center justify-center rounded-xl border border-border/70 text-success"
+                    : "flex size-11 shrink-0 items-center justify-center rounded-xl border border-border/70 text-muted-foreground"
                 }
                 aria-hidden="true"
               >
-                <TypeIcon size={19} />
+                <TypeIcon size={20} />
               </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2.5">
-                  <span className="truncate text-lg font-semibold tracking-tight">{row.label}</span>
-                  <span
-                    className={
-                      online
-                        ? "inline-flex items-center gap-1.5 text-xs font-medium text-success"
-                        : "inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-                    }
-                  >
-                    <span className="size-2 rounded-full bg-current" aria-hidden="true" />
-                    {online ? "Connected" : "Not connected"}
-                  </span>
-                </div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {[DEVICE_TYPE_LABEL[row.type], people].filter(Boolean).join(" · ")}
-                </div>
-              </div>
+              <span
+                className={
+                  online
+                    ? "inline-flex items-center gap-2 text-sm font-medium text-success"
+                    : "inline-flex items-center gap-2 text-sm font-medium text-muted-foreground"
+                }
+              >
+                <span className="size-2 rounded-full bg-current" aria-hidden="true" />
+                {online ? "Connected" : "Not connected"}
+              </span>
+            </div>
+            <div className="ml-auto">
+              <DevicePeople device={row} />
             </div>
           </div>
           <div className="mt-4 -mb-px">
