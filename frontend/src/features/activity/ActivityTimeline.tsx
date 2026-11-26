@@ -327,12 +327,18 @@ function TimelineRows({
   onOpenScreenshot: (id: number) => void;
   filters: ActivityFilters;
 }) {
-  let rendered = 0;
+  let remaining = renderLimit;
+  const visibleGroups = [];
+  for (const group of dayGroups) {
+    if (remaining <= 0) break;
+    const items = group.items.slice(0, remaining);
+    remaining -= items.length;
+    if (items.length) visibleGroups.push({ ...group, items });
+  }
   return (
     <div className="flex flex-col overflow-clip rounded-lg border border-border/70">
-      {dayGroups.map((group) => {
-        const items = group.items.filter(() => rendered++ < renderLimit);
-        if (items.length === 0) return null;
+      {visibleGroups.map((group) => {
+        const items = group.items;
         return (
           <div key={group.dayKey} id={`vtl-day-${group.dayKey}`}>
             <div

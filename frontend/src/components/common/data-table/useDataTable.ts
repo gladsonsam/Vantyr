@@ -12,7 +12,7 @@ export interface UseDataTableOptions<TData extends RowData> {
   /** Keep stable between renders (state or memo); a new array resets the table's row models. */
   data: TData[];
   /** Keep stable between renders (module scope or memo). */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- columns carry their own value types
+  // oxlint-disable-next-line typescript/no-explicit-any -- columns carry their own value types
   columns: ColumnDef<DataTableFeatures, TData, any>[];
   /** Rows per page. Default 50. */
   pageSize?: number;
@@ -32,7 +32,7 @@ export function compareSortValues(a: unknown, b: unknown): number {
 
 // Row-type agnostic: it only reads cell values. Module scope keeps the column
 // defaults stable across renders.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 const sortByValue: SortFn<DataTableFeatures, any> = (rowA, rowB, columnId) =>
   compareSortValues(rowA.getValue(columnId), rowB.getValue(columnId));
 const defaultColumn = { sortFn: sortByValue, sortUndefined: "last" } as const;

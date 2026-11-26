@@ -7,7 +7,7 @@ on:
     paths:
       - "frontend/**"
       - "packages/ui/**"
-      - "packages/eslint-config/**"
+      - "packages/oxlint-config/**"
       - "package.json"
       - "package-lock.json"
       - "agent/ui-src/**"

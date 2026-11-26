@@ -501,7 +501,7 @@ function useRecallSearchModel({
     // react-doctor-disable-next-line react-doctor/no-pass-data-to-parent
     publishSearchLocation(restored);
     // Depend on scalar draft identity rather than a newly normalized object.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [
     query,
     filters,

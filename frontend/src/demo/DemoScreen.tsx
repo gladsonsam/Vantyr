@@ -7,7 +7,7 @@
  * `demoLiveStatus` app/window the rest of the demo uses) so the screen panel —
  * and any promo footage recorded from it — looks alive.
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { demoLiveStatus } from "./data";
 
 type Scene = "terminal" | "code" | "design" | "email" | "browser";
@@ -109,6 +109,7 @@ function WindowFrame({ title, accent, children }: { title: string; accent: strin
 }
 
 function Taskbar() {
+  const [clock] = useState(() => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
   return (
     <div
       style={{
@@ -135,7 +136,7 @@ function Taskbar() {
         <span key={c} style={{ width: 18, height: 18, borderRadius: 5, background: c, opacity: 0.7 }} />
       ))}
       <span style={{ marginLeft: "auto", fontSize: 12, color: C.dim, fontFamily: "var(--mono, monospace)" }}>
-        {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        {clock}
       </span>
     </div>
   );

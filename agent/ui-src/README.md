@@ -40,5 +40,5 @@ sources, so `src/styles/ui.css` has an `@source` line for `packages/ui/src`; kee
 Theme tokens stay per app (`src/styles/ui.css`); components may only use token classes both
 apps define.
 
-ESLint comes from `@vantyr/eslint-config` (`packages/eslint-config`); this app also enables
-react-hooks' React Compiler rules.
+Oxlint uses `packages/oxlint-config/react-compiler.json`, shared with the dashboard.
+Run `npm run lint` here, or from the repository root for all JavaScript workspaces.

@@ -14,15 +14,17 @@ export function useRowKeys<T extends object>(rows: readonly T[]): readonly strin
   const keys = rows.map(row => previous.get(row)?.shift());
   const claimed = new Set(keys.filter(key => key !== undefined));
   let nextId = state.nextId;
-  const resolved = keys.map((key, i) => {
-    if (key !== undefined) return key;
+  const resolved: string[] = [];
+  for (const [i, key] of keys.entries()) {
+    if (key !== undefined) { resolved.push(key); continue; }
     const prior = state.keys[i];
     if (rows.length === state.rows.length && prior !== undefined && !claimed.has(prior)) {
       claimed.add(prior);
-      return prior;
+      resolved.push(prior);
+    } else {
+      resolved.push(prefix + "-" + nextId++);
     }
-    return `${prefix}-${nextId++}`;
-  });
+  }
   setState({ rows, keys: resolved, nextId });
   return resolved;
 }

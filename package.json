@@ -4,7 +4,6 @@
   "workspaces": [
     "frontend",
     "agent/ui-src",
-    "packages/eslint-config",
     "packages/ui"
   ],
   "scripts": {
@@ -12,7 +11,9 @@
     "agent:build": "npm --prefix agent run tauri:build",
     "agent:ui": "npm run dev -w agent/ui-src",
     "demo": "npm run dev:demo -w frontend",
-    "dev": "npm run dev -w frontend"
+    "dev": "npm run dev -w frontend",
+    "lint": "npm run lint --workspaces --if-present",
+    "lint:fix": "npm run lint:fix --workspaces --if-present"
   },
   "overrides": {
     "esbuild": "^0.28.2",
@@ -21,6 +22,7 @@
   "devDependencies": {
     "ajv": "^8.20.0",
     "shadcn": "^4.23.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "oxlint": "^1.95.0"
   }
 }

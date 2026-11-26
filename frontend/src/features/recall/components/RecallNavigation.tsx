@@ -32,7 +32,7 @@ export function RecallNavigation({ agentId, timezone, atMs, monitor, displayedFr
   }
   useEffect(() => {
     // This counter cancels asynchronous requests, rather than referencing a DOM node.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
     return () => { generation.current++; };
   }, [preferencesKey, agentId]);
   const persist = (next: Bookmark[]) => {

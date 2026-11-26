@@ -128,7 +128,7 @@ Vite and `tsc` compile it as part of this app, so there is no build step and edi
   CSS variables the CLI mentions into `styles/ui.css` by hand.
 - Lint and type-check the package with `npm run lint -w packages/ui` and
   `npm run typecheck -w packages/ui` (the dashboard's `tsc -b` also compiles what it imports).
-- ESLint is `@vantyr/eslint-config` (`packages/eslint-config`), shared with the agent UI.
+- Oxlint rules live in `packages/oxlint-config`, shared with the agent UI and component package.
 - Install from the repository root (`npm ci`); the three JS packages are npm workspaces sharing
   one `package-lock.json`. Run scripts from the root with `npm run <script> -w frontend`, or from
   `frontend/` as before.

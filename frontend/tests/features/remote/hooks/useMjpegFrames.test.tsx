@@ -28,7 +28,7 @@ describe("bounded actual-source MJPEG transport/decode", () => {
     const a=bitmap(); first.resolve(a); await settle(); expect(decode).toHaveBeenCalledTimes(2); expect(present.mock.calls[0][0].geometry?.geometry_revision).toBe(1); expect(a.close).toHaveBeenCalled();
     const b=bitmap(); last.resolve(b); await settle(); expect(present.mock.calls[1][0].geometry?.geometry_revision).toBe(100); expect(b.close).toHaveBeenCalled();
     stream.cancel(); await stream.done; expect(c.cancel).toHaveBeenCalledTimes(1); expect(stopped).toHaveBeenCalledWith(null);
-    expect((fetcher.mock.calls[0][1]?.signal as AbortSignal).aborted).toBe(true);
+    expect(fetcher.mock.calls[0][1]?.signal?.aborted).toBe(true);
   });
   it("serializes decode across device/stream replacement and closes obsolete completions", async () => {
     const old=connection(), fresh=connection(), first=deferred<ImageBitmap>(), second=deferred<ImageBitmap>();
