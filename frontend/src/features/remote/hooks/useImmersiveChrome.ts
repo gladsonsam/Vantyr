@@ -40,6 +40,7 @@ export function useImmersiveChrome({
   const handleRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** Bumped on every reveal/hide so a pending blur check cannot undo a newer decision. */
   const epoch = useRef(0);
   const heldRef = useRef(held);
@@ -54,7 +55,14 @@ export function useImmersiveChrome({
     clearTimeout(timer.current);
     timer.current = undefined;
   }, []);
-  useEffect(() => clearTimer, [clearTimer]);
+  useEffect(
+    () => () => {
+      clearTimer();
+      clearTimeout(blurTimer.current);
+      epoch.current += 1;
+    },
+    [active, clearTimer],
+  );
 
   const inside = useCallback(
     (node: EventTarget | null) =>
@@ -127,7 +135,8 @@ export function useImmersiveChrome({
   const onBlur = () => {
     if (reveal.current !== "pinned") return;
     const seen = epoch.current;
-    setTimeout(() => {
+    clearTimeout(blurTimer.current);
+    blurTimer.current = setTimeout(() => {
       if (seen !== epoch.current) return;
       const focused = document.activeElement;
       if (heldRef.current || !focused || focused === document.body || inside(focused)) return;
