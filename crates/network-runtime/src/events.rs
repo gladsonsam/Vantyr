@@ -9,9 +9,11 @@
 //! Bounds are configurable but validated on creation *and* on update: a hard
 //! event count, a hard total byte count, a per-event byte limit, a time
 //! retention window and a future-timestamp skew. The oldest records are
-//! evicted first. Free-text fields that look like raw URLs, query strings,
-//! credentials or bodies are rejected at ingest; nothing is scraped from the
-//! network and no body/header is ever stored.
+//! evicted first. All read and stat APIs take the caller's clock and prune
+//! expired records before returning, so an idle queue does not retain readable
+//! records past its retention window. Free-text fields that look like raw URLs,
+//! query strings, credentials or bodies are rejected at ingest; nothing is
+//! scraped from the network and no body/header is ever stored.
 
 use std::collections::VecDeque;
 use std::fmt;
@@ -182,11 +184,11 @@ impl EventQueue {
         }
 
         let mut state = self.state.lock().unwrap();
-        let seconds_ahead = (event.occurred_at - now).num_seconds();
-        let skew = state.config.max_future_skew_secs as i64;
-        if seconds_ahead > skew {
+        let ahead = event.occurred_at - now;
+        let skew = ChronoDuration::seconds(state.config.max_future_skew_secs as i64);
+        if ahead > skew {
             return Err(EventError::FutureTimestamp {
-                seconds_ahead,
+                seconds_ahead: ahead.num_seconds(),
                 limit: state.config.max_future_skew_secs,
             });
         }
@@ -227,11 +229,13 @@ impl EventQueue {
         Ok(())
     }
 
-    /// Decoded records in oldest-to-newest order. No aggregation is performed.
-    pub fn events(&self) -> Vec<Event> {
-        self.state
-            .lock()
-            .unwrap()
+    /// Decoded records in oldest-to-newest order using the caller's clock.
+    /// Expired records are pruned before the read, so an idle queue never
+    /// exposes them. No aggregation is performed.
+    pub fn events(&self, now: DateTime<Utc>) -> Vec<Event> {
+        let mut state = self.state.lock().unwrap();
+        state.prune_expired(now);
+        state
             .entries
             .iter()
             .map(|stored| {
@@ -241,9 +245,12 @@ impl EventQueue {
             .collect()
     }
 
-    /// Current (count, byte) usage against the configured caps.
-    pub fn stats(&self) -> (usize, usize) {
-        let state = self.state.lock().unwrap();
+    /// Current (count, byte) usage using the caller's clock. The same expiry
+    /// pruning as `events` runs first, so the counters cannot disagree with
+    /// what a read returns.
+    pub fn stats(&self, now: DateTime<Utc>) -> (usize, usize) {
+        let mut state = self.state.lock().unwrap();
+        state.prune_expired(now);
         (state.entries.len(), state.bytes)
     }
 }
@@ -378,11 +385,11 @@ mod tests {
                 .ingest(h, event(h, source, at, &format!("c{index}"), None), at)
                 .unwrap();
         }
-        let events = queue.events();
+        let events = queue.events(now);
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].correlation_id.as_deref(), Some("c1"));
         assert_eq!(events[1].correlation_id.as_deref(), Some("c2"));
-        assert_eq!(queue.stats().0, 2);
+        assert_eq!(queue.stats(now).0, 2);
     }
 
     #[test]
@@ -406,8 +413,8 @@ mod tests {
                 .ingest(h, event(h, EventSource::Dns, now, &correlation, None), now)
                 .unwrap();
         }
-        assert_eq!(queue.stats(), (2, base * 2));
-        assert_eq!(queue.events()[0].correlation_id.as_deref(), Some("c1"));
+        assert_eq!(queue.stats(now), (2, base * 2));
+        assert_eq!(queue.events(now)[0].correlation_id.as_deref(), Some("c1"));
 
         let too_big = EventQueueConfig {
             max_event_bytes: base - 1,
@@ -421,7 +428,7 @@ mod tests {
                 limit: base - 1
             })
         );
-        assert_eq!(strict.stats(), (0, 0));
+        assert_eq!(strict.stats(now), (0, 0));
     }
 
     #[test]
@@ -441,13 +448,38 @@ mod tests {
                 stale_at,
             )
             .unwrap();
-        assert_eq!(queue.stats().0, 1);
+        // At the ingest clock the record is still live; at `now` it is gone.
+        assert_eq!(queue.stats(stale_at).0, 1);
+        assert!(queue.events(now).is_empty());
         queue
             .ingest(h, event(h, EventSource::Dns, now, "fresh", None), now)
             .unwrap();
-        let events = queue.events();
+        let events = queue.events(now);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].correlation_id.as_deref(), Some("fresh"));
+    }
+
+    #[test]
+    fn idle_queue_hides_expired_records_on_read() {
+        let h = household();
+        let ingested_at = ts("2026-11-26T10:00:00Z");
+        let config = EventQueueConfig {
+            retention_secs: 10,
+            ..EventQueueConfig::default()
+        };
+        let queue = EventQueue::new(h, config).unwrap();
+        let stored = event(h, EventSource::Dns, ingested_at, "expiring", None);
+        let stored_bytes = serde_json::to_vec(&stored).unwrap().len();
+        queue.ingest(h, stored, ingested_at).unwrap();
+
+        assert_eq!(queue.events(ingested_at).len(), 1);
+        assert_eq!(queue.stats(ingested_at), (1, stored_bytes));
+
+        let later = ingested_at + ChronoDuration::seconds(11);
+        // No new ingest and no config update: reads alone expose no expired
+        // record and the byte/count accounting follows the same pruning.
+        assert!(queue.events(later).is_empty());
+        assert_eq!(queue.stats(later), (0, 0));
     }
 
     #[test]
@@ -485,7 +517,20 @@ mod tests {
                 now,
             )
             .unwrap();
-        assert_eq!(queue.events().len(), 1);
+        assert_eq!(queue.events(now).len(), 1);
+
+        // Durations are compared precisely, not truncated to whole seconds.
+        let sub_second = event(
+            h,
+            EventSource::Dns,
+            now + ChronoDuration::seconds(60) + ChronoDuration::milliseconds(500),
+            "sub-second-future",
+            None,
+        );
+        assert!(matches!(
+            queue.ingest(h, sub_second, now),
+            Err(EventError::FutureTimestamp { limit: 60, .. })
+        ));
     }
 
     #[test]
@@ -502,7 +547,7 @@ mod tests {
             queue.ingest(h, event(other, EventSource::Dns, now, "c", None), now),
             Err(EventError::WrongHousehold)
         );
-        assert_eq!(queue.stats(), (0, 0));
+        assert_eq!(queue.stats(now), (0, 0));
     }
 
     #[test]
@@ -527,7 +572,7 @@ mod tests {
             queue.ingest(h, credential, now),
             Err(EventError::SensitiveField("correlation_id"))
         );
-        assert_eq!(queue.stats(), (0, 0));
+        assert_eq!(queue.stats(now), (0, 0));
     }
 
     #[test]
@@ -540,14 +585,14 @@ mod tests {
         let proxy = event(h, EventSource::Proxy, now, "visit-42", Some(person));
         let expected = proxy.clone();
         queue.ingest(h, proxy, now).unwrap();
-        assert_eq!(queue.events(), vec![expected.clone()]);
+        assert_eq!(queue.events(now), vec![expected.clone()]);
 
         for source in [EventSource::Dns, EventSource::Agent] {
             queue
                 .ingest(h, event(h, source, now, "visit-42", Some(person)), now)
                 .unwrap();
         }
-        let events = queue.events();
+        let events = queue.events(now);
         assert_eq!(events.len(), 3, "three sources stay three records");
         assert_eq!(events[0].source, EventSource::Proxy);
         assert_eq!(events[1].source, EventSource::Dns);
@@ -590,13 +635,13 @@ mod tests {
             queue.set_config(bad, now),
             Err(EventError::InvalidConfig(_))
         ));
-        assert_eq!(queue.stats().0, 3, "invalid update changed nothing");
+        assert_eq!(queue.stats(now).0, 3, "invalid update changed nothing");
 
         let tight = EventQueueConfig {
             max_events: 1,
             ..EventQueueConfig::default()
         };
         queue.set_config(tight, now).unwrap();
-        assert_eq!(queue.events()[0].correlation_id.as_deref(), Some("c2"));
+        assert_eq!(queue.events(now)[0].correlation_id.as_deref(), Some("c2"));
     }
 }

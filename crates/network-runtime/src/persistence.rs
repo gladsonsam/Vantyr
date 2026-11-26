@@ -14,8 +14,19 @@
 //! transition, the household and worker identity are immutable, and a single
 //! injectable validator decides whether a config is supported. Persistence
 //! never marks an unsupported config good on its own. Ordering is strict: the
-//! disk snapshot is committed first and memory advances only afterwards, so a
-//! write failure cannot regress either copy.
+//! disk rename commits first and memory advances only afterwards.
+//!
+//! # Durability contract
+//!
+//! A successful `apply` is durable across a **process restart**: the new file
+//! is fully written and synced before the atomic rename. The parent-directory
+//! sync that makes the rename survive sudden power loss is best effort; its
+//! failure is deliberately not returned, because at that point the rename has
+//! already replaced the snapshot and memory has advanced with it. After such
+//! a failure the on-disk state is the new snapshot (or, after power loss, the
+//! old directory entry may still win) — it is never reported as a failure that
+//! left the previous snapshot in place. Failures *before* the rename are
+//! reported and do leave the previous snapshot intact.
 
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
@@ -51,8 +62,8 @@ where
     }
 }
 
-/// Exactly the state made durable by one apply. `highwater` is the highest
-/// revision this worker has durably applied; a candidate must be strictly newer.
+/// Exactly the state written by one apply. `highwater` is the highest
+/// revision this worker has applied; a candidate must be strictly newer.
 /// Every snapshot we write has `highwater == policy.revision`; a mismatch on
 /// load is treated as corruption.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -110,6 +121,34 @@ impl fmt::Display for LkgError {
 
 impl std::error::Error for LkgError {}
 
+type IoHook = fn(&Path) -> io::Result<()>;
+
+/// Internal seams for the two file-system steps around the rename. Production
+/// uses a no-op before the rename and a best-effort directory fsync after it;
+/// tests inject failures to pin down the pre/post-rename distinction.
+#[derive(Clone, Copy)]
+struct WriteHooks {
+    before_rename: IoHook,
+    after_rename: IoHook,
+}
+
+impl Default for WriteHooks {
+    fn default() -> Self {
+        Self {
+            before_rename: noop_hook,
+            after_rename: sync_parent_dir,
+        }
+    }
+}
+
+fn noop_hook(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+fn sync_parent_dir(path: &Path) -> io::Result<()> {
+    File::open(path).and_then(|dir| dir.sync_all())
+}
+
 /// A worker-local last-known-good store bound to one household and one worker.
 pub struct LkgStore<V> {
     path: PathBuf,
@@ -117,6 +156,7 @@ pub struct LkgStore<V> {
     worker_id: String,
     validator: V,
     state: Mutex<Option<LkgSnapshot>>,
+    hooks: WriteHooks,
 }
 
 impl<V: PolicyValidator> LkgStore<V> {
@@ -146,12 +186,15 @@ impl<V: PolicyValidator> LkgStore<V> {
             worker_id,
             validator,
             state: Mutex::new(loaded),
+            hooks: WriteHooks::default(),
         })
     }
 
-    /// Durably apply a strictly newer policy. On any failure the previous
-    /// snapshot stays on disk and in memory; the new state is published only
-    /// after the atomic file replacement succeeds.
+    /// Apply a strictly newer policy to the local snapshot file. A returned
+    /// `Ok` is durable across process restart; a returned `Err` happened before
+    /// the rename and left the previous snapshot on disk and in memory. A
+    /// best-effort parent-directory sync failure after the rename is not
+    /// returned — see the module's durability contract.
     pub fn apply(&self, candidate: Policy, now: DateTime<Utc>) -> Result<(), LkgError> {
         let mut state = self.state.lock().unwrap();
         if candidate.household_id != self.household_id {
@@ -181,7 +224,7 @@ impl<V: PolicyValidator> LkgStore<V> {
             });
         }
 
-        write_snapshot_atomic(&self.path, &bytes)?;
+        write_snapshot_atomic(&self.path, &bytes, self.hooks)?;
         *state = Some(snapshot);
         Ok(())
     }
@@ -195,7 +238,7 @@ impl<V: PolicyValidator> LkgStore<V> {
             .map(|snapshot| snapshot.policy.clone())
     }
 
-    /// Highest durably applied revision; `0` means no snapshot yet.
+    /// Highest applied revision; `0` means no snapshot yet.
     pub fn highwater(&self) -> PolicyRevision {
         self.state
             .lock()
@@ -204,7 +247,7 @@ impl<V: PolicyValidator> LkgStore<V> {
             .map_or(0, |snapshot| snapshot.highwater)
     }
 
-    /// Full durable snapshot for status/display, including schema and worker.
+    /// Full worker-local snapshot for status/display, including schema and worker.
     pub fn snapshot(&self) -> Option<LkgSnapshot> {
         self.state.lock().unwrap().clone()
     }
@@ -304,9 +347,10 @@ fn open_snapshot(path: &Path) -> Result<File, LkgError> {
 }
 
 /// Same-directory temp file, mode 0600, full write + file sync, then atomic
-/// rename. Any failure drops the temp file and leaves the previous snapshot
-/// untouched; the parent directory is synced afterwards where supported.
-fn write_snapshot_atomic(path: &Path, bytes: &[u8]) -> Result<(), LkgError> {
+/// rename. A failure before the rename drops the temp file and leaves the
+/// previous snapshot untouched. The parent-directory fsync after the rename is
+/// best effort; its error is ignored because the rename already committed.
+fn write_snapshot_atomic(path: &Path, bytes: &[u8], hooks: WriteHooks) -> Result<(), LkgError> {
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -329,11 +373,16 @@ fn write_snapshot_atomic(path: &Path, bytes: &[u8]) -> Result<(), LkgError> {
         file.sync_all()
             .map_err(|e| LkgError::WriteFailed(e.to_string()))?;
     }
+    (hooks.before_rename)(path)
+        .map_err(|e| LkgError::WriteFailed(format!("before rename: {e}")))?;
     temp.persist(path)
         .map_err(|e| LkgError::WriteFailed(e.to_string()))?;
 
-    // Best effort: directory fsync is supported on Unix and ignored elsewhere.
-    let _ = File::open(parent).and_then(|dir| dir.sync_all());
+    // Best effort by contract: once the rename succeeded, an unsynced
+    // directory is an uncertainty about power-loss survival, not a failed
+    // replacement. Do not turn it into an error while memory still holds the
+    // old snapshot.
+    let _ = (hooks.after_rename)(parent);
     Ok(())
 }
 
@@ -697,5 +746,87 @@ mod tests {
             .unwrap();
         let mode = fs::metadata(path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "state may carry secrets");
+    }
+
+    #[test]
+    fn oversize_apply_is_rejected_without_replacing_file_or_memory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lkg.json");
+        let h = household();
+        let now = ts("2026-11-26T10:00:00Z");
+        let mut huge = policy(h, 2, "too-big");
+        huge.baseline[0].reason = "x".repeat(MAX_SNAPSHOT_BYTES as usize + 1);
+        let probe = LkgSnapshot {
+            schema: SNAPSHOT_SCHEMA,
+            household_id: h,
+            worker_id: WORKER.to_owned(),
+            highwater: 2,
+            policy: huge.clone(),
+            saved_at: now,
+        };
+        let probe_bytes = serde_json::to_vec(&probe).unwrap().len() as u64;
+        assert!(probe_bytes > MAX_SNAPSHOT_BYTES);
+        let expected = LkgError::TooLarge {
+            bytes: probe_bytes,
+            limit: MAX_SNAPSHOT_BYTES,
+        };
+
+        let fresh = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        assert_eq!(fresh.apply(huge.clone(), now), Err(expected.clone()));
+        assert!(!path.exists(), "no file created for an oversize candidate");
+        assert!(fresh.current().is_none());
+
+        let store = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        store.apply(policy(h, 1, "base"), now).unwrap();
+        let committed = fs::read(&path).unwrap();
+        assert_eq!(store.apply(huge, now), Err(expected));
+        assert_eq!(fs::read(&path).unwrap(), committed, "file unchanged");
+        assert_eq!(store.current().unwrap().revision, 1, "memory unchanged");
+    }
+
+    #[test]
+    fn injected_pre_rename_failure_retains_old_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lkg.json");
+        let h = household();
+        let now = ts("2026-11-26T10:00:00Z");
+        let mut store = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        store.apply(policy(h, 1, "base"), now).unwrap();
+        let committed = fs::read(&path).unwrap();
+
+        store.hooks.before_rename = |_| Err(io::Error::other("injected before rename"));
+        let result = store.apply(policy(h, 2, "new"), now);
+        assert!(
+            matches!(&result, Err(LkgError::WriteFailed(detail)) if detail.contains("before rename")),
+            "{result:?}"
+        );
+        assert_eq!(fs::read(&path).unwrap(), committed, "old file retained");
+        assert_eq!(store.current().unwrap().revision, 1, "old memory retained");
+    }
+
+    #[test]
+    fn injected_post_rename_sync_failure_keeps_success_contract() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lkg.json");
+        let h = household();
+        let now = ts("2026-11-26T10:00:00Z");
+        let mut store = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        store.apply(policy(h, 1, "base"), now).unwrap();
+
+        store.hooks.after_rename = |_| Err(io::Error::other("injected directory fsync"));
+        // The rename already committed: no error is returned, and the in-memory
+        // last-known-good advances with the file. Power-loss survival of the
+        // directory entry is the only uncertainty.
+        store.apply(policy(h, 2, "new"), now).unwrap();
+        let on_disk: LkgSnapshot = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            on_disk.highwater, 2,
+            "new file committed before the sync hook"
+        );
+        assert_eq!(store.current().unwrap().revision, 2);
+        drop(store);
+
+        let reopened = LkgStore::open(path, h, WORKER, accepting()).unwrap();
+        assert_eq!(reopened.current().unwrap().revision, 2);
     }
 }
