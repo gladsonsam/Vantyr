@@ -377,10 +377,12 @@ No substantive UI or Supabase changes were made in this step.
   exercises actual worker answers, restrictive unknown clients, aliases,
   upstream outage, cache behavior, recovery and same-config restart. This
   does not establish durable worker recovery or controller verification.
-- Review pending: scoped gateway credentials and authenticated heartbeat.
+- Accepted: scoped gateway credentials and authenticated heartbeat; independent
+  review passed 22 gateway tests and all 35 network tests, including concurrent
+  ingestion, rotation, revocation and issuance. Report retention defaults to
+  seven days and 1,000 records per gateway, with hard limits and periodic pruning.
   Worker-reported revisions remain unverified and unenforced; no real policy
-  distribution or canary is delivered by this increment. Report-history
-  retention and concurrent credential revocation are explicit review checks.
+  distribution or canary is delivered by this increment.
 - Accepted: authenticated HTTP/CONNECT worker with destination filtering,
   streamed-body and socket progress budgets, and graceful shutdown. Independent
   review passed 36 tests and additional slow-client, keepalive and backpressure
