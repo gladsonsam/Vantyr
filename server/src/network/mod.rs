@@ -36,6 +36,11 @@ use crate::state::AppState;
 mod api;
 mod authz;
 mod db;
+mod dns_events_api;
+mod dns_events_db;
+mod dns_events_dto;
+mod dns_events_retention;
+mod dns_events_service;
 mod dns_management_api;
 mod dns_management_db;
 mod dns_management_dto;
@@ -67,6 +72,8 @@ mod read_dto;
 mod service;
 
 #[cfg(test)]
+mod dns_events_tests;
+#[cfg(test)]
 mod dns_management_e2e_tests;
 #[cfg(test)]
 mod dns_management_tests;
@@ -88,6 +95,7 @@ mod tests;
 // Kept public for the periodic retention task / tests; this slice enforces the
 // same bounds on every write, so no core plumbing change is needed yet.
 #[allow(unused_imports)]
+pub use dns_events_retention::prune_dns_events;
 pub use enroll_retention::{prune_enrollment_attempts, prune_enrollment_records};
 pub use gateway_api::worker_routes;
 pub use gateway_retention::prune_gateway_reports;
@@ -202,9 +210,25 @@ fn dns_management_routes() -> Router<Arc<AppState>> {
             "/network/households/{hid}/dns/status",
             get(dns_management_api::status_get),
         )
+        .merge(dns_events_routes())
         .layer(axum::extract::DefaultBodyLimit::max(
             dns_management_dto::MAX_REQUEST_BYTES,
         ))
+}
+
+/// Bounded DNS query-log reads. GET only, so CSRF is not required; the session
+/// cookie and an explicit household grant are. No worker Bearer is accepted.
+/// The worker ingest route is registered separately on the cookie-free router.
+fn dns_events_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route(
+            "/network/households/{hid}/dns/events",
+            get(dns_events_api::events_search),
+        )
+        .route(
+            "/network/households/{hid}/dns/stats",
+            get(dns_events_api::events_stats),
+        )
 }
 
 /// BYOD enrollment routes inherit session + CSRF from `app::api_routes()`.

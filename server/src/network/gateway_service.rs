@@ -38,7 +38,7 @@ fn validate_commands(commands: &[String]) -> ApiResult<()> {
             .any(|c| !gateway_auth::GATEWAY_COMMAND_ALLOWLIST.contains(&c.as_str()))
     {
         return Err(ApiError::bad_request(
-            "commands must be heartbeat, read_policy, read_dns_management and/or report_dns_status",
+            "commands must be heartbeat, read_policy, read_dns_management, report_dns_status and/or report_dns_events",
         ));
     }
     Ok(())

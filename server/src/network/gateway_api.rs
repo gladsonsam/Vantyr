@@ -348,8 +348,19 @@ pub fn worker_routes() -> axum::Router<Arc<AppState>> {
         .layer(axum::extract::DefaultBodyLimit::max(
             super::dns_management_dto::MAX_REQUEST_BYTES,
         ));
+    // Durable DNS event batches are opt-in and get their own body cap. The
+    // governor stays outermost and therefore applies to this route as well.
+    let dns_events = axum::Router::new()
+        .route(
+            "/worker/network/dns/events",
+            post(super::dns_events_api::worker_ingest),
+        )
+        .layer(axum::extract::DefaultBodyLimit::max(
+            super::dns_events_dto::MAX_REQUEST_BYTES,
+        ));
     axum::Router::new()
         .merge(legacy)
         .merge(dns_management)
+        .merge(dns_events)
         .layer(GovernorLayer::new(config))
 }

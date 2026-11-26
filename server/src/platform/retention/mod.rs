@@ -77,6 +77,17 @@ pub async fn prune_auxiliary_retention(
             "pruned old Vantyr Network gateway reports by retention"
         );
     }
+    // Durable DNS observations are age+count bounded on every ingest, but idle
+    // households need this production sweep. It prunes both event rows and
+    // replay receipts; failures are logged without suppressing other work.
+    match crate::network::prune_dns_events(pool).await {
+        Ok(rows) => {
+            if rows > 0 {
+                tracing::info!(rows, "pruned old Vantyr Network DNS events by retention");
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "Vantyr Network DNS event prune failed"),
+    }
     // BYOD enrollment history is also age+count bounded. Self-service writes
     // prune their own household, but idle households need this sweep. Each
     // sweep is independent: a failure is logged with its real cause and does

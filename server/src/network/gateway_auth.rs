@@ -29,12 +29,16 @@ pub const COMMAND_READ_POLICY: &str = "read_policy";
 pub const COMMAND_READ_DNS_MANAGEMENT: &str = "read_dns_management";
 /// Explicit, opt-in scope to report DNS download/applied observations.
 pub const COMMAND_REPORT_DNS_STATUS: &str = "report_dns_status";
-/// The complete command allowlist, mirrored by the migration 0079 CHECK.
+/// Explicit, opt-in scope to submit bounded durable DNS event batches. Never
+/// added implicitly: existing credentials keep their original command set.
+pub const COMMAND_REPORT_DNS_EVENTS: &str = "report_dns_events";
+/// The complete command allowlist, mirrored by the migration 0081 CHECK.
 pub const GATEWAY_COMMAND_ALLOWLIST: &[&str] = &[
     COMMAND_HEARTBEAT,
     COMMAND_READ_POLICY,
     COMMAND_READ_DNS_MANAGEMENT,
     COMMAND_REPORT_DNS_STATUS,
+    COMMAND_REPORT_DNS_EVENTS,
 ];
 /// Matches the credential `cardinality(allowed_commands) BETWEEN 1 AND 8` CHECK.
 pub const MAX_COMMANDS: usize = 8;
@@ -246,6 +250,12 @@ mod tests {
         );
         assert!(normalize_commands(Some(&[])).is_err());
         assert!(normalize_commands(Some(&["agent_token".into()])).is_err());
+        // The new event command is explicit opt-in only; the default is unchanged.
+        assert_eq!(
+            normalize_commands(Some(&[COMMAND_REPORT_DNS_EVENTS.to_string()])).unwrap(),
+            vec![COMMAND_REPORT_DNS_EVENTS.to_string()]
+        );
+        assert!(GATEWAY_COMMAND_ALLOWLIST.contains(&COMMAND_REPORT_DNS_EVENTS));
         assert_eq!(
             normalize_commands(Some(&[
                 COMMAND_HEARTBEAT.to_string(),
