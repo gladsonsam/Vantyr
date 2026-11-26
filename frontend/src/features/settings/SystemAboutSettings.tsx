@@ -225,7 +225,7 @@ function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-lg bg-muted/50 px-3 py-2.5">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 font-mono text-sm break-words">{value}</dd>
+      <dd className="mt-1 font-sans text-sm break-words">{value}</dd>
     </div>
   );
 }
@@ -269,7 +269,7 @@ function StorageUsageCard({ storage }: { storage: Loaded<StorageUsage> }) {
               </summary>
               <div className="flex flex-col gap-3 pt-3">
                 <p className="text-sm text-muted-foreground">
-                  Tables in <code className="font-mono text-xs">public</code>; partition children
+                  Tables in <code className="font-sans text-xs">public</code>; partition children
                   are rolled into their parent&apos;s size.
                 </p>
                 <Table>
@@ -282,7 +282,7 @@ function StorageUsageCard({ storage }: { storage: Loaded<StorageUsage> }) {
                   <TableBody>
                     {usage.tables.map((item) => (
                       <TableRow key={item.name}>
-                        <TableCell className="px-3 py-3.5 font-mono text-xs break-all">
+                        <TableCell className="px-3 py-3.5 font-sans text-xs break-all">
                           {item.name}
                         </TableCell>
                         <TableCell className="px-3 py-3.5">

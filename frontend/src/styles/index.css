@@ -96,3 +96,10 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--muted) transparent;
 }
+
+pre,
+code,
+kbd,
+samp {
+  font-family: var(--font-sans);
+}

@@ -67,7 +67,7 @@ function RunRow({ row }: { row: ScheduledScriptEvent }) {
         <span className="min-w-0 truncate text-sm">{row.agent_name || "Unknown agent"}</span>
         <time
           dateTime={row.expected_fire_time}
-          className="font-mono text-xs text-muted-foreground tabular-nums"
+          className="font-sans text-xs text-muted-foreground tabular-nums"
         >
           {fmtDateTime(row.expected_fire_time)}
         </time>
@@ -95,7 +95,7 @@ function RunOutput({ status, output }: { status: string; output: string | null }
   return (
     <div className="text-xs">
       <pre
-        className={`font-mono break-words whitespace-pre-wrap [overflow-wrap:anywhere] ${open || !long ? "" : "line-clamp-4"}`}
+        className={`font-sans break-words whitespace-pre-wrap [overflow-wrap:anywhere] ${open || !long ? "" : "line-clamp-4"}`}
       >
         {output}
       </pre>

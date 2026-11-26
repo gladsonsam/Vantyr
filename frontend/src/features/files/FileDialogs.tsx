@@ -42,7 +42,7 @@ export function FilePreviewDialog({
           </DialogTitle>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-auto rounded-xl bg-muted/50 p-3">
-          <pre className="m-0 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap text-foreground">
+          <pre className="m-0 font-sans text-xs leading-relaxed break-words whitespace-pre-wrap text-foreground">
             {preview.loading ? "Loading…" : preview.text || "(Empty file.)"}
           </pre>
         </div>
@@ -103,7 +103,7 @@ export function DeleteFilesDialog({
         {names.length > 1 || location ? (
           <div className="flex max-h-32 flex-col gap-1 overflow-y-auto rounded-lg bg-muted/50 px-3 py-2 text-[13px]">
             {location ? (
-              <p className="font-mono text-xs break-all text-muted-foreground">{location}</p>
+              <p className="font-sans text-xs break-all text-muted-foreground">{location}</p>
             ) : null}
             {names.length > 1 ? (
               <ul className="flex flex-col gap-0.5">

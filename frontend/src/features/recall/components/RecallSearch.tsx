@@ -586,7 +586,7 @@ function SearchHit({
         }}
       />
       <span className="flex min-w-0 flex-col gap-[3px]">
-        <span className="font-mono text-[11.5px] text-muted-foreground">
+        <span className="font-sans text-[11.5px] text-muted-foreground">
           {shortDateIn(timezone, new Date(r.captured_at).getTime())} ·{" "}
           {timeIn(timezone, r.captured_at)}
           {showDisplay && Number.isInteger(r.monitor) ? ` · Display ${r.monitor + 1}` : ""}

@@ -30,7 +30,7 @@ import {
 
 type Adapter = NonNullable<AgentInfo["adapters"]>[number];
 
-/** A labelled value; identifiers and paths are monospace and copy with one press. */
+/** A labelled value; identifiers and paths use the UI font and copy with one press. */
 function FactList({ facts }: { facts: Fact[] }) {
   if (facts.length === 0) return null;
   return (
@@ -331,7 +331,7 @@ function DriveSpecs({ info }: { info: AgentInfo }) {
                     </span>
                   ) : null}
                   {mountAddsInfo(drive) ? (
-                    <span className="font-mono text-xs font-normal text-muted-foreground">
+                    <span className="font-sans text-xs font-normal text-muted-foreground">
                       {drive.mount_point}
                     </span>
                   ) : null}

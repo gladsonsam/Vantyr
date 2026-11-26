@@ -107,7 +107,7 @@ export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
             <Textarea
               id="bulk-script"
               rows={10}
-              className="font-mono"
+              className="font-sans"
               value={script}
               onChange={(e) => setScript(e.target.value)}
               placeholder="hostname"
@@ -116,7 +116,7 @@ export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
             />
           </Field>
           {results && (
-            <pre className="max-h-[360px] overflow-auto rounded-lg bg-muted/50 p-3 font-mono text-xs whitespace-pre-wrap">
+            <pre className="max-h-[360px] overflow-auto rounded-lg bg-muted/50 p-3 font-sans text-xs whitespace-pre-wrap">
               {JSON.stringify(results, null, 2)}
             </pre>
           )}

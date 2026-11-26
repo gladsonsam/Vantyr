@@ -26,10 +26,8 @@ interface Props {
   dashboardRole?: DashboardRole | null;
 }
 
-// Consolas first: it's a real monospace always present on Windows, so xterm can
-// measure the cell width correctly even before the webfont loads. IBM Plex Mono
-// (the app font) is preloaded below and used once available.
-const TERM_FONT = "'IBM Plex Mono', Consolas, 'Cascadia Mono', 'Courier New', monospace";
+// Use the same bundled UI face as the rest of the application.
+const TERM_FONT = '"Geist Variable", ui-sans-serif, system-ui, sans-serif';
 const TERM_FONT_SIZE = 13;
 
 type Connection = TerminalConnection;
@@ -200,14 +198,12 @@ async function startTerminalConnection(
   setConnection: (connection: Connection) => void,
   isCurrent: () => boolean,
 ): Promise<(() => void) | undefined> {
-  // Make sure the monospace font is loaded BEFORE xterm measures the cell
-  // size, otherwise it sizes cells for a fallback font and glyphs render
-  // with gaps inside words.
+  // Load the UI face before the terminal measures its character grid.
   try {
-    await document.fonts.load(`${TERM_FONT_SIZE}px "IBM Plex Mono"`);
+    await document.fonts.load(`${TERM_FONT_SIZE}px "Geist Variable"`);
     await document.fonts.ready;
   } catch {
-    /* fonts API unavailable — fall back to Consolas/monospace */
+    /* Fonts API unavailable; use the sans-serif fallback. */
   }
   if (!isCurrent()) return;
 

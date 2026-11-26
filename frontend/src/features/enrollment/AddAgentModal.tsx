@@ -214,7 +214,7 @@ function DiscoveryInstructions({
           <span className="mt-1.5 block text-muted-foreground">Loading…</span>
         ) : hints?.agent_wss_url ? (
           <span className="mt-1.5 flex items-start gap-1.5">
-            <code className="min-w-0 rounded bg-muted px-2 py-1 font-mono text-xs break-all">
+            <code className="min-w-0 rounded bg-muted px-2 py-1 font-sans text-xs break-all">
               {hints.agent_wss_url}
             </code>
             <Button
@@ -242,7 +242,7 @@ function PairingCodeResult({
     <>
       {enrollResult ? (
         <div className="rounded-lg bg-muted/50 px-4 py-3">
-          <span className="block font-mono text-2xl font-bold tracking-widest">
+          <span className="block font-sans text-2xl font-bold tracking-widest">
             {formatEnrollmentOtp6(enrollResult.token)}
           </span>
           <span className="mt-1 block text-xs text-muted-foreground">

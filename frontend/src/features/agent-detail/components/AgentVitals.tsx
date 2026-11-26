@@ -160,7 +160,7 @@ export function AgentVitals({
           <dd
             className={cn(
               "m-0 min-w-0 truncate text-right text-[13px] font-semibold tabular-nums sm:mt-0.5 sm:text-left",
-              vital.mono && "font-mono",
+              vital.mono && "font-sans",
               vital.tone,
             )}
             title={vital.extra ? `${vital.value} · ${vital.extra}` : vital.value}

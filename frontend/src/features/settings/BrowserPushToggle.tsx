@@ -221,9 +221,9 @@ function PushBody({ supported, toggle }: { supported: boolean; toggle: PushToggl
       <Alert>
         <AlertTitle>Browser push isn&apos;t set up on the server</AlertTitle>
         <AlertDescription>
-          Set <code className="font-mono text-xs">VAPID_PUBLIC_KEY</code> and{" "}
-          <code className="font-mono text-xs">VAPID_PRIVATE_KEY</code> in the server environment
-          (see <code className="font-mono text-xs">.env.example</code>) and restart to enable
+          Set <code className="font-sans text-xs">VAPID_PUBLIC_KEY</code> and{" "}
+          <code className="font-sans text-xs">VAPID_PRIVATE_KEY</code> in the server environment
+          (see <code className="font-sans text-xs">.env.example</code>) and restart to enable
           browser push.
         </AlertDescription>
       </Alert>

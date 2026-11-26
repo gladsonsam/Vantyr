@@ -131,7 +131,7 @@ export function formatProcessor(info: Pick<AgentInfo, "cpu_brand" | "cpu_cores">
 export interface Fact {
   label: string;
   value: string;
-  /** Identifier or path: monospace, copy button. */
+  /** Identifier or path with a copy button. */
   copy?: boolean;
 }
 

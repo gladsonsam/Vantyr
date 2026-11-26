@@ -60,12 +60,12 @@ function ClaimMeta({ claim }: { claim: PendingAgentClaim }) {
       ].map(([label, value]) => (
         <div key={label} className="min-w-0">
           <dt className="text-[11px] text-muted-foreground">{label}</dt>
-          <dd className="truncate font-mono text-xs">{value}</dd>
+          <dd className="truncate font-sans text-xs">{value}</dd>
         </div>
       ))}
       <div>
         <dt className="text-[11px] text-muted-foreground">First seen</dt>
-        <dd className="font-mono text-xs">
+        <dd className="font-sans text-xs">
           <time dateTime={claim.created_at} title={new Date(claim.created_at).toLocaleString()}>
             {formatRelativeTime(claim.created_at)}
           </time>
@@ -129,7 +129,7 @@ export function PendingApprovalsCard({
                 <ShieldQuestion className="size-4" />
               </span>
               Pending approval
-              <span className="font-mono text-sm text-warning tabular-nums">{pending.length}</span>
+              <span className="font-sans text-sm text-warning tabular-nums">{pending.length}</span>
             </CardTitle>
             {onRefresh && (
               <CardAction>

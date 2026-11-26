@@ -57,14 +57,14 @@ export function AppBlockHistoryDialog({
           >
             <time
               dateTime={row.killed_at}
-              className="font-mono text-xs tabular-nums sm:w-44 sm:shrink-0"
+              className="font-sans text-xs tabular-nums sm:w-44 sm:shrink-0"
             >
               {fmtDateTime(row.killed_at)}
             </time>
             <span className="min-w-0 flex-1 truncate text-sm font-medium">
               {row.agent_name || "Unknown agent"}
             </span>
-            <span className="min-w-0 font-mono text-xs break-all">{row.exe_name}</span>
+            <span className="min-w-0 font-sans text-xs break-all">{row.exe_name}</span>
           </li>
         ))}
       </ul>

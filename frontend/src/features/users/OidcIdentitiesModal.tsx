@@ -106,11 +106,11 @@ function IdentityRow({
         <dl className="grid min-w-0 flex-1 gap-1 text-xs">
           <div>
             <dt className="text-muted-foreground">Issuer</dt>
-            <dd className="font-mono break-all">{identity.issuer}</dd>
+            <dd className="font-sans break-all">{identity.issuer}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Subject</dt>
-            <dd className="font-mono break-all">{identity.subject}</dd>
+            <dd className="font-sans break-all">{identity.subject}</dd>
           </div>
         </dl>
         {!asking && (
@@ -268,7 +268,7 @@ function OidcIdentitiesBody({
             placeholder="https://idp.example.com"
             disabled={isSubmitting}
             autoComplete="off"
-            className="h-9 font-mono text-xs"
+            className="h-9 font-sans text-xs"
             hideError
           />
           <InputField
@@ -278,7 +278,7 @@ function OidcIdentitiesBody({
             label="Subject (sub)"
             disabled={isSubmitting}
             autoComplete="off"
-            className="h-9 font-mono text-xs"
+            className="h-9 font-sans text-xs"
             hideError
           />
         </div>

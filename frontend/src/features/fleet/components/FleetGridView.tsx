@@ -88,7 +88,7 @@ export function FleetGridView({
               {hasValue(row.ip) && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span className="font-mono text-foreground/80" title="IP address">
+                  <span className="font-sans text-foreground/80" title="IP address">
                     {row.ip}
                   </span>
                 </>
@@ -98,7 +98,7 @@ export function FleetGridView({
                   <span aria-hidden="true">·</span>
                   <span
                     className={cn(
-                      "inline-flex items-center gap-1 font-mono whitespace-nowrap",
+                      "inline-flex items-center gap-1 font-sans whitespace-nowrap",
                       row.updateNeeded ? "text-warning" : "text-foreground/80",
                     )}
                     title={

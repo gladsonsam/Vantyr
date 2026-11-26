@@ -47,7 +47,7 @@ export function UrlSourceForm({
         id="urlcat-source"
         label="List source"
         disabled={saving}
-        className="h-9 font-mono text-xs"
+        className="h-9 font-sans text-xs"
         inputMode="url"
         autoComplete="off"
         spellCheck={false}

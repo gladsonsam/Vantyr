@@ -45,7 +45,7 @@ export function CopyValue({
         aria-label={`Copy ${label ? `${label} ` : ""}${text}`}
         className={cn(
           "group/copy inline-flex min-h-6 max-w-full cursor-pointer items-start gap-1.5 rounded-md px-1 py-0.5 text-left hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none max-sm:min-h-9 pointer-coarse:min-h-9",
-          mono && "font-mono text-[13px]",
+          mono && "font-sans text-[13px]",
         )}
       >
         <span className="min-w-0 wrap-break-word">{text}</span>

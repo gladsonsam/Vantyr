@@ -51,3 +51,10 @@ img {
     transition-duration: 0.01ms !important;
   }
 }
+
+pre,
+code,
+kbd,
+samp {
+  font-family: var(--font-sans);
+}

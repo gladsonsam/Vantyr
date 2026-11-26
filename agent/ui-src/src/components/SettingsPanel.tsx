@@ -1128,7 +1128,7 @@ function LogsSettingsSection({
           if (!el) return;
           logStickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 8;
         }}
-        className="min-h-0 flex-1 resize-none overflow-auto font-mono text-xs leading-relaxed whitespace-pre md:text-xs [field-sizing:fixed]"
+        className="min-h-0 flex-1 resize-none overflow-auto font-sans text-xs leading-relaxed whitespace-pre md:text-xs [field-sizing:fixed]"
       />
     </div>
   );

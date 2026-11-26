@@ -392,7 +392,7 @@ function RuleRow({
     <li className={cn("flex items-center gap-3 py-3", ROW_PADDING)}>
       <AppIcon agentId={agentId} exeName={rule.exe_pattern} size={20} />
       <div className={cn("min-w-0 flex-1", !rule.enabled && "opacity-60")}>
-        <p className="font-mono text-[13px] break-all">{rule.exe_pattern}</p>
+        <p className="font-sans text-[13px] break-all">{rule.exe_pattern}</p>
         <p className="text-xs break-words text-muted-foreground">{detail}</p>
       </div>
       <Switch

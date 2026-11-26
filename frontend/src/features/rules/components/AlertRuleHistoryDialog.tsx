@@ -115,10 +115,10 @@ function HistoryRow({
   return (
     <li className="flex flex-col gap-2 border-b border-foreground/[0.06] p-3 last:border-b-0 sm:flex-row sm:items-start sm:gap-4">
       <div className="min-w-0 sm:w-44 sm:shrink-0">
-        <p className="font-mono text-xs tabular-nums">{when}</p>
+        <p className="font-sans text-xs tabular-nums">{when}</p>
         <p className="truncate text-sm font-medium">{row.agent_name || "Unknown agent"}</p>
       </div>
-      <p className="min-w-0 flex-1 font-mono text-xs break-words [overflow-wrap:anywhere]">
+      <p className="min-w-0 flex-1 font-sans text-xs break-words [overflow-wrap:anywhere]">
         {row.snippet || <span className="text-muted-foreground">No matched text recorded</span>}
       </p>
       <div className="flex shrink-0 items-center gap-1">

@@ -74,7 +74,7 @@ export function AgentReplacementSettings({
           <Alert>
             <AlertDescription>
               <span className="block">
-                Pairing code: <strong className="font-mono text-2xl">{code.value}</strong>
+                Pairing code: <strong className="font-sans text-2xl">{code.value}</strong>
               </span>
               <span className="mt-2 block text-muted-foreground">
                 One use, keeps this device&apos;s name.{" "}

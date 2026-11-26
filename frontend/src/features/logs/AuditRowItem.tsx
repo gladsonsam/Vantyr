@@ -41,7 +41,7 @@ export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRo
         <time
           dateTime={row.ts}
           title={fmtDateTime(row.ts)}
-          className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums"
+          className="shrink-0 font-sans text-xs text-muted-foreground tabular-nums"
         >
           {fmtClock(row.ts)}
         </time>
@@ -51,7 +51,7 @@ export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRo
           {who.map((part, index) => (
             <Fragment key={part}>
               {index > 0 && <Dot />}
-              <span className={cn("min-w-0 break-words", part === row.client_ip && "font-mono")}>
+              <span className={cn("min-w-0 break-words", part === row.client_ip && "font-sans")}>
                 {part}
               </span>
             </Fragment>
@@ -113,7 +113,7 @@ export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRo
                 <pre
                   tabIndex={0}
                   aria-label={`Raw record for ${action}`}
-                  className="max-h-56 overflow-auto rounded-md bg-background/60 p-2 font-mono text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  className="max-h-56 overflow-auto rounded-md bg-background/60 p-2 font-sans text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
                   {full}
                 </pre>

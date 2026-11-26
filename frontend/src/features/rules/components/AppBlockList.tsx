@@ -50,7 +50,7 @@ export function AppBlockList({
                   {contextAgentId && (
                     <AppIcon agentId={contextAgentId} exeName={r.exe_pattern} size={16} />
                   )}
-                  <span className="min-w-0 break-all font-mono text-xs">{r.exe_pattern}</span>
+                  <span className="min-w-0 break-all font-sans text-xs">{r.exe_pattern}</span>
                 </span>
                 <span className="text-xs">{MATCH_LABEL[r.match_mode] ?? r.match_mode}</span>
               </>
