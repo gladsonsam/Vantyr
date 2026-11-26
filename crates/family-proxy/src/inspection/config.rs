@@ -23,6 +23,9 @@ use vantyr_network_pki::DEFAULT_CA_NAME;
 
 use crate::config::{canonical_host, MAX_NAME_LEN, MAX_TIMEOUT_SECS};
 
+/// Opaque exceptions must be renewed explicitly rather than become permanent.
+pub const MAX_EXCEPTION_DAYS: i64 = 7;
+
 /// Bound on the length of a configured filesystem path.
 pub const MAX_PATH_LEN: usize = 4096;
 /// Max certificates whose inspection can be opted out of by exception.
@@ -163,17 +166,20 @@ impl InspectionConfig {
             if host.is_empty() || host.len() > MAX_NAME_LEN {
                 bail!("inspection exception host must be 1..={MAX_NAME_LEN} characters");
             }
-            if exception.port < 1024 {
-                bail!("inspection exception port must be 1024 or higher");
+            if exception.port == 0 {
+                bail!("inspection exception port must be nonzero");
             }
             Uuid::from_str(&exception.client_id)
                 .map_err(|_| anyhow::anyhow!("inspection exception client id is not a UUID"))?;
             if !seen_clients.contains(&exception.client_id) {
                 bail!("inspection exception client id is not enabled for inspection");
             }
-            let _: DateTime<Utc> = DateTime::parse_from_rfc3339(&exception.expires_at)
+            let expires_at: DateTime<Utc> = DateTime::parse_from_rfc3339(&exception.expires_at)
                 .map_err(|_| anyhow::anyhow!("inspection exception expires_at must be RFC3339"))?
                 .with_timezone(&Utc);
+            if expires_at > Utc::now() + chrono::Duration::days(MAX_EXCEPTION_DAYS) {
+                bail!("inspection exception expiry must be within {MAX_EXCEPTION_DAYS} days");
+            }
             if !destinations
                 .iter()
                 .any(|(h, p)| *h == host && *p == exception.port)
@@ -251,11 +257,36 @@ mod tests {
             host: "other.test".into(),
             port: 18443,
             client_id: "22222222-3333-4444-5555-666666666666".into(),
-            expires_at: "2030-01-01T00:00:00Z".into(),
+            expires_at: (Utc::now() + chrono::Duration::hours(1)).to_rfc3339(),
         });
         assert!(
             cfg.validate(&clients(), &destinations()).is_err(),
             "an exception must never name an unapproved destination"
         );
+    }
+
+    #[test]
+    fn standard_https_exception_is_temporary_and_destination_scoped() {
+        let mut cfg = InspectionConfig {
+            enabled: true,
+            ca_dir: "/tmp/vantyr-pki".into(),
+            secret_file_path: "/tmp/vantyr-pki/secret".into(),
+            enabled_client_ids: vec!["22222222-3333-4444-5555-666666666666".into()],
+            ..InspectionConfig::default()
+        };
+        cfg.exceptions.push(InspectionException {
+            host: "origin.test".into(),
+            port: 443,
+            client_id: cfg.enabled_client_ids[0].clone(),
+            expires_at: (Utc::now() + chrono::Duration::hours(1)).to_rfc3339(),
+        });
+        let approved = vec![("origin.test".to_owned(), 443)];
+        assert!(cfg.validate(&clients(), &approved).is_ok());
+        assert!(cfg.validate(&clients(), &[]).is_err());
+        cfg.exceptions[0].expires_at =
+            (Utc::now() + chrono::Duration::days(MAX_EXCEPTION_DAYS + 1)).to_rfc3339();
+        assert!(cfg.validate(&clients(), &approved).is_err());
+        cfg.exceptions[0].expires_at = "2000-01-01T00:00:00Z".into();
+        assert!(cfg.validate(&clients(), &approved).is_ok());
     }
 }

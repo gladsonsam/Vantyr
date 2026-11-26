@@ -58,7 +58,8 @@ fn help_version_and_check_config_work_in_a_real_process() {
     let out = String::from_utf8_lossy(&help.stdout);
     assert!(out.contains("Vantyr Proxy"));
     assert!(out.contains("vantyr-proxy --check-config"));
-    assert!(out.contains("TLS inspection and HTTP/2 are NOT"));
+    assert!(out.contains("Optional TLS inspection is off by"));
+    assert!(out.contains("HTTP/2 and WebSocket are unsupported"));
 
     let version = Command::new(BIN).arg("--version").output().unwrap();
     assert!(version.status.success());

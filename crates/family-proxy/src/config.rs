@@ -477,8 +477,8 @@ impl Config {
             if host.is_empty() || host.len() > MAX_NAME_LEN {
                 bail!("destination host must be 1..={MAX_NAME_LEN} characters");
             }
-            if destination.port < 1024 {
-                bail!("destination port must be 1024 or higher");
+            if destination.port == 0 {
+                bail!("destination port must be nonzero");
             }
             if !seen.insert((host.clone(), destination.port)) {
                 bail!("duplicate destination {host}:{}", destination.port);
@@ -681,6 +681,16 @@ mod tests {
             "host": "echo.test", "port": 18443, "pin": "127.0.0.1:18443"
         }]
     }"#;
+
+    #[test]
+    fn standard_remote_ports_do_not_require_a_privileged_local_listener() {
+        for port in [80, 443] {
+            let config =
+                Config::parse(VALID.replace("18443", &port.to_string()).as_bytes()).unwrap();
+            assert_eq!(config.bind_addr().port(), 15354);
+        }
+        assert!(Config::parse(VALID.replace("18443", "0").as_bytes()).is_err());
+    }
 
     #[test]
     fn valid_config_builds_fail_closed_policy_and_device_mapping() {

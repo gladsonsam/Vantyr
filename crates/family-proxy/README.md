@@ -57,10 +57,15 @@ decrypted connection; a prior-knowledge h2 stream receives 505.
 ### Narrow opaque exceptions
 
 `inspection.exceptions` entries are exact `host`, `port`, credential-scoped and
-expiring (RFC3339 `expires_at`). They are validated against already approved
+expiring (RFC3339 `expires_at`, at most seven days ahead when loading config).
+They are validated against already approved
 destinations, so they cannot widen the destination or bypass policy/egress.
 They only select the opaque path for that one client after the same credential
 and egress checks. An expired exception returns to inspection.
+
+Destination ports are explicit nonzero approvals, including standard HTTP 80
+and HTTPS 443. The unprivileged-port restriction applies to the local listener,
+not to the remote service being contacted.
 
 ### Configuration and key custody
 

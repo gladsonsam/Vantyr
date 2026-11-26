@@ -520,7 +520,8 @@ async fn scoped_raw_exception_preserves_client_tls_then_expiry_returns_to_inspec
     // Active exception: the client's own TLS reaches the origin unchanged.
     let active = serde_json::json!([{
         "host": "origin.test", "port": origin.addr.port(),
-        "client_id": CLIENT_ID, "expires_at": "2099-01-01T00:00:00Z"
+        "client_id": CLIENT_ID,
+        "expires_at": (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339()
     }]);
     let config = config_with(origin.addr, 60, active);
     let proxy = start_inspected(config, inspection_ca, &origin_ca).await;

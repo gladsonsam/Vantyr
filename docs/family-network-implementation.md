@@ -388,32 +388,35 @@ No substantive UI or Supabase changes were made in this step.
   review passed 36 tests and additional slow-client, keepalive and backpressure
   probes. These are idle/progress budgets rather than a total transfer time
   limit. Static bootstrap credentials remain separate from controller
-  enrollment; TLS inspection is not available.
+  enrollment. Optional inspection is covered by the separate accepted increment
+  below.
 - Accepted: unique inspection CA generation, encrypted key custody,
   memory-only signer unlock, public certificate export and validation tests;
   23 tests include a real TLS handshake and certificate rejection paths.
   Temporary plaintext buffer erasure and recovered certificate/key metadata
   consistency remain explicit hardening limitations. Client trust setup and
-  live inspection are separate, unfinished capabilities.
+  live inspection are separate capabilities; inspection now has independent
+  acceptance as described below, while client trust setup remains unfinished.
 - Accepted: one complete validated DNS configuration and policy bundle is
   persisted atomically and reloaded as a whole snapshot, preserving revision
   and policy age across restart. Independent review passed 34 DNS tests,
   23 runtime tests and six malformed-state/timestamp probes. Invalid payloads
   are checked before identity access; config/policy divergence and publication
   times beyond 60 seconds of clock skew are rejected. Container-lab coverage of
-  durable recovery and reload is the next integration increment.
+  durable recovery and reload has now passed the separate review below.
 - BYOD enrollment and reversible client setup follow the responsibility
   boundaries in [network-onboarding.md](network-onboarding.md). Router DHCP
   stays outside Vantyr. Frontend implementation is managed independently.
 
-### Integration increments awaiting independent acceptance
+### Integration acceptance and remaining local corrections
 
 - UniFi adapter and setup planner: official versioned API discovery, verified
   HTTPS, bounded reads, topology-aware DNS previews and simulated rollback.
   Review requested transport-level site allowlisting, the documented 200-item
   page maximum and removal of an ineffective hostname builder method. Those
-  corrections pass 24 tests, including zero network contact for denied direct
-  transport calls; fresh acceptance is pending. No live write path exists.
+  corrections passed independent acceptance with 24 tests, including zero
+  network contact for denied direct transport calls. A further literal-IPv6
+  parser correction has a dedicated regression test. No live write path exists.
 
 - Versioned policy control API: immutable saved revisions, monotonic historical
   rollback, desired gateway assignment and explicitly scoped worker retrieval.
@@ -422,18 +425,23 @@ No substantive UI or Supabase changes were made in this step.
   Review found rollback provenance could indefinitely pin source payloads;
   the correction retains revision metadata without extending payload retention,
   adds a rollback serialization-size check and tests 40 consecutive rollbacks.
-  Fresh independent acceptance remains pending.
+  Fresh independent review accepted the correction, including an adversarial
+  rollback-chain probe and near-64-KiB serialization boundary checks.
 - Optional HTTPS inspection: unique signer, upstream TLS validation before
   CONNECT acknowledgment, authority-bound downstream TLS, scoped expiring raw
   exceptions and bounded streams. Implementation reports 53 proxy tests passing.
-  Independent security review is pending; client trust setup is not delivered.
+  Independent security review accepted 53 proxy tests, 23 PKI tests and six
+  additional authority/SNI/ALPN probes. Client trust setup is not delivered.
+  Local follow-up bounds opaque exceptions to seven days, corrects CLI help
+  and allows explicitly approved remote ports 80/443 while keeping the listener
+  unprivileged; fresh review of these follow-ups remains pending.
 - Durable container lab: implementation reports base/full-stack/durable smoke
   passing, including higher-revision reload, invalid reload preservation,
   restart with a changed external config and preserved stale-policy behavior.
-  Independent rerun and cleanup review are pending.
-  The first independent rerun passed all three suites but requested a
-  parse-specific corrupt-state assertion and dynamically fresh publication
-  fixtures. Those localized test corrections require fresh acceptance.
+  Fresh independent review accepted the parse-specific corrupt-state assertion,
+  fresh timestamp fixtures and all 25 durable-smoke assertions. Both positive
+  and negative diagnostic controls passed; all scoped containers, networks and
+  volumes were confirmed removed.
 - Parent integration check: server and proxy compile together with the committed
   dependency graph using `cargo check --locked --offline`. No deployment follows
   from a successful build or a pushed feature-branch commit.

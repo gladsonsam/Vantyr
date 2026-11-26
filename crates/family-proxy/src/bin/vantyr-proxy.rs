@@ -16,8 +16,9 @@ Usage:
   vantyr-proxy --version            show the version
 
 The default listener is an unprivileged high loopback port. Credentials come
-from a private (mode 0600) config file. TLS inspection and HTTP/2 are NOT
-supported in this milestone; a CONNECT tunnel is end-to-end client-validated.
+from a private (mode 0600) config file. Optional TLS inspection is off by
+default and requires explicit client scope, a unique CA and client trust.
+Opaque CONNECT keeps client-validated TLS. HTTP/2 and WebSocket are unsupported.
 No host resolver, DHCP, firewall, router or CA setting is changed.";
 
 async fn run() -> Result<()> {

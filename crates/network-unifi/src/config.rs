@@ -161,7 +161,7 @@ impl ControllerConfig {
                 "controller URL has an empty host".into(),
             ));
         }
-        if host.parse::<IpAddr>().is_err() && !allow_hostname {
+        if matches!(parsed.host(), Some(url::Host::Domain(_))) && !allow_hostname {
             // A hostname introduces resolver-controlled rebinding risk. Require
             // an explicit operator opt-in before accepting it.
             return Err(Error::InvalidConfig(
@@ -343,5 +343,19 @@ mod tests {
         assert!(config
             .with_limits(Duration::from_secs(5), 1024, 201, 1)
             .is_err());
+    }
+
+    #[test]
+    fn strict_local_controller_supports_ipv4_and_ipv6_literals() {
+        for address in ["127.0.0.1", "::1", "fd00::1"] {
+            let config = ControllerConfig::for_local(
+                address.parse().unwrap(),
+                key(),
+                vec!["11111111-1111-4111-8111-111111111111".into()],
+            )
+            .unwrap();
+            assert!(!config.allow_hostname());
+            assert!(url::Url::parse(config.base_url()).is_ok());
+        }
     }
 }
