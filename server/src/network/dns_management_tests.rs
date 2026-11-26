@@ -295,7 +295,7 @@ async fn initial_get_is_null_then_cas_create_noop_and_safe_audit(pool: PgPool) {
     let (status, body) = http.get(&path).await;
     assert_eq!(status, 200, "{body}");
     assert!(body["desired"].is_null());
-    assert_eq!(body["supported"]["worker_consumer"], "pending");
+    assert_eq!(body["supported"]["worker_consumer"], "opt_in");
     assert_eq!(body["supported"]["verified"], false);
     assert_eq!(body["supported"]["serve_stale"], false);
 

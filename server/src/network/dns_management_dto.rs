@@ -296,7 +296,8 @@ pub struct SupportedView {
     pub scheduled_fetch: bool,
     pub manual_refresh: bool,
     pub service_blocking: &'static str,
-    /// Honest Stage A marker: no DNS consumer is wired to this config yet.
+    /// Accepted worker support requires explicit operator opt-in. This says
+    /// nothing about installation, application or verification on a gateway.
     pub worker_consumer: &'static str,
     pub safe_search: bool,
     pub statistics: bool,
@@ -313,7 +314,7 @@ impl Default for SupportedView {
             scheduled_fetch: true,
             manual_refresh: true,
             service_blocking: "dns_domains",
-            worker_consumer: "pending",
+            worker_consumer: "opt_in",
             safe_search: false,
             statistics: false,
             serve_stale: false,

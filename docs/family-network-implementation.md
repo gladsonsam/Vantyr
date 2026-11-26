@@ -575,8 +575,12 @@ No substantive UI or Supabase changes were made in this step.
   Policy age and applied management time remain original. Only the list-fetch
   resolver and test CA are injected; no live provider or production SSRF bypass
   is exercised. The later locator diagnostic correction was separately tested,
-  not part of that original run. Independent harness review is in progress.
-  Dashboard handoff remains gated on independent acceptance of the harness.
+  not part of that original run. Independent harness review reran the test on
+  unified source including `bd062ef1`: one pass, zero failures in 33.65 s, plus
+  21 server management tests, formatting and strict clippy. The complete backend
+  slice is accepted and its contract is ready for dashboard wiring. Software
+  support is marked `worker_consumer: opt_in`; actual gateway configuration and
+  worker-reported applied status remain separate.
   Existing cache/rate/retention controls, statistics and verified coverage remain
   separate open requirements; the service catalogue is operator-declared.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently

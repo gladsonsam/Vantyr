@@ -94,10 +94,11 @@ carries only operation names, version and digest — never a URL or metadata.
 `GET` returns `{desired: null | {config_version, schema_version, body_sha256,
 config, created_at, updated_at, updated_by}, delivery: [...], supported:
 {...}}`. An empty household is `desired:null` with 200. `supported` reports
-`worker_consumer:"pending"`, `service_blocking:"dns_domains"`, and `false` for
+`worker_consumer:"opt_in"`, `service_blocking:"dns_domains"`, and `false` for
 SafeSearch, statistics, serve-stale, cache-TTL controls, rate limiting,
 retention controls and `verified`. No caller can set a value that implies a
-missing runtime feature.
+missing runtime feature. `opt_in` denotes accepted software support, not a claim
+that any particular gateway is configured, currently reporting or verified.
 
 ## Manual refresh (per gateway, bounded and replay-safe)
 
@@ -188,7 +189,8 @@ SHA-256: `820a75626ccf71e9a30529b381dc7dd2dd5abc9209446c850b129acc2a2ea93e`.
 ## Verification performed
 
 `SQLX_OFFLINE=true DATABASE_URL=<throwaway PG> cargo test -p vantyr-server
---locked --offline dns_management`: **17 passed, 0 failed**. Real HTTP over a
+--locked --offline dns_management`: **21 passed, 0 failed** on independent
+harness review. Real HTTP over a
 real router and fresh migrated databases, covering initial null GET, CAS create
 and no-op, safe audits, URL/bounds/catalog rejection, policy and desired-policy
 non-interference, grant/CSRF/auth separation, explicit command scopes (old and
@@ -220,6 +222,10 @@ DATABASE_URL="postgres://<throwaway-user>:<throwaway-pw>@127.0.0.1:58743/vantyr"
 ```
 
 **Result on that basis:** `1 passed; 0 failed; 421 filtered out` in ~34.8 s.
+Independent harness review reran the same test on source `6a359955` (including
+diagnostic fix `bd062ef1`): **1 passed, 0 failed**, 33.65 s. Its supplementary
+`dns_management` filter passed 21 tests; formatting and strict server clippy
+were clean. Both the worker lifecycle and harness are independently accepted.
 Compile gate `SQLX_OFFLINE=true cargo test -p vantyr-server --locked --offline
 --no-run` passed; `rustfmt --check` and `SQLX_OFFLINE=true cargo clippy -p
 vantyr-server --all-targets --locked --offline -- -D warnings` passed. No full
@@ -256,18 +262,21 @@ loopback resolver, together with the unique private test CA for verification.
 TLS still verifies against that CA; the worker's management client keeps its
 unchanged verified/no-proxy/no-redirect transport. There is no insecure
 verifier, no production SSRF bypass, no live provider, no mocked wire DTO and no
-copied auth/serializer logic. A passing run establishes observation and
+copied auth/serializer logic. The passing runs establish observation and
 application of downloaded list bytes; it does **not** claim a canary,
-enforcement or a `verified` dashboard badge, nor independent review of the
-worker fix.
+enforcement or a `verified` dashboard badge. The OIDC provider redirect flow is
+not driven: a real test session is seeded through the production session store,
+then the actual session and CSRF middleware are exercised.
 
-## Stage B gaps (not claimed here)
+## Dashboard integration and remaining scope
 
-- The worker consumer exists, but restart-refresh and bounded source reporting
-  remain integration gates. Dashboard handoff waits for their acceptance and a
-  passing real-server/worker test. Dashboard clients use the session-authenticated
-  admin APIs; the read/report commands are scoped worker Bearer APIs.
+- The server and worker integration is accepted and ready for dashboard wiring.
+  Dashboard clients use the session-authenticated admin APIs; the read/report
+  commands are scoped worker Bearer APIs and never browser login credentials.
+- A configured gateway must explicitly enable the management consumer. Saved,
+  delivered, downloaded and worker-reported applied states remain distinct.
 - No dashboard "applied/protected" badge; `verified` stays false/absent until a
   real canary and coverage check exist.
-- No frontend handoff until server + worker are reviewed and an end-to-end flow
-  is demonstrated.
+- Dashboard wiring and its validation are tracked separately from backend
+  acceptance. Statistics, general DNS settings and other capability gaps are not
+  implemented by the list/service management routes.
