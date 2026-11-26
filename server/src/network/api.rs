@@ -381,7 +381,8 @@ pub async fn assignment_create(
         body.active.unwrap_or(true),
         note.as_deref(),
     )
-    .await?;
+    .await
+    .map_err(inventory_write_error)?;
     audit_network(
         &s,
         &user,
@@ -441,7 +442,8 @@ pub async fn assignment_patch(
         body.active,
         note_refs.as_ref().copied(),
     )
-    .await?
+    .await
+    .map_err(inventory_write_error)?
     {
         return Err(ApiError::not_found(
             "assignment not found in this household",
@@ -457,6 +459,19 @@ pub async fn assignment_patch(
     )
     .await;
     Ok(Json(json!({ "ok": true })))
+}
+
+/// Reference checks can race a conservative inventory delete. Never expose
+/// PostgreSQL constraint details or turn a removed reference into a 500.
+pub(super) fn inventory_write_error(error: sqlx::Error) -> ApiError {
+    if error
+        .as_database_error()
+        .is_some_and(|db| db.is_foreign_key_violation())
+    {
+        ApiError::conflict("an inventory reference changed; reload and try again")
+    } else {
+        error.into()
+    }
 }
 
 // ─── Connections ─────────────────────────────────────────────────────────────
@@ -544,7 +559,8 @@ pub async fn connection_create(
         body.revoked_at,
         note.as_deref(),
     )
-    .await?;
+    .await
+    .map_err(inventory_write_error)?;
     audit_network(
         &s,
         &user,
@@ -631,7 +647,8 @@ pub async fn connection_patch(
         body.revoked_at,
         note_refs.as_ref().copied(),
     )
-    .await?
+    .await
+    .map_err(inventory_write_error)?
     {
         return Err(ApiError::not_found(
             "connection not found in this household",

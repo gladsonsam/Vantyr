@@ -90,7 +90,10 @@ Every mutator locks the household, locks the target row `FOR UPDATE`, recounts
 references in the same transaction, and only then deletes. A concurrent FK
 insert takes `FOR KEY SHARE` on the parent row and therefore blocks until the
 decision commits — a household lock alone is not sufficient, and no cascade is
-relied upon. Refusals are `409` with a short actionable message (<160 chars),
+relied upon. Assignment and connection create/PATCH also map a foreign-key
+failure after a concurrent delete to `409`, without exposing constraint details;
+the caller must reload the referenced inventory. Refusals are `409` with a short
+message (<160 chars),
 never `500`, and leave every row and every audit entry intact.
 
 | Object | Blocks deletion (any status/history, including revoked/ended/inactive) |

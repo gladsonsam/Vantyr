@@ -796,6 +796,61 @@ async fn target_row_lock_blocks_concurrent_fk_insert(pool: PgPool) {
     handle.abort();
 }
 
+/// Exercise the real HTTP insert after its pre-check passes but while the
+/// deleting transaction still holds the parent row. Observe the database lock
+/// wait before committing, rather than relying on a timing-only sleep.
+#[sqlx::test]
+async fn committed_delete_racing_http_insert_returns_conflict(pool: PgPool) {
+    let (base, handle) = spawn_router(pool.clone()).await;
+    let owner = insert_user(&pool, "owner", "admin").await;
+    let (at, ac) = session_for(&pool, owner, "owner").await;
+    let admin = Http::new(&base, at, ac);
+    let hid = bootstrap_as(&admin, "Home").await;
+    let person = create_person(&admin, hid, "Deleted", false).await;
+    let device = create_device(&admin, hid, "race-device").await;
+    let mut deleting = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM network_persons WHERE id = $1 FOR UPDATE")
+        .bind(person)
+        .execute(&mut *deleting)
+        .await
+        .unwrap();
+    let request = admin.clone();
+    let pending = tokio::spawn(async move {
+        request
+            .post(
+                &format!("/api/network/households/{hid}/assignments"),
+                json!({"person_id":person,"device_id":device}),
+            )
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let blocked: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%INSERT INTO network_assignments%')")
+                .fetch_one(&pool).await.unwrap();
+            if blocked { break; }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.expect("HTTP insert must reach its FK lock wait after pre-checks");
+    sqlx::query("DELETE FROM network_persons WHERE id = $1")
+        .bind(person)
+        .execute(&mut *deleting)
+        .await
+        .unwrap();
+    deleting.commit().await.unwrap();
+    let (status, body) = pending.await.unwrap();
+    assert_eq!(status, 409, "{body}");
+    assert!(!body.to_string().contains("23503"));
+    let rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM network_assignments WHERE household_id = $1")
+            .bind(hid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(rows, 0);
+    handle.abort();
+}
+
 // ─── Atomic default profile ──────────────────────────────────────────────────
 
 #[sqlx::test]
