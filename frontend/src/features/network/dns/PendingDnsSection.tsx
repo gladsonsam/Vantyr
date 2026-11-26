@@ -8,16 +8,17 @@ interface PendingItem {
 
 const MANAGEMENT: PendingItem[] = [
   {
-    name: "Blocklist subscriptions",
-    meaning:
-      "Add or remove a list by URL, refresh it, and see its last check and whether it is stale or failed.",
+    name: "Encrypted upstreams (DoT/DoH)",
+    meaning: "Currently set only in the gateway’s command line or config file, not from here.",
   },
-  { name: "Named service blocking", meaning: "Block a whole service, such as a social network, by name." },
-  { name: "Encrypted DNS", meaning: "Turn DNS over HTTPS or TLS on or off and manage its certificate." },
   { name: "Local records", meaning: "Add, edit or remove a local A, AAAA or CNAME record." },
   { name: "Cache controls", meaning: "Clear the cache and test that a name resolves." },
-  { name: "Access list", meaning: "Edit the address ranges (CIDR) that may ask this server." },
+  { name: "CIDR allow list", meaning: "Edit the address ranges (CIDR) that may ask this server." },
   { name: "Per-device overrides", meaning: "Give one device its own DNS settings." },
+  { name: "Blocked response mode", meaning: "Choose NXDOMAIN, refused or a sinkhole answer for blocked names." },
+  { name: "Rate limiting", meaning: "Limit how many queries a client can send." },
+  { name: "Retention, statistics and query logs", meaning: "Choose how long query data is kept and view statistics and logs." },
+  { name: "SafeSearch", meaning: "Force safe-search results on supported search engines." },
 ];
 
 const ADVANCED: PendingItem[] = [

@@ -1,4 +1,5 @@
 import { Download, TriangleAlert } from "lucide-react";
+import type { NetworkGatewayKind } from "@/api/types";
 import { Button } from "@vantyr/ui/components/button";
 import {
   Dialog,
@@ -20,6 +21,7 @@ export interface IssuedToken {
   expiresAt: string;
   commands: string[];
   gatewayLabel: string;
+  gatewayKind?: NetworkGatewayKind;
 }
 
 function download(name: string, text: string) {
@@ -75,6 +77,13 @@ export function IssuedTokenDialog({
                 {issued.commands.join(", ")}
               </KeyValueCard>
             </KeyValueGrid>
+            {issued.gatewayKind === "dns" &&
+            issued.commands.some((c) => c === "read_dns_management" || c === "report_dns_status") ? (
+              <p className="text-sm text-muted-foreground">
+                Run the DNS worker with a private (mode 0600) credential file and --dns-management
+                (usually together with --subscriptions). Management reports are not heartbeats.
+              </p>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <CopyTextButton text={issued.token} label="Copy token" />
               <Button

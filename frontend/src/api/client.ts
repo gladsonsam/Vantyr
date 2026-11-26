@@ -9,12 +9,15 @@ export interface PageParams {
 export class ApiError extends Error {
   status: number;
   payload?: unknown;
+  /** Parsed `Retry-After` (seconds) when the response carried a delta-seconds value, e.g. on a 429. */
+  retryAfterSecs?: number;
 
-  constructor(message: string, status: number, payload?: unknown) {
+  constructor(message: string, status: number, payload?: unknown, retryAfterSecs?: number) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.payload = payload;
+    this.retryAfterSecs = retryAfterSecs;
   }
 }
 
@@ -100,14 +103,16 @@ async function readJsonResponse<T>(
       setDashboardCsrfToken(null);
       notifySessionExpired();
     }
+    const retryRaw = res.headers.get("Retry-After");
+    const retryParsed = retryRaw != null && /^\d+$/.test(retryRaw.trim()) ? Number(retryRaw) : undefined;
     if (ct.includes("application/json")) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       const suffix = opts?.includePathInHttpError ? ` – ${path}` : "";
-      throw new ApiError(body.error ?? `HTTP ${res.status}${suffix}`, res.status, body);
+      throw new ApiError(body.error ?? `HTTP ${res.status}${suffix}`, res.status, body, retryParsed);
     }
     const text = await res.text().catch(() => "");
     const suffix = opts?.includePathInHttpError ? ` – ${path}` : "";
-    throw new ApiError(text.trim() || `HTTP ${res.status}${suffix}`, res.status);
+    throw new ApiError(text.trim() || `HTTP ${res.status}${suffix}`, res.status, undefined, retryParsed);
   }
 
   if (!ct.includes("application/json")) {

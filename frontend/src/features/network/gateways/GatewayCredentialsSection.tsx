@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { KeyRound, Plus, RefreshCw, Ban } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Ban, KeyRound, Plus, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { errorText } from "@/api";
 import { networkQueries, useGatewayCredentialMutations } from "@/api/queries/network";
@@ -19,7 +19,12 @@ import { QueryError } from "@/features/network/components/QueryError";
 import { SettingsSection } from "@/features/network/components/SettingsSection";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { CredentialRequestFields } from "./CredentialRequestFields";
-import { DEFAULT_CREDENTIAL_REQUEST, toCredentialBody } from "./credentialRequest";
+import {
+  DEFAULT_CREDENTIAL_REQUEST,
+  toCredentialBody,
+  valuesFromCommands,
+  type CredentialRequestValues,
+} from "./credentialRequest";
 import { HoldAction } from "./HoldAction";
 import type { IssuedToken } from "./IssuedTokenDialog";
 
@@ -33,30 +38,53 @@ function credentialState(credential: NetworkGatewayCredential): {
   return { label: "Active", text: "text-success" };
 }
 
-function IssueDialog({
+function RequestDialog({
+  kind,
+  title,
+  description,
+  triggerContent,
+  triggerDisabled,
+  submitLabel,
+  initial,
   busy,
   error,
-  onIssue,
+  onSubmit,
 }: {
+  kind: NetworkGateway["kind"];
+  title: string;
+  description: string;
+  triggerContent: ReactNode;
+  triggerDisabled?: boolean;
+  submitLabel: string;
+  initial: CredentialRequestValues;
   busy: boolean;
   error: string | null;
-  onIssue: (values: ReturnType<typeof toCredentialBody>) => Promise<boolean>;
+  onSubmit: (values: ReturnType<typeof toCredentialBody>) => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
-  const [values, setValues] = useState(DEFAULT_CREDENTIAL_REQUEST);
+  const [values, setValues] = useState(initial);
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" size="sm" />}>
-        <Plus /> Issue token
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setValues(initial);
+      }}
+    >
+      <DialogTrigger render={<Button variant="outline" size="sm" disabled={triggerDisabled} />}>
+        {triggerContent}
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Issue worker token</DialogTitle>
-          <DialogDescription>
-            The token is shown once. Existing tokens keep working until they expire or are revoked.
-          </DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <CredentialRequestFields values={values} onChange={setValues} idPrefix="issue-cred" />
+        <CredentialRequestFields
+          values={values}
+          onChange={setValues}
+          idPrefix={`cred-${submitLabel.toLowerCase().replace(/\W+/g, "-")}`}
+          kind={kind}
+        />
         {error ? (
           <p role="alert" className="text-sm text-destructive">
             {error}
@@ -66,13 +94,13 @@ function IssueDialog({
           <Button
             disabled={busy}
             onClick={() =>
-              void onIssue(toCredentialBody(values)).then((ok) => {
+              void onSubmit(toCredentialBody(values, kind)).then((ok) => {
                 if (ok) setOpen(false);
               })
             }
           >
             {busy ? <Spinner /> : null}
-            Issue token
+            {submitLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -106,6 +134,7 @@ export function GatewayCredentialsSection({
       expiresAt: token.expires_at,
       commands,
       gatewayLabel: gateway.label,
+      gatewayKind: gateway.kind,
     });
 
   const issueNew = async (body: ReturnType<typeof toCredentialBody>) => {
@@ -119,13 +148,17 @@ export function GatewayCredentialsSection({
     }
   };
 
-  const rotateOne = async (credential: NetworkGatewayCredential) => {
+  const rotateOne = async (
+    credential: NetworkGatewayCredential,
+    body: ReturnType<typeof toCredentialBody>,
+  ) => {
     setError(null);
-    const commands = credential.allowed_commands;
     try {
-      hand(await rotate.mutateAsync({ credential: credential.id, commands }), commands);
+      hand(await rotate.mutateAsync({ credential: credential.id, ...body }), body.commands);
+      return true;
     } catch (e) {
       setError(errorText(e));
+      return false;
     }
   };
 
@@ -142,10 +175,24 @@ export function GatewayCredentialsSection({
     <SettingsSection
       title="Worker tokens"
       icon={<KeyRound />}
-      help="Credentials the gateway worker uses to call Vantyr. They are not a person’s proxy sign-in credential and not a dashboard session. Rotating issues a replacement with the same commands and a 24 hour expiry."
+      help="Credentials the gateway worker uses to call Vantyr. They are not a person’s proxy sign-in credential and not a dashboard session. Rotating issues a replacement; pick its commands and expiry again (the old commands are pre-checked). Tokens are never upgraded automatically."
       action={
         canChange ? (
-          <IssueDialog busy={issue.isPending} error={error} onIssue={issueNew} />
+          <RequestDialog
+            kind={gateway.kind}
+            title="Issue worker token"
+            description="The token is shown once. Existing tokens keep working until they expire or are revoked. Request each command the worker needs."
+            triggerContent={
+              <>
+                <Plus /> Issue token
+              </>
+            }
+            submitLabel="Issue token"
+            initial={DEFAULT_CREDENTIAL_REQUEST}
+            busy={issue.isPending}
+            error={error}
+            onSubmit={issueNew}
+          />
         ) : null
       }
     >
@@ -196,16 +243,22 @@ export function GatewayCredentialsSection({
                 </div>
                 {canChange && live ? (
                   <div className="flex flex-wrap items-center gap-2">
-                    <HoldAction
-                      icon={<RefreshCw className="size-4" />}
-                      ariaLabel={`Hold to rotate token issued ${credential.issued_at}`}
-                      doneLabel="Rotated"
-                      destructive={false}
-                      disabled={rotate.isPending}
-                      onHold={() => void rotateOne(credential)}
-                    >
-                      Hold to rotate
-                    </HoldAction>
+                    <RequestDialog
+                      kind={gateway.kind}
+                      title="Rotate worker token"
+                      description="Issues a replacement token, shown once. Choose its commands and expiry; the previous token's commands are pre-checked. The old token keeps working until it expires or is revoked."
+                      triggerContent={
+                        <>
+                          <RefreshCw /> Rotate
+                        </>
+                      }
+                      triggerDisabled={rotate.isPending}
+                      submitLabel="Rotate token"
+                      initial={valuesFromCommands(credential.allowed_commands)}
+                      busy={rotate.isPending}
+                      error={error}
+                      onSubmit={(body) => rotateOne(credential, body)}
+                    />
                     <HoldAction
                       icon={<Ban className="size-4" />}
                       ariaLabel={`Hold to revoke token issued ${credential.issued_at}`}

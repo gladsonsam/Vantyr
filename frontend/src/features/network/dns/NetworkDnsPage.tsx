@@ -1,18 +1,21 @@
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { LoadFailedCard } from "@/components/common/LoadFailedCard";
+import { useNetworkHousehold } from "@/features/network/access/networkScope";
+import { useNetworkAdmin } from "@/features/network/access/useNetworkAdmin";
 import {
   AvailabilityGate,
   UnavailableSection,
 } from "@/features/network/components/AvailabilityGate";
+import { DnsStatusPanel } from "@/features/network/dns-status/DnsStatusPanel";
 import { useDnsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import { SettingsPageHeader } from "@/features/settings/components/SettingsLayout";
-import { TimeAgo } from "@/features/network/components/TimeAgo";
-import { AccessCard, CacheCard, FilteringCard, ListCard, LoggingCard } from "./DnsSettingsCards";
+import { AccessCard, CacheCard, FilteringCard, LoggingCard } from "./DnsSettingsCards";
 import { EncryptedCard, RewritesCard, ServicesCard, UpstreamsCard } from "./DnsReadOnlyCards";
+import { DnsManagementSections } from "./DnsManagementSections";
 import { PendingDnsSection } from "./PendingDnsSection";
 
-/** Vantyr DNS settings. A control saves a proposal for gateways; it does not prove they are enforcing it. */
-export function NetworkDnsPage() {
+/** The other DNS controls, from the runtime snapshot. Unavailable stays unavailable; nothing is faked. */
+function RuntimeDnsSections() {
   const query = useDnsQuery();
   if (query.isPending) {
     return (
@@ -27,9 +30,43 @@ export function NetworkDnsPage() {
     );
   }
   if (query.data.state === "unavailable") {
-    return <UnavailableSection title="DNS" reason={query.data.reason} />;
+    return <UnavailableSection title="Other DNS settings" reason={query.data.reason} />;
   }
   const dns = query.data.data;
+  return (
+    <>
+      <AvailabilityGate title="Filtering" value={dns.filtering}>
+        {(value) => <FilteringCard filtering={value} />}
+      </AvailabilityGate>
+      <AvailabilityGate title="Upstream servers" value={dns.upstreams}>
+        {(upstreams) => <UpstreamsCard upstreams={upstreams} />}
+      </AvailabilityGate>
+      <AvailabilityGate title="Blocked services and categories" value={dns.services}>
+        {(services) => <ServicesCard services={services} />}
+      </AvailabilityGate>
+      <AvailabilityGate title="Local records" value={dns.rewrites}>
+        {(rewrites) => <RewritesCard rewrites={rewrites} />}
+      </AvailabilityGate>
+      <AvailabilityGate title="Encrypted DNS" value={dns.encrypted}>
+        {(encrypted) => <EncryptedCard encrypted={encrypted} />}
+      </AvailabilityGate>
+      <AvailabilityGate title="Cache" value={dns.cache}>
+        {(value) => <CacheCard cache={value} />}
+      </AvailabilityGate>
+      <AvailabilityGate title="Access" value={dns.access}>
+        {(value) => <AccessCard access={value} />}
+      </AvailabilityGate>
+      <AvailabilityGate title="Query log" value={dns.logging}>
+        {(value) => <LoggingCard logging={value} />}
+      </AvailabilityGate>
+    </>
+  );
+}
+
+/** Vantyr DNS settings. A control saves a proposal for gateways; it does not prove they are enforcing it. */
+export function NetworkDnsPage() {
+  const household = useNetworkHousehold();
+  const isAdmin = useNetworkAdmin(household.id);
   return (
     <div className="space-y-8">
       <SettingsPageHeader
@@ -37,56 +74,9 @@ export function NetworkDnsPage() {
         description="A change is saved as a proposal. Saved is not applied, and applied is not verified: only a gateway report says what is enforced."
       />
       <div className="space-y-8">
-        <AvailabilityGate title="Filtering" value={dns.filtering}>
-          {(value) => <FilteringCard filtering={value} />}
-        </AvailabilityGate>
-        <AvailabilityGate title="Upstream servers" value={dns.upstreams}>
-          {(upstreams) => <UpstreamsCard upstreams={upstreams} />}
-        </AvailabilityGate>
-        <AvailabilityGate title="Blocklist subscriptions" value={dns.lists}>
-          {(lists) => (
-            <ListCard
-              title="Blocklist subscriptions"
-              note="Read-only. Adding, removing and refreshing lists is not available on this server yet."
-              rows={lists.map((l) => ({
-                key: l.id,
-                left: l.name,
-                right: (
-                  <>
-                    {l.entries.toLocaleString()} entries ·{" "}
-                    {l.error ? (
-                      <span className="text-destructive">failed: {l.error}</span>
-                    ) : l.lastRefreshedAt ? (
-                      <>
-                        checked <TimeAgo iso={l.lastRefreshedAt} />
-                      </>
-                    ) : (
-                      "never checked"
-                    )}
-                  </>
-                ),
-              }))}
-            />
-          )}
-        </AvailabilityGate>
-        <AvailabilityGate title="Blocked services and categories" value={dns.services}>
-          {(services) => <ServicesCard services={services} />}
-        </AvailabilityGate>
-        <AvailabilityGate title="Local records" value={dns.rewrites}>
-          {(rewrites) => <RewritesCard rewrites={rewrites} />}
-        </AvailabilityGate>
-        <AvailabilityGate title="Encrypted DNS" value={dns.encrypted}>
-          {(encrypted) => <EncryptedCard encrypted={encrypted} />}
-        </AvailabilityGate>
-        <AvailabilityGate title="Cache" value={dns.cache}>
-          {(value) => <CacheCard cache={value} />}
-        </AvailabilityGate>
-        <AvailabilityGate title="Access" value={dns.access}>
-          {(value) => <AccessCard access={value} />}
-        </AvailabilityGate>
-        <AvailabilityGate title="Query log" value={dns.logging}>
-          {(value) => <LoggingCard logging={value} />}
-        </AvailabilityGate>
+        {isAdmin ? <DnsManagementSections householdId={household.id} /> : null}
+        <DnsStatusPanel householdId={household.id} canManage={isAdmin} />
+        <RuntimeDnsSections />
         <PendingDnsSection />
       </div>
     </div>

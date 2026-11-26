@@ -176,8 +176,17 @@ export type Patch<T> = T | null | undefined;
 export const NETWORK_GATEWAY_KINDS = ["dns", "proxy"] as const;
 export type NetworkGatewayKind = (typeof NETWORK_GATEWAY_KINDS)[number];
 
-/** Commands a worker credential can be scoped to. Heartbeat-only unless `read_policy` is requested. */
-export const NETWORK_GATEWAY_COMMANDS = ["heartbeat", "read_policy"] as const;
+/**
+ * Commands a worker credential can be scoped to. Heartbeat-only unless others are requested
+ * explicitly: a credential never gains `read_policy`, `read_dns_management` or `report_dns_status`
+ * implicitly.
+ */
+export const NETWORK_GATEWAY_COMMANDS = [
+  "heartbeat",
+  "read_policy",
+  "read_dns_management",
+  "report_dns_status",
+] as const;
 export type NetworkGatewayCommand = (typeof NETWORK_GATEWAY_COMMANDS)[number];
 
 /** Capabilities a worker may report (server allowlist). */

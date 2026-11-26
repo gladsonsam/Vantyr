@@ -99,6 +99,11 @@ const EnrollChooser = lazy(() =>
 const EnrollPage = lazy(() =>
   import("@/features/network/enroll/EnrollPage").then((m) => ({ default: m.EnrollPage })),
 );
+const DnsStatusPage = lazy(() =>
+  import("@/features/network/dns-status/DnsStatusPage").then((m) => ({
+    default: m.DnsStatusPage,
+  })),
+);
 const UsersPage = lazy(() =>
   import("@/features/users/UsersPage").then((m) => ({ default: m.UsersPage })),
 );
@@ -221,6 +226,8 @@ export function AppRoutes() {
         {/* Self-service BYOD enrollment stays outside the administrator-gated Network layout. */}
         <Route path="/network/enroll" element={<EnrollChooser />} />
         <Route path="/network/enroll/:householdId" element={<EnrollPage />} />
+        {/* Events-only DNS status: also outside the administrator-gated layout. */}
+        <Route path="/network/dns-status/:householdId" element={<DnsStatusPage />} />
         <Route path="/network" element={<NetworkLayout />}>
           <Route index element={<NetworkOverviewPage />} />
           <Route path="policies" element={<NetworkPoliciesPage />} />

@@ -9,3 +9,4 @@ export * from "./rules";
 export * from "./modules";
 export * from "./audit";
 export * from "./network";
+export * from "./dnsManagement";

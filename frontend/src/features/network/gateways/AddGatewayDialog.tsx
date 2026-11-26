@@ -72,7 +72,7 @@ export function AddGatewayDialog({
       return;
     }
     try {
-      const body = toCredentialBody(request);
+      const body = toCredentialBody(request, kind);
       const issued = await api.networkGatewayCredentialIssue(household, gatewayId, body);
       void queryClient.invalidateQueries({
         queryKey: networkKeys.gatewayCredentials(household, gatewayId),
@@ -84,6 +84,7 @@ export function AddGatewayDialog({
         expiresAt: issued.expires_at,
         commands: body.commands,
         gatewayLabel: trimmed,
+        gatewayKind: kind,
       });
     } catch (e) {
       setError(
@@ -142,7 +143,7 @@ export function AddGatewayDialog({
               />
             </div>
           </div>
-          <CredentialRequestFields values={request} onChange={setRequest} idPrefix="add-gateway" />
+          <CredentialRequestFields values={request} onChange={setRequest} idPrefix="add-gateway" kind={kind} />
           {error ? (
             <p role="alert" className="text-sm text-destructive">
               {error}
