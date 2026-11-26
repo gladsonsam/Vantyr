@@ -17,7 +17,6 @@ pub struct AuthCredential {
     pub id: Uuid,
     pub household_id: Uuid,
     pub gateway_id: Uuid,
-    pub kind: String,
     pub audience: String,
     pub allowed_commands: Vec<String>,
     pub secret_hash: String,
@@ -91,27 +90,8 @@ pub async fn gateway_in_household(
     .await
 }
 
-/// Returns the kind of an active gateway in this household. The kind is read
-/// from storage, never taken from the caller; issuance/rotation bind to it and
-/// the composite FK enforces the same scope in the database.
-pub async fn active_gateway_kind(
-    pool: &PgPool,
-    household_id: Uuid,
-    gateway_id: Uuid,
-) -> sqlx::Result<Option<String>> {
-    sqlx::query_scalar::<_, String>(
-        r"
-        SELECT kind FROM network_gateways
-        WHERE household_id = $1 AND id = $2 AND enabled AND revoked_at IS NULL
-        ",
-    )
-    .bind(household_id)
-    .bind(gateway_id)
-    .fetch_optional(pool)
-    .await
-}
-
-/// Same check as `active_gateway_kind`, inside a transaction after locking.
+/// Reads the kind of an active gateway INSIDE the locked transaction. The kind
+/// comes from storage, never the caller; the composite FK enforces it too.
 pub async fn active_gateway_kind_on_conn(
     conn: &mut PgConnection,
     household_id: Uuid,
@@ -126,20 +106,6 @@ pub async fn active_gateway_kind_on_conn(
     .bind(household_id)
     .bind(gateway_id)
     .fetch_optional(conn)
-    .await
-}
-
-pub async fn lock_gateway(
-    conn: &mut PgConnection,
-    household_id: Uuid,
-    gateway_id: Uuid,
-) -> sqlx::Result<Uuid> {
-    sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM network_gateways WHERE household_id = $1 AND id = $2 FOR UPDATE",
-    )
-    .bind(household_id)
-    .bind(gateway_id)
-    .fetch_one(conn)
     .await
 }
 
@@ -307,37 +273,60 @@ pub async fn revoke_credential_conn(
     Ok(res.rows_affected() == 1)
 }
 
-/// The worker authentication lookup. `for_update` serializes with revoke/rotate.
-pub async fn auth_credential(
+/// Lock household then gateway in ONE global h -> g -> c order. Every mutator
+/// takes these two locks first, so heartbeat, rotate and revoke cannot deadlock.
+/// Returns false if either scope row does not exist.
+pub async fn lock_household_and_gateway(
+    conn: &mut PgConnection,
+    household_id: Uuid,
+    gateway_id: Uuid,
+) -> sqlx::Result<bool> {
+    let household: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM network_households WHERE id = $1 FOR UPDATE")
+            .bind(household_id)
+            .fetch_optional(&mut *conn)
+            .await?;
+    if household.is_none() {
+        return Ok(false);
+    }
+    let gateway: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM network_gateways WHERE household_id = $1 AND id = $2 FOR UPDATE",
+    )
+    .bind(household_id)
+    .bind(gateway_id)
+    .fetch_optional(conn)
+    .await?;
+    Ok(gateway.is_some())
+}
+
+/// Worker authentication lookup, fully scoped to the claimed household,
+/// gateway and kind. Called only AFTER h and g are locked, so `FOR UPDATE OF c`
+/// completes the single h -> g -> c lock order.
+pub async fn auth_credential_scoped(
     conn: &mut PgConnection,
     credential_id: Uuid,
-    for_update: bool,
+    household_id: Uuid,
+    gateway_id: Uuid,
+    kind: &str,
 ) -> sqlx::Result<Option<AuthCredential>> {
-    let sql = if for_update {
+    sqlx::query_as::<_, AuthCredential>(
         r"
-        SELECT c.id, c.household_id, c.gateway_id, c.kind, c.audience,
+        SELECT c.id, c.household_id, c.gateway_id, c.audience,
                c.allowed_commands, c.secret_hash, c.expires_at, c.revoked_at,
                g.enabled AS gateway_enabled, g.revoked_at AS gateway_revoked_at
         FROM network_gateway_credentials c
         JOIN network_gateways g
           ON g.id = c.gateway_id AND g.household_id = c.household_id AND g.kind = c.kind
-        WHERE c.id = $1 FOR UPDATE OF c
-        "
-    } else {
-        r"
-        SELECT c.id, c.household_id, c.gateway_id, c.kind, c.audience,
-               c.allowed_commands, c.secret_hash, c.expires_at, c.revoked_at,
-               g.enabled AS gateway_enabled, g.revoked_at AS gateway_revoked_at
-        FROM network_gateway_credentials c
-        JOIN network_gateways g
-          ON g.id = c.gateway_id AND g.household_id = c.household_id AND g.kind = c.kind
-        WHERE c.id = $1
-        "
-    };
-    sqlx::query_as::<_, AuthCredential>(sql)
-        .bind(credential_id)
-        .fetch_optional(conn)
-        .await
+        WHERE c.id = $1 AND c.household_id = $2 AND c.gateway_id = $3 AND c.kind = $4
+        FOR UPDATE OF c
+        ",
+    )
+    .bind(credential_id)
+    .bind(household_id)
+    .bind(gateway_id)
+    .bind(kind)
+    .fetch_optional(conn)
+    .await
 }
 
 pub async fn mark_credential_used(
@@ -387,10 +376,12 @@ pub async fn insert_report(
 }
 
 /// Read-only reporting for a household admin; no hash or secret is selectable.
+/// Expired rows are hidden on read even when no ingest or sweep has run yet.
 pub async fn list_reports(
     pool: &PgPool,
     household_id: Uuid,
     gateway_id: Uuid,
+    cutoff: DateTime<Utc>,
     limit: i64,
     offset: i64,
 ) -> sqlx::Result<Vec<GatewayReport>> {
@@ -399,15 +390,79 @@ pub async fn list_reports(
         SELECT id, household_id, gateway_id, credential_id, reported_at, observed_at,
                capabilities, desired_revision, applied_revision, failure, verified, enforced
         FROM network_gateway_reports
-        WHERE household_id = $1 AND gateway_id = $2
+        WHERE household_id = $1 AND gateway_id = $2 AND reported_at >= $3
         ORDER BY reported_at DESC, id DESC
-        LIMIT $3 OFFSET $4
+        LIMIT $4 OFFSET $5
         ",
     )
     .bind(household_id)
     .bind(gateway_id)
+    .bind(cutoff)
     .bind(limit)
     .bind(offset)
     .fetch_all(pool)
     .await
+}
+
+/// Called inside the heartbeat transaction while the gateway row is locked, so
+/// concurrent ingests for one gateway serialize and the count cap holds.
+pub async fn prune_reports_for_gateway(
+    conn: &mut PgConnection,
+    household_id: Uuid,
+    gateway_id: Uuid,
+    cutoff: DateTime<Utc>,
+    max_per_gateway: i64,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        r"
+        DELETE FROM network_gateway_reports
+        WHERE household_id = $1 AND gateway_id = $2
+          AND (
+            reported_at < $3
+            OR id NOT IN (
+                SELECT id FROM network_gateway_reports
+                WHERE household_id = $1 AND gateway_id = $2
+                ORDER BY reported_at DESC, id DESC
+                LIMIT $4
+            )
+          )
+        ",
+    )
+    .bind(household_id)
+    .bind(gateway_id)
+    .bind(cutoff)
+    .bind(max_per_gateway)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Periodic age/count sweep for idle gateways (used by the retention task).
+pub async fn prune_all_reports(
+    pool: &PgPool,
+    cutoff: DateTime<Utc>,
+    max_per_gateway: i64,
+) -> sqlx::Result<u64> {
+    let res = sqlx::query(
+        r"
+        DELETE FROM network_gateway_reports r
+        WHERE r.reported_at < $1
+           OR r.id IN (
+                SELECT ranked.id FROM (
+                    SELECT id,
+                           row_number() OVER (
+                               PARTITION BY household_id, gateway_id
+                               ORDER BY reported_at DESC, id DESC
+                           ) AS rn
+                    FROM network_gateway_reports
+                ) ranked
+                WHERE ranked.rn > $2
+           )
+        ",
+    )
+    .bind(cutoff)
+    .bind(max_per_gateway)
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected())
 }

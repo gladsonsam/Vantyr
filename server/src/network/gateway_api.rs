@@ -27,7 +27,9 @@ use crate::http::pagination::{validate_page_params, PageParams};
 use crate::http::{audit_ip, AuthUser};
 use crate::state::AppState;
 
-use super::{api, authz, db, gateway_auth, gateway_db, gateway_dto, gateway_service};
+use super::{
+    api, authz, db, gateway_auth, gateway_db, gateway_dto, gateway_retention, gateway_service,
+};
 
 fn bounds(page: &PageParams) -> ApiResult<(i64, i64)> {
     validate_page_params(page).map_err(ApiError::bad_request)?;
@@ -224,7 +226,10 @@ pub async fn reports_list(
         return Err(ApiError::not_found("gateway not found in this household"));
     }
     let (limit, offset) = bounds(&page)?;
-    let rows = gateway_db::list_reports(&s.db, hid, gid, limit, offset).await?;
+    let retention = gateway_retention::GatewayReportRetention::from_env().clamped();
+    let rows =
+        gateway_db::list_reports(&s.db, hid, gid, retention.cutoff(Utc::now()), limit, offset)
+            .await?;
     Ok(Json(json!({ "reports": rows })))
 }
 
@@ -266,7 +271,15 @@ pub async fn worker_heartbeat(
     let bearer = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
-    let outcome = gateway_service::heartbeat(&s.db, bearer, body, Utc::now()).await?;
+    let now = Utc::now();
+    let outcome = gateway_service::heartbeat(
+        &s.db,
+        bearer,
+        body,
+        now,
+        gateway_retention::GatewayReportRetention::from_env(),
+    )
+    .await?;
     let ip = audit_ip(&headers, addr);
     audit_worker(
         &s,

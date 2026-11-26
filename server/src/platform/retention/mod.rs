@@ -66,6 +66,15 @@ pub async fn prune_auxiliary_retention(
             tracing::info!(rows = n, "pruned old agent_metrics by retention");
         }
     }
+    // Gateway reports are privacy-minimal observations: bound by age and count
+    // even for gateways that stop sending heartbeats.
+    let n = crate::network::prune_gateway_reports(pool).await?;
+    if n > 0 {
+        tracing::info!(
+            rows = n,
+            "pruned old Vantyr Network gateway reports by retention"
+        );
+    }
     Ok(())
 }
 

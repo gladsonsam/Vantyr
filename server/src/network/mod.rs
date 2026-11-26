@@ -14,8 +14,13 @@
 //! enforcement. No DHCP server or router management exists here; router DHCP
 //! stays outside Vantyr (DNS/Proxy only).
 //!
-//! Out of scope (later slices): session verification APIs, worker/runtime
-//! distribution, gateway token endpoints, events ingestion, and router lease
+//! In scope now: household-owned DNS/Proxy gateways with one-time scoped worker
+//! credentials and a bearer-authenticated heartbeat that records unverified
+//! observations only. Reports are retention-bounded (age + count) and never
+//! carry enforcement or canary state.
+//!
+//! Out of scope (later slices): actual policy distribution, canary/ack
+//! verification, session verification APIs, events ingestion, and router lease
 //! hints (read-only, never an identity claim).
 
 use std::sync::Arc;
@@ -33,15 +38,19 @@ mod gateway_api;
 mod gateway_auth;
 mod gateway_db;
 mod gateway_dto;
+mod gateway_retention;
 mod gateway_service;
 mod service;
 
+#[cfg(test)]
+mod gateway_retention_tests;
 #[cfg(test)]
 mod gateway_tests;
 #[cfg(test)]
 mod tests;
 
 pub use gateway_api::worker_routes;
+pub use gateway_retention::prune_gateway_reports;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()

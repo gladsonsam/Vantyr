@@ -1,9 +1,10 @@
 //! Atomic gateway/credential transitions and the worker heartbeat path.
 //!
-//! Issuance, rotation, revocation and report persistence are each a single
-//! transaction. The worker credential is verified against the database on
-//! EVERY request (row locked against concurrent rotate/revoke), with a
-//! constant-time digest comparison and scope/expiry/kind/command checks.
+//! EVERY mutator acquires the same lock order: household -> gateway ->
+//! credential. Reading a credential row `FOR UPDATE` last cannot deadlock with
+//! rotate/revoke, which hold the same prefix before touching the credential.
+//! Issuance re-checks gateway activity inside the locked transaction, so a
+//! concurrent revocation cannot race a TOCTOU read.
 
 use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
@@ -13,13 +14,18 @@ use uuid::Uuid;
 use crate::error::{ApiError, ApiResult};
 
 use super::gateway_dto::HeartbeatBody;
-use super::{db as base_db, gateway_auth, gateway_db, gateway_dto};
+use super::gateway_retention::GatewayReportRetention;
+use super::{gateway_auth, gateway_db, gateway_dto};
 
 fn worker_auth_error() -> ApiError {
     ApiError::Status(
         StatusCode::UNAUTHORIZED,
         "invalid gateway credential".to_string(),
     )
+}
+
+fn scope_not_found() -> ApiError {
+    ApiError::not_found("active gateway not found in this household")
 }
 
 /// Metadata only: no secret, digest or claimed ids beyond the worker's own scope.
@@ -37,7 +43,7 @@ pub async fn create_gateway(
     label: &str,
 ) -> ApiResult<Uuid> {
     let mut tx = pool.begin().await?;
-    base_db::lock_household(&mut tx, household_id).await?;
+    super::db::lock_household(&mut tx, household_id).await?;
     let id = gateway_db::insert_gateway(&mut tx, household_id, kind, label, actor).await?;
     tx.commit().await?;
     Ok(id)
@@ -45,6 +51,7 @@ pub async fn create_gateway(
 
 /// Issue a credential for an ACTIVE gateway in this household. The plaintext
 /// secret is generated here, hashed, and only the hash reaches the database.
+/// Activity is checked after the household and gateway are locked.
 pub async fn issue_credential(
     pool: &PgPool,
     household_id: Uuid,
@@ -52,16 +59,18 @@ pub async fn issue_credential(
     issued_by: Uuid,
     expires_at: DateTime<Utc>,
 ) -> ApiResult<(Uuid, String)> {
-    let Some(kind) = gateway_db::active_gateway_kind(pool, household_id, gateway_id).await? else {
-        return Err(ApiError::not_found(
-            "active gateway not found in this household",
-        ));
+    let mut tx = pool.begin().await?;
+    if !gateway_db::lock_household_and_gateway(&mut tx, household_id, gateway_id).await? {
+        return Err(scope_not_found());
+    }
+    let Some(kind) =
+        gateway_db::active_gateway_kind_on_conn(&mut tx, household_id, gateway_id).await?
+    else {
+        return Err(scope_not_found());
     };
     let id = gateway_auth::new_token_id();
     let secret = gateway_auth::new_secret();
     let hash = gateway_auth::hash_secret(&secret);
-    let mut tx = pool.begin().await?;
-    base_db::lock_household(&mut tx, household_id).await?;
     gateway_db::insert_credential(
         &mut tx,
         id,
@@ -89,14 +98,13 @@ pub async fn rotate_credential(
     expires_at: DateTime<Utc>,
 ) -> ApiResult<(Uuid, String)> {
     let mut tx = pool.begin().await?;
-    base_db::lock_household(&mut tx, household_id).await?;
-    gateway_db::lock_gateway(&mut tx, household_id, gateway_id).await?;
+    if !gateway_db::lock_household_and_gateway(&mut tx, household_id, gateway_id).await? {
+        return Err(scope_not_found());
+    }
     let Some(kind) =
         gateway_db::active_gateway_kind_on_conn(&mut tx, household_id, gateway_id).await?
     else {
-        return Err(ApiError::not_found(
-            "active gateway not found in this household",
-        ));
+        return Err(scope_not_found());
     };
     if !gateway_db::revoke_credential_conn(&mut tx, household_id, gateway_id, credential_id).await?
     {
@@ -128,7 +136,9 @@ pub async fn revoke_credential(
     credential_id: Uuid,
 ) -> ApiResult<bool> {
     let mut tx = pool.begin().await?;
-    base_db::lock_household(&mut tx, household_id).await?;
+    if !gateway_db::lock_household_and_gateway(&mut tx, household_id, gateway_id).await? {
+        return Err(scope_not_found());
+    }
     let removed =
         gateway_db::revoke_credential_conn(&mut tx, household_id, gateway_id, credential_id)
             .await?;
@@ -142,21 +152,24 @@ pub async fn revoke_gateway(
     gateway_id: Uuid,
 ) -> ApiResult<bool> {
     let mut tx = pool.begin().await?;
-    base_db::lock_household(&mut tx, household_id).await?;
+    if !gateway_db::lock_household_and_gateway(&mut tx, household_id, gateway_id).await? {
+        return Ok(false);
+    }
     let removed = gateway_db::revoke_gateway_conn(&mut tx, household_id, gateway_id).await?;
     tx.commit().await?;
     Ok(removed)
 }
 
 /// The ONLY gateway credential use in this slice: a bounded heartbeat report.
-/// All bound checks happen before the report is written; nothing here writes
-/// agent tokens, module grants or control state, and no self-reported flag can
-/// set verification/enforcement (the schema forbids it).
+/// All bound checks happen before any write; nothing here writes agent tokens,
+/// module grants or control state, and no self-reported flag can set
+/// verification/enforcement (the schema forbids it).
 pub async fn heartbeat(
     pool: &PgPool,
     bearer: Option<&str>,
     body: HeartbeatBody,
     now: DateTime<Utc>,
+    retention: GatewayReportRetention,
 ) -> ApiResult<HeartbeatOutcome> {
     // Bounds checked before any database work.
     let (credential_id, secret) =
@@ -164,6 +177,7 @@ pub async fn heartbeat(
     if body.audience != gateway_auth::AUDIENCE || body.command != gateway_auth::COMMAND_HEARTBEAT {
         return Err(worker_auth_error());
     }
+    let claimed_kind = gateway_dto::normalize_kind(&body.kind).map_err(|_| worker_auth_error())?;
     let capabilities = gateway_auth::normalize_capabilities(body.capabilities.as_deref())
         .map_err(|()| ApiError::bad_request("capabilities are not in the worker allowlist"))?;
     let observed_at = body.observed_at.unwrap_or(now);
@@ -185,16 +199,29 @@ pub async fn heartbeat(
     let failure =
         gateway_auth::bounded_text(body.failure.as_deref(), gateway_auth::MAX_FAILURE_LEN)
             .map_err(|()| ApiError::bad_request("failure is unbounded"))?;
+    let cfg = retention.clamped();
 
     let mut tx = pool.begin().await?;
-    let Some(cred) = gateway_db::auth_credential(&mut tx, credential_id, true).await? else {
+    // Global h -> g -> c order: validate claimed scope, then lock it.
+    if !gateway_db::lock_household_and_gateway(&mut tx, body.household_id, body.gateway_id).await? {
+        return Err(worker_auth_error());
+    }
+    let Some(cred) = gateway_db::auth_credential_scoped(
+        &mut tx,
+        credential_id,
+        body.household_id,
+        body.gateway_id,
+        &claimed_kind,
+    )
+    .await?
+    else {
         return Err(worker_auth_error());
     };
     // Constant-time proof of possession of the one-time secret.
     if !gateway_auth::verify_secret(secret, &cred.secret_hash) {
         return Err(worker_auth_error());
     }
-    // Revocation and expiry are checked against the database on every request.
+    // Revocation and expiry are re-checked from the locked row on every request.
     if cred.revoked_at.is_some()
         || cred.gateway_revoked_at.is_some()
         || !cred.gateway_enabled
@@ -207,14 +234,6 @@ pub async fn heartbeat(
             .allowed_commands
             .iter()
             .any(|c| c == gateway_auth::COMMAND_HEARTBEAT)
-    {
-        return Err(worker_auth_error());
-    }
-    // A worker may only report its OWN gateway / household / kind.
-    let claimed_kind = gateway_dto::normalize_kind(&body.kind).map_err(|_| worker_auth_error())?;
-    if body.household_id != cred.household_id
-        || body.gateway_id != cred.gateway_id
-        || claimed_kind != cred.kind
     {
         return Err(worker_auth_error());
     }
@@ -235,6 +254,16 @@ pub async fn heartbeat(
         desired.as_deref(),
         applied.as_deref(),
         failure.as_deref(),
+    )
+    .await?;
+    // Ingest-time hard cap and age limit, under the gateway lock: concurrent
+    // heartbeats for this gateway cannot grow the table past `max_per_gateway`.
+    gateway_db::prune_reports_for_gateway(
+        &mut tx,
+        cred.household_id,
+        cred.gateway_id,
+        cfg.cutoff(now),
+        cfg.max_per_gateway,
     )
     .await?;
     gateway_db::touch_gateway_from_report(
