@@ -10,6 +10,16 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
+/// A present nullable PATCH field is always `Some`: null means clear, while
+/// `#[serde(default)]` handles an omitted field as `None` (keep).
+fn deserialize_nullable_patch<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
 // ─── Responses (also used as typed sqlx rows) ────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, FromRow)]
@@ -141,10 +151,7 @@ pub struct PatchPersonBody {
     #[serde(default)]
     pub display_name: Option<String>,
     /// Omitted = keep; JSON null = clear; string = set.
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
+    #[serde(default, deserialize_with = "deserialize_nullable_patch")]
     pub note: Option<Option<String>>,
     #[serde(default)]
     pub is_default_profile: Option<bool>,
@@ -187,19 +194,13 @@ pub struct CreateAssignmentBody {
 #[derive(Debug, Deserialize)]
 pub struct PatchAssignmentBody {
     /// Omitted = keep; JSON null = unlink; UUID = link/replace.
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
+    #[serde(default, deserialize_with = "deserialize_nullable_patch")]
     pub agent_id: Option<Option<Uuid>>,
     #[serde(default)]
     pub role: Option<String>,
     #[serde(default)]
     pub active: Option<bool>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
+    #[serde(default, deserialize_with = "deserialize_nullable_patch")]
     pub note: Option<Option<String>>,
 }
 
@@ -233,15 +234,9 @@ pub struct CreateConnectionBody {
 #[derive(Debug, Deserialize)]
 pub struct PatchConnectionBody {
     /// Omitted = keep; JSON null = clear; UUID = set (validated in scope).
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
+    #[serde(default, deserialize_with = "deserialize_nullable_patch")]
     pub assignment_id: Option<Option<Uuid>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
+    #[serde(default, deserialize_with = "deserialize_nullable_patch")]
     pub enrolled_agent_id: Option<Option<Uuid>>,
     #[serde(default)]
     pub provenance: Option<String>,
@@ -249,25 +244,13 @@ pub struct PatchConnectionBody {
     pub capabilities: Option<Vec<String>>,
     #[serde(default)]
     pub status: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
+    #[serde(default, deserialize_with = "deserialize_nullable_patch")]
     pub observed_at: Option<Option<DateTime<Utc>>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
+    #[serde(default, deserialize_with = "deserialize_nullable_patch")]
     pub last_seen_at: Option<Option<DateTime<Utc>>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
+    #[serde(default, deserialize_with = "deserialize_nullable_patch")]
     pub revoked_at: Option<Option<DateTime<Utc>>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
+    #[serde(default, deserialize_with = "deserialize_nullable_patch")]
     pub note: Option<Option<String>>,
 }
 
