@@ -1,7 +1,12 @@
 {
   "$schema": "../node_modules/oxlint/configuration_schema.json",
   "extends": ["../packages/oxlint-config/react-compiler.json"],
-  "ignorePatterns": ["dist", "node_modules", "src/api/types/generated"],
+  "ignorePatterns": [
+    "dist",
+    "node_modules",
+    "src/api/types/generated",
+    "src/components/react-bits"
+  ],
   "overrides": [
     {
       "files": ["src/components/common/ErrorBoundary.tsx"],
