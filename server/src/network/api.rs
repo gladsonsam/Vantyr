@@ -18,7 +18,7 @@ use uuid::Uuid;
 use crate::error::{ApiError, ApiResult};
 use crate::http::pagination::{validate_page_params, PageParams};
 use crate::http::{audit_ip, AuthUser, RequireAdmin};
-use crate::network::{authz, db, dto, service};
+use crate::network::{authz, db, dto, mutation_service, service};
 use crate::state::AppState;
 
 pub(super) async fn audit_network(
@@ -145,17 +145,11 @@ pub async fn person_create(
         .map_err(ApiError::bad_request)?;
     let note =
         dto::normalize_optional_text(&body.note, "note", 1000).map_err(ApiError::bad_request)?;
-    if body.is_default_profile == Some(true) {
-        // No person id yet, so clear every default in this household.
-        sqlx::query(
-            "UPDATE network_persons SET is_default_profile = false WHERE household_id = $1",
-        )
-        .bind(hid)
-        .execute(&s.db)
-        .await?;
-    }
-    let id = db::insert_person(
+    // Target validation, clearing the prior default and the insert all happen
+    // in one household-locked transaction (see mutation_service).
+    let id = mutation_service::create_person(
         &s.db,
+        user.user_id,
         hid,
         &name,
         note.as_deref(),
@@ -194,22 +188,18 @@ pub async fn person_patch(
         .map_err(ApiError::bad_request)?;
     let note = dto::normalize_note_patch(&body.note).map_err(ApiError::bad_request)?;
     let note_refs = note.as_ref().map(|n| n.as_deref());
-    if body.is_default_profile == Some(true) && !db::person_in_household(&s.db, hid, pid).await? {
-        return Err(ApiError::not_found("person not found in this household"));
-    }
-    if body.is_default_profile == Some(true) {
-        db::clear_default_profile(&s.db, hid, pid).await?;
-    }
-    if !db::update_person(
+    // A missing/foreign target must leave the current default untouched.
+    let updated = mutation_service::patch_person(
         &s.db,
+        user.user_id,
         hid,
         pid,
         name.as_deref(),
         note_refs.as_ref().copied(),
         body.is_default_profile,
     )
-    .await?
-    {
+    .await?;
+    if updated.is_none() {
         return Err(ApiError::not_found("person not found in this household"));
     }
     audit_network(

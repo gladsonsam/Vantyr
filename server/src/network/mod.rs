@@ -49,6 +49,10 @@ mod gateway_db;
 mod gateway_dto;
 mod gateway_retention;
 mod gateway_service;
+mod mutation_api;
+mod mutation_db;
+mod mutation_dto;
+mod mutation_service;
 mod policy_api;
 mod policy_db;
 mod policy_dto;
@@ -64,6 +68,8 @@ mod enroll_tests;
 mod gateway_retention_tests;
 #[cfg(test)]
 mod gateway_tests;
+#[cfg(test)]
+mod mutation_tests;
 #[cfg(test)]
 mod policy_tests;
 #[cfg(test)]
@@ -86,6 +92,11 @@ pub fn routes() -> Router<Arc<AppState>> {
             "/network/households",
             get(api::households_list).post(api::household_create),
         )
+        // Household configuration edit (name / timezone only).
+        .route(
+            "/network/households/{hid}",
+            patch(mutation_api::household_patch),
+        )
         // Persons.
         .route(
             "/network/households/{hid}/persons",
@@ -93,7 +104,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         )
         .route(
             "/network/households/{hid}/persons/{pid}",
-            patch(api::person_patch),
+            patch(api::person_patch).delete(mutation_api::person_delete),
         )
         // Household-owned devices.
         .route(
@@ -102,7 +113,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         )
         .route(
             "/network/households/{hid}/devices/{did}",
-            patch(api::device_patch),
+            patch(api::device_patch).delete(mutation_api::device_delete),
         )
         // Person-to-device assignments.
         .route(
@@ -111,7 +122,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         )
         .route(
             "/network/households/{hid}/assignments/{aid}",
-            patch(api::assignment_patch),
+            patch(api::assignment_patch).delete(mutation_api::assignment_delete),
         )
         // Connections with separate kind / provenance / capabilities / status.
         .route(
@@ -120,7 +131,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         )
         .route(
             "/network/households/{hid}/connections/{cid}",
-            patch(api::connection_patch),
+            patch(api::connection_patch).delete(mutation_api::connection_delete),
         )
         // Explicit enrollment of an existing agent into a household.
         .route(
@@ -144,7 +155,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         )
         .route(
             "/network/households/{hid}/gateways/{gid}",
-            axum::routing::delete(gateway_api::gateway_revoke),
+            patch(mutation_api::gateway_patch).delete(gateway_api::gateway_revoke),
         )
         .route(
             "/network/households/{hid}/gateways/{gid}/credentials",

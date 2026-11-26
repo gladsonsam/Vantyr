@@ -2,7 +2,7 @@
 //! platform roles (admin / operator / viewer) are deliberately not consulted, so
 //! an operator or viewer can never acquire network rights implicitly.
 
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
@@ -58,6 +58,30 @@ pub async fn has_grant(
     .bind(household_id)
     .bind(grant.as_str())
     .fetch_one(pool)
+    .await
+}
+
+/// Re-check the exact grant while holding the household row lock. An admin can
+/// be revoked between the HTTP guard and a mutator acquiring the lock; without
+/// this second check a stale request could still commit.
+pub async fn has_grant_on_conn(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    household_id: Uuid,
+    grant: NetworkGrant,
+) -> sqlx::Result<bool> {
+    sqlx::query_scalar::<_, bool>(
+        r"
+        SELECT EXISTS (
+            SELECT 1 FROM network_grants
+            WHERE user_id = $1 AND household_id = $2 AND grant_name = $3
+        )
+        ",
+    )
+    .bind(user_id)
+    .bind(household_id)
+    .bind(grant.as_str())
+    .fetch_one(conn)
     .await
 }
 

@@ -207,6 +207,9 @@ pub async fn list_grants(
 
 // ─── Persons ─────────────────────────────────────────────────────────────────
 
+// Retained for the older test fixtures; production person creation now runs
+// through mutation_db::insert_person_on_conn inside the household lock.
+#[allow(dead_code)]
 pub async fn insert_person(
     pool: &PgPool,
     household_id: Uuid,
@@ -227,21 +230,6 @@ pub async fn insert_person(
     .bind(is_default_profile)
     .fetch_one(pool)
     .await
-}
-
-pub async fn clear_default_profile(
-    pool: &PgPool,
-    household_id: Uuid,
-    except_person_id: Uuid,
-) -> sqlx::Result<()> {
-    sqlx::query(
-        "UPDATE network_persons SET is_default_profile = false WHERE household_id = $1 AND is_default_profile AND id <> $2",
-    )
-    .bind(household_id)
-    .bind(except_person_id)
-    .execute(pool)
-    .await?;
-    Ok(())
 }
 
 pub async fn list_persons(
@@ -278,41 +266,6 @@ pub async fn person_in_household(
     .bind(person_id)
     .fetch_one(pool)
     .await
-}
-
-/// `false` means no such person in this household. A `Some(None)` note clears it.
-pub async fn update_person(
-    pool: &PgPool,
-    household_id: Uuid,
-    person_id: Uuid,
-    display_name: Option<&str>,
-    note: Option<Option<&str>>,
-    is_default_profile: Option<bool>,
-) -> sqlx::Result<bool> {
-    let mut qb = QueryBuilder::new("UPDATE network_persons SET ");
-    let mut fields = qb.separated(", ");
-    if let Some(name) = display_name {
-        fields.push("display_name = ").push_bind_unseparated(name);
-    }
-    match note {
-        Some(Some(n)) => {
-            fields.push("note = ").push_bind_unseparated(n);
-        }
-        Some(None) => {
-            fields.push("note = NULL");
-        }
-        None => {}
-    }
-    if let Some(flag) = is_default_profile {
-        fields
-            .push("is_default_profile = ")
-            .push_bind_unseparated(flag);
-    }
-    qb.push(" WHERE household_id = ")
-        .push_bind(household_id)
-        .push(" AND id = ")
-        .push_bind(person_id);
-    Ok(qb.build().execute(pool).await?.rows_affected() == 1)
 }
 
 // ─── Devices (household-owned; never a global key oracle) ───────────────────
