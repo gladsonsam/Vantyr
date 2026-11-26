@@ -4,9 +4,10 @@
 mod support;
 
 use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use family_proxy::ProxyServer;
+use family_policy::Effect;
+use family_proxy::{DestinationConfig, MatchSpec, ProxyServer, RuleSpec};
 use support::*;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -62,7 +63,7 @@ async fn authenticated_http_forward_reaches_origin_and_strips_credentials() {
         "proxy hop-by-hop headers must be stripped"
     );
     assert!(request.to_ascii_lowercase().contains("host: origin.test"));
-    proxy.stop();
+    proxy.stop().await;
 }
 
 #[tokio::test]
@@ -90,7 +91,7 @@ async fn policy_denied_domain_and_unapproved_literals_never_contact_origin() {
         0,
         "no origin contact for denied targets"
     );
-    proxy.stop();
+    proxy.stop().await;
 }
 
 #[tokio::test]
@@ -132,7 +133,7 @@ async fn missing_and_wrong_credentials_are_rejected_before_egress() {
     let head = read_head(&mut client).await;
     assert_eq!(status_line(&head), 407, "unauthenticated CONNECT: {head:?}");
     assert_eq!(echo.connections(), 0, "no tunnel without valid auth");
-    proxy.stop();
+    proxy.stop().await;
 }
 
 #[tokio::test]
@@ -163,7 +164,7 @@ async fn connect_tunnel_echoes_bytes_through_the_pinned_socket() {
         .expect("tunnel read timeout")
         .expect("tunnel read failed");
     assert_eq!(&reply, b"hello-vantyr");
-    proxy.stop();
+    proxy.stop().await;
 }
 
 #[tokio::test]
@@ -202,7 +203,7 @@ async fn connect_to_private_metadata_and_mapped_literals_never_returns_200() {
         0,
         "no tunnel may reach a denied destination"
     );
-    proxy.stop();
+    proxy.stop().await;
 }
 
 #[tokio::test]
@@ -237,7 +238,7 @@ async fn pinned_destination_ignores_a_hostile_rebinding_resolver() {
         0,
         "a pinned destination must not consult DNS at all"
     );
-    proxy.stop();
+    proxy.stop().await;
 }
 
 #[tokio::test]
@@ -275,7 +276,7 @@ async fn connection_limit_drops_excess_clients() {
     }
     assert_eq!(origin.connections(), 0);
     drop(holder);
-    proxy.stop();
+    proxy.stop().await;
 }
 
 #[tokio::test]
@@ -299,7 +300,7 @@ async fn idle_tunnel_is_bounded() {
         .await
         .expect("idle tunnel read timeout");
     assert_eq!(closed.unwrap_or(0), 0, "idle tunnel must close");
-    proxy.stop();
+    proxy.stop().await;
 }
 
 #[tokio::test]
@@ -320,5 +321,161 @@ async fn websocket_upgrade_is_rejected_honestly() {
         "upgrade must not silently pass: {head:?}"
     );
     assert_eq!(origin.connections(), 0);
-    proxy.stop();
+    proxy.stop().await;
+}
+
+#[tokio::test]
+async fn stalled_upstream_http_request_expires_and_releases_connection_permit() {
+    let origin = HttpOrigin::start().await;
+    let echo = EchoOrigin::start().await;
+    let stall = StallOrigin::start().await;
+    let mut config = test_config_with_limits(origin.addr, echo.addr, 1, 60);
+    config.limits.request_timeout_secs = 1;
+    config.destinations.push(DestinationConfig {
+        host: "stall.test".into(),
+        port: stall.addr.port(),
+        pin: Some(format!("127.0.0.1:{}", stall.addr.port())),
+    });
+    config
+        .profiles
+        .get_mut("restricted")
+        .unwrap()
+        .push(RuleSpec {
+            effect: Effect::Allow,
+            matcher: MatchSpec::Suffix {
+                value: "stall.test".into(),
+            },
+            reason: None,
+        });
+    config.validate().unwrap();
+    let proxy = start_proxy(config).await;
+
+    let mut first = connect(proxy.bind_addr()).await;
+    let started = Instant::now();
+    send(
+        &mut first,
+        &http_get(
+            &format!("stall.test:{}", stall.addr.port()),
+            "/",
+            Some(GOOD_AUTH),
+        ),
+    )
+    .await;
+    let head = read_head(&mut first).await;
+    assert_eq!(status_line(&head), 504, "stalled upstream: {head:?}");
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "full request deadline must fire, not only connect timeout"
+    );
+    assert_eq!(stall.connections(), 1);
+    drop(first);
+
+    // The connection permit must have been released so a second client works.
+    let mut second = connect(proxy.bind_addr()).await;
+    send(
+        &mut second,
+        &http_get(
+            &format!("origin.test:{}", origin.addr.port()),
+            "/",
+            Some(GOOD_AUTH),
+        ),
+    )
+    .await;
+    let head = read_head(&mut second).await;
+    assert_eq!(
+        status_line(&head),
+        200,
+        "next request after deadline: {head:?}"
+    );
+    assert_eq!(origin.connections(), 1);
+    proxy.stop().await;
+}
+
+#[tokio::test]
+async fn header_count_size_and_body_limits_reject_before_origin_contact() {
+    let origin = HttpOrigin::start().await;
+    let echo = EchoOrigin::start().await;
+    let mut config = test_config_with_limits(origin.addr, echo.addr, 8, 60);
+    config.limits.max_body_bytes = 1024;
+    config.validate().unwrap();
+    let proxy = start_proxy(config).await;
+
+    let mut too_many = format!(
+        "GET http://origin.test:{}/ HTTP/1.1\r\nHost: origin.test\r\nProxy-Authorization: {GOOD_AUTH}\r\n",
+        origin.addr.port()
+    );
+    for index in 0..120 {
+        too_many.push_str(&format!("X-Test-{index}: v\r\n"));
+    }
+    too_many.push_str("\r\n");
+    let mut client = connect(proxy.bind_addr()).await;
+    send(&mut client, &too_many).await;
+    let head = read_head(&mut client).await;
+    let code = status_line(&head);
+    assert!(
+        code == 400 || code == 431 || code == 0,
+        "excess headers must not be forwarded: {head:?}"
+    );
+    drop(client);
+
+    let oversized = format!(
+        "GET http://origin.test:{}/ HTTP/1.1\r\nHost: origin.test\r\nProxy-Authorization: {GOOD_AUTH}\r\nX-Big: {}\r\n\r\n",
+        origin.addr.port(),
+        "v".repeat(40_000)
+    );
+    let mut client = connect(proxy.bind_addr()).await;
+    send(&mut client, &oversized).await;
+    let head = read_head(&mut client).await;
+    let code = status_line(&head);
+    assert!(
+        code == 400 || code == 431 || code == 0,
+        "oversized header must not be forwarded: {head:?}"
+    );
+    drop(client);
+
+    let over_body = format!(
+        "POST http://origin.test:{}/ HTTP/1.1\r\nHost: origin.test\r\nProxy-Authorization: {GOOD_AUTH}\r\nContent-Length: 5000\r\n\r\n{}",
+        origin.addr.port(),
+        "x".repeat(5000)
+    );
+    let mut client = connect(proxy.bind_addr()).await;
+    send(&mut client, &over_body).await;
+    let head = read_head(&mut client).await;
+    assert_ne!(
+        status_line(&head),
+        200,
+        "oversized body must not succeed: {head:?}"
+    );
+    assert_eq!(
+        origin.connections(),
+        0,
+        "no over-limit request reaches origin"
+    );
+    proxy.stop().await;
+}
+
+#[tokio::test]
+async fn stopping_the_proxy_closes_active_tunnels() {
+    let origin = HttpOrigin::start().await;
+    let echo = EchoOrigin::start().await;
+    let proxy = start_proxy(test_config(origin.addr, echo.addr)).await;
+
+    let mut client = connect(proxy.bind_addr()).await;
+    send(
+        &mut client,
+        &connect_req("echo.test", echo.addr.port(), Some(GOOD_AUTH)),
+    )
+    .await;
+    assert_eq!(status_line(&read_head(&mut client).await), 200);
+
+    proxy.stop().await;
+    let mut buf = [0u8; 8];
+    let closed = tokio::time::timeout(Duration::from_secs(3), client.read(&mut buf))
+        .await
+        .expect("active tunnel must close on shutdown");
+    assert_eq!(
+        closed.unwrap_or(0),
+        0,
+        "active tunnel left running after stop"
+    );
 }

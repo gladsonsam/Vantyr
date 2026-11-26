@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,6 +18,7 @@ use anyhow::Result;
 use chrono::Utc;
 use family_policy::{evaluate, Action, EvaluationContext, Policy};
 use rama::dns::client::resolver::DnsAddressResolver;
+use rama::graceful::Shutdown;
 use rama::http::client::{HttpClientService, HttpConnectRequestAdapter, HttpConnector};
 use rama::http::header;
 use rama::http::layer::remove_header::RemoveRequestHeaderLayer;
@@ -24,7 +26,7 @@ use rama::http::layer::upgrade::{EagerHttpProxyConnector, UpgradeLayer, UpgradeS
 use rama::http::matcher::MethodMatcher;
 use rama::http::server::HttpServer;
 use rama::http::BodyLimitLayer;
-use rama::http::{Body, Request, Response, StatusCode, Version};
+use rama::http::{Body, HeaderValue, Request, Response, StatusCode, Version};
 use rama::net::client::{ConnectorService, EstablishedClientConnection};
 use rama::net::proxy::{FirstByteTimeoutStart, IoForwardService};
 use rama::rt::Executor;
@@ -32,7 +34,7 @@ use rama::service::service_fn;
 use rama::service::BoxService;
 use rama::tcp::server::TcpListener as RamaTcpListener;
 use rama::{Layer, Service};
-use tokio::sync::{watch, Semaphore};
+use tokio::sync::{oneshot, Semaphore};
 use tokio::task::JoinHandle;
 
 use crate::auth::{proxy_authentication_required, AuthError, AuthState};
@@ -40,7 +42,26 @@ use crate::config::Config;
 use crate::egress::{EgressConnector, EgressPolicy};
 
 type Upgrade = UpgradeService<rama::service::BoxService<Request, Response, Infallible>, Response>;
-type Forward = BoxService<Request, Response, rama::error::BoxError>;
+type Forward = BoxService<Request, Response, ForwardError>;
+
+/// An upstream failure is either a deadline over the whole request/response
+/// exchange or another connection/protocol failure.
+#[derive(Debug)]
+enum ForwardError {
+    Deadline,
+    Upstream(rama::error::BoxError),
+}
+
+impl fmt::Display for ForwardError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Deadline => write!(f, "upstream request deadline exceeded"),
+            Self::Upstream(error) => write!(f, "upstream request failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for ForwardError {}
 
 /// The request-level service. `Clone` so the HTTP server can serve many
 /// connections from the same immutable state.
@@ -52,6 +73,7 @@ struct ProxyService {
     upgrade: Upgrade,
     forward: Forward,
     heartbeat_ttl_secs: u64,
+    max_body_bytes: usize,
 }
 
 /// A transport-level concurrency gate. A full proxy drops the connection
@@ -79,14 +101,19 @@ where
 }
 
 /// Forward a single request over an established, policy-checked connection.
+/// The deadline covers connect, response headers and the whole response body.
 #[derive(Clone)]
 struct ForwardClient<C> {
     connector: C,
+    deadline: Duration,
 }
 
 impl<C> ForwardClient<C> {
-    fn new(connector: C) -> Self {
-        Self { connector }
+    fn new(connector: C, deadline: Duration) -> Self {
+        Self {
+            connector,
+            deadline,
+        }
     }
 }
 
@@ -99,19 +126,32 @@ where
         + 'static,
 {
     type Output = Response;
-    type Error = rama::error::BoxError;
+    type Error = ForwardError;
 
     async fn serve(&self, request: Request<B>) -> Result<Response, Self::Error> {
-        let EstablishedClientConnection { input, conn } = self.connector.connect(request).await?;
-        conn.serve(input).await
+        match tokio::time::timeout(self.deadline, async {
+            let EstablishedClientConnection { input, conn } = self
+                .connector
+                .connect(request)
+                .await
+                .map_err(|error| ForwardError::Upstream(error.into()))?;
+            conn.serve(input).await.map_err(ForwardError::Upstream)
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(ForwardError::Deadline),
+        }
     }
 }
 
-/// A running proxy listener. Dropping it aborts the accept loop; `stop()` is
-/// explicit so callers can shut down cleanly.
+/// A running proxy listener. `stop()` triggers graceful shutdown so active
+/// connections and tunnels are closed rather than orphaned when the accept
+/// loop ends.
 pub struct ProxyServer {
     bind_addr: SocketAddr,
-    shutdown: watch::Sender<bool>,
+    trigger: Option<oneshot::Sender<()>>,
+    shutdown: Option<Shutdown>,
     task: JoinHandle<()>,
 }
 
@@ -131,7 +171,11 @@ impl ProxyServer {
     {
         config.validate()?;
         let limits = config.limits();
-        let exec = Executor::default();
+        let (trigger, signal) = oneshot::channel::<()>();
+        let shutdown = Shutdown::new(async move {
+            let _ = signal.await;
+        });
+        let exec = Executor::graceful(shutdown.guard());
 
         let egress = EgressConnector::new(
             EgressPolicy::from_config(&config),
@@ -158,8 +202,10 @@ impl ProxyServer {
         let http_connector = HttpConnector::new(adapter, exec.clone());
         let forward: Forward = RemoveRequestHeaderLayer::forwarding_metadata()
             .into_layer(
-                RemoveRequestHeaderLayer::hop_by_hop()
-                    .into_layer(ForwardClient::new(http_connector)),
+                RemoveRequestHeaderLayer::hop_by_hop().into_layer(ForwardClient::new(
+                    http_connector,
+                    Duration::from_secs(limits.request_timeout_secs),
+                )),
             )
             .boxed();
 
@@ -177,6 +223,7 @@ impl ProxyServer {
             upgrade,
             forward,
             heartbeat_ttl_secs: Config::heartbeat_ttl_secs(),
+            max_body_bytes: limits.max_body_bytes,
         };
 
         let mut http_server = HttpServer::new_http1(exec.clone());
@@ -196,16 +243,13 @@ impl ProxyServer {
             .await
             .map_err(|error| anyhow::anyhow!("bind failed: {error}"))?;
         let bind_addr = tcp.local_addr()?;
-        let (shutdown, mut changed) = watch::channel(false);
-        let task = tokio::spawn(async move {
-            tokio::select! {
-                _ = changed.changed() => {},
-                _ = tcp.serve(limited) => {},
-            }
-        });
+        // `TcpListener::serve` observes the graceful executor's guard and
+        // stops accepting when shutdown is triggered.
+        let task = tokio::spawn(tcp.serve(limited));
         Ok(Self {
             bind_addr,
-            shutdown,
+            trigger: Some(trigger),
+            shutdown: Some(shutdown),
             task,
         })
     }
@@ -214,8 +258,15 @@ impl ProxyServer {
         self.bind_addr
     }
 
-    pub fn stop(self) {
-        let _ = self.shutdown.send(true);
+    /// Trigger shutdown and wait (bounded) for connection tasks and tunnels
+    /// to end, so no accepted connection is left running behind the listener.
+    pub async fn stop(mut self) {
+        if let Some(trigger) = self.trigger.take() {
+            let _ = trigger.send(());
+        }
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = shutdown.shutdown_with_limit(Duration::from_secs(2)).await;
+        }
         self.task.abort();
     }
 }
@@ -280,7 +331,23 @@ impl ProxyService {
             return status(StatusCode::FORBIDDEN, &decision.reason_code);
         }
 
-        if request.method() == &rama::http::Method::CONNECT {
+        // Enforce the configured body budget before dialling the upstream.
+        // `Body::limited` additionally bounds streamed bodies with no declared
+        // length, so either shape cannot exceed the limit.
+        let declared = request
+            .headers()
+            .get(header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<usize>().ok());
+        if declared.is_some_and(|len| len > self.max_body_bytes) {
+            let mut response = status(StatusCode::PAYLOAD_TOO_LARGE, "request body exceeds limit");
+            response
+                .headers_mut()
+                .insert(header::CONNECTION, HeaderValue::from_static("close"));
+            return response;
+        }
+
+        if request.method().eq(&rama::http::Method::CONNECT) {
             return match self.upgrade.serve(request).await {
                 Ok(response) => response,
                 Err(never) => match never {},
@@ -296,11 +363,29 @@ impl ProxyService {
                 | &rama::http::Method::DELETE
                 | &rama::http::Method::OPTIONS
         ) {
+            let (parts, body) = request.into_parts();
+            let request = Request::from_parts(parts, body.limited(self.max_body_bytes));
             return match self.forward.serve(request).await {
                 Ok(response) => response,
-                Err(error) => {
+                Err(ForwardError::Deadline) => {
+                    let mut response = status(
+                        StatusCode::GATEWAY_TIMEOUT,
+                        "upstream request deadline exceeded",
+                    );
+                    // Close the client connection so its semaphore permit is
+                    // released and the next client can be served immediately.
+                    response
+                        .headers_mut()
+                        .insert(header::CONNECTION, HeaderValue::from_static("close"));
+                    response
+                }
+                Err(ForwardError::Upstream(error)) => {
                     tracing::warn!(error = ?error, "upstream request failed");
-                    status(StatusCode::BAD_GATEWAY, "upstream request failed")
+                    let mut response = status(StatusCode::BAD_GATEWAY, "upstream request failed");
+                    response
+                        .headers_mut()
+                        .insert(header::CONNECTION, HeaderValue::from_static("close"));
+                    response
                 }
             };
         }

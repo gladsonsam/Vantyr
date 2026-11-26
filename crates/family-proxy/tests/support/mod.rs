@@ -16,9 +16,9 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 
 pub const GOOD_AUTH: &str =
-    "Basic MjIyMjIyMjItMzMzMy00NDQ0LTU1NTUtNjY2NjY2NjY2NjY2Omdvb2QtdG9rZW4=";
+    "Basic MjIyMjIyMjItMzMzMy00NDQ0LTU1NTUtNjY2NjY2NjY2NjY2OnZhbnR5ci1wcm94eS1ib290c3RyYXAtdG9rZW4tMDAwMQ==";
 pub const WRONG_AUTH: &str =
-    "Basic MjIyMjIyMjItMzMzMy00NDQ0LTU1NTUtNjY2NjY2NjY2NjY2Ondyb25nLXRva2Vu";
+    "Basic MjIyMjIyMjItMzMzMy00NDQ0LTU1NTUtNjY2NjY2NjY2NjY2Ondyb25nLXZhbnR5ci1wcm94eS1ib290c3RyYXAtdG9rZW4tMDAwMDAx";
 
 pub fn free_addr() -> SocketAddr {
     std::net::TcpListener::bind("127.0.0.1:0")
@@ -105,10 +105,7 @@ impl HttpOrigin {
                 tokio::spawn(async move {
                     let mut buf = Vec::new();
                     let mut tmp = [0u8; 2048];
-                    loop {
-                        let Ok(n) = stream.read(&mut tmp).await else {
-                            break;
-                        };
+                    while let Ok(n) = stream.read(&mut tmp).await {
                         if n == 0 || buf.len() > 16 * 1024 {
                             break;
                         }
@@ -193,6 +190,47 @@ impl Drop for EchoOrigin {
     }
 }
 
+/// An upstream that accepts the connection but never answers. Used to prove
+/// the full HTTP request/response deadline, not just the connect timeout.
+pub struct StallOrigin {
+    pub addr: SocketAddr,
+    pub hits: Arc<AtomicUsize>,
+    task: JoinHandle<()>,
+}
+
+impl StallOrigin {
+    pub async fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let h = hits.clone();
+        let task = tokio::spawn(async move {
+            loop {
+                let Ok((stream, _)) = listener.accept().await else {
+                    break;
+                };
+                h.fetch_add(1, Ordering::SeqCst);
+                // Hold the socket open without ever writing a response.
+                tokio::spawn(async move {
+                    let _held = stream;
+                    std::future::pending::<()>().await;
+                });
+            }
+        });
+        Self { addr, hits, task }
+    }
+
+    pub fn connections(&self) -> usize {
+        self.hits.load(Ordering::SeqCst)
+    }
+}
+
+impl Drop for StallOrigin {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 /// Build a valid config with two pinned loopback destinations plus a
 /// policy-denied hostname. Every destination is a narrow explicit exception.
 pub fn test_config(origin: SocketAddr, echo: SocketAddr) -> Config {
@@ -227,7 +265,7 @@ pub fn test_config_with_limits(
         "devices": [{ "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "default_profile": "restricted" }],
         "clients": [{
             "id": "22222222-3333-4444-5555-666666666666",
-            "token": "good-token",
+            "token": "vantyr-proxy-bootstrap-token-0001",
             "device_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         }],
         "destinations": [

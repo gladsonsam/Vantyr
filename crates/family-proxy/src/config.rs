@@ -8,6 +8,7 @@
 //! from a source address, and never linked to a person by this worker.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::fs::File;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -190,7 +191,7 @@ pub struct DeviceConfig {
 /// A static proxy client. `token` is bootstrap-only secret material; the
 /// configuration file must be private. `profile`, when present, is an
 /// explicit static profile mapping and never an inferred "adult" selector.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClientConfig {
     pub id: String,
@@ -200,6 +201,18 @@ pub struct ClientConfig {
     pub device_id: String,
     #[serde(default)]
     pub profile: Option<String>,
+}
+
+impl fmt::Debug for ClientConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClientConfig")
+            .field("id", &self.id)
+            .field("label", &self.label)
+            .field("token", &"<redacted>")
+            .field("device_id", &self.device_id)
+            .field("profile", &self.profile)
+            .finish()
+    }
 }
 
 /// One explicitly approved destination. A `pin` is a narrow loopback
@@ -422,8 +435,10 @@ impl Config {
             if !client_ids.insert(id) {
                 bail!("duplicate client id {}", client.id);
             }
-            if client.token.is_empty() || client.token.len() > MAX_TOKEN_LEN {
-                bail!("client token must be 1..={MAX_TOKEN_LEN} characters");
+            // Static bootstrap tokens are high-entropy secrets. A 1-byte
+            // token invites trial-and-error even behind a loopback listener.
+            if client.token.len() < 32 || client.token.len() > MAX_TOKEN_LEN {
+                bail!("client token must be 32..={MAX_TOKEN_LEN} characters");
             }
             if !tokens.insert(&client.token) {
                 bail!("client tokens must be unique");
@@ -645,7 +660,7 @@ mod tests {
         }],
         "clients": [{
             "id": "22222222-3333-4444-5555-666666666666",
-            "token": "a-test-token",
+            "token": "vantyr-proxy-bootstrap-token-0001",
             "device_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         }],
         "destinations": [{
@@ -744,6 +759,15 @@ mod tests {
             "\"host\": \"169.254.169.254\", \"port\": 18443",
         );
         assert!(Config::parse(literal_no_pin.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn short_client_tokens_are_rejected() {
+        let short = VALID.replace("vantyr-proxy-bootstrap-token-0001", "short");
+        assert!(
+            Config::parse(short.as_bytes()).is_err(),
+            "a 1-byte bootstrap token must not be accepted"
+        );
     }
 
     #[test]

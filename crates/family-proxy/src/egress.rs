@@ -38,13 +38,28 @@ pub enum DenyReason {
     Unspecified,
     Multicast,
     Documentation,
+    ProtocolAssignment,
+    Benchmarking,
+    SpecialPurpose,
+    /// A standard translation prefix. The embedded IPv4 address is not
+    /// trusted, even when the enclosing IPv6 address looks global.
+    TranslationPrefix,
     BroughtForwardPrivate,
+    /// Outside the conservative global-unicast IPv6 range (2000::/3).
+    Reserved,
     NotApproved,
 }
 
-/// Address classification, independent of any DNS behaviour. NAT64 and
-/// IPv4-compatible forms are reduced to the embedded IPv4 address so a mapped
-/// private destination cannot slip through as an innocuous-looking IPv6 one.
+/// Conservative destination classification, independent of DNS behaviour.
+///
+/// This deliberately fails closed: only global unicast is eligible. It
+/// rejects every standard translation prefix, including the well-known
+/// `64:ff9b::/32` space (which covers RFC 6052 `/96` and the RFC 8215
+/// `64:ff9b:1::/48` local-use prefix), 6to4 and Teredo. Network-specific
+/// RFC 6052 prefixes cannot be recognised from the address alone; a network
+/// that uses such a translator must pin destinations instead of relying on
+/// DNS64. This classifier does not claim to detect arbitrary unknown
+/// translators.
 pub fn classify_ip(ip: IpAddr) -> Result<(), DenyReason> {
     match normalize_ip(ip) {
         IpAddr::V4(v4) => classify_v4(v4),
@@ -68,12 +83,49 @@ pub fn classify_ip(ip: IpAddr) -> Result<(), DenyReason> {
             }
             // Deprecated IPv4-compatible ::a.b.c.d.
             if s[..5].iter().all(|&part| part == 0) && s[5] == 0 && (s[6] != 0 || s[7] != 0) {
-                return classify_v4(embedded_v4(s[6], s[7]));
-            }
-            // Well-known NAT64 prefix 64:ff9b::/96.
-            if s[0] == 0x0064 && s[1] == 0xff9b && s[2..6].iter().all(|&part| part == 0) {
                 return classify_v4(embedded_v4(s[6], s[7]))
                     .map_err(|_| DenyReason::BroughtForwardPrivate);
+            }
+            // SIIT IPv4-translated ::ffff:0:a.b.c.d/96 (not the mapped form
+            // already canonicalised by normalize_ip).
+            if s[..4].iter().all(|&part| part == 0) && s[4] == 0xffff && s[5] == 0 {
+                return classify_v4(embedded_v4(s[6], s[7]))
+                    .map_err(|_| DenyReason::BroughtForwardPrivate);
+            }
+            // Well-known NAT64 / translation space: 64:ff9b::/32 covers both
+            // the RFC 6052 well-known /96 and RFC 8215's 64:ff9b:1::/48.
+            if s[0] == 0x0064 && s[1] == 0xff9b {
+                return Err(DenyReason::TranslationPrefix);
+            }
+            // Translation and special-purpose ranges inside 2000::/3.
+            if s[0] == 0x2002 {
+                return Err(DenyReason::TranslationPrefix); // 6to4 embeds IPv4
+            }
+            if s[0] == 0x2001 && s[1] == 0x0000 {
+                return Err(DenyReason::TranslationPrefix); // Teredo /32
+            }
+            if s[0] == 0x2001 && (s[1] & 0xfff0) == 0x0010 {
+                return Err(DenyReason::SpecialPurpose); // deprecated ORCHID
+            }
+            if s[0] == 0x2001 && (s[1] & 0xfff0) == 0x0020 {
+                return Err(DenyReason::SpecialPurpose); // ORCHIDv2
+            }
+            if s[0] == 0x2001 && s[1] == 0x0002 {
+                return Err(DenyReason::Benchmarking);
+            }
+            if s[0] == 0x2001 && s[1] == 0x0004 && s[2] == 0x0112 {
+                return Err(DenyReason::SpecialPurpose); // AS112
+            }
+            if s[0] == 0x2001 && s[1] == 0x0db8 {
+                return Err(DenyReason::Documentation);
+            }
+            if s[0] == 0x2620 && s[1] == 0x004f && (s[2] & 0xff00) == 0x8000 {
+                return Err(DenyReason::SpecialPurpose); // AS112 direct delegation
+            }
+            // Only conservative global unicast is eligible. This also closes
+            // other translation/reserved spaces outside 2000::/3.
+            if (s[0] & 0xe000) != 0x2000 {
+                return Err(DenyReason::Reserved);
             }
             Ok(())
         }
@@ -85,8 +137,8 @@ fn embedded_v4(high: u16, low: u16) -> Ipv4Addr {
 }
 
 fn classify_v4(v4: Ipv4Addr) -> Result<(), DenyReason> {
-    let [a, b, _, _] = v4.octets();
-    if v4.is_unspecified() {
+    let [a, b, c, _] = v4.octets();
+    if v4.is_unspecified() || a == 0 {
         return Err(DenyReason::Unspecified);
     }
     if v4.is_loopback() {
@@ -94,6 +146,10 @@ fn classify_v4(v4: Ipv4Addr) -> Result<(), DenyReason> {
     }
     if v4.is_multicast() || v4.is_broadcast() {
         return Err(DenyReason::Multicast);
+    }
+    // 240.0.0.0/4 is reserved (future use), including 255.255.255.255.
+    if a >= 240 {
+        return Err(DenyReason::Reserved);
     }
     if a == 169 && b == 254 {
         return Err(DenyReason::Metadata);
@@ -105,10 +161,19 @@ fn classify_v4(v4: Ipv4Addr) -> Result<(), DenyReason> {
         return Err(DenyReason::CarrierNat);
     }
     if a == 192 && b == 0 {
+        return Err(DenyReason::ProtocolAssignment);
+    }
+    if a == 192 && b == 88 && c == 99 {
+        return Err(DenyReason::SpecialPurpose);
+    }
+    if a == 198 && (b == 18 || b == 19) {
+        return Err(DenyReason::Benchmarking);
+    }
+    if a == 198 && b == 51 && c == 100 {
         return Err(DenyReason::Documentation);
     }
-    if a == 0 {
-        return Err(DenyReason::Unspecified);
+    if a == 203 && b == 0 && c == 113 {
+        return Err(DenyReason::Documentation);
     }
     Ok(())
 }
@@ -301,67 +366,177 @@ where
         &self,
         req: ConnectRequest,
     ) -> Result<EstablishedClientConnection<TcpStream, ConnectRequest>, ConnectionError> {
-        let host = req.authority.host.to_str().to_string();
-        let port = req.authority.port;
-        let Some(approval) = self.policy.approval(&host, port) else {
-            return Err(reject(DenyReason::NotApproved));
-        };
-
-        let candidates = if let Some(pin) = approval.pin {
-            // Narrow exception: dial exactly the configured loopback socket.
-            // No lookup occurs, so a rebinding/forged resolver answer cannot
-            // change where the connection goes.
-            vec![pin]
-        } else if let Ok(ip) = req.authority.host.try_as_ip() {
-            // Literal path: Rama would pass this straight through, so the
-            // check has to happen here. Only an explicit pin permits a literal.
-            match self.policy.literal_candidate(approval, ip, port) {
-                Some(addr) => vec![addr],
-                None => return Err(reject(DenyReason::NotApproved)),
-            }
-        } else {
-            let Ok(domain) = req.authority.host.clone().try_into_domain() else {
-                return Err(reject(DenyReason::NotApproved));
-            };
-            let mut resolved = Vec::new();
-            let mut v4 = std::pin::pin!(self.resolver.lookup_ipv4(domain.clone()));
-            while let Some(item) = v4.next().await {
-                if let Ok(ip) = item {
-                    resolved.push(IpAddr::V4(ip));
-                    if resolved.len() >= self.max_candidates {
-                        break;
-                    }
-                }
-            }
-            if resolved.len() < self.max_candidates {
-                let mut v6 = std::pin::pin!(self.resolver.lookup_ipv6(domain));
-                while let Some(item) = v6.next().await {
-                    if let Ok(ip) = item {
-                        resolved.push(IpAddr::V6(ip));
-                        if resolved.len() >= self.max_candidates {
-                            break;
-                        }
-                    }
-                }
-            }
-            let approved = self.policy.filter_resolved(approval, resolved, port);
-            if approved.is_empty() {
-                return Err(reject(DenyReason::NotApproved));
-            }
-            approved
-        };
-
+        let candidates = self
+            .validated_candidates(&req.authority.host, req.authority.port)
+            .await?;
         // A candidate stream is mandatory: the transport cannot fall back to
         // its own lookup of the authority after this point.
         req.extensions
             .insert(ConnectorTargetStream::new(FixedCandidates(candidates)));
         self.tcp.connect(req).await
     }
+
+    /// Resolve and validate the approved candidate sockets. Kept as a single
+    /// seam so tests can assert the non-pinned DNS path filters every answer
+    /// and consults the resolver only once, without faking the transport.
+    pub(crate) async fn validated_candidates(
+        &self,
+        host: &rama::net::address::Host,
+        port: u16,
+    ) -> Result<Vec<SocketAddr>, ConnectionError> {
+        let Some(approval) = self.policy.approval(&host.to_str(), port) else {
+            return Err(reject(DenyReason::NotApproved));
+        };
+        if let Some(pin) = approval.pin {
+            // Narrow exception: dial exactly the configured loopback socket.
+            // No lookup occurs, so a rebinding/forged resolver answer cannot
+            // change where the connection goes.
+            return Ok(vec![pin]);
+        }
+        if let Ok(ip) = host.try_as_ip() {
+            // Literal path: Rama would pass this straight through, so the
+            // check has to happen here. Only an explicit pin permits a literal.
+            return self
+                .policy
+                .literal_candidate(approval, ip, port)
+                .map(|addr| vec![addr])
+                .ok_or_else(|| reject(DenyReason::NotApproved));
+        }
+        let Ok(domain) = host.clone().try_into_domain() else {
+            return Err(reject(DenyReason::NotApproved));
+        };
+        let mut resolved = Vec::new();
+        let mut v4 = std::pin::pin!(self.resolver.lookup_ipv4(domain.clone()));
+        while let Some(item) = v4.next().await {
+            if let Ok(ip) = item {
+                resolved.push(IpAddr::V4(ip));
+                if resolved.len() >= self.max_candidates {
+                    break;
+                }
+            }
+        }
+        if resolved.len() < self.max_candidates {
+            let mut v6 = std::pin::pin!(self.resolver.lookup_ipv6(domain));
+            while let Some(item) = v6.next().await {
+                if let Ok(ip) = item {
+                    resolved.push(IpAddr::V6(ip));
+                    if resolved.len() >= self.max_candidates {
+                        break;
+                    }
+                }
+            }
+        }
+        let approved = self.policy.filter_resolved(approval, resolved, port);
+        if approved.is_empty() {
+            return Err(reject(DenyReason::NotApproved));
+        }
+        Ok(approved)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rama::dns::client::resolver::DnsAddressResolver;
+    use rama::futures::stream;
+    use rama::net::address::{Domain, Host};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Resolver used to exercise the non-pinned path. It answers once with a
+    /// mixture of private, special and global addresses and counts lookups so
+    /// a second, uncontrolled lookup would be visible.
+    #[derive(Clone, Debug)]
+    struct FakeResolver {
+        calls: Arc<AtomicUsize>,
+        v4: Vec<Ipv4Addr>,
+        v6: Vec<std::net::Ipv6Addr>,
+    }
+
+    impl DnsAddressResolver for FakeResolver {
+        type Error = BoxError;
+
+        fn lookup_ipv4(
+            &self,
+            _domain: Domain,
+        ) -> impl stream::Stream<Item = Result<Ipv4Addr, Self::Error>> + Send + '_ {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            stream::iter(self.v4.iter().copied().map(Ok))
+        }
+
+        fn lookup_ipv6(
+            &self,
+            _domain: Domain,
+        ) -> impl stream::Stream<Item = Result<std::net::Ipv6Addr, Self::Error>> + Send + '_
+        {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            stream::iter(self.v6.iter().copied().map(Ok))
+        }
+    }
+
+    #[tokio::test]
+    async fn non_pinned_dns_path_filters_every_answer_and_looks_up_once() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let resolver = FakeResolver {
+            calls: calls.clone(),
+            v4: vec![
+                Ipv4Addr::new(169, 254, 169, 254),
+                Ipv4Addr::new(10, 0, 0, 1),
+                Ipv4Addr::new(93, 184, 216, 34),
+            ],
+            v6: vec![
+                // RFC 8215 local-use NAT64 embedding the metadata address.
+                "64:ff9b:1:a9fe:a9fe::".parse().unwrap(),
+                // 6to4 embedding a private IPv4 address.
+                "2002:0a00:0001::".parse().unwrap(),
+                "2606:4700:4700::1111".parse().unwrap(),
+            ],
+        };
+        let connector = EgressConnector::new(
+            EgressPolicy::new([("public.test".into(), 443, None)]),
+            resolver,
+            Duration::from_secs(2),
+        );
+        let host = Host::Name(Domain::try_from("public.test").unwrap());
+        let candidates = connector
+            .validated_candidates(&host, 443)
+            .await
+            .expect("a global candidate remains");
+        assert_eq!(
+            candidates,
+            vec![
+                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443),
+                SocketAddr::new("2606:4700:4700::1111".parse::<IpAddr>().unwrap(), 443),
+            ],
+            "private, metadata and translation answers must never be dial candidates"
+        );
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "one A and one AAAA stream inside the connector, no additional lookups"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_pinned_dns_path_fails_closed_when_all_answers_are_private() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let resolver = FakeResolver {
+            calls: calls.clone(),
+            v4: vec![Ipv4Addr::new(192, 168, 1, 1), Ipv4Addr::LOCALHOST],
+            v6: vec!["64:ff9b:1:a9fe:a9fe::".parse().unwrap()],
+        };
+        let connector = EgressConnector::new(
+            EgressPolicy::new([("blocked.test".into(), 443, None)]),
+            resolver,
+            Duration::from_secs(2),
+        );
+        let host = Host::Name(Domain::try_from("blocked.test").unwrap());
+        assert!(connector.validated_candidates(&host, 443).await.is_err());
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "one A and one AAAA stream, no additional lookups"
+        );
+    }
 
     #[test]
     fn private_link_local_metadata_nat64_and_mapped_forms_are_denied() {
@@ -380,6 +555,15 @@ mod tests {
             "::ffff:10.1.2.3",
             "::127.0.0.1",
             "64:ff9b::a9fe:a9fe",
+            "64:ff9b:1:a9fe:a9fe::", // RFC 8215 local-use /48
+            "64:ff9b:1::1",
+            "2002:0a00:0001::",   // 6to4 embedding 10.0.0.1
+            "2001:0:a9fe:a9fe::", // Teredo
+            "2001:db8::1",
+            "240.0.0.1", // reserved 240/4
+            "255.255.255.255",
+            "198.18.0.1",
+            "192.0.0.9",
         ] {
             assert!(
                 classify_ip(ip.parse().unwrap()).is_err(),
@@ -408,7 +592,7 @@ mod tests {
 
     #[test]
     fn simulated_rebinding_answer_keeps_only_the_approved_ip() {
-        let approved = Ipv4Addr::new(198, 51, 100, 7);
+        let approved = Ipv4Addr::new(93, 184, 216, 34);
         let policy = EgressPolicy::new([("public.test".into(), 443, None)]);
         let approval = policy.approval("public.test", 443).unwrap();
         let resolved = vec![
@@ -416,6 +600,7 @@ mod tests {
             IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
             IpAddr::V4(approved),
             IpAddr::V6("64:ff9b::a9fe:a9fe".parse().unwrap()),
+            IpAddr::V6("64:ff9b:1:a9fe:a9fe::".parse().unwrap()),
         ];
         let candidates = policy.filter_resolved(approval, resolved, 443);
         assert_eq!(

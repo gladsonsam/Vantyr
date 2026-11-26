@@ -2,11 +2,19 @@
 //!
 //! The credential is parsed by Rama's maintained typed header support and
 //! compared with a maintained constant-time primitive. Header values and
-//! tokens are never logged. A credential selects a configured device (and an
-//! optional explicit static profile); it never selects a person, and no
-//! source-address association is performed anywhere in this crate.
+//! tokens are never logged or rendered by `Debug`. A credential selects a
+//! configured device (and an optional explicit static profile); it never
+//! selects a person, and no source-address association is performed here.
+//!
+//! These are loopback bootstrap credentials, not a household identity system.
+//! Repeated failures for one username are bounded by a small cooldown; the
+//! full gateway credential service (hashed secrets, rotation, real runtime
+//! authentication) is later work.
 
 use std::collections::BTreeMap;
+use std::fmt;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use rama::http::header::HeaderValue;
 use rama::http::headers::{HeaderMapExt, ProxyAuthorization};
@@ -18,7 +26,7 @@ use uuid::Uuid;
 use crate::config::Config;
 
 /// What an authenticated proxy client is bound to.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AuthenticatedClient {
     pub id: Uuid,
     pub device_id: String,
@@ -28,10 +36,49 @@ pub struct AuthenticatedClient {
     token: Vec<u8>,
 }
 
+impl fmt::Debug for AuthenticatedClient {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AuthenticatedClient")
+            .field("id", &self.id)
+            .field("device_id", &self.device_id)
+            .field("profile", &self.profile)
+            .field("token", &"<redacted>")
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthError {
     Missing,
     Invalid,
+}
+
+/// Bounded failure budget. Test code may shorten the cooldown; production
+/// uses the conservative defaults.
+#[derive(Clone, Copy, Debug)]
+pub struct AuthPolicy {
+    pub max_failures: u32,
+    pub window: Duration,
+    pub cooldown: Duration,
+    pub max_tracked: usize,
+}
+
+impl Default for AuthPolicy {
+    fn default() -> Self {
+        Self {
+            max_failures: 8,
+            window: Duration::from_secs(60),
+            cooldown: Duration::from_secs(30),
+            max_tracked: 1024,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Attempt {
+    failures: u32,
+    window_start: Instant,
+    blocked_until: Option<Instant>,
 }
 
 /// Constant-time verifier keyed by the public Basic username. Only the token
@@ -42,10 +89,16 @@ pub struct AuthState {
     /// Fixed dummy token so an unknown username still performs a real
     /// constant-time comparison instead of an early return.
     dummy_token: [u8; 32],
+    policy: AuthPolicy,
+    attempts: Arc<Mutex<BTreeMap<String, Attempt>>>,
 }
 
 impl AuthState {
     pub fn new(config: &Config) -> Self {
+        Self::with_policy(config, AuthPolicy::default())
+    }
+
+    pub fn with_policy(config: &Config, policy: AuthPolicy) -> Self {
         let clients = config
             .clients
             .iter()
@@ -64,6 +117,8 @@ impl AuthState {
         Self {
             clients,
             dummy_token: [0x5a; 32],
+            policy,
+            attempts: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 
@@ -74,7 +129,32 @@ impl AuthState {
         else {
             return Err(AuthError::Missing);
         };
-        self.verify(basic)
+        let username = basic.username().to_owned();
+        {
+            let mut attempts = self.attempts.lock().expect("auth attempt lock");
+            let now = Instant::now();
+            self.prune(&mut attempts, now);
+            if attempts
+                .get(&username)
+                .and_then(|attempt| attempt.blocked_until)
+                .is_some_and(|until| until > now)
+            {
+                return Err(AuthError::Invalid);
+            }
+        }
+        match self.verify(basic) {
+            Ok(client) => {
+                self.attempts
+                    .lock()
+                    .expect("auth attempt lock")
+                    .remove(&username);
+                Ok(client)
+            }
+            Err(error) => {
+                self.record_failure(&username);
+                Err(error)
+            }
+        }
     }
 
     /// Verify an already decoded Basic credential. Kept separate so tests can
@@ -92,6 +172,38 @@ impl AuthState {
         match client {
             Some(client) if matched => Ok(client),
             _ => Err(AuthError::Invalid),
+        }
+    }
+
+    fn prune(&self, attempts: &mut BTreeMap<String, Attempt>, now: Instant) {
+        attempts.retain(|_, attempt| {
+            attempt.blocked_until.is_some_and(|until| until > now)
+                || now.duration_since(attempt.window_start) < self.policy.window
+        });
+        while attempts.len() > self.policy.max_tracked {
+            let Some(oldest) = attempts.keys().next().cloned() else {
+                break;
+            };
+            attempts.remove(&oldest);
+        }
+    }
+
+    fn record_failure(&self, username: &str) {
+        let mut attempts = self.attempts.lock().expect("auth attempt lock");
+        let now = Instant::now();
+        self.prune(&mut attempts, now);
+        let entry = attempts.entry(username.to_owned()).or_insert(Attempt {
+            failures: 0,
+            window_start: now,
+            blocked_until: None,
+        });
+        if now.duration_since(entry.window_start) >= self.policy.window {
+            entry.failures = 0;
+            entry.window_start = now;
+        }
+        entry.failures += 1;
+        if entry.failures >= self.policy.max_failures {
+            entry.blocked_until = Some(now + self.policy.cooldown);
         }
     }
 }
@@ -114,12 +226,13 @@ mod tests {
     use rama::http::header::PROXY_AUTHORIZATION;
     use rama::http::Request;
 
+    const TOKEN: &str = "vantyr-proxy-bootstrap-token-0001";
     const VALID: &str = r#"{
         "household_id": "11111111-2222-3333-4444-555555555555",
         "policy_revision": 1,
         "clients": [{
             "id": "22222222-3333-4444-5555-666666666666",
-            "token": "correct-token",
+            "token": "vantyr-proxy-bootstrap-token-0001",
             "device_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         }],
         "devices": [{
@@ -128,14 +241,30 @@ mod tests {
         }]
     }"#;
 
+    fn request(token: &str) -> Request<()> {
+        let credential = format!("22222222-3333-4444-5555-666666666666:{token}");
+        let encoded = rama::net::user::Basic::try_from(credential.as_str()).unwrap();
+        let mut request = Request::new(());
+        request
+            .headers_mut()
+            .typed_insert(ProxyAuthorization(encoded));
+        request
+    }
+
     #[test]
     fn accepts_only_the_exact_basic_token() {
         let config = Config::parse(VALID.as_bytes()).unwrap();
         let auth = AuthState::new(&config);
-        let good = Basic::try_from("22222222-3333-4444-5555-666666666666:correct-token").unwrap();
-        let bad = Basic::try_from("22222222-3333-4444-5555-666666666666:correct-token ").unwrap();
-        let unknown = Basic::try_from("22222222-3333-4444-5555-666666666666:wrong").unwrap();
-        let missing_user = Basic::try_from("deadbeef:correct-token").unwrap();
+        let good =
+            Basic::try_from(format!("22222222-3333-4444-5555-666666666666:{TOKEN}").as_str())
+                .unwrap();
+        let bad =
+            Basic::try_from(format!("22222222-3333-4444-5555-666666666666:{TOKEN} ").as_str())
+                .unwrap();
+        let unknown =
+            Basic::try_from("22222222-3333-4444-5555-666666666666:wrong-token-value-long-enough")
+                .unwrap();
+        let missing_user = Basic::try_from(format!("deadbeef:{TOKEN}").as_str()).unwrap();
         assert_eq!(
             auth.verify(good).unwrap().device_id,
             config.clients[0].device_id
@@ -168,6 +297,47 @@ mod tests {
             .to_str()
             .unwrap();
         assert!(header.starts_with("Basic realm=\"Vantyr Proxy\""));
-        assert!(!header.contains("correct-token"));
+        assert!(!header.contains(TOKEN));
+    }
+
+    #[test]
+    fn repeated_failures_trigger_a_bounded_cooldown() {
+        let config = Config::parse(VALID.as_bytes()).unwrap();
+        let auth = AuthState::with_policy(
+            &config,
+            AuthPolicy {
+                max_failures: 2,
+                window: Duration::from_secs(60),
+                cooldown: Duration::from_millis(80),
+                max_tracked: 8,
+            },
+        );
+        let wrong = request("wrong-token-value-long-enough-for-the-policy");
+        assert_eq!(auth.authenticate(&wrong).unwrap_err(), AuthError::Invalid);
+        assert_eq!(auth.authenticate(&wrong).unwrap_err(), AuthError::Invalid);
+        let good = request(TOKEN);
+        assert_eq!(
+            auth.authenticate(&good).unwrap_err(),
+            AuthError::Invalid,
+            "third attempt is blocked by the cooldown"
+        );
+        std::thread::sleep(Duration::from_millis(120));
+        assert!(auth.authenticate(&good).is_ok(), "cooldown must expire");
+    }
+
+    #[test]
+    fn secrets_are_never_rendered_in_debug() {
+        let config = Config::parse(VALID.as_bytes()).unwrap();
+        let auth = AuthState::new(&config);
+        let client = auth
+            .verify(
+                Basic::try_from(format!("22222222-3333-4444-5555-666666666666:{TOKEN}").as_str())
+                    .unwrap(),
+            )
+            .unwrap();
+        assert!(!format!("{config:?}").contains(TOKEN));
+        assert!(!format!("{auth:?}").contains(TOKEN));
+        assert!(!format!("{client:?}").contains(TOKEN));
+        assert!(format!("{client:?}").contains("<redacted>"));
     }
 }

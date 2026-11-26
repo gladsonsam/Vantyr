@@ -71,7 +71,7 @@ async fn run() -> Result<()> {
     eprintln!("Vantyr Proxy: listening on http {}", server.bind_addr());
     tokio::signal::ctrl_c().await?;
     eprintln!("Vantyr Proxy: shutting down");
-    server.stop();
+    server.stop().await;
     Ok(())
 }
 

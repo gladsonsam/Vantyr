@@ -39,7 +39,7 @@ fn valid_json(bind_port: u16, origin_port: u16) -> String {
         "devices": [{ "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "default_profile": "restricted" }],
         "clients": [{
             "id": "22222222-3333-4444-5555-666666666666",
-            "token": "good-token",
+            "token": "vantyr-proxy-bootstrap-token-0001",
             "device_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         }],
         "destinations": [{
