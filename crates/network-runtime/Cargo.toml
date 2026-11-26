@@ -1,0 +1,23 @@
+[package]
+name = "vantyr-network-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Worker-local last-known-good persistence and bounded event queue for the Vantyr Network layer"
+license = "MIT"
+publish = false
+
+[dependencies]
+# Temporary alias: the shared policy crate is still published as
+# `family-policy` until the coordinated rename; Vantyr Network code uses the
+# new name so only this manifest needs updating later.
+vantyr-network-policy = { package = "family-policy", path = "../family-policy" }
+serde       = { version = "=1.0.229", features = ["derive"] }
+serde_json  = "=1.0.154"
+tempfile    = "=3.27.0"
+chrono      = { version = "=0.4.45", default-features = false, features = ["clock", "serde"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.191"
+
+[dev-dependencies]
+uuid = { version = "=1.29.3", features = ["v4"] }

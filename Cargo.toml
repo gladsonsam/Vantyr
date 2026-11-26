@@ -9,6 +9,8 @@ members  = [
   "crates/family-dns",
   "crates/family-proxy",
   "crates/gateway-compat-spike",
+  # Vantyr Network worker runtime: worker-local LKG + bounded events.
+  "crates/network-runtime",
 ]
 exclude  = ["agent"]   # built separately (cargo xwin for the Windows release); depends on ./protocol by path
 resolver = "2"
