@@ -79,7 +79,8 @@ pub struct IssueCredentialBody {
     #[serde(default)]
     pub expires_in_hours: Option<i64>,
     /// OPTIONAL explicit command scope. Omitted means heartbeat-only, so an
-    /// existing heartbeat credential never gains `read_policy` implicitly.
+    /// existing heartbeat credential never gains `read_policy`,
+    /// `read_dns_management` or `report_dns_status` implicitly.
     #[serde(default)]
     pub commands: Option<Vec<String>>,
 }

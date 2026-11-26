@@ -24,8 +24,18 @@ pub const COMMAND_HEARTBEAT: &str = "heartbeat";
 /// Explicit, opt-in scope to retrieve the assigned policy. This command is
 /// NEVER added to a credential implicitly; issuance must request it.
 pub const COMMAND_READ_POLICY: &str = "read_policy";
-/// The complete command allowlist, mirrored by the migration 0077 CHECK.
-pub const GATEWAY_COMMAND_ALLOWLIST: &[&str] = &[COMMAND_HEARTBEAT, COMMAND_READ_POLICY];
+/// Explicit, opt-in scope to retrieve the bounded DNS management config.
+/// Never added to a credential implicitly; issuance must request it.
+pub const COMMAND_READ_DNS_MANAGEMENT: &str = "read_dns_management";
+/// Explicit, opt-in scope to report DNS download/applied observations.
+pub const COMMAND_REPORT_DNS_STATUS: &str = "report_dns_status";
+/// The complete command allowlist, mirrored by the migration 0079 CHECK.
+pub const GATEWAY_COMMAND_ALLOWLIST: &[&str] = &[
+    COMMAND_HEARTBEAT,
+    COMMAND_READ_POLICY,
+    COMMAND_READ_DNS_MANAGEMENT,
+    COMMAND_REPORT_DNS_STATUS,
+];
 /// Matches the credential `cardinality(allowed_commands) BETWEEN 1 AND 8` CHECK.
 pub const MAX_COMMANDS: usize = 8;
 

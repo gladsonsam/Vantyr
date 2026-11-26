@@ -140,8 +140,11 @@ pub async fn credential_issue(
     authz::require_network_admin(&s.db, user.user_id, hid).await?;
     let expires_at = gateway_dto::credential_expiry(body.expires_in_hours, Utc::now())
         .map_err(|()| ApiError::bad_request("expires_in_hours must be between 1 and 720"))?;
-    let commands = gateway_auth::normalize_commands(body.commands.as_deref())
-        .map_err(|()| ApiError::bad_request("commands must be heartbeat and/or read_policy"))?;
+    let commands = gateway_auth::normalize_commands(body.commands.as_deref()).map_err(|()| {
+        ApiError::bad_request(
+            "commands must be heartbeat, read_policy, read_dns_management and/or report_dns_status",
+        )
+    })?;
     let (id, secret) =
         gateway_service::issue_credential(&s.db, hid, gid, user.user_id, expires_at, &commands)
             .await?;
@@ -174,8 +177,11 @@ pub async fn credential_rotate(
     authz::require_network_admin(&s.db, user.user_id, hid).await?;
     let expires_at = gateway_dto::credential_expiry(body.expires_in_hours, Utc::now())
         .map_err(|()| ApiError::bad_request("expires_in_hours must be between 1 and 720"))?;
-    let commands = gateway_auth::normalize_commands(body.commands.as_deref())
-        .map_err(|()| ApiError::bad_request("commands must be heartbeat and/or read_policy"))?;
+    let commands = gateway_auth::normalize_commands(body.commands.as_deref()).map_err(|()| {
+        ApiError::bad_request(
+            "commands must be heartbeat, read_policy, read_dns_management and/or report_dns_status",
+        )
+    })?;
     let (id, secret) = gateway_service::rotate_credential(
         &s.db,
         hid,
@@ -323,9 +329,27 @@ pub fn worker_routes() -> axum::Router<Arc<AppState>> {
             .finish()
             .expect("static gateway worker rate limit config"),
     );
-    axum::Router::new()
+    // The accepted heartbeat/read_policy routes keep their original 4 KiB
+    // body cap. New DNS management routes get a separate 32 KiB cap. The
+    // Governor layer is added last so it stays outermost and applies to BOTH.
+    let legacy = axum::Router::new()
         .route("/worker/network/gateway/heartbeat", post(worker_heartbeat))
         .merge(super::policy_api::worker_route())
-        .layer(axum::extract::DefaultBodyLimit::max(4096))
+        .layer(axum::extract::DefaultBodyLimit::max(4096));
+    let dns_management = axum::Router::new()
+        .route(
+            "/worker/network/dns-management/read",
+            post(super::dns_management_api::worker_read),
+        )
+        .route(
+            "/worker/network/dns/status",
+            post(super::dns_management_api::worker_status),
+        )
+        .layer(axum::extract::DefaultBodyLimit::max(
+            super::dns_management_dto::MAX_REQUEST_BYTES,
+        ));
+    axum::Router::new()
+        .merge(legacy)
+        .merge(dns_management)
         .layer(GovernorLayer::new(config))
 }

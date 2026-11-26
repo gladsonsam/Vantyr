@@ -36,6 +36,10 @@ use crate::state::AppState;
 mod api;
 mod authz;
 mod db;
+mod dns_management_api;
+mod dns_management_db;
+mod dns_management_dto;
+mod dns_management_service;
 mod dto;
 mod enroll_api;
 mod enroll_auth;
@@ -62,6 +66,8 @@ mod read_db;
 mod read_dto;
 mod service;
 
+#[cfg(test)]
+mod dns_management_tests;
 #[cfg(test)]
 mod enroll_tests;
 #[cfg(test)]
@@ -175,6 +181,28 @@ pub fn routes() -> Router<Arc<AppState>> {
         )
         .merge(enroll_routes())
         .merge(policy_routes())
+        .merge(dns_management_routes())
+}
+
+/// Bounded DNS management admin routes. No policy route is touched: a saved
+/// management config is desire only until a Stage B worker reports it.
+fn dns_management_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route(
+            "/network/households/{hid}/dns/management",
+            get(dns_management_api::management_get).patch(dns_management_api::management_patch),
+        )
+        .route(
+            "/network/households/{hid}/dns/lists/{source_id}/refresh",
+            post(dns_management_api::refresh),
+        )
+        .route(
+            "/network/households/{hid}/dns/status",
+            get(dns_management_api::status_get),
+        )
+        .layer(axum::extract::DefaultBodyLimit::max(
+            dns_management_dto::MAX_REQUEST_BYTES,
+        ))
 }
 
 /// BYOD enrollment routes inherit session + CSRF from `app::api_routes()`.

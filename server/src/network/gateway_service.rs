@@ -8,7 +8,7 @@
 
 use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
@@ -38,10 +38,58 @@ fn validate_commands(commands: &[String]) -> ApiResult<()> {
             .any(|c| !gateway_auth::GATEWAY_COMMAND_ALLOWLIST.contains(&c.as_str()))
     {
         return Err(ApiError::bad_request(
-            "commands must be heartbeat and/or read_policy",
+            "commands must be heartbeat, read_policy, read_dns_management and/or report_dns_status",
         ));
     }
     Ok(())
+}
+
+/// Scoped worker proof produced by the shared helper. Contains metadata only.
+pub(super) struct AuthorizedWorker {
+    pub id: Uuid,
+    pub household_id: Uuid,
+    pub gateway_id: Uuid,
+}
+
+/// Tiny shared helper for NEW worker routes only. Previously accepted
+/// heartbeat/read_policy auth is deliberately left untouched; this helper
+/// reproduces exactly the same audience, command, expiry, revocation, enable,
+/// household/gateway/kind and constant-time secret checks so the new routes
+/// cannot drift. The caller must already hold the h -> g lock on `conn`.
+pub(super) async fn authorize_worker_on_conn(
+    conn: &mut PgConnection,
+    bearer: Option<&str>,
+    household_id: Uuid,
+    gateway_id: Uuid,
+    kind: &str,
+    command: &str,
+    now: DateTime<Utc>,
+) -> ApiResult<AuthorizedWorker> {
+    let (credential_id, secret) =
+        gateway_auth::parse_bearer(bearer).ok_or_else(worker_auth_error)?;
+    let Some(cred) =
+        gateway_db::auth_credential_scoped(conn, credential_id, household_id, gateway_id, kind)
+            .await?
+    else {
+        return Err(worker_auth_error());
+    };
+    if !gateway_auth::verify_secret(secret, &cred.secret_hash) {
+        return Err(worker_auth_error());
+    }
+    if cred.revoked_at.is_some()
+        || cred.gateway_revoked_at.is_some()
+        || !cred.gateway_enabled
+        || cred.expires_at <= now
+        || cred.audience != gateway_auth::AUDIENCE
+        || !cred.allowed_commands.iter().any(|c| c == command)
+    {
+        return Err(worker_auth_error());
+    }
+    Ok(AuthorizedWorker {
+        id: cred.id,
+        household_id: cred.household_id,
+        gateway_id: cred.gateway_id,
+    })
 }
 
 /// Metadata only: no secret, digest or claimed ids beyond the worker's own scope.
