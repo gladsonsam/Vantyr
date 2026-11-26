@@ -461,8 +461,12 @@ No substantive UI or Supabase changes were made in this step.
   precedence, invalid-candidate disk-hash preservation, abrupt-restart material
   recovery and explicit disable/removal all pass. The runtime carries parser
   attribution notices; all four guarded projects had zero containers, networks
-  and volumes after cleanup. Automatic subscription integration will require
-  the next minimal-build whitelist update; it was not part of this evidence.
+  and volumes after cleanup. Maintenance `6621f897` + `bfc44fef` is independently
+  accepted against frozen `39c467e9`: the restricted build includes the required
+  subscription crate, and exact labelled policy/bundle/filter counter checks pass
+  durable and list smokes, including negative prefix-mismatch probes. No
+  `--subscriptions` runtime is enabled in those fixtures; this evidence does not
+  accept the pending automatic-fetch lifecycle implementation.
 - Parent integration check: server and proxy compile together with the committed
   dependency graph using `cargo check --locked --offline`. No deployment follows
   from a successful build or a pushed feature-branch commit.
