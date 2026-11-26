@@ -28,7 +28,7 @@
 
 use std::sync::Arc;
 
-use axum::routing::{get, patch, post};
+use axum::routing::{delete, get, patch, post};
 use axum::Router;
 
 use crate::state::AppState;
@@ -37,6 +37,12 @@ mod api;
 mod authz;
 mod db;
 mod dto;
+mod enroll_api;
+mod enroll_auth;
+mod enroll_db;
+mod enroll_dto;
+mod enroll_retention;
+mod enroll_service;
 mod gateway_api;
 mod gateway_auth;
 mod gateway_db;
@@ -50,6 +56,8 @@ mod policy_service;
 mod service;
 
 #[cfg(test)]
+mod enroll_tests;
+#[cfg(test)]
 mod gateway_retention_tests;
 #[cfg(test)]
 mod gateway_tests;
@@ -58,6 +66,10 @@ mod policy_tests;
 #[cfg(test)]
 mod tests;
 
+// Kept public for the periodic retention task / tests; this slice enforces the
+// same bounds on every write, so no core plumbing change is needed yet.
+#[allow(unused_imports)]
+pub use enroll_retention::{prune_enrollment_attempts, prune_enrollment_records};
 pub use gateway_api::worker_routes;
 pub use gateway_retention::prune_gateway_reports;
 
@@ -145,7 +157,54 @@ pub fn routes() -> Router<Arc<AppState>> {
             "/network/households/{hid}/gateways/{gid}/reports",
             get(gateway_api::reports_list),
         )
+        .merge(enroll_routes())
         .merge(policy_routes())
+}
+
+/// BYOD enrollment routes inherit session + CSRF from `app::api_routes()`.
+/// Bodies are tiny; a small cap keeps hostile payloads out of deserialization.
+fn enroll_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        // Admin-only: explicit binding of a real dashboard user to a person.
+        .route(
+            "/network/households/{hid}/bindings",
+            get(enroll_api::bindings_list).post(enroll_api::binding_create),
+        )
+        .route(
+            "/network/households/{hid}/bindings/{bid}",
+            delete(enroll_api::binding_delete),
+        )
+        .route(
+            "/network/households/{hid}/bindings/{bid}/device-authorizations",
+            get(enroll_api::device_authorizations_list)
+                .post(enroll_api::device_authorization_create),
+        )
+        // Self-service: only the caller's own enrollments/grants/sessions.
+        .route(
+            "/network/households/{hid}/enroll/devices",
+            get(enroll_api::own_devices_list).post(enroll_api::device_register),
+        )
+        .route(
+            "/network/households/{hid}/enroll/devices/{did}",
+            delete(enroll_api::device_enrollment_end),
+        )
+        .route(
+            "/network/households/{hid}/enroll/grants",
+            get(enroll_api::own_grants_list).post(enroll_api::grant_request),
+        )
+        .route(
+            "/network/households/{hid}/enroll/grants/consume",
+            post(enroll_api::grant_consume),
+        )
+        .route(
+            "/network/households/{hid}/enroll/sessions",
+            get(enroll_api::own_sessions_list).delete(enroll_api::sessions_end_all),
+        )
+        .route(
+            "/network/households/{hid}/enroll/sessions/{sid}",
+            delete(enroll_api::session_end),
+        )
+        .layer(axum::extract::DefaultBodyLimit::max(16 * 1024))
 }
 
 /// Policy admin routes share a small request-body cap: the stored canonical

@@ -772,7 +772,7 @@ pub async fn grant_create(
     authz::require_network_admin(&s.db, user.user_id, hid).await?;
     let Some(grant) = authz::NetworkGrant::parse(&body.grant) else {
         return Err(ApiError::bad_request(
-            "grant must be network_admin or network_events",
+            "grant must be network_admin, network_events or network_enroll",
         ));
     };
     if !db::dashboard_user_exists(&s.db, body.user_id).await? {
@@ -801,7 +801,7 @@ pub async fn grant_delete(
     authz::require_network_admin(&s.db, user.user_id, hid).await?;
     let Some(grant) = authz::NetworkGrant::parse(&grant_name) else {
         return Err(ApiError::bad_request(
-            "grant must be network_admin or network_events",
+            "grant must be network_admin, network_events or network_enroll",
         ));
     };
     if !service::revoke_grant(&s.db, hid, uid, grant).await? {

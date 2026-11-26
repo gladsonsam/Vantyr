@@ -14,6 +14,10 @@ pub enum NetworkGrant {
     /// Reserved for a future, explicitly scoped network-events read endpoint.
     /// It does not authorize inventory reads or writes in this slice.
     Events,
+    /// Explicit opt-in for authenticated BYOD enrollment only. It never grants
+    /// inventory, policy, grant management or event-reading rights, and it is
+    /// never implied by a platform role or by another network grant.
+    Enroll,
 }
 
 impl NetworkGrant {
@@ -21,6 +25,7 @@ impl NetworkGrant {
         match self {
             Self::Admin => "network_admin",
             Self::Events => "network_events",
+            Self::Enroll => "network_enroll",
         }
     }
 
@@ -28,6 +33,7 @@ impl NetworkGrant {
         match raw.trim().to_ascii_lowercase().as_str() {
             "network_admin" => Some(Self::Admin),
             "network_events" => Some(Self::Events),
+            "network_enroll" => Some(Self::Enroll),
             _ => None,
         }
     }
