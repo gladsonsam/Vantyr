@@ -609,6 +609,13 @@ No substantive UI or Supabase changes were made in this step.
   downloads, no false manual receipts and bounded desired-source reporting.
   The real-server harness has now been resumed against this committed revision;
   its result remains pending. Cache ownership and cleanup are also reviewed.
+  Review of `fd46b48f` found open cache-lifecycle issues: quarantined managed
+  specs are not retained for retry, restart can delete/lose the active cache,
+  pid-only ownership collides across same-process runtimes, and `/proc` liveness
+  checks are not portable across Unix. Lifecycle test factories also ignored
+  the supplied cache root and masked the production layout. These findings are
+  being fixed; both worker and real-server tests must honor that root before
+  their results can close the integration gate.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
   accepted separately from encrypted inbound listeners. Fresh review passed all
   91 DNS tests, including eight real-TLS upstream tests, and strict clippy.
