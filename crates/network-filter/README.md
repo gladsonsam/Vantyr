@@ -40,6 +40,10 @@ implemented here.
 
 ### ABP source (`ListFormat::Abp`, feature `abp`)
 
+Unicode and punycode IDN rules are currently rejected by the ABP adapter
+with a diagnostic. Hosts-source IDNA canonicalisation remains supported.
+
+
 Accepted, after an explicit DNS-representability guard **and** upstream parsing:
 
 - `||host^` — domain-anchored block, matching that host and its subdomains;

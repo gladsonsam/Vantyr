@@ -475,8 +475,12 @@ No substantive UI or Supabase changes were made in this step.
 - BYOD backend: scoped SSO principal bindings, single-use enrollment grants and
   time-bounded verified sessions. This does not install client trust or enable
   endpoint monitoring; worker/client identity integration remains subsequent work.
-- Filtering lists: immutable maintained-parser adapters, bounded list input and
-  explicit supported-rule semantics, plus bounded named service/domain groups.
+- Filtering lists: library commit `2e59e1e0` independently accepted with 11
+  real-backend tests and adversarial syntax, service and precedence probes.
+  Immutable maintained-parser adapters provide bounded list input and explicit
+  supported-rule semantics, plus bounded named service/domain groups. Live DNS
+  snapshot integration is now in progress; library acceptance does not imply
+  that fetched lists already affect worker answers.
   Service blocking is DNS-domain coverage, not proof of application identity or
   every feature hosted on a shared CDN.
 - Public list subscriptions: operator-configured HTTPS URLs (including raw
