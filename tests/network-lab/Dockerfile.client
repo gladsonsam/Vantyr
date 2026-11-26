@@ -1,0 +1,10 @@
+# DNS assertion client for the Vantyr network lab.
+# Base image is pinned by registry digest; the DNS client is the maintained ISC
+# BIND tool package pinned to the version available in that exact base image.
+FROM docker.io/library/alpine@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f
+
+RUN apk add --no-cache bind-tools=9.20.30-r0 \
+    && test -x /usr/bin/dig \
+    && dig -v
+
+USER nobody

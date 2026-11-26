@@ -1,0 +1,65 @@
+# Vantyr family network — isolated DNS integration lab.
+#
+# Every resource is scoped by the project name below. This stack never uses host
+# networking, privileged mode, the Docker socket, host DNS/DHCP/router/firewall
+# configuration or production data. The only optional published ports are
+# loopback-only and live in compose.host-access.yml.
+name: vantyr-network-lab
+
+services:
+  # Deterministic stub upstream. Digest-pinned from the registry; the zone data
+  # is read-only and owned by this directory.
+  upstream:
+    image: coredns/coredns:1.15.0@sha256:0a9d8c8ddf34347eb59aad9a8784f0710de88d6d112726d11d271f9bc6daca26
+    command: ["-conf", "/etc/coredns/Corefile"]
+    read_only: true
+    # The pinned CoreDNS binary carries a file capability, so exec needs this
+    # one narrow capability even though the lab port is unprivileged (15353).
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ./coredns:/etc/coredns:ro
+    networks:
+      labnet:
+        ipv4_address: 172.26.9.53
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
+
+  # DNS assertion client. Built from a digest-pinned base with a pinned ISC
+  # BIND tool package; no handwritten DNS wire parsing anywhere in this lab.
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    command: ["sleep", "infinity"]
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      labnet:
+        ipv4_address: 172.26.9.54
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
+
+networks:
+  labnet:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.26.9.0/24
+          gateway: 172.26.9.1

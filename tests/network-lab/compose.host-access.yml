@@ -1,0 +1,17 @@
+# Optional, loopback-only exposure of the stub upstream for host-side tools.
+# Use as an additional -f file, never on its own. No 0.0.0.0 bind, no privileged
+# host port. The container still listens on unprivileged port 15353.
+#
+# Docker does not publish ports on an internal bridge, so this override also
+# relaxes that one property. Without this file the default lab network stays
+# internal: true; with it the only published ports are the two loopback binds
+# below. No host networking, no privileged ports, no host DNS changes.
+services:
+  upstream:
+    ports:
+      - "127.0.0.1:15553:15353/udp"
+      - "127.0.0.1:15553:15353/tcp"
+
+networks:
+  labnet:
+    internal: false

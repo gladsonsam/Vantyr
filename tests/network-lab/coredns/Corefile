@@ -1,0 +1,11 @@
+# Deterministic stub upstream for the Vantyr network lab.
+#
+# No cache plugin: answers carry the exact TTLs in the zone file so assertions
+# remain stable. No forwarded recursion: every answer comes from the local zone.
+# Health/ready endpoints bind to loopback inside the container only.
+.:15353 {
+    errors
+    health 127.0.0.1:8080
+    ready 127.0.0.1:8181
+    file /etc/coredns/db.lab.vantyr.test lab.vantyr.test
+}

@@ -1,0 +1,23 @@
+$ORIGIN lab.vantyr.test.
+$TTL 300
+
+; The SOA record TTL and its minimum field are both 60s: the stub's negative
+; answers therefore carry a deterministic 60s TTL (RFC 2308).
+@   60 IN SOA ns.lab.vantyr.test. hostmaster.lab.vantyr.test. (
+        1       ; serial
+        3600    ; refresh
+        600     ; retry
+        604800  ; expire
+        60 )    ; negative TTL
+
+@           IN  NS    ns.lab.vantyr.test.
+ns          IN  A     172.26.9.53
+
+; Addresses use documentation ranges only (RFC 5737 and RFC 3849).
+www     300 IN  A     203.0.113.10
+www     300 IN  AAAA  2001:db8::10
+alias    90 IN  CNAME www.lab.vantyr.test.
+ttl     123 IN  A     198.51.100.7
+
+; Sinkhole-shaped answer for the future filtering assertion.
+sink     60 IN  A     192.0.2.0

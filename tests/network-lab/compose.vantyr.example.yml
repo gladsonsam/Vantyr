@@ -1,0 +1,37 @@
+# INTEGRATION HOOK TEMPLATE — UNSUPPORTED TODAY.
+#
+# The Vantyr DNS worker currently exists as a library crate only
+# (crates/family-dns). There is no worker executable and no policy-to-DNS
+# wiring, so this override cannot be started today and proves no filtering
+# behaviour. It records the exact contract for when an executable lands.
+#
+# Usage once a worker executable exists:
+#   cp compose.vantyr.example.yml compose.vantyr.override.yml
+#   # uncomment and complete the service below, then:
+#   VANTYR_DNS_IMAGE=<locally built worker image> \
+#     docker compose -f compose.yml -f compose.vantyr.override.yml \
+#       -p vantyr-network-lab up -d
+#
+# The worker then uses the same upstream as this lab: 172.26.9.53:15353 on the
+# private labnet. Host DNS/DHCP/router/firewall stay untouched.
+services: {}
+#
+#  vantyr-dns:
+#    profiles: ["vantyr"]
+#    image: "${VANTYR_DNS_IMAGE:?set VANTYR_DNS_IMAGE to a locally built worker image}"
+#    environment:
+#      VANTYR_DNS_UPSTREAM_HOST: "${VANTYR_DNS_UPSTREAM_HOST:-172.26.9.53}"
+#      VANTYR_DNS_UPSTREAM_PORT: "${VANTYR_DNS_UPSTREAM_PORT:-15353}"
+#      VANTYR_DNS_LISTEN_HOST: "${VANTYR_DNS_LISTEN_HOST:-172.26.9.55}"
+#      VANTYR_DNS_LISTEN_PORT: "${VANTYR_DNS_LISTEN_PORT:-15353}"
+#    networks:
+#      labnet:
+#        ipv4_address: 172.26.9.55
+#    mem_limit: 128m
+#    cpus: 0.25
+#    pids_limit: 64
+#    logging:
+#      driver: json-file
+#      options:
+#        max-size: "1m"
+#        max-file: "2"
