@@ -456,6 +456,13 @@ No substantive UI or Supabase changes were made in this step.
   fresh timestamp fixtures and all 25 durable-smoke assertions. Both positive
   and negative diagnostic controls passed; all scoped containers, networks and
   volumes were confirmed removed.
+  Local-list lab update `e0854b93` is independently accepted against frozen
+  worker source `c21da216`: real UDP/TCP list/service/alias checks, baseline
+  precedence, invalid-candidate disk-hash preservation, abrupt-restart material
+  recovery and explicit disable/removal all pass. The runtime carries parser
+  attribution notices; all four guarded projects had zero containers, networks
+  and volumes after cleanup. Automatic subscription integration will require
+  the next minimal-build whitelist update; it was not part of this evidence.
 - Parent integration check: server and proxy compile together with the committed
   dependency graph using `cargo check --locked --offline`. No deployment follows
   from a successful build or a pushed feature-branch commit.
