@@ -1,6 +1,7 @@
 //! HTTP handlers. Every household id comes from the URL path and is authorized
 //! against the caller's explicit grants before any row is read or written.
-//! Request bodies never carry a household id.
+//! Sensitive details go only to household-scoped `network_audit`; the globally
+//! readable platform audit log gets a generic marker with no ids or keys.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -20,20 +21,28 @@ use crate::http::{audit_ip, AuthUser, RequireAdmin};
 use crate::network::{authz, db, dto, service};
 use crate::state::AppState;
 
-async fn audit_ok(
+async fn audit_network(
     state: &AppState,
     user: &AuthUser,
     ip: Option<&str>,
+    household_id: Uuid,
     action: &str,
     detail: Value,
 ) {
+    if let Err(e) =
+        db::insert_network_audit(&state.db, household_id, &user.username, ip, action, &detail).await
+    {
+        tracing::warn!(error = %e, action, "network audit insert failed");
+    }
+    // `/api/audit` is readable by every authenticated session: only a generic
+    // marker belongs here, never device keys, person/agent ids or scope ids.
     crate::platform::audit::insert_audit_log_traced(
         &state.db,
         user.username.as_str(),
         None,
-        action,
+        "network_action",
         "ok",
-        &detail,
+        &json!({}),
         ip,
     )
     .await;
@@ -47,7 +56,8 @@ fn bounds(params: &PageParams) -> ApiResult<(i64, i64)> {
 // ─── Bootstrap / households ──────────────────────────────────────────────────
 
 /// One-time, admin-only creation of the single default household and the
-/// caller's explicit network_admin grant. No role elsewhere implies this grant.
+/// caller's explicit network_admin grant. No platform role elsewhere implies
+/// this grant.
 pub async fn bootstrap(
     State(s): State<Arc<AppState>>,
     RequireAdmin(user): RequireAdmin,
@@ -56,13 +66,15 @@ pub async fn bootstrap(
     Json(body): Json<dto::BootstrapBody>,
 ) -> ApiResult<Json<Value>> {
     let name = dto::normalize_text(&body.name, "name", 120).map_err(ApiError::bad_request)?;
-    let household_id = service::bootstrap_default_household(&s.db, &user, &name).await?;
-    audit_ok(
+    let timezone = dto::normalize_timezone(&body.timezone).map_err(ApiError::bad_request)?;
+    let household_id = service::bootstrap_default_household(&s.db, &user, &name, &timezone).await?;
+    audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
+        household_id,
         "network_bootstrap",
-        json!({ "household_id": household_id, "name": name }),
+        json!({ "household_id": household_id, "name": name, "timezone": timezone }),
     )
     .await;
     Ok(Json(json!({ "household_id": household_id })))
@@ -78,8 +90,7 @@ pub async fn households_list(
     Ok(Json(json!({ "households": rows })))
 }
 
-/// Create an additional household. Requires an explicit admin grant somewhere
-/// already; the creator receives an explicit grant on the new household only.
+/// Create an additional household plus its creator grant in one transaction.
 pub async fn household_create(
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
@@ -93,11 +104,13 @@ pub async fn household_create(
         Err(e) => return Err(ApiError::Internal(e.into())),
     }
     let name = dto::normalize_text(&body.name, "name", 120).map_err(ApiError::bad_request)?;
-    let household_id = service::create_household(&s.db, &user, &name).await?;
-    audit_ok(
+    let timezone = dto::normalize_timezone(&body.timezone).map_err(ApiError::bad_request)?;
+    let household_id = service::create_household(&s.db, &user, &name, &timezone).await?;
+    audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
+        household_id,
         "network_household_create",
         json!({ "household_id": household_id, "name": name }),
     )
@@ -132,13 +145,30 @@ pub async fn person_create(
         .map_err(ApiError::bad_request)?;
     let note =
         dto::normalize_optional_text(&body.note, "note", 1000).map_err(ApiError::bad_request)?;
-    let id = db::insert_person(&s.db, hid, &name, note.as_deref()).await?;
-    audit_ok(
+    if body.is_default_profile == Some(true) {
+        // No person id yet, so clear every default in this household.
+        sqlx::query(
+            "UPDATE network_persons SET is_default_profile = false WHERE household_id = $1",
+        )
+        .bind(hid)
+        .execute(&s.db)
+        .await?;
+    }
+    let id = db::insert_person(
+        &s.db,
+        hid,
+        &name,
+        note.as_deref(),
+        body.is_default_profile.unwrap_or(false),
+    )
+    .await?;
+    audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
+        hid,
         "network_person_create",
-        json!({ "household_id": hid, "person_id": id }),
+        json!({ "person_id": id }),
     )
     .await;
     Ok(Json(json!({ "id": id })))
@@ -153,7 +183,7 @@ pub async fn person_patch(
     Json(body): Json<dto::PatchPersonBody>,
 ) -> ApiResult<Json<Value>> {
     authz::require_network_admin(&s.db, user.user_id, hid).await?;
-    if body.display_name.is_none() && body.note.is_none() {
+    if body.display_name.is_none() && body.note.is_none() && body.is_default_profile.is_none() {
         return Err(ApiError::bad_request("No fields to update"));
     }
     let name = body
@@ -164,29 +194,37 @@ pub async fn person_patch(
         .map_err(ApiError::bad_request)?;
     let note = dto::normalize_note_patch(&body.note).map_err(ApiError::bad_request)?;
     let note_refs = note.as_ref().map(|n| n.as_deref());
+    if body.is_default_profile == Some(true) && !db::person_in_household(&s.db, hid, pid).await? {
+        return Err(ApiError::not_found("person not found in this household"));
+    }
+    if body.is_default_profile == Some(true) {
+        db::clear_default_profile(&s.db, hid, pid).await?;
+    }
     if !db::update_person(
         &s.db,
         hid,
         pid,
         name.as_deref(),
         note_refs.as_ref().copied(),
+        body.is_default_profile,
     )
     .await?
     {
         return Err(ApiError::not_found("person not found in this household"));
     }
-    audit_ok(
+    audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
+        hid,
         "network_person_update",
-        json!({ "household_id": hid, "person_id": pid }),
+        json!({ "person_id": pid }),
     )
     .await;
     Ok(Json(json!({ "ok": true })))
 }
 
-// ─── Devices ─────────────────────────────────────────────────────────────────
+// ─── Devices (household-owned) ───────────────────────────────────────────────
 
 pub async fn devices_list(
     Path(hid): Path<Uuid>,
@@ -218,21 +256,31 @@ pub async fn device_create(
         "device_type",
     )
     .map_err(ApiError::bad_request)?;
-    let id = match db::insert_device(&s.db, &key, &label, &device_type).await {
+    let id = match db::insert_device(
+        &s.db,
+        hid,
+        &key,
+        &label,
+        &device_type,
+        body.shared.unwrap_or(false),
+    )
+    .await
+    {
         Ok(id) => id,
         Err(e) if crate::db::pg_is_unique_violation(&e) => {
             return Err(ApiError::conflict(
-                "A device with that canonical_key already exists",
+                "A device with that canonical_key already exists in this household",
             ))
         }
         Err(e) => return Err(e.into()),
     };
-    audit_ok(
+    audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
+        hid,
         "network_device_create",
-        json!({ "household_id": hid, "device_id": id, "canonical_key": key }),
+        json!({ "device_id": id, "canonical_key": key }),
     )
     .await;
     Ok(Json(json!({ "id": id })))
@@ -247,7 +295,7 @@ pub async fn device_patch(
     Json(body): Json<dto::PatchDeviceBody>,
 ) -> ApiResult<Json<Value>> {
     authz::require_network_admin(&s.db, user.user_id, hid).await?;
-    if body.label.is_none() && body.device_type.is_none() {
+    if body.label.is_none() && body.device_type.is_none() && body.shared.is_none() {
         return Err(ApiError::bad_request("No fields to update"));
     }
     let label = body
@@ -269,17 +317,25 @@ pub async fn device_patch(
         })
         .transpose()
         .map_err(ApiError::bad_request)?;
-    if !db::update_device_in_household(&s.db, hid, did, label.as_deref(), device_type.as_deref())
-        .await?
+    if !db::update_device(
+        &s.db,
+        hid,
+        did,
+        label.as_deref(),
+        device_type.as_deref(),
+        body.shared,
+    )
+    .await?
     {
-        return Err(ApiError::not_found("device not assigned in this household"));
+        return Err(ApiError::not_found("device not found in this household"));
     }
-    audit_ok(
+    audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
+        hid,
         "network_device_update",
-        json!({ "household_id": hid, "device_id": did }),
+        json!({ "device_id": did }),
     )
     .await;
     Ok(Json(json!({ "ok": true })))
@@ -311,10 +367,9 @@ pub async fn assignment_create(
     if !db::person_in_household(&s.db, hid, body.person_id).await? {
         return Err(ApiError::not_found("person not found in this household"));
     }
-    if !db::device_exists(&s.db, body.device_id).await? {
-        return Err(ApiError::not_found("device not found"));
+    if !db::device_in_household(&s.db, hid, body.device_id).await? {
+        return Err(ApiError::not_found("device not found in this household"));
     }
-    // An agent may be linked only by explicit enrollment in this household.
     if let Some(agent_id) = body.agent_id {
         if !db::agent_enrolled_in_household(&s.db, hid, agent_id).await? {
             return Err(ApiError::bad_request(
@@ -333,15 +388,17 @@ pub async fn assignment_create(
         body.device_id,
         body.agent_id,
         &role,
+        body.active.unwrap_or(true),
         note.as_deref(),
     )
     .await?;
-    audit_ok(
+    audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
+        hid,
         "network_assignment_create",
-        json!({ "household_id": hid, "assignment_id": id, "agent_id": body.agent_id }),
+        json!({ "assignment_id": id }),
     )
     .await;
     Ok(Json(json!({ "id": id })))
@@ -356,7 +413,11 @@ pub async fn assignment_patch(
     Json(body): Json<dto::PatchAssignmentBody>,
 ) -> ApiResult<Json<Value>> {
     authz::require_network_admin(&s.db, user.user_id, hid).await?;
-    if body.agent_id.is_none() && body.role.is_none() && body.note.is_none() {
+    if body.agent_id.is_none()
+        && body.role.is_none()
+        && body.active.is_none()
+        && body.note.is_none()
+    {
         return Err(ApiError::bad_request("No fields to update"));
     }
     if let Some(Some(agent_id)) = body.agent_id {
@@ -387,6 +448,7 @@ pub async fn assignment_patch(
         aid,
         body.agent_id,
         role.as_deref(),
+        body.active,
         note_refs.as_ref().copied(),
     )
     .await?
@@ -395,12 +457,13 @@ pub async fn assignment_patch(
             "assignment not found in this household",
         ));
     }
-    audit_ok(
+    audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
+        hid,
         "network_assignment_update",
-        json!({ "household_id": hid, "assignment_id": aid }),
+        json!({ "assignment_id": aid }),
     )
     .await;
     Ok(Json(json!({ "ok": true })))
@@ -447,10 +510,22 @@ pub async fn connection_create(
     Json(body): Json<dto::CreateConnectionBody>,
 ) -> ApiResult<Json<Value>> {
     authz::require_network_admin(&s.db, user.user_id, hid).await?;
-    if !db::assignment_in_household(&s.db, hid, body.assignment_id).await? {
-        return Err(ApiError::not_found(
-            "assignment not found in this household",
-        ));
+    if !db::device_in_household(&s.db, hid, body.device_id).await? {
+        return Err(ApiError::not_found("device not found in this household"));
+    }
+    if let Some(assignment_id) = body.assignment_id {
+        if !db::assignment_in_household(&s.db, hid, assignment_id).await? {
+            return Err(ApiError::not_found(
+                "assignment not found in this household",
+            ));
+        }
+    }
+    if let Some(agent_id) = body.enrolled_agent_id {
+        if !db::agent_enrolled_in_household(&s.db, hid, agent_id).await? {
+            return Err(ApiError::bad_request(
+                "agent is not enrolled in this household",
+            ));
+        }
     }
     let kind = dto::normalize_enum(&Some(body.kind), dto::CONNECTION_KINDS, "agent", "kind")
         .map_err(ApiError::bad_request)?;
@@ -467,21 +542,26 @@ pub async fn connection_create(
     let id = db::insert_connection(
         &s.db,
         hid,
+        body.device_id,
         body.assignment_id,
+        body.enrolled_agent_id,
         &kind,
         &provenance,
         &caps_json,
         &status,
         body.observed_at,
+        body.last_seen_at,
+        body.revoked_at,
         note.as_deref(),
     )
     .await?;
-    audit_ok(
+    audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
+        hid,
         "network_connection_create",
-        json!({ "household_id": hid, "connection_id": id, "kind": kind }),
+        json!({ "connection_id": id, "kind": kind }),
     )
     .await;
     Ok(Json(json!({ "id": id })))
@@ -496,14 +576,20 @@ pub async fn connection_patch(
     Json(body): Json<dto::PatchConnectionBody>,
 ) -> ApiResult<Json<Value>> {
     authz::require_network_admin(&s.db, user.user_id, hid).await?;
-    if body.provenance.is_none()
+    if body.assignment_id.is_none()
+        && body.enrolled_agent_id.is_none()
+        && body.provenance.is_none()
         && body.capabilities.is_none()
         && body.status.is_none()
         && body.observed_at.is_none()
+        && body.last_seen_at.is_none()
+        && body.revoked_at.is_none()
         && body.note.is_none()
     {
         return Err(ApiError::bad_request("No fields to update"));
     }
+    validate_optional_link(&s, hid, body.assignment_id, true).await?;
+    validate_optional_link(&s, hid, body.enrolled_agent_id, false).await?;
     let provenance = body
         .provenance
         .as_deref()
@@ -545,10 +631,14 @@ pub async fn connection_patch(
         &s.db,
         hid,
         cid,
+        body.assignment_id,
+        body.enrolled_agent_id,
         provenance.as_deref(),
         caps_json.as_ref(),
         status.as_deref(),
         body.observed_at,
+        body.last_seen_at,
+        body.revoked_at,
         note_refs.as_ref().copied(),
     )
     .await?
@@ -557,35 +647,55 @@ pub async fn connection_patch(
             "connection not found in this household",
         ));
     }
-    audit_ok(
+    audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
+        hid,
         "network_connection_update",
-        json!({ "household_id": hid, "connection_id": cid }),
+        json!({ "connection_id": cid }),
     )
     .await;
     Ok(Json(json!({ "ok": true })))
 }
 
-// ─── Explicit agent enrollment ───────────────────────────────────────────────
-
-pub async fn enrollments_list(
-    Path(hid): Path<Uuid>,
-    State(s): State<Arc<AppState>>,
-    Extension(user): Extension<AuthUser>,
-    Query(page): Query<PageParams>,
-) -> ApiResult<Json<Value>> {
-    authz::require_network_admin(&s.db, user.user_id, hid).await?;
-    let (limit, offset) = bounds(&page)?;
-    let rows = db::list_enrollments(&s.db, hid, limit, offset).await?;
-    Ok(Json(json!({ "enrollments": rows })))
+/// Validate a tri-state optional link before a PATCH. `assignment` selects the
+/// in-scope assignment check; otherwise the in-scope enrolled-agent check.
+async fn validate_optional_link(
+    s: &AppState,
+    hid: Uuid,
+    value: Option<Option<Uuid>>,
+    assignment: bool,
+) -> ApiResult<()> {
+    let Some(Some(id)) = value else {
+        return Ok(());
+    };
+    let ok = if assignment {
+        db::assignment_in_household(&s.db, hid, id).await?
+    } else {
+        db::agent_enrolled_in_household(&s.db, hid, id).await?
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(ApiError::bad_request(
+            "linked object is not in this household",
+        ))
+    }
 }
 
+// ─── Explicit agent enrollment ───────────────────────────────────────────────
+
+/// Requires BOTH platform admin approval and an explicit network_admin grant
+/// on the target household. The existing fleet is a global admin/operator
+/// model, so an operator (even with a household grant) cannot claim an agent;
+/// household admins cannot claim arbitrary fleet UUIDs without platform admin.
+/// No stronger pre-existing per-agent enrollment proof seam is available in
+/// this slice; the link is explicit, audited and one-household-per-agent.
 pub async fn enrollment_create(
     Path(hid): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<dto::EnrollAgentBody>,
@@ -599,15 +709,42 @@ pub async fn enrollment_create(
             "agent is already enrolled in a household",
         ));
     }
-    audit_ok(
+    audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
+        hid,
         "network_agent_enroll",
-        json!({ "household_id": hid, "agent_id": body.agent_id }),
+        json!({ "agent_id": body.agent_id }),
     )
     .await;
     Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn enrollments_list(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Query(page): Query<PageParams>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    let (limit, offset) = bounds(&page)?;
+    let rows = db::list_enrollments(&s.db, hid, limit, offset).await?;
+    Ok(Json(json!({ "enrollments": rows })))
+}
+
+// ─── Household-scoped audit ──────────────────────────────────────────────────
+
+pub async fn audit_list(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Query(page): Query<PageParams>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    let (limit, offset) = bounds(&page)?;
+    let rows = db::list_network_audit(&s.db, hid, limit, offset).await?;
+    Ok(Json(json!({ "rows": rows })))
 }
 
 // ─── Grants ──────────────────────────────────────────────────────────────────
@@ -642,17 +779,13 @@ pub async fn grant_create(
         return Err(ApiError::not_found("dashboard user not found"));
     }
     let created = db::insert_grant(&s.db, hid, body.user_id, grant, user.user_id).await?;
-    audit_ok(
+    audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
+        hid,
         "network_grant_set",
-        json!({
-            "household_id": hid,
-            "user_id": body.user_id,
-            "grant": grant.as_str(),
-            "created": created,
-        }),
+        json!({ "user_id": body.user_id, "grant": grant.as_str(), "created": created }),
     )
     .await;
     Ok(Json(json!({ "ok": true, "created": created })))
@@ -671,15 +804,16 @@ pub async fn grant_delete(
             "grant must be network_admin or network_events",
         ));
     };
-    if !db::delete_grant(&s.db, hid, uid, grant).await? {
+    if !service::revoke_grant(&s.db, hid, uid, grant).await? {
         return Err(ApiError::not_found("grant not found"));
     }
-    audit_ok(
+    audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
+        hid,
         "network_grant_revoke",
-        json!({ "household_id": hid, "user_id": uid, "grant": grant.as_str() }),
+        json!({ "user_id": uid, "grant": grant.as_str() }),
     )
     .await;
     Ok(Json(json!({ "ok": true })))

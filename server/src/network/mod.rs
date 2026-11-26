@@ -1,16 +1,22 @@
 //! Vantyr Network — household inventory and explicit, household-scoped grants.
 //!
-//! Scope: PostgreSQL inventory (households, persons, shared devices,
+//! Scope: PostgreSQL inventory (households, persons, household-owned devices,
 //! assignments, connections), explicit agent enrollment and grant management,
-//! plus the audited one-time bootstrap. All routes are mounted under `/api` by
-//! `app::api_routes()` and therefore inherit the existing session + CSRF
-//! middleware. Platform roles never imply a network grant: `authz` is the sole
-//! authorization source, and every object id is checked against the household
-//! from the URL path.
+//! the audited one-time bootstrap and a household-scoped audit trail. Routes
+//! are mounted under `/api` by `app::api_routes()`, inheriting session + CSRF.
+//! Platform roles never imply a network grant: `authz` is the sole source of
+//! inventory access, and every object id is checked against the household from
+//! the URL path. A canonical key is unique per household, never globally.
 //!
-//! Out of scope (deliberate seams for later slices): session verification
-//! APIs, worker/runtime distribution, gateway token endpoints, events ingest,
-//! and any DNS/proxy enforcement status derived from these rows.
+//! Connections carry a required household-owned device id; assignment and
+//! verified enrollment are optional, so an agentless device can own a DNS
+//! connection with no person. Reported status/capabilities are facts, not
+//! enforcement. No DHCP server or router management exists here; router DHCP
+//! stays outside Vantyr (DNS/Proxy only).
+//!
+//! Out of scope (later slices): session verification APIs, worker/runtime
+//! distribution, gateway token endpoints, events ingestion, and router lease
+//! hints (read-only, never an identity claim).
 
 use std::sync::Arc;
 
@@ -45,7 +51,7 @@ pub fn routes() -> Router<Arc<AppState>> {
             "/network/households/{hid}/persons/{pid}",
             patch(api::person_patch),
         )
-        // Devices (global inventory, visible per household via assignments).
+        // Household-owned devices.
         .route(
             "/network/households/{hid}/devices",
             get(api::devices_list).post(api::device_create),
@@ -77,7 +83,8 @@ pub fn routes() -> Router<Arc<AppState>> {
             "/network/households/{hid}/agent-enrollments",
             get(api::enrollments_list).post(api::enrollment_create),
         )
-        // Household-scoped grants.
+        // Household-scoped audit and grants.
+        .route("/network/households/{hid}/audit", get(api::audit_list))
         .route(
             "/network/households/{hid}/grants",
             get(api::grants_list).post(api::grant_create),

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::middleware::from_fn_with_state;
+use axum::Router;
 use chrono::Utc;
 use serde_json::{json, Value};
 use sqlx::PgPool;
@@ -14,7 +15,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
-use crate::network::{db, dto};
+use crate::network::{db, dto, service};
 use crate::state::AppState;
 
 // ─── Test harness ────────────────────────────────────────────────────────────
@@ -47,9 +48,15 @@ async fn session_for(pool: &PgPool, user_id: Uuid, label: &str) -> (String, Stri
     (token, csrf)
 }
 
+/// Mounts the feature routes under `/api` together with the platform audit
+/// route, then applies the real session + CSRF middleware.
 async fn spawn_router(pool: PgPool) -> (String, JoinHandle<()>, Arc<AppState>) {
     let state = crate::test_support::app_state(pool);
-    let app = crate::network::routes()
+    let api = Router::new()
+        .merge(crate::network::routes())
+        .merge(crate::platform::routes());
+    let app = Router::new()
+        .nest("/api", api)
         .route_layer(from_fn_with_state(state.clone(), crate::auth::require_auth))
         .with_state(state.clone());
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -109,22 +116,47 @@ impl Http {
     async fn patch(&self, path: &str, body: Value) -> (u16, Value) {
         Self::send(self.builder(reqwest::Method::PATCH, path).json(&body)).await
     }
+
+    async fn delete(&self, path: &str) -> (u16, Value) {
+        Self::send(self.builder(reqwest::Method::DELETE, path)).await
+    }
 }
 
 async fn bootstrap_as(base: &str, token: &str, csrf: &str, name: &str) -> Uuid {
     let http = Http::new(base.to_string(), token.to_string(), csrf.to_string());
     let (status, body) = http
-        .post("/network/bootstrap", json!({ "name": name }))
+        .post("/api/network/bootstrap", json!({ "name": name }))
         .await;
     assert_eq!(status, 200, "bootstrap failed: {body}");
     Uuid::parse_str(body["household_id"].as_str().unwrap()).unwrap()
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────────
+async fn grant_admin(_base: &str, owner: &Http, hid: Uuid, user_id: Uuid) {
+    let (status, body) = owner
+        .post(
+            &format!("/api/network/households/{hid}/grants"),
+            json!({ "user_id": user_id, "grant": "network_admin" }),
+        )
+        .await;
+    assert_eq!(status, 200, "grant failed: {body}");
+}
+
+fn actor(user_id: Uuid) -> crate::http::AuthUser {
+    crate::http::AuthUser {
+        user_id,
+        username: "no-such-user".into(),
+        role: "admin".into(),
+        display_name: String::new(),
+        display_icon: None,
+        csrf_token: String::new(),
+    }
+}
+
+// ─── Core authz / bootstrap tests ────────────────────────────────────────────
 
 #[sqlx::test]
 async fn bootstrap_is_admin_only_one_time_and_audited(pool: PgPool) {
-    let (base, handle, state) = spawn_router(pool.clone()).await;
+    let (base, handle, _state) = spawn_router(pool.clone()).await;
     let admin = insert_user(&pool, "root", "admin").await;
     let operator = insert_user(&pool, "op", "operator").await;
     let viewer = insert_user(&pool, "view", "viewer").await;
@@ -135,17 +167,16 @@ async fn bootstrap_is_admin_only_one_time_and_audited(pool: PgPool) {
     let op_http = Http::new(base.clone(), ot, oc);
     let view_http = Http::new(base.clone(), vt, vc);
 
-    // The platform operator/viewer roles never authorize bootstrap.
     assert_eq!(
         op_http
-            .post("/network/bootstrap", json!({ "name": "Nope" }))
+            .post("/api/network/bootstrap", json!({ "name": "Nope" }))
             .await
             .0,
         403
     );
     assert_eq!(
         view_http
-            .post("/network/bootstrap", json!({ "name": "Nope" }))
+            .post("/api/network/bootstrap", json!({ "name": "Nope" }))
             .await
             .0,
         403
@@ -153,7 +184,6 @@ async fn bootstrap_is_admin_only_one_time_and_audited(pool: PgPool) {
 
     let hid = bootstrap_as(&base, &at, &ac, "Home").await;
 
-    // Exactly one default household, one explicit grant, one audit row.
     let defaults: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM network_households WHERE is_default")
             .fetch_one(&pool)
@@ -169,29 +199,33 @@ async fn bootstrap_is_admin_only_one_time_and_audited(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(grants, 1);
-    let audits: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'network_bootstrap'")
+    let scoped_audits: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM network_audit WHERE action = 'network_bootstrap'")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(audits, 1);
-
-    // Race-safe one-time bootstrap: a second attempt is a conflict.
-    let (status, _) = admin_http
-        .post("/network/bootstrap", json!({ "name": "Again" }))
+    assert_eq!(scoped_audits, 1);
+    let (status, body) = admin_http
+        .get(&format!("/api/network/households/{hid}/audit"))
         .await;
-    assert_eq!(status, 409);
+    assert_eq!(status, 200);
+    assert_eq!(body["rows"][0]["action"], "network_bootstrap");
 
-    let (status, body) = admin_http.get("/network/households").await;
+    assert_eq!(
+        admin_http
+            .post("/api/network/bootstrap", json!({ "name": "Again" }))
+            .await
+            .0,
+        409
+    );
+    let (status, body) = admin_http.get("/api/network/households").await;
     assert_eq!(status, 200);
     assert_eq!(body["households"].as_array().unwrap().len(), 1);
+    assert_eq!(body["households"][0]["timezone"], "UTC");
 
-    // Operator and viewer roles still have no inventory access.
-    let path = format!("/network/households/{hid}/persons");
+    let path = format!("/api/network/households/{hid}/persons");
     assert_eq!(op_http.get(&path).await.0, 403);
     assert_eq!(view_http.get(&path).await.0, 403);
-
-    let _ = state;
     handle.abort();
 }
 
@@ -205,10 +239,9 @@ async fn admin_without_network_grant_is_denied_until_explicitly_granted(pool: Pg
     let hid = bootstrap_as(&base, &at, &ac, "Home").await;
     let admin_a = Http::new(base.clone(), at, ac);
     let admin_b = Http::new(base.clone(), bt, bc);
-    let persons_path = format!("/network/households/{hid}/persons");
+    let persons_path = format!("/api/network/households/{hid}/persons");
 
-    // A second admin has no grant: no list, no read, no write, no grant management.
-    let (status, body) = admin_b.get("/network/households").await;
+    let (status, body) = admin_b.get("/api/network/households").await;
     assert_eq!(status, 200);
     assert!(body["households"].as_array().unwrap().is_empty());
     assert_eq!(admin_b.get(&persons_path).await.0, 403);
@@ -221,17 +254,17 @@ async fn admin_without_network_grant_is_denied_until_explicitly_granted(pool: Pg
     );
     assert_eq!(
         admin_b
-            .get(&format!("/network/households/{hid}/grants"))
+            .get(&format!("/api/network/households/{hid}/grants"))
             .await
             .0,
         403
     );
 
-    // network_events alone does not authorize inventory reads.
+    // network_events alone never authorizes inventory reads.
     assert_eq!(
         admin_a
             .post(
-                &format!("/network/households/{hid}/grants"),
+                &format!("/api/network/households/{hid}/grants"),
                 json!({ "user_id": b, "grant": "network_events" }),
             )
             .await
@@ -239,18 +272,7 @@ async fn admin_without_network_grant_is_denied_until_explicitly_granted(pool: Pg
         200
     );
     assert_eq!(admin_b.get(&persons_path).await.0, 403);
-
-    // An explicit network_admin grant unlocks only that household.
-    assert_eq!(
-        admin_a
-            .post(
-                &format!("/network/households/{hid}/grants"),
-                json!({ "user_id": b, "grant": "network_admin" }),
-            )
-            .await
-            .0,
-        200
-    );
+    grant_admin(&base, &admin_a, hid, b).await;
     assert_eq!(admin_b.get(&persons_path).await.0, 200);
     handle.abort();
 }
@@ -263,9 +285,12 @@ async fn household_b_cannot_read_or_mutate_household_a_objects(pool: PgPool) {
     let (at, ac) = session_for(&pool, a, "owner").await;
     let (ct, cc) = session_for(&pool, c, "member").await;
     let ha = bootstrap_as(&base, &at, &ac, "House A").await;
-    let owner = Http::new(base.clone(), at.clone(), ac.clone());
+    let owner = Http::new(base.clone(), at, ac);
     let (status, body) = owner
-        .post("/network/households", json!({ "name": "House B" }))
+        .post(
+            "/api/network/households",
+            json!({ "name": "House B", "timezone": "Asia/Kuala_Lumpur" }),
+        )
         .await;
     assert_eq!(status, 200, "{body}");
     let hb = Uuid::parse_str(body["household_id"].as_str().unwrap()).unwrap();
@@ -274,7 +299,7 @@ async fn household_b_cannot_read_or_mutate_household_a_objects(pool: PgPool) {
     let pa: Uuid = {
         let (s, b) = owner
             .post(
-                &format!("/network/households/{ha}/persons"),
+                &format!("/api/network/households/{ha}/persons"),
                 json!({ "display_name": "Alice" }),
             )
             .await;
@@ -284,7 +309,7 @@ async fn household_b_cannot_read_or_mutate_household_a_objects(pool: PgPool) {
     let pb: Uuid = {
         let (s, b) = owner
             .post(
-                &format!("/network/households/{hb}/persons"),
+                &format!("/api/network/households/{hb}/persons"),
                 json!({ "display_name": "Bob" }),
             )
             .await;
@@ -292,21 +317,11 @@ async fn household_b_cannot_read_or_mutate_household_a_objects(pool: PgPool) {
         Uuid::parse_str(b["id"].as_str().unwrap()).unwrap()
     };
 
-    // Viewer C gets an explicit admin grant on A only.
-    assert_eq!(
-        owner
-            .post(
-                &format!("/network/households/{ha}/grants"),
-                json!({ "user_id": c, "grant": "network_admin" }),
-            )
-            .await
-            .0,
-        200
-    );
+    grant_admin(&base, &owner, ha, c).await;
     let member = Http::new(base.clone(), ct, cc);
 
     let (status, body) = member
-        .get(&format!("/network/households/{ha}/persons"))
+        .get(&format!("/api/network/households/{ha}/persons"))
         .await;
     assert_eq!(status, 200);
     let names: Vec<&str> = body["persons"]
@@ -319,7 +334,7 @@ async fn household_b_cannot_read_or_mutate_household_a_objects(pool: PgPool) {
 
     assert_eq!(
         member
-            .get(&format!("/network/households/{hb}/persons"))
+            .get(&format!("/api/network/households/{hb}/persons"))
             .await
             .0,
         403
@@ -327,35 +342,30 @@ async fn household_b_cannot_read_or_mutate_household_a_objects(pool: PgPool) {
     assert_eq!(
         member
             .post(
-                &format!("/network/households/{hb}/persons"),
+                &format!("/api/network/households/{hb}/persons"),
                 json!({ "display_name": "Eve" }),
             )
             .await
             .0,
         403
     );
-    // A's grant must not authorize PATCH on a B-scoped path, with either id.
-    assert_eq!(
-        member
-            .patch(
-                &format!("/network/households/{hb}/persons/{pa}"),
-                json!({ "display_name": "Hacked" }),
-            )
-            .await
-            .0,
-        403
-    );
-    // Even on the authorized household, a B object id must not be reachable.
     let (status, body) = member
         .patch(
-            &format!("/network/households/{ha}/persons/{pb}"),
+            &format!("/api/network/households/{hb}/persons/{pa}"),
+            json!({ "display_name": "Hacked" }),
+        )
+        .await;
+    assert_eq!(status, 403, "{body}");
+    let (status, body) = member
+        .patch(
+            &format!("/api/network/households/{ha}/persons/{pb}"),
             json!({ "display_name": "Hacked" }),
         )
         .await;
     assert_eq!(status, 404, "{body}");
     assert_eq!(
         member
-            .get(&format!("/network/households/{hb}/grants"))
+            .get(&format!("/api/network/households/{hb}/grants"))
             .await
             .0,
         403
@@ -363,11 +373,123 @@ async fn household_b_cannot_read_or_mutate_household_a_objects(pool: PgPool) {
     handle.abort();
 }
 
+// ─── P0: household-owned devices, no global key oracle ──────────────────────
+
 #[sqlx::test]
-async fn cross_household_references_fail_and_agent_link_is_explicit(pool: PgPool) {
+async fn devices_are_household_owned_same_key_allowed_and_no_global_oracle(pool: PgPool) {
+    let (base, handle, _state) = spawn_router(pool.clone()).await;
     let a = insert_user(&pool, "owner", "admin").await;
-    // Snapshot module/Recall state before any inventory write; these tables must
-    // be byte-for-byte unchanged (Recall has one seeded global row).
+    let c = insert_user(&pool, "member", "viewer").await;
+    let (at, ac) = session_for(&pool, a, "owner").await;
+    let (ct, cc) = session_for(&pool, c, "member").await;
+    let ha = bootstrap_as(&base, &at, &ac, "House A").await;
+    let owner = Http::new(base.clone(), at, ac);
+    let (s, b) = owner
+        .post("/api/network/households", json!({ "name": "House B" }))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let hb = Uuid::parse_str(b["household_id"].as_str().unwrap()).unwrap();
+    grant_admin(&base, &owner, ha, c).await;
+    let member = Http::new(base.clone(), ct, cc);
+
+    // Unassigned devices are visible immediately in their own household.
+    let (s, b) = member
+        .post(
+            &format!("/api/network/households/{ha}/devices"),
+            json!({ "canonical_key": "SharedKey001", "label": "TV", "device_type": "tv" }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let da = Uuid::parse_str(b["id"].as_str().unwrap()).unwrap();
+    let (s, b) = owner
+        .post(
+            &format!("/api/network/households/{hb}/devices"),
+            json!({ "canonical_key": "sharedkey001", "label": "TV B", "device_type": "tv" }),
+        )
+        .await;
+    assert_eq!(s, 200, "same key in another household must be allowed: {b}");
+    let db_id = Uuid::parse_str(b["id"].as_str().unwrap()).unwrap();
+
+    let (s, b) = member
+        .get(&format!("/api/network/households/{ha}/devices"))
+        .await;
+    assert_eq!(s, 200);
+    let keys: Vec<&str> = b["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["canonical_key"].as_str().unwrap())
+        .collect();
+    assert_eq!(keys, vec!["sharedkey001"]);
+    assert_eq!(
+        member
+            .get(&format!("/api/network/households/{hb}/devices"))
+            .await
+            .0,
+        403
+    );
+    assert_eq!(
+        member
+            .post(
+                &format!("/api/network/households/{hb}/devices"),
+                json!({ "canonical_key": "anykey123", "label": "Sneak" }),
+            )
+            .await
+            .0,
+        403
+    );
+
+    // Cross-household mutation and assignment attempts are denied.
+    let (s, b) = member
+        .patch(
+            &format!("/api/network/households/{hb}/devices/{da}"),
+            json!({ "label": "Stolen" }),
+        )
+        .await;
+    assert_eq!(s, 403, "{b}");
+    let (s, b) = member
+        .patch(
+            &format!("/api/network/households/{ha}/devices/{db_id}"),
+            json!({ "label": "Stolen" }),
+        )
+        .await;
+    assert_eq!(s, 404, "{b}");
+    let (s, b) = owner
+        .post(
+            &format!("/api/network/households/{ha}/persons"),
+            json!({ "display_name": "Alice" }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let person = Uuid::parse_str(b["id"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        member
+            .post(
+                &format!("/api/network/households/{ha}/assignments"),
+                json!({ "person_id": person, "device_id": db_id }),
+            )
+            .await
+            .0,
+        404
+    );
+
+    // Same normalized key in the same household is still a conflict.
+    assert_eq!(
+        member
+            .post(
+                &format!("/api/network/households/{ha}/devices"),
+                json!({ "canonical_key": "shared-key-001", "label": "Dup" }),
+            )
+            .await
+            .0,
+        409
+    );
+    handle.abort();
+}
+
+#[sqlx::test]
+async fn cross_household_fks_reject_and_agent_link_is_explicit(pool: PgPool) {
+    let a = insert_user(&pool, "owner", "admin").await;
     let untouched_before = (
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM agent_module_reports")
             .fetch_one(&pool)
@@ -389,10 +511,7 @@ async fn cross_household_references_fail_and_agent_link_is_explicit(pool: PgPool
     let ha = sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO network_households (name, is_default, created_by) VALUES ('A', true, $1) RETURNING id",
     )
-    .bind(a)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    .bind(a).fetch_one(&pool).await.unwrap();
     let hb = sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO network_households (name, created_by) VALUES ('B', $1) RETURNING id",
     )
@@ -401,9 +520,16 @@ async fn cross_household_references_fail_and_agent_link_is_explicit(pool: PgPool
     .await
     .unwrap();
 
-    let pa = db::insert_person(&pool, ha, "Alice", None).await.unwrap();
-    let pb = db::insert_person(&pool, hb, "Bob", None).await.unwrap();
-    let device = db::insert_device(&pool, "dev001", "Router", "router")
+    let pa = db::insert_person(&pool, ha, "Alice", None, false)
+        .await
+        .unwrap();
+    let pb = db::insert_person(&pool, hb, "Bob", None, false)
+        .await
+        .unwrap();
+    let da = db::insert_device(&pool, ha, "dev001", "Router", "router", false)
+        .await
+        .unwrap();
+    let dbb = db::insert_device(&pool, hb, "dev001", "Router B", "router", false)
         .await
         .unwrap();
 
@@ -418,34 +544,21 @@ async fn cross_household_references_fail_and_agent_link_is_explicit(pool: PgPool
         .unwrap();
     db::insert_enrollment(&pool, hb, agent, a).await.unwrap();
 
-    // Person from B cannot be assigned in A (composite FK).
-    let wrong_person = sqlx::query(
-        "INSERT INTO network_assignments (household_id, person_id, device_id) VALUES ($1, $2, $3)",
-    )
-    .bind(ha)
-    .bind(pb)
-    .bind(device)
-    .execute(&pool)
-    .await;
-    assert!(
-        wrong_person.is_err(),
-        "cross-household person FK must reject"
-    );
+    // Person, device and agent must all belong to the assignment's household.
+    for (label, person, device, linked_agent) in [
+        ("cross-household person", pb, da, None),
+        ("cross-household device", pa, dbb, None),
+        ("cross-household enrolled agent", pa, da, Some(agent)),
+    ] {
+        let res = sqlx::query(
+            "INSERT INTO network_assignments (household_id, person_id, device_id, agent_id) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(ha).bind(person).bind(device).bind(linked_agent)
+        .execute(&pool).await;
+        assert!(res.is_err(), "{label} must be rejected by composite FK");
+    }
 
-    // Agent enrolled in B cannot be linked to an assignment in A.
-    let wrong_agent = sqlx::query(
-        "INSERT INTO network_assignments (household_id, person_id, device_id, agent_id) VALUES ($1, $2, $3, $4)",
-    )
-    .bind(ha)
-    .bind(pa)
-    .bind(device)
-    .bind(agent)
-    .execute(&pool)
-    .await;
-    assert!(wrong_agent.is_err(), "cross-household agent FK must reject");
-
-    // No agent id means no agent is attributed (no IP/username inference).
-    let bare = db::insert_assignment(&pool, ha, pa, device, None, "member", None)
+    let bare = db::insert_assignment(&pool, ha, pa, da, None, "member", true, None)
         .await
         .unwrap();
     let stored: Option<Uuid> =
@@ -457,22 +570,19 @@ async fn cross_household_references_fail_and_agent_link_is_explicit(pool: PgPool
     assert!(stored.is_none(), "agent must never be inferred");
 
     let enrolled_assignment =
-        db::insert_assignment(&pool, hb, pb, device, Some(agent), "member", None)
+        db::insert_assignment(&pool, hb, pb, dbb, Some(agent), "member", true, None)
             .await
             .unwrap();
     let wrong_connection = sqlx::query(
-        "INSERT INTO network_connections (household_id, assignment_id, kind) VALUES ($1, $2, 'dns')",
+        "INSERT INTO network_connections (household_id, device_id, assignment_id, kind) VALUES ($1, $2, $3, 'dns')",
     )
-    .bind(ha)
-    .bind(enrolled_assignment)
-    .execute(&pool)
-    .await;
+    .bind(ha).bind(dbb).bind(enrolled_assignment)
+    .execute(&pool).await;
     assert!(
         wrong_connection.is_err(),
-        "cross-household connection FK must reject"
+        "cross-household device FK must reject"
     );
 
-    // No module grants, agent token or Recall settings were touched.
     let token_hash: String = sqlx::query_scalar("SELECT api_token_hash FROM agents WHERE id = $1")
         .bind(agent)
         .fetch_one(&pool)
@@ -499,9 +609,279 @@ async fn cross_household_references_fail_and_agent_link_is_explicit(pool: PgPool
     );
     assert_eq!(
         untouched_after, untouched_before,
-        "inventory must not write module grants or Recall settings"
+        "no module/token/Recall writes"
     );
 }
+
+// ─── P1: device-owned connections with no person ────────────────────────────
+
+#[sqlx::test]
+async fn tv_device_owns_dns_connection_without_person_or_assignment(pool: PgPool) {
+    let (base, handle, _state) = spawn_router(pool.clone()).await;
+    let a = insert_user(&pool, "owner", "admin").await;
+    let (at, ac) = session_for(&pool, a, "owner").await;
+    let hid = bootstrap_as(&base, &at, &ac, "Home").await;
+    let owner = Http::new(base.clone(), at, ac);
+    let (s, b) = owner
+        .post(
+            &format!("/api/network/households/{hid}/devices"),
+            json!({ "canonical_key": "tv0001", "label": "Living Room TV", "device_type": "tv" }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let device = Uuid::parse_str(b["id"].as_str().unwrap()).unwrap();
+
+    let (s, b) = owner
+        .post(
+            &format!("/api/network/households/{hid}/connections"),
+            json!({
+                "device_id": device,
+                "kind": "dns",
+                "provenance": "dns",
+                "capabilities": ["resolver"],
+                "status": "active",
+                "last_seen_at": "2026-11-26T10:00:00Z"
+            }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let cid = Uuid::parse_str(b["id"].as_str().unwrap()).unwrap();
+    let (s, b) = owner
+        .get(&format!(
+            "/api/network/households/{hid}/connections?kind=dns"
+        ))
+        .await;
+    assert_eq!(s, 200);
+    assert_eq!(b["connections"][0]["device_id"], device.to_string());
+    assert!(b["connections"][0]["assignment_id"].is_null());
+    assert!(b["connections"][0]["enrolled_agent_id"].is_null());
+    let people: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM network_persons")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(people, 0, "no person was fabricated for this connection");
+
+    let (s, b) = owner
+        .patch(
+            &format!("/api/network/households/{hid}/connections/{cid}"),
+            json!({ "status": "revoked", "revoked_at": "2026-11-26T11:00:00Z" }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let (s, b) = owner
+        .get(&format!("/api/network/households/{hid}/connections"))
+        .await;
+    assert_eq!(s, 200);
+    assert_eq!(b["connections"][0]["status"], "revoked");
+    assert!(!b["connections"][0]["revoked_at"].is_null());
+    handle.abort();
+}
+
+// ─── P2: enrollment authority, last-admin guard, atomic create ──────────────
+
+#[sqlx::test]
+async fn enrollment_requires_platform_admin_and_household_network_scope(pool: PgPool) {
+    let (base, handle, _state) = spawn_router(pool.clone()).await;
+    let root = insert_user(&pool, "root", "admin").await;
+    let other_admin = insert_user(&pool, "other-admin", "admin").await;
+    let operator = insert_user(&pool, "op", "operator").await;
+    let viewer = insert_user(&pool, "view", "viewer").await;
+    let (rt, rc) = session_for(&pool, root, "root").await;
+    let (ot, oc) = session_for(&pool, other_admin, "other").await;
+    let (opt, opc) = session_for(&pool, operator, "op").await;
+    let (vt, vc) = session_for(&pool, viewer, "view").await;
+    let hid = bootstrap_as(&base, &rt, &rc, "Home").await;
+    let root_http = Http::new(base.clone(), rt, rc);
+    grant_admin(&base, &root_http, hid, operator).await;
+    grant_admin(&base, &root_http, hid, viewer).await;
+
+    let agent = Uuid::new_v4();
+    crate::test_support::insert_agent(&pool, agent)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE agents SET api_token_hash = 'sentinel-token-hash' WHERE id = $1")
+        .bind(agent)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let path = format!("/api/network/households/{hid}/agent-enrollments");
+    let body = json!({ "agent_id": agent });
+
+    // Operator role, even with an explicit household grant, cannot enroll.
+    assert_eq!(
+        Http::new(base.clone(), opt, opc)
+            .post(&path, body.clone())
+            .await
+            .0,
+        403
+    );
+    // Viewer role likewise.
+    assert_eq!(
+        Http::new(base.clone(), vt, vc)
+            .post(&path, body.clone())
+            .await
+            .0,
+        403
+    );
+    // Platform admin without a household grant cannot claim a fleet agent.
+    assert_eq!(
+        Http::new(base.clone(), ot, oc)
+            .post(&path, body.clone())
+            .await
+            .0,
+        403
+    );
+    // Platform admin WITH explicit household scope can.
+    assert_eq!(root_http.post(&path, body).await.0, 200);
+
+    let token_hash: String = sqlx::query_scalar("SELECT api_token_hash FROM agents WHERE id = $1")
+        .bind(agent)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(token_hash, "sentinel-token-hash");
+    for count in [
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM agent_module_reports")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM recall_settings_agent")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+    ] {
+        assert_eq!(count, 0);
+    }
+    handle.abort();
+}
+
+#[sqlx::test]
+async fn last_network_admin_guard_and_atomic_household_create(pool: PgPool) {
+    let (base, handle, _state) = spawn_router(pool.clone()).await;
+    let a = insert_user(&pool, "a", "admin").await;
+    let b = insert_user(&pool, "b", "admin").await;
+    let (at, ac) = session_for(&pool, a, "a").await;
+    let (bt, bc) = session_for(&pool, b, "b").await;
+    let hid = bootstrap_as(&base, &at, &ac, "Home").await;
+    let ha = Http::new(base.clone(), at.clone(), ac.clone());
+    let hb = Http::new(base.clone(), bt, bc);
+
+    // The only admin cannot revoke themselves.
+    let (s, body) = ha
+        .delete(&format!(
+            "/api/network/households/{hid}/grants/{a}/network_admin"
+        ))
+        .await;
+    assert_eq!(s, 409, "{body}");
+
+    grant_admin(&base, &ha, hid, b).await;
+    // Two concurrent revokes serialize on the household row; one survives.
+    let path_a = format!("/api/network/households/{hid}/grants/{a}/network_admin");
+    let path_b = format!("/api/network/households/{hid}/grants/{b}/network_admin");
+    let (ra, rb) = tokio::join!(ha.delete(&path_a), hb.delete(&path_b));
+    assert_eq!([ra.0, rb.0].iter().filter(|&&s| s == 200).count(), 1);
+    assert_eq!([ra.0, rb.0].iter().filter(|&&s| s == 409).count(), 1);
+    let admins: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM network_grants WHERE household_id = $1 AND grant_name = 'network_admin'",
+    )
+    .bind(hid).fetch_one(&pool).await.unwrap();
+    assert_eq!(admins, 1);
+
+    // A grant failure rolls the whole household insert back.
+    let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM network_households")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let bogus = actor(Uuid::new_v4());
+    assert!(service::create_household(&pool, &bogus, "Orphan", "UTC")
+        .await
+        .is_err());
+    let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM network_households")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(after, before, "household create must be atomic");
+    let _ = (ha, at, ac);
+    handle.abort();
+}
+
+// ─── Scoped audit vs globally readable audit ────────────────────────────────
+
+#[sqlx::test]
+async fn network_audit_is_scoped_and_global_audit_has_no_sensitive_details(pool: PgPool) {
+    let (base, handle, _state) = spawn_router(pool.clone()).await;
+    let a = insert_user(&pool, "owner", "admin").await;
+    let c = insert_user(&pool, "viewer", "viewer").await;
+    let (at, ac) = session_for(&pool, a, "owner").await;
+    let (ct, cc) = session_for(&pool, c, "viewer").await;
+    let ha = bootstrap_as(&base, &at, &ac, "House A").await;
+    let owner = Http::new(base.clone(), at, ac);
+    let (s, b) = owner
+        .post("/api/network/households", json!({ "name": "House B" }))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let hb = Uuid::parse_str(b["household_id"].as_str().unwrap()).unwrap();
+    grant_admin(&base, &owner, ha, c).await;
+    let member = Http::new(base.clone(), ct, cc);
+
+    let (s, b) = member
+        .post(
+            &format!("/api/network/households/{ha}/devices"),
+            json!({ "canonical_key": "sensitiveKey99", "label": "Private" }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let device_id = b["id"].as_str().unwrap().to_string();
+    let (s, b) = member
+        .post(
+            &format!("/api/network/households/{ha}/persons"),
+            json!({ "display_name": "Private Person" }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let person_id = b["id"].as_str().unwrap().to_string();
+
+    let (s, b) = member
+        .get(&format!("/api/network/households/{ha}/audit"))
+        .await;
+    assert_eq!(s, 200);
+    let scoped = b.to_string();
+    assert!(scoped.contains("sensitivekey99"));
+    assert!(scoped.contains(&device_id));
+    assert_eq!(
+        member
+            .get(&format!("/api/network/households/{hb}/audit"))
+            .await
+            .0,
+        403
+    );
+
+    // The global audit route is readable by any session, but must not carry
+    // any network ids, keys or scope identifiers.
+    let (s, b) = member.get("/api/audit").await;
+    assert_eq!(s, 200, "{b}");
+    let global = b.to_string();
+    for secret in [
+        "sensitivekey99",
+        &device_id,
+        &person_id,
+        &ha.to_string(),
+        &hb.to_string(),
+    ] {
+        assert!(!global.contains(secret), "global audit leaked {secret}");
+    }
+    let rows = b["rows"].as_array().unwrap();
+    assert!(
+        rows.iter().all(|r| {
+            let action = r["action"].as_str().unwrap_or("");
+            !action.starts_with("network_") || action == "network_action"
+        }),
+        "only the generic network_action marker may be globally visible"
+    );
+    handle.abort();
+}
+
+// ─── CSRF / pagination / normalization ──────────────────────────────────────
 
 #[sqlx::test]
 async fn csrf_is_enforced_inputs_normalized_and_pages_capped(pool: PgPool) {
@@ -510,9 +890,8 @@ async fn csrf_is_enforced_inputs_normalized_and_pages_capped(pool: PgPool) {
     let (token, csrf) = session_for(&pool, admin, "admin").await;
     let hid = bootstrap_as(&base, &token, &csrf, "Home").await;
     let http = Http::new(base.clone(), token.clone(), csrf.clone());
-    let path = format!("/network/households/{hid}/persons");
+    let path = format!("/api/network/households/{hid}/persons");
 
-    // The existing require_auth CSRF middleware applies to network POST/PATCH.
     let no_csrf = http
         .client
         .post(format!("{base}{path}"))
@@ -529,33 +908,38 @@ async fn csrf_is_enforced_inputs_normalized_and_pages_capped(pool: PgPool) {
         http.post(&path, json!({ "display_name": "Carol" })).await.0,
         200
     );
-
-    // Pagination and identifier normalization are bounded.
     assert_eq!(http.get(&format!("{path}?limit=5000")).await.0, 400);
-    let devices_path = format!("/network/households/{hid}/devices");
+
+    // Invalid timezone is rejected; a valid one is stored on the household.
+    assert_eq!(
+        http.post(
+            "/api/network/households",
+            json!({ "name": "Bad TZ", "timezone": "Mars/Olympus" }),
+        )
+        .await
+        .0,
+        400
+    );
+    let (s, b) = http
+        .post(
+            "/api/network/households",
+            json!({ "name": "Good TZ", "timezone": "Asia/Kuala_Lumpur" }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+
+    let devices_path = format!("/api/network/households/{hid}/devices");
     let (status, body) = http
         .post(
             &devices_path,
-            json!({ "canonical_key": " AA-BB:cc_dd.11 ", "label": "Laptop" }),
-        )
-        .await;
-    assert_eq!(status, 200, "{body}");
-    let device_id = Uuid::parse_str(body["id"].as_str().unwrap()).unwrap();
-    // Shared devices become visible in a household through an assignment.
-    let (status, body) = http.post(&path, json!({ "display_name": "Dave" })).await;
-    assert_eq!(status, 200, "{body}");
-    let person_id = Uuid::parse_str(body["id"].as_str().unwrap()).unwrap();
-    let (status, body) = http
-        .post(
-            &format!("/network/households/{hid}/assignments"),
-            json!({ "person_id": person_id, "device_id": device_id }),
+            json!({ "canonical_key": " AA-BB:cc_dd.11 ", "label": "Laptop", "shared": true }),
         )
         .await;
     assert_eq!(status, 200, "{body}");
     let (status, body) = http.get(&devices_path).await;
     assert_eq!(status, 200);
     assert_eq!(body["devices"][0]["canonical_key"], "aabbccdd11");
-    // The normalized duplicate key is rejected through the same path.
+    assert_eq!(body["devices"][0]["shared"], true);
     assert_eq!(
         http.post(
             &devices_path,
@@ -566,9 +950,7 @@ async fn csrf_is_enforced_inputs_normalized_and_pages_capped(pool: PgPool) {
         409
     );
 
-    // The typed DTO validator rejects over-long capability lists.
     let too_many: Vec<String> = (0..33).map(|i| format!("c{i}")).collect();
     assert!(dto::normalize_capabilities(&Some(too_many)).is_err());
-
     handle.abort();
 }

@@ -1,10 +1,9 @@
-//! Atomic bootstrap: create the one default household and the bootstrap admin's
-//! explicit network_admin grant in a single transaction.
+//! Atomic bootstrap, household provisioning and grant revocation.
 //!
-//! A transaction-scoped advisory lock serializes concurrent bootstrap attempts;
-//! the partial unique index on `network_households.is_default` is the second
-//! line of defence. Nothing here touches agent tokens, module grants, Recall
-//! settings, remote scripts or any runtime/worker state.
+//! Bootstrap and household creation write the household and its initial
+//! explicit grant in one transaction. Revocation locks the household row so
+//! concurrent deletes cannot remove the last network_admin. Nothing here
+//! touches agent tokens, module grants, Recall settings or runtime state.
 
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -21,6 +20,7 @@ pub async fn bootstrap_default_household(
     pool: &PgPool,
     actor: &AuthUser,
     name: &str,
+    timezone: &str,
 ) -> ApiResult<Uuid> {
     let mut tx = pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
@@ -34,7 +34,7 @@ pub async fn bootstrap_default_household(
         ));
     }
 
-    let household_id = db::insert_default_household(&mut tx, name, actor.user_id).await?;
+    let household_id = db::insert_default_household(&mut tx, name, timezone, actor.user_id).await?;
     db::insert_grant_on_conn(
         &mut tx,
         household_id,
@@ -47,17 +47,48 @@ pub async fn bootstrap_default_household(
     Ok(household_id)
 }
 
-/// Create an additional household and give the authenticated creator an
-/// explicit grant on it. Never grants access to any other household.
-pub async fn create_household(pool: &PgPool, actor: &AuthUser, name: &str) -> ApiResult<Uuid> {
-    let household_id = db::insert_household(pool, name, actor.user_id).await?;
-    db::insert_grant(
-        pool,
+/// Create an additional household and its creator grant atomically: a grant
+/// failure rolls the household insert back. No grant to any other household.
+pub async fn create_household(
+    pool: &PgPool,
+    actor: &AuthUser,
+    name: &str,
+    timezone: &str,
+) -> ApiResult<Uuid> {
+    let mut tx = pool.begin().await?;
+    let household_id = db::insert_household_on_conn(&mut tx, name, timezone, actor.user_id).await?;
+    db::insert_grant_on_conn(
+        &mut tx,
         household_id,
         actor.user_id,
         NetworkGrant::Admin,
         actor.user_id,
     )
     .await?;
+    tx.commit().await?;
     Ok(household_id)
+}
+
+/// Revoke a grant while holding the household row lock. The last
+/// `network_admin` cannot be removed, even by another admin, and two
+/// concurrent revokes serialize so one always survives.
+pub async fn revoke_grant(
+    pool: &PgPool,
+    household_id: Uuid,
+    user_id: Uuid,
+    grant: NetworkGrant,
+) -> ApiResult<bool> {
+    let mut tx = pool.begin().await?;
+    db::lock_household(&mut tx, household_id).await?;
+    if grant == NetworkGrant::Admin
+        && db::grant_is_admin(&mut tx, household_id, user_id).await?
+        && db::count_admins(&mut tx, household_id).await? <= 1
+    {
+        return Err(ApiError::conflict(
+            "Cannot revoke the last network_admin of a household",
+        ));
+    }
+    let removed = db::delete_grant_on_conn(&mut tx, household_id, user_id, grant).await?;
+    tx.commit().await?;
+    Ok(removed)
 }

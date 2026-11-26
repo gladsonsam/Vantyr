@@ -1,8 +1,9 @@
 //! Typed request/response DTOs and input normalization for the network inventory API.
 //!
-//! Everything the client sends is trimmed, length-capped and validated here before
-//! it reaches SQL. Household ids are *never* taken from request bodies: they come
-//! from the URL path, which authz has already checked against the caller's grants.
+//! Household ids are never taken from request bodies: they come from the URL
+//! path, which authz has already checked against the caller's grants.
+//! Device keys are unique *within* a household, never globally — a key in
+//! household B must not reveal or claim a device in household A.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,7 @@ use uuid::Uuid;
 pub struct Household {
     pub id: Uuid,
     pub name: String,
+    pub timezone: String,
     pub is_default: bool,
     pub created_at: DateTime<Utc>,
 }
@@ -24,16 +26,21 @@ pub struct Person {
     pub id: Uuid,
     pub household_id: Uuid,
     pub display_name: String,
+    pub is_default_profile: bool,
     pub note: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
+/// A device belongs to exactly one household. `shared` describes deliberate
+/// sharing inside that household, not global ownership.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct Device {
     pub id: Uuid,
+    pub household_id: Uuid,
     pub canonical_key: String,
     pub label: String,
     pub device_type: String,
+    pub shared: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -45,22 +52,31 @@ pub struct Assignment {
     pub person_id: Uuid,
     pub device_id: Uuid,
     pub agent_id: Option<Uuid>,
+    pub active: bool,
     pub role: String,
     pub note: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
+/// `status`, `capabilities`, `provenance` and `last_seen_at` are reported,
+/// unverified observations. No CRUD write enforces anything on a worker.
+/// `assignment_id` and `enrolled_agent_id` are optional: a device may carry a
+/// connection with no person, assignment or agent at all.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct Connection {
     pub id: Uuid,
     pub household_id: Uuid,
-    pub assignment_id: Uuid,
+    pub device_id: Uuid,
+    pub assignment_id: Option<Uuid>,
+    pub enrolled_agent_id: Option<Uuid>,
     pub kind: String,
     pub provenance: String,
     pub capabilities: serde_json::Value,
     pub status: String,
     pub observed_at: Option<DateTime<Utc>>,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<DateTime<Utc>>,
     pub note: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -81,16 +97,34 @@ pub struct Grant {
     pub granted_at: DateTime<Utc>,
 }
 
+/// Household-scoped audit row. Only readable with `network_admin` on that
+/// household, unlike the globally readable platform audit log.
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct NetworkAudit {
+    pub id: i64,
+    pub ts: DateTime<Utc>,
+    pub household_id: Uuid,
+    pub actor: String,
+    pub client_ip: Option<String>,
+    pub action: String,
+    pub status: String,
+    pub detail: serde_json::Value,
+}
+
 // ─── Requests ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct BootstrapBody {
     pub name: String,
+    #[serde(default)]
+    pub timezone: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateHouseholdBody {
     pub name: String,
+    #[serde(default)]
+    pub timezone: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,6 +132,8 @@ pub struct CreatePersonBody {
     pub display_name: String,
     #[serde(default)]
     pub note: Option<String>,
+    #[serde(default)]
+    pub is_default_profile: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,6 +143,8 @@ pub struct PatchPersonBody {
     /// Omitted = keep; JSON null = clear; string = set.
     #[serde(default)]
     pub note: Option<Option<String>>,
+    #[serde(default)]
+    pub is_default_profile: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,6 +153,8 @@ pub struct CreateDeviceBody {
     pub label: String,
     #[serde(default)]
     pub device_type: Option<String>,
+    #[serde(default)]
+    pub shared: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,6 +163,8 @@ pub struct PatchDeviceBody {
     pub label: Option<String>,
     #[serde(default)]
     pub device_type: Option<String>,
+    #[serde(default)]
+    pub shared: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -133,6 +175,8 @@ pub struct CreateAssignmentBody {
     pub agent_id: Option<Uuid>,
     #[serde(default)]
     pub role: Option<String>,
+    #[serde(default)]
+    pub active: Option<bool>,
     #[serde(default)]
     pub note: Option<String>,
 }
@@ -145,12 +189,21 @@ pub struct PatchAssignmentBody {
     #[serde(default)]
     pub role: Option<String>,
     #[serde(default)]
+    pub active: Option<bool>,
+    #[serde(default)]
     pub note: Option<Option<String>>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateConnectionBody {
-    pub assignment_id: Uuid,
+    /// Required, household-owned; the connection is about this device.
+    pub device_id: Uuid,
+    /// Optional verified in-scope assignment (no person is required without it).
+    #[serde(default)]
+    pub assignment_id: Option<Uuid>,
+    /// Optional explicitly enrolled agent identity (never inferred).
+    #[serde(default)]
+    pub enrolled_agent_id: Option<Uuid>,
     pub kind: String,
     #[serde(default)]
     pub provenance: Option<String>,
@@ -161,20 +214,32 @@ pub struct CreateConnectionBody {
     #[serde(default)]
     pub observed_at: Option<DateTime<Utc>>,
     #[serde(default)]
+    pub last_seen_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub revoked_at: Option<DateTime<Utc>>,
+    #[serde(default)]
     pub note: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct PatchConnectionBody {
+    /// Omitted = keep; JSON null = clear; UUID = set (validated in scope).
+    #[serde(default)]
+    pub assignment_id: Option<Option<Uuid>>,
+    #[serde(default)]
+    pub enrolled_agent_id: Option<Option<Uuid>>,
     #[serde(default)]
     pub provenance: Option<String>,
     #[serde(default)]
     pub capabilities: Option<Vec<String>>,
     #[serde(default)]
     pub status: Option<String>,
-    /// Omitted = keep; JSON null = clear; timestamp = set.
     #[serde(default)]
     pub observed_at: Option<Option<DateTime<Utc>>>,
+    #[serde(default)]
+    pub last_seen_at: Option<Option<DateTime<Utc>>>,
+    #[serde(default)]
+    pub revoked_at: Option<Option<DateTime<Utc>>>,
     #[serde(default)]
     pub note: Option<Option<String>>,
 }
@@ -228,9 +293,23 @@ pub fn normalize_note_patch(
     }
 }
 
+/// Valid IANA timezone name (chrono-tz catalogue), defaulting to UTC.
+pub fn normalize_timezone(raw: &Option<String>) -> Result<String, String> {
+    let Some(s) = raw else {
+        return Ok("UTC".to_string());
+    };
+    let t = s.trim();
+    if t.is_empty() || t.len() > 64 {
+        return Err("timezone must be a 1 to 64 character IANA name".into());
+    }
+    let parsed: chrono_tz::Tz = t
+        .parse()
+        .map_err(|_| "timezone must be a valid IANA name")?;
+    Ok(parsed.name().to_string())
+}
+
 /// Canonical device key: lowercase, strip separator noise, require a short
-/// alphanumeric identifier. Normalizing here makes duplicate detection reliable
-/// without storing a raw, user-supplied identifier verbatim.
+/// alphanumeric identifier. Uniqueness is enforced per household in SQL.
 pub fn normalize_canonical_key(raw: &str) -> Result<String, String> {
     let key: String = raw
         .trim()
@@ -270,7 +349,8 @@ pub const DEVICE_TYPES: &[&str] = &[
 pub const ASSIGNMENT_ROLES: &[&str] = &["owner", "member", "guest", "managed", "unknown"];
 pub const CONNECTION_KINDS: &[&str] = &["agent", "dns", "proxy"];
 pub const PROVENANCES: &[&str] = &["manual", "agent", "dns", "proxy", "import"];
-pub const CONNECTION_STATUSES: &[&str] = &["unknown", "active", "inactive", "stale", "error"];
+pub const CONNECTION_STATUSES: &[&str] =
+    &["unknown", "active", "inactive", "stale", "error", "revoked"];
 
 pub fn normalize_capabilities(raw: &Option<Vec<String>>) -> Result<Vec<String>, String> {
     let Some(items) = raw else {
@@ -313,5 +393,15 @@ mod tests {
         );
         let too_many: Vec<String> = (0..33).map(|i| format!("c{i}")).collect();
         assert!(normalize_capabilities(&Some(too_many)).is_err());
+    }
+
+    #[test]
+    fn timezone_must_be_a_known_iana_name() {
+        assert_eq!(normalize_timezone(&None).unwrap(), "UTC");
+        assert_eq!(
+            normalize_timezone(&Some(" Asia/Kuala_Lumpur ".into())).unwrap(),
+            "Asia/Kuala_Lumpur"
+        );
+        assert!(normalize_timezone(&Some("Mars/Olympus".into())).is_err());
     }
 }
