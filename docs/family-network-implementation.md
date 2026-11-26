@@ -561,6 +561,13 @@ No substantive UI or Supabase changes were made in this step.
   evidence and per-gateway refresh acknowledgments are implemented. The worker
   consumer is being built against that committed wire contract. No dashboard
   handoff or end-to-end acceptance is claimed yet.
+  Initial review found repeated refresh receipts stayed stuck on the old token
+  and timestamp windows rejected valid seven-day scheduling or old applied
+  content. Parent fix `eadf36d4` passes 19 targeted tests and strict scoped
+  clippy; fresh independent acceptance is pending. It also returns stored token
+  version/expiry on deduplication, prevents false historical delivery evidence,
+  pins the latest status's delivered version, bounds numeric casts and corrects
+  the database request cap with additive migration 0080 (0079 unchanged).
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
   accepted separately from encrypted inbound listeners. Fresh review passed all
   91 DNS tests, including eight real-TLS upstream tests, and strict clippy.
