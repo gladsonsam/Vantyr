@@ -43,8 +43,9 @@ use axum::serve::{Listener, ListenerExt};
 use axum::Router;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use family_dns::{
-    config_digest, DnsServer, DurableOptions, FormatValidator, ManagementClient, ManagementConfig,
-    ManagementOptions, ManagementWorker, SubscriptionRuntime, SubscriptionSettings,
+    config_digest, single_source_config, DnsServer, DurableOptions, FormatValidator,
+    ManagementClient, ManagementConfig, ManagementOptions, ManagementWorker, SubscriptionRuntime,
+    SubscriptionSettings,
 };
 use hickory_server::proto::op::{Message, MessageType, OpCode, Query, ResponseCode};
 use hickory_server::proto::rr::{Name as DnsName, RecordType};
@@ -59,9 +60,6 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::task::JoinHandle;
 use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
-use vantyr_network_subscriptions::config::{
-    Limits, QueryPolicy, SourceMetadata, SubscriptionConfig, SubscriptionSource,
-};
 use vantyr_network_subscriptions::error::Error as SubscriptionError;
 use vantyr_network_subscriptions::fetcher::Fetcher;
 use vantyr_network_subscriptions::transport::{HttpTransport, ReqwestTransport};
@@ -554,7 +552,10 @@ fn build_runtime(st: &Fixture, list_ca: &str) -> Arc<SubscriptionRuntime> {
             .with_fetcher_factory({
                 let list_ca = list_ca.to_owned();
                 move |spec, root, _ca| {
-                    let limits = Limits::default();
+                    // The production helper builds the bounded one-source
+                    // config (including the 7-day explicit stale bound).
+                    let cfg = single_source_config(spec);
+                    let limits = cfg.limits.clone();
                     let url = reqwest::Url::parse(&spec.url)
                         .map_err(|e| SubscriptionError::InvalidConfig(e.to_string()))?;
                     let addr =
@@ -571,22 +572,6 @@ fn build_runtime(st: &Fixture, list_ca: &str) -> Arc<SubscriptionRuntime> {
                         .tls_certs_merge([cert])
                         .build()
                         .map_err(|e| SubscriptionError::InvalidConfig(e.to_string()))?;
-                    let cfg = SubscriptionConfig {
-                        sources: vec![SubscriptionSource {
-                            id: spec.id.clone(),
-                            url: spec.url.clone(),
-                            enabled: spec.enabled,
-                            interval_secs: spec.interval_secs,
-                            max_stale_secs: spec.max_stale_secs,
-                            metadata: SourceMetadata {
-                                title: spec.metadata.title.clone(),
-                                publisher: spec.metadata.publisher.clone(),
-                                license: spec.metadata.license.clone(),
-                            },
-                        }],
-                        limits: limits.clone(),
-                        query_policy: QueryPolicy::Reject,
-                    };
                     let transport = Arc::new(ReqwestTransport::from_client(
                         client,
                         limits.max_header_bytes,
@@ -612,6 +597,9 @@ fn build_runtime_from_cache(st: &Fixture) -> Arc<SubscriptionRuntime> {
     build_runtime(st, &ca)
 }
 
+// Test-harness assembly only; the eight inputs are the distinct private files
+// and identities the real worker needs, kept explicit rather than hidden.
+#[allow(clippy::too_many_arguments)]
 async fn start_worker(
     st: &Fixture,
     hid: Uuid,
