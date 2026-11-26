@@ -19,6 +19,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
+use crate::network::enroll_auth;
 use crate::network::enroll_db::{self, AttemptOutcome};
 use crate::network::enroll_retention::AttemptRetention;
 use crate::state::AppState;
@@ -765,12 +766,22 @@ async fn expiry_generation_revocation_and_shared_device_sessions_are_consistent(
             .0,
         200
     );
+    // Ending one session revokes only outstanding grants for THAT device, so a
+    // fresh grant (not the pre-end g2) is required to start the next session.
     assert_eq!(
         consume(&f.user, f.hid, g2, &s2, "dns_setup", f.device_id)
             .await
             .0,
+        403,
+        "the pre-end same-device grant was revoked by session end"
+    );
+    let (g2b, s2b, _) = issue(&f.user, f.hid, f.device_id, "dns_setup", 60).await;
+    assert_eq!(
+        consume(&f.user, f.hid, g2b, &s2b, "dns_setup", f.device_id)
+            .await
+            .0,
         200,
-        "the still-valid grant works after the old session ends"
+        "a fresh grant works after the old session ends"
     );
 
     // Admin revocation invalidates outstanding grants and sessions and bumps
@@ -1097,4 +1108,561 @@ async fn attempt_history_is_bounded_by_age_and_count(pool: PgPool) {
     assert!(remaining <= cfg.max_per_household);
     let swept = super::prune_enrollment_attempts(&pool).await.unwrap();
     assert!(swept <= remaining as u64, "periodic prune never adds rows");
+}
+
+// ─── Review follow-ups ───────────────────────────────────────────────────────
+
+#[sqlx::test]
+async fn production_auxiliary_prune_runs_both_enrollment_sweeps(pool: PgPool) {
+    let f = setup(&pool).await;
+    let (grant_id, secret, _) = issue(&f.user, f.hid, f.device_id, "proxy_setup", 60).await;
+    assert_eq!(
+        consume(
+            &f.user,
+            f.hid,
+            grant_id,
+            &secret,
+            "proxy_setup",
+            f.device_id
+        )
+        .await
+        .0,
+        200
+    );
+    // One live session stays; one retired session and one retired grant age out.
+    let first_session: Uuid = sqlx::query_scalar(
+        "SELECT id FROM network_verified_sessions WHERE household_id = $1 AND ended_at IS NULL",
+    )
+    .bind(f.hid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        f.user
+            .delete(&format!(
+                "/api/network/households/{}/enroll/sessions/{first_session}",
+                f.hid
+            ))
+            .await
+            .0,
+        200
+    );
+    let (gid2, s2, _) = issue(&f.user, f.hid, f.device_id, "dns_setup", 60).await;
+    assert_eq!(
+        consume(&f.user, f.hid, gid2, &s2, "dns_setup", f.device_id)
+            .await
+            .0,
+        200
+    );
+    let retired_session: Uuid = sqlx::query_scalar(
+        "SELECT id FROM network_verified_sessions WHERE ended_at IS NOT NULL ORDER BY verified_at LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap_or_default();
+    let old = Utc::now() - ChronoDuration::days(40);
+    sqlx::query(
+        "UPDATE network_enrollment_grants SET created_at = $1 WHERE consumed_at IS NOT NULL",
+    )
+    .bind(old)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE network_verified_sessions SET verified_at = $2 WHERE id = $1")
+        .bind(retired_session)
+        .bind(old)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO network_enrollment_attempts (household_id, occurred_at, outcome) VALUES ($1, $2, 'wrong_scope')",
+    )
+    .bind(f.hid)
+    .bind(old)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let attempts_before: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM network_enrollment_attempts")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let grants_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM network_enrollment_grants")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(attempts_before >= 1 && grants_before >= 2);
+
+    // The production helper (also used at startup and every retention tick)
+    // must invoke both enrollment sweeps without any other configuration.
+    crate::platform::retention::prune_auxiliary_retention(&pool, None, None, None, None)
+        .await
+        .unwrap();
+
+    let attempts_after: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM network_enrollment_attempts")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let grants_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM network_enrollment_grants")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(
+        attempts_after < attempts_before,
+        "attempt sweep was wired in"
+    );
+    assert!(grants_after < grants_before, "record sweep was wired in");
+    let live: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM network_verified_sessions WHERE ended_at IS NULL")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(live, 1, "a live session is never swept");
+}
+
+#[sqlx::test]
+async fn grant_revoked_between_api_auth_and_lock_blocks_all_self_mutators(pool: PgPool) {
+    let f = setup(&pool).await;
+    let (grant_id, secret, _) = issue(&f.user, f.hid, f.device_id, "proxy_setup", 60).await;
+    // Simulate the API authorization that happens before the service lock.
+    let _api_binding = crate::network::enroll_service::require_enrollment(&pool, f.hid, f.user_id)
+        .await
+        .unwrap();
+
+    // Admin revocation wins the household lock before the service starts.
+    let mut tx = pool.begin().await.unwrap();
+    enroll_db::lock_household(&mut tx, f.hid).await.unwrap();
+    assert!(crate::network::db::delete_grant_on_conn(
+        &mut tx,
+        f.hid,
+        f.user_id,
+        crate::network::authz::NetworkGrant::Enroll,
+    )
+    .await
+    .unwrap());
+    tx.commit().await.unwrap();
+
+    let devices_before: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM network_devices WHERE household_id = $1")
+            .bind(f.hid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let grants_before: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM network_enrollment_grants WHERE household_id = $1",
+    )
+    .bind(f.hid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let sessions_before: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM network_verified_sessions WHERE household_id = $1",
+    )
+    .bind(f.hid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let issue_err = crate::network::enroll_service::issue_grant(
+        &pool,
+        f.hid,
+        f.user_id,
+        f.device_id,
+        "proxy_setup",
+        60,
+    )
+    .await;
+    assert!(issue_err.is_err(), "stale API authorization must not issue");
+
+    let register_err = crate::network::enroll_service::self_register_device(
+        &pool,
+        f.hid,
+        f.user_id,
+        "Late Device",
+        "computer",
+        false,
+    )
+    .await;
+    assert!(
+        register_err.is_err(),
+        "stale API authorization must not register"
+    );
+
+    let consume_err = crate::network::enroll_service::consume_grant(
+        &pool,
+        f.hid,
+        f.user_id,
+        grant_id,
+        enroll_auth::parse_provided_secret(&secret).unwrap(),
+        "proxy_setup",
+        f.device_id,
+    )
+    .await;
+    assert!(
+        consume_err.is_err(),
+        "stale API authorization must not consume"
+    );
+
+    let (status, _) = f
+        .user
+        .post(
+            &format!("/api/network/households/{}/enroll/grants", f.hid),
+            json!({
+                "device_id": f.device_id, "purpose": "proxy_setup", "expires_in_secs": 60
+            }),
+        )
+        .await;
+    assert_eq!(status, 403, "HTTP route also denies after revocation");
+
+    for (sql, before, label) in [
+        (
+            "SELECT COUNT(*) FROM network_devices WHERE household_id = $1",
+            devices_before,
+            "devices",
+        ),
+        (
+            "SELECT COUNT(*) FROM network_enrollment_grants WHERE household_id = $1",
+            grants_before,
+            "grants",
+        ),
+        (
+            "SELECT COUNT(*) FROM network_verified_sessions WHERE household_id = $1",
+            sessions_before,
+            "sessions",
+        ),
+    ] {
+        let after: i64 = sqlx::query_scalar(sql)
+            .bind(f.hid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(after, before, "no {label} side effect after grant revoke");
+    }
+}
+
+#[sqlx::test]
+async fn network_logout_revokes_outstanding_grants_but_not_dashboard_session(pool: PgPool) {
+    let f = setup(&pool).await;
+    let (grant_id, secret, _) = issue(&f.user, f.hid, f.device_id, "proxy_setup", 60).await;
+    let (g2, s2, _) = issue(&f.user, f.hid, f.device_id, "dns_setup", 60).await;
+    assert_eq!(
+        consume(&f.user, f.hid, g2, &s2, "dns_setup", f.device_id)
+            .await
+            .0,
+        200
+    );
+    let (status, body) = f
+        .user
+        .delete(&format!(
+            "/api/network/households/{}/enroll/sessions",
+            f.hid
+        ))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        body["scope"],
+        "this household and binding only; dashboard session unaffected"
+    );
+    assert!(body["grants_revoked"].as_u64().unwrap() >= 1);
+
+    assert_eq!(
+        consume(
+            &f.user,
+            f.hid,
+            grant_id,
+            &secret,
+            "proxy_setup",
+            f.device_id
+        )
+        .await
+        .0,
+        403,
+        "an outstanding grant cannot be consumed after network logout"
+    );
+    let revoked: bool = sqlx::query_scalar(
+        "SELECT revoked_at IS NOT NULL FROM network_enrollment_grants WHERE id = $1",
+    )
+    .bind(grant_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(revoked);
+    assert_eq!(
+        f.user.get(&devices_path(f.hid)).await.0,
+        200,
+        "network logout does not end the dashboard/OIDC session"
+    );
+    // A fresh grant can be requested afterwards; logout is not a ban.
+    let _fresh = issue(&f.user, f.hid, f.device_id, "proxy_setup", 60).await;
+}
+
+#[sqlx::test]
+async fn single_session_end_revokes_only_same_device_grants(pool: PgPool) {
+    let f = setup(&pool).await;
+    let (status, body) = f
+        .user
+        .post(
+            &format!("/api/network/households/{}/enroll/devices", f.hid),
+            json!({ "label": "Second", "device_type": "phone", "shared": true }),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let device_b = Uuid::parse_str(body["device_id"].as_str().unwrap()).unwrap();
+
+    let (g1, s1, _) = issue(&f.user, f.hid, f.device_id, "proxy_setup", 60).await;
+    assert_eq!(
+        consume(&f.user, f.hid, g1, &s1, "proxy_setup", f.device_id)
+            .await
+            .0,
+        200
+    );
+    let session_a: Uuid = sqlx::query_scalar(
+        "SELECT id FROM network_verified_sessions WHERE household_id = $1 AND ended_at IS NULL",
+    )
+    .bind(f.hid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (same_device_grant, same_secret, _) =
+        issue(&f.user, f.hid, f.device_id, "dns_setup", 60).await;
+    let (other_grant, other_secret, _) = issue(&f.user, f.hid, device_b, "proxy_setup", 60).await;
+
+    let (status, body) = f
+        .user
+        .delete(&format!(
+            "/api/network/households/{}/enroll/sessions/{session_a}",
+            f.hid
+        ))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        body["grants_revoked"], 1,
+        "only the same-device grant is revoked"
+    );
+
+    assert_eq!(
+        consume(
+            &f.user,
+            f.hid,
+            same_device_grant,
+            &same_secret,
+            "dns_setup",
+            f.device_id
+        )
+        .await
+        .0,
+        403
+    );
+    assert_eq!(
+        consume(
+            &f.user,
+            f.hid,
+            other_grant,
+            &other_secret,
+            "proxy_setup",
+            device_b
+        )
+        .await
+        .0,
+        200,
+        "a grant on a different device remains valid"
+    );
+}
+
+#[sqlx::test]
+async fn binding_remap_bumps_generation_and_invalidates_everything(pool: PgPool) {
+    let f = setup(&pool).await;
+    let (grant_id, secret, _) = issue(&f.user, f.hid, f.device_id, "proxy_setup", 60).await;
+    assert_eq!(
+        consume(
+            &f.user,
+            f.hid,
+            grant_id,
+            &secret,
+            "proxy_setup",
+            f.device_id
+        )
+        .await
+        .0,
+        200
+    );
+    let before_gen: i64 =
+        sqlx::query_scalar("SELECT generation FROM network_principal_bindings WHERE id = $1")
+            .bind(f.binding_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let (status, body) = f
+        .admin
+        .post(
+            &format!("/api/network/households/{}/persons", f.hid),
+            json!({ "display_name": "Other person" }),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    let person2 = Uuid::parse_str(body["id"].as_str().unwrap()).unwrap();
+
+    // Re-map the SAME binding row to a different person: one unique binding,
+    // a fresh generation, everything issued under the old one invalidated.
+    let (status, body) = admin_post_binding(&f.admin, f.hid, person2, f.user_id).await;
+    assert_eq!(status, 200, "{body}");
+    let remapped: Uuid = Uuid::parse_str(body["binding_id"].as_str().unwrap()).unwrap();
+    assert_eq!(remapped, f.binding_id);
+
+    let after_gen: i64 =
+        sqlx::query_scalar("SELECT generation FROM network_principal_bindings WHERE id = $1")
+            .bind(f.binding_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(after_gen, before_gen + 1);
+
+    let live_sessions: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM network_verified_sessions WHERE household_id = $1 AND ended_at IS NULL",
+    )
+    .bind(f.hid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let live_enrollments: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM network_device_enrollments WHERE household_id = $1 AND status IN ('authorized','active')",
+    )
+    .bind(f.hid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(live_sessions, 0);
+    assert_eq!(live_enrollments, 0);
+    assert_eq!(
+        consume(
+            &f.user,
+            f.hid,
+            grant_id,
+            &secret,
+            "proxy_setup",
+            f.device_id
+        )
+        .await
+        .0,
+        403,
+        "old-generation grant cannot be consumed after remap"
+    );
+}
+
+#[sqlx::test]
+async fn device_authorization_list_is_paginated_and_live_cap_is_enforced(pool: PgPool) {
+    let f = setup(&pool).await;
+    for i in 0..3 {
+        let (status, body) = f
+            .admin
+            .post(
+                &format!("/api/network/households/{}/devices", f.hid),
+                json!({
+                    "canonical_key": format!("paginateddev{i}"),
+                    "label": format!("Desk {i}"),
+                    "device_type": "computer",
+                }),
+            )
+            .await;
+        assert_eq!(status, 200, "{body}");
+        let did = Uuid::parse_str(body["id"].as_str().unwrap()).unwrap();
+        let (status, _) = f
+            .admin
+            .post(
+                &format!(
+                    "/api/network/households/{}/bindings/{}/device-authorizations",
+                    f.hid, f.binding_id
+                ),
+                json!({ "device_id": did }),
+            )
+            .await;
+        assert_eq!(status, 200);
+    }
+    let base = format!(
+        "/api/network/households/{}/bindings/{}/device-authorizations",
+        f.hid, f.binding_id
+    );
+    let (status, first) = f.admin.get(&format!("{base}?limit=2&offset=0")).await;
+    assert_eq!(status, 200, "{first}");
+    assert_eq!(first["returned"], 2);
+    assert_eq!(first["limit"], 2);
+    assert_eq!(first["truncated"], true, "page 0 has more rows");
+    let (status, second) = f.admin.get(&format!("{base}?limit=2&offset=2")).await;
+    assert_eq!(status, 200);
+    assert_eq!(second["returned"], 2);
+    assert_eq!(second["offset"], 2);
+    let (status, empty) = f.admin.get(&format!("{base}?limit=2&offset=4")).await;
+    assert_eq!(status, 200);
+    assert_eq!(empty["returned"], 0);
+    assert_eq!(empty["truncated"], false);
+
+    // Fill to the household cap under the lock; the next self-registration or
+    // admin authorization is refused rather than growing inventory without end.
+    let cap = crate::network::enroll_service::MAX_LIVE_ENROLLMENTS_PER_HOUSEHOLD;
+    let mut tx = pool.begin().await.unwrap();
+    enroll_db::lock_household(&mut tx, f.hid).await.unwrap();
+    let current = enroll_db::count_live_enrollments_on_conn(&mut tx, f.hid)
+        .await
+        .unwrap();
+    for i in 0..(cap - current) {
+        let did = enroll_db::insert_device_on_conn(
+            &mut tx,
+            f.hid,
+            &format!("capdev{i:04}"),
+            "Cap device",
+            "computer",
+            false,
+        )
+        .await
+        .unwrap();
+        enroll_db::insert_device_enrollment_on_conn(
+            &mut tx,
+            f.hid,
+            f.binding_id,
+            did,
+            1,
+            None,
+            "active",
+        )
+        .await
+        .unwrap();
+    }
+    tx.commit().await.unwrap();
+    let (status, _) = f
+        .user
+        .post(
+            &format!("/api/network/households/{}/enroll/devices", f.hid),
+            json!({ "label": "Over cap", "device_type": "computer" }),
+        )
+        .await;
+    assert_eq!(status, 409, "self registration respects the live cap");
+    let (status, _) = f
+        .admin
+        .post(
+            &format!("/api/network/households/{}/devices", f.hid),
+            json!({
+                "canonical_key": "overcapdev01", "label": "Over cap", "device_type": "computer"
+            }),
+        )
+        .await;
+    assert_eq!(status, 200);
+    let extra: Uuid = sqlx::query_scalar(
+        "SELECT id FROM network_devices WHERE household_id = $1 AND canonical_key = 'overcapdev01'",
+    )
+    .bind(f.hid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (status, _) = f
+        .admin
+        .post(
+            &format!(
+                "/api/network/households/{}/bindings/{}/device-authorizations",
+                f.hid, f.binding_id
+            ),
+            json!({ "device_id": extra }),
+        )
+        .await;
+    assert_eq!(status, 409, "admin preauthorization respects the live cap");
 }

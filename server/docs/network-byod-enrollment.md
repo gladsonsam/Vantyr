@@ -32,8 +32,24 @@ Neutral contract note for the additive slice in migration `0078` and
    eight hours). One live session per device is allowed; switching requires
    ending the previous session.
 
-Self-revocation, network logout, device-end and admin binding-revoke invalidate
-grants and sessions in the same transaction.
+Revocation semantics (all in the same household-locked transaction):
+
+- `DELETE .../enroll/sessions` is **network logout**: it ends every verified
+  session for this binding in this household and revokes every outstanding
+  enrollment grant for that binding. The dashboard/OIDC session is untouched;
+  a fresh grant may be requested afterwards.
+- `DELETE .../enroll/sessions/{sid}` ends one named session and revokes only
+  outstanding grants for that same device and binding; grants on other devices
+  remain valid.
+- `DELETE .../enroll/devices/{did}` ends that device enrollment and revokes its
+  grants and sessions; admin binding revoke/re-map bumps the generation and
+  invalidates every grant, session and device enrollment under the old one.
+
+Every self mutator rechecks the exact `network_enroll` grant inside the
+household-locked transaction, so a revocation that wins the lock cannot be
+beaten by a request authorized before the revocation. Admin device-authorization
+reads are paginated with explicit `limit`, `offset` and `truncated` fields; live
+enrollments per household are hard-capped.
 
 ## Scope boundaries
 

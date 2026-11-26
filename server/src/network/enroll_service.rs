@@ -2,9 +2,10 @@
 //!
 //! Every mutator opens ONE transaction and locks the household row first, so a
 //! binding revoke, device end, grant consume and session end for the same
-//! household cannot interleave. After that prefix the order is binding ->
-//! device enrollment -> grant -> session. No plaintext secret, digest or
-//! person/device claim is logged here.
+//! household cannot interleave. The exact lock order after that prefix is
+//! binding -> grant -> device enrollment -> session: the consume path reads
+//! and locks the grant before its device enrollment and the target session.
+//! No plaintext secret, digest or person/device claim is logged here.
 //!
 //! Scope is intentionally narrow: this service issues one-time scoped grants
 //! and records time-bounded verified sessions. It never produces proxy
@@ -21,6 +22,10 @@ use super::authz::{has_grant, NetworkGrant};
 use super::enroll_auth::{self, Secret, VERIFICATION_OIDC};
 use super::enroll_db::{self, AttemptOutcome, BindingRec, EndReason};
 use super::enroll_retention::{AttemptRetention, RecordRetention};
+
+/// Hard cap on live device enrollments per household. Stops self-registration
+/// from growing inventory without bound; checked under the household lock.
+pub const MAX_LIVE_ENROLLMENTS_PER_HOUSEHOLD: i64 = 100;
 
 /// An authenticated user may enroll only with BOTH the explicit grant and an
 /// active admin-created principal binding in this household. Both checks fail
@@ -40,6 +45,27 @@ pub async fn require_enrollment(
         .await
         .map_err(|e| ApiError::Internal(e.into()))?
         .ok_or_else(ApiError::forbidden)
+}
+
+/// Re-check the *exact* grant inside the transaction that holds the household
+/// row lock. `require_enrollment` above only authorized the HTTP request: an
+/// admin can revoke `network_enroll` after that check but before this mutator
+/// obtains the lock. Without this recheck the stale request would still issue
+/// a grant, consume one or register a device. Every self mutator calls this.
+async fn require_enroll_grant_on_conn(
+    conn: &mut sqlx::PgConnection,
+    household_id: Uuid,
+    user_id: Uuid,
+) -> ApiResult<()> {
+    let allowed =
+        enroll_db::has_grant_on_conn(conn, household_id, user_id, NetworkGrant::Enroll.as_str())
+            .await
+            .map_err(|e| ApiError::Internal(e.into()))?;
+    if allowed {
+        Ok(())
+    } else {
+        Err(ApiError::forbidden())
+    }
 }
 
 // ─── Admin: explicit principal bindings ──────────────────────────────────────
@@ -152,6 +178,13 @@ pub async fn authorize_device(
     if !enroll_db::device_in_household_on_conn(&mut tx, household_id, device_id).await? {
         return Err(ApiError::not_found("device not found in this household"));
     }
+    if enroll_db::count_live_enrollments_on_conn(&mut tx, household_id).await?
+        >= MAX_LIVE_ENROLLMENTS_PER_HOUSEHOLD
+    {
+        return Err(ApiError::conflict(
+            "live enrollment cap reached for this household",
+        ));
+    }
     if enroll_db::live_enrollment_for_device_on_conn(&mut tx, household_id, device_id).await? {
         return Err(ApiError::conflict(
             "device already has a live enrollment in this household",
@@ -184,10 +217,18 @@ pub async fn self_register_device(
 ) -> ApiResult<Uuid> {
     let mut tx = pool.begin().await?;
     enroll_db::lock_household(&mut tx, household_id).await?;
+    require_enroll_grant_on_conn(&mut tx, household_id, user_id).await?;
     let Some(binding) = enroll_db::active_binding_on_conn(&mut tx, household_id, user_id).await?
     else {
         return Err(ApiError::forbidden());
     };
+    if enroll_db::count_live_enrollments_on_conn(&mut tx, household_id).await?
+        >= MAX_LIVE_ENROLLMENTS_PER_HOUSEHOLD
+    {
+        return Err(ApiError::conflict(
+            "live enrollment cap reached for this household",
+        ));
+    }
     let device_id = enroll_db::insert_device_on_conn(
         &mut tx,
         household_id,
@@ -237,6 +278,7 @@ pub async fn issue_grant(
 ) -> ApiResult<GrantOutcome> {
     let mut tx = pool.begin().await?;
     enroll_db::lock_household(&mut tx, household_id).await?;
+    require_enroll_grant_on_conn(&mut tx, household_id, user_id).await?;
     let Some(binding) = enroll_db::active_binding_on_conn(&mut tx, household_id, user_id).await?
     else {
         return Err(ApiError::forbidden());
@@ -334,6 +376,9 @@ async fn consume_inner(
     device_id: Uuid,
     now: DateTime<Utc>,
 ) -> Result<SessionOutcome, ConsumeFailure> {
+    if let Err(e) = require_enroll_grant_on_conn(conn, household_id, user_id).await {
+        return Err((e, AttemptOutcome::WrongScope, None));
+    }
     let Some(binding) = enroll_db::active_binding_on_conn(conn, household_id, user_id)
         .await
         .map_err(|e| {
@@ -613,53 +658,86 @@ pub async fn consume_grant(
 
 // ─── Self-service revocation / logout ────────────────────────────────────────
 
+/// End ONE verified session. Only a session owned by this exact binding/user
+/// in this household can be ended. Its outstanding (unconsumed) grants are
+/// revoked for the SAME device and binding only: a grant already consumed or
+/// bound to another device/binding is left alone. Report the count of revoked
+/// grants so callers can see the effect without exposing any secret.
 pub async fn end_session(
     pool: &PgPool,
     household_id: Uuid,
     user_id: Uuid,
     session_id: Uuid,
-) -> ApiResult<bool> {
+) -> ApiResult<(bool, u64)> {
     let mut tx = pool.begin().await?;
     enroll_db::lock_household(&mut tx, household_id).await?;
+    require_enroll_grant_on_conn(&mut tx, household_id, user_id).await?;
     let Some(binding) = enroll_db::active_binding_on_conn(&mut tx, household_id, user_id).await?
     else {
         return Err(ApiError::forbidden());
     };
+    let Some(device_id) =
+        enroll_db::session_device_on_conn(&mut tx, household_id, binding.id, user_id, session_id)
+            .await?
+    else {
+        return Err(ApiError::not_found("verified session not found"));
+    };
+    let now = Utc::now();
     let removed = enroll_db::end_own_session_on_conn(
         &mut tx,
         household_id,
         binding.id,
         user_id,
         session_id,
-        Utc::now(),
+        now,
         EndReason::SelfEnd,
     )
     .await?;
+    let revoked = enroll_db::revoke_grants_for_device_and_binding_on_conn(
+        &mut tx,
+        household_id,
+        device_id,
+        binding.id,
+        now,
+    )
+    .await?;
     tx.commit().await?;
-    Ok(removed)
+    Ok((removed, revoked))
 }
 
-/// Network logout: ends every verified session owned by this authenticated
-/// user in this household. Dashboard session logout is already enforced by the
-/// shared `require_auth` middleware; this is the network-specific revocation.
-pub async fn end_all_sessions(pool: &PgPool, household_id: Uuid, user_id: Uuid) -> ApiResult<u64> {
+/// Network logout (NOT dashboard logout). Ends every verified session owned by
+/// this authenticated user in this household AND revokes every outstanding
+/// enrollment grant for that exact binding/household in the same transaction.
+/// The dashboard OIDC session-cookie is untouched: the user can sign in again
+/// and request a fresh grant, but no pre-logout grant can be consumed. The
+/// shared `require_auth` middleware separately enforces dashboard logout.
+pub async fn end_all_sessions(
+    pool: &PgPool,
+    household_id: Uuid,
+    user_id: Uuid,
+) -> ApiResult<(u64, u64)> {
     let mut tx = pool.begin().await?;
     enroll_db::lock_household(&mut tx, household_id).await?;
+    require_enroll_grant_on_conn(&mut tx, household_id, user_id).await?;
     let Some(binding) = enroll_db::active_binding_on_conn(&mut tx, household_id, user_id).await?
     else {
         return Err(ApiError::forbidden());
     };
+    let now = Utc::now();
     let n = enroll_db::end_own_sessions_on_conn(
         &mut tx,
         household_id,
         binding.id,
         user_id,
-        Utc::now(),
+        now,
         EndReason::SelfAll,
     )
     .await?;
+    let revoked =
+        enroll_db::revoke_grants_for_binding_on_conn(&mut tx, household_id, binding.id, now)
+            .await?;
     tx.commit().await?;
-    Ok(n)
+    Ok((n, revoked))
 }
 
 /// End this account's device enrollment. Grants and verified sessions for the
@@ -673,6 +751,7 @@ pub async fn end_device_enrollment(
 ) -> ApiResult<bool> {
     let mut tx = pool.begin().await?;
     enroll_db::lock_household(&mut tx, household_id).await?;
+    require_enroll_grant_on_conn(&mut tx, household_id, user_id).await?;
     let Some(binding) = enroll_db::active_binding_on_conn(&mut tx, household_id, user_id).await?
     else {
         return Err(ApiError::forbidden());

@@ -66,6 +66,30 @@ pub async fn lock_household(conn: &mut PgConnection, household_id: Uuid) -> sqlx
         .await
 }
 
+/// Exact grant check inside the same transaction as the household lock. The
+/// API-level check can be stale by the time a mutator obtains the lock; every
+/// self mutator rechecks here so a concurrent `network_enroll` revoke wins.
+pub async fn has_grant_on_conn(
+    conn: &mut PgConnection,
+    household_id: Uuid,
+    user_id: Uuid,
+    grant_name: &str,
+) -> sqlx::Result<bool> {
+    sqlx::query_scalar::<_, bool>(
+        r"
+        SELECT EXISTS (
+            SELECT 1 FROM network_grants
+            WHERE household_id = $1 AND user_id = $2 AND grant_name = $3
+        )
+        ",
+    )
+    .bind(household_id)
+    .bind(user_id)
+    .bind(grant_name)
+    .fetch_one(conn)
+    .await
+}
+
 pub async fn person_in_household_on_conn(
     conn: &mut PgConnection,
     household_id: Uuid,
@@ -198,6 +222,23 @@ pub async fn device_enrollment_on_conn(
     .bind(device_id)
     .bind(binding_id)
     .fetch_optional(conn)
+    .await
+}
+
+/// Hard bound on live enrollments in one household. Checked under the household
+/// lock before self-registration or admin pre-authorization inserts a row.
+pub async fn count_live_enrollments_on_conn(
+    conn: &mut PgConnection,
+    household_id: Uuid,
+) -> sqlx::Result<i64> {
+    sqlx::query_scalar::<_, i64>(
+        r"
+        SELECT COUNT(*) FROM network_device_enrollments
+        WHERE household_id = $1 AND status IN ('authorized', 'active')
+        ",
+    )
+    .bind(household_id)
+    .fetch_one(conn)
     .await
 }
 
@@ -429,6 +470,7 @@ pub async fn list_own_devices(
         WHERE e.household_id = $1 AND e.binding_id = $2
           AND e.status IN ('authorized', 'active')
         ORDER BY d.label, d.id
+        LIMIT 100
         ",
     )
     .bind(household_id)
@@ -437,10 +479,14 @@ pub async fn list_own_devices(
     .await
 }
 
+/// Bounded, paginated admin read. The caller receives the page window and a
+/// `truncated` flag so an omitted remainder is never presented as the full set.
 pub async fn list_device_enrollments(
     pool: &PgPool,
     household_id: Uuid,
     binding_id: Uuid,
+    limit: i64,
+    offset: i64,
 ) -> sqlx::Result<Vec<DeviceAuthorizationRow>> {
     sqlx::query_as::<_, DeviceAuthorizationRow>(
         r"
@@ -448,10 +494,13 @@ pub async fn list_device_enrollments(
         FROM network_device_enrollments
         WHERE household_id = $1 AND binding_id = $2
         ORDER BY created_at DESC, id
+        LIMIT $3 OFFSET $4
         ",
     )
     .bind(household_id)
     .bind(binding_id)
+    .bind(limit)
+    .bind(offset)
     .fetch_all(pool)
     .await
 }
@@ -635,6 +684,31 @@ pub async fn end_session_on_conn(
     Ok(res.rows_affected() == 1)
 }
 
+/// Resolve the device of a session before ending it, so single-session logout
+/// can revoke only outstanding grants for that exact device and binding.
+pub async fn session_device_on_conn(
+    conn: &mut PgConnection,
+    household_id: Uuid,
+    binding_id: Uuid,
+    user_id: Uuid,
+    session_id: Uuid,
+) -> sqlx::Result<Option<Uuid>> {
+    sqlx::query_scalar::<_, Uuid>(
+        r"
+        SELECT device_id FROM network_verified_sessions
+        WHERE household_id = $1 AND binding_id = $2 AND dashboard_user = $3
+          AND id = $4 AND ended_at IS NULL
+        FOR UPDATE
+        ",
+    )
+    .bind(household_id)
+    .bind(binding_id)
+    .bind(user_id)
+    .bind(session_id)
+    .fetch_optional(conn)
+    .await
+}
+
 /// Ends only a session owned by the calling binding/user. The household is
 /// locked by the caller, so a concurrent revoke cannot race this decision.
 pub async fn end_own_session_on_conn(
@@ -766,6 +840,31 @@ pub async fn revoke_grants_for_binding_on_conn(
         ",
     )
     .bind(household_id)
+    .bind(binding_id)
+    .bind(now)
+    .execute(conn)
+    .await?;
+    Ok(res.rows_affected())
+}
+
+/// Device + binding scoped grant revocation for single-session logout. A grant
+/// for a different device or a different binding is deliberately untouched.
+pub async fn revoke_grants_for_device_and_binding_on_conn(
+    conn: &mut PgConnection,
+    household_id: Uuid,
+    device_id: Uuid,
+    binding_id: Uuid,
+    now: DateTime<Utc>,
+) -> sqlx::Result<u64> {
+    let res = sqlx::query(
+        r"
+        UPDATE network_enrollment_grants SET revoked_at = $4
+        WHERE household_id = $1 AND device_id = $2 AND binding_id = $3
+          AND revoked_at IS NULL AND consumed_at IS NULL
+        ",
+    )
+    .bind(household_id)
+    .bind(device_id)
     .bind(binding_id)
     .bind(now)
     .execute(conn)

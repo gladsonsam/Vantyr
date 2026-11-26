@@ -124,11 +124,20 @@ pub async fn device_authorizations_list(
     Path((hid, bid)): Path<(Uuid, Uuid)>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
+    Query(page): Query<PageParams>,
 ) -> ApiResult<Json<Value>> {
     authz::require_network_admin(&s.db, user.user_id, hid).await?;
-    // Bounded by the household's live enrollment cap; no unbounded scan.
-    let rows = enroll_db::list_device_enrollments(&s.db, hid, bid).await?;
-    Ok(Json(json!({ "enrollments": rows })))
+    let (limit, offset) = bounds(&page)?;
+    let rows = enroll_db::list_device_enrollments(&s.db, hid, bid, limit, offset).await?;
+    // Explicit page window and truncation flag: a short page is never silently
+    // presented as the complete set of device authorizations.
+    Ok(Json(json!({
+        "enrollments": rows,
+        "limit": limit,
+        "offset": offset,
+        "returned": rows.len(),
+        "truncated": rows.len() as i64 == limit,
+    })))
 }
 
 // ─── Self: scoped device enrollment ──────────────────────────────────────────
@@ -335,7 +344,9 @@ pub async fn session_end(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
     let binding = enroll_service::require_enrollment(&s.db, hid, user.user_id).await?;
-    if !enroll_service::end_session(&s.db, hid, user.user_id, sid).await? {
+    let (removed, grants_revoked) =
+        enroll_service::end_session(&s.db, hid, user.user_id, sid).await?;
+    if !removed {
         return Err(ApiError::not_found("verified session not found"));
     }
     super::api::audit_network(
@@ -344,10 +355,18 @@ pub async fn session_end(
         audit_ip(&headers, addr).as_deref(),
         hid,
         "network_verified_session_ended",
-        json!({ "session_id": sid, "binding_id": binding.id }),
+        json!({
+            "session_id": sid,
+            "binding_id": binding.id,
+            "grants_revoked": grants_revoked,
+        }),
     )
     .await;
-    Ok(Json(json!({ "ok": true })))
+    Ok(Json(json!({
+        "ok": true,
+        "grants_revoked": grants_revoked,
+        "scope": "this device and binding only",
+    })))
 }
 
 pub async fn sessions_end_all(
@@ -358,15 +377,25 @@ pub async fn sessions_end_all(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
     let binding = enroll_service::require_enrollment(&s.db, hid, user.user_id).await?;
-    let n = enroll_service::end_all_sessions(&s.db, hid, user.user_id).await?;
+    let (ended, grants_revoked) =
+        enroll_service::end_all_sessions(&s.db, hid, user.user_id).await?;
     super::api::audit_network(
         &s,
         &user,
         audit_ip(&headers, addr).as_deref(),
         hid,
         "network_verified_sessions_logged_out",
-        json!({ "binding_id": binding.id, "ended": n }),
+        json!({
+            "binding_id": binding.id,
+            "ended": ended,
+            "grants_revoked": grants_revoked,
+        }),
     )
     .await;
-    Ok(Json(json!({ "ok": true, "ended": n })))
+    Ok(Json(json!({
+        "ok": true,
+        "ended": ended,
+        "grants_revoked": grants_revoked,
+        "scope": "this household and binding only; dashboard session unaffected",
+    })))
 }

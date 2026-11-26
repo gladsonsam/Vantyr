@@ -30,8 +30,10 @@ pub fn routes() -> Router<Arc<AppState>> {
         )
 }
 
-/// Optional extra pruning (alert history + old software rows + script executions).
-/// Telemetry uses [`db::prune_telemetry_by_retention`].
+/// Optional extra pruning (alert history + old software rows + script executions,
+/// gateway reports and BYOD enrollment history). Telemetry uses
+/// [`db::prune_telemetry_by_retention`]. Called once at startup and on every
+/// tick of [`spawn_prune_task`].
 pub async fn prune_auxiliary_retention(
     pool: &PgPool,
     alert_event_days: Option<i64>,
@@ -74,6 +76,29 @@ pub async fn prune_auxiliary_retention(
             rows = n,
             "pruned old Vantyr Network gateway reports by retention"
         );
+    }
+    // BYOD enrollment history is also age+count bounded. Self-service writes
+    // prune their own household, but idle households need this sweep. Each
+    // sweep is independent: a failure is logged with its real cause and does
+    // not suppress the other retention work or the remaining sweeps.
+    match crate::network::prune_enrollment_attempts(pool).await {
+        Ok(rows) => {
+            if rows > 0 {
+                tracing::info!(rows, "pruned old Vantyr Network enrollment attempts");
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "Vantyr Network enrollment attempt prune failed"),
+    }
+    match crate::network::prune_enrollment_records(pool).await {
+        Ok(rows) => {
+            if rows > 0 {
+                tracing::info!(
+                    rows,
+                    "pruned old Vantyr Network grants and verified sessions"
+                );
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "Vantyr Network enrollment record prune failed"),
     }
     Ok(())
 }
