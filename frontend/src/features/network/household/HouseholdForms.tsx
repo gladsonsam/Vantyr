@@ -319,8 +319,9 @@ export function EditPersonForm({ household, person }: { household: string; perso
           Default profile
         </Label>
         <HelpTip label="About the default profile">
-          The profile used for devices that have no person assigned. The server decides whether more
-          than one person can hold it.
+          Marks one person as the household’s default profile. Only one person can hold it at a
+          time: saving this clears it from whoever had it before. It is a profile marker, not proof
+          of who is using a device.
         </HelpTip>
       </div>
     </FormDialog>
@@ -489,7 +490,6 @@ export function EditConnectionForm({
                 ...(status === "revoked" && !connection.revoked_at
                   ? { revoked_at: new Date().toISOString() }
                   : {}),
-                ...(status !== "revoked" && connection.revoked_at ? { revoked_at: null } : {}),
               }
             : {}),
           ...(agent !== current ? { enrolled_agent_id: agent === NONE ? null : agent } : {}),
@@ -500,14 +500,26 @@ export function EditConnectionForm({
         setAgent(current);
       }}
     >
-      <Field label="Status" id={`conn-status-${connection.id}`}>
+      <Field
+        label="Status"
+        id={`conn-status-${connection.id}`}
+        help={
+          connection.status === "revoked"
+            ? "A revoked connection can’t be reinstated from here yet."
+            : "Revoking records that this connection should no longer be trusted. It does not revoke gateway credentials."
+        }
+      >
         <Select value={status} onValueChange={(v) => setStatus(v as NetworkConnectionStatus)}>
           <SelectTrigger id={`conn-status-${connection.id}`} className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {NETWORK_CONNECTION_STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>
+              <SelectItem
+                key={s}
+                value={s}
+                disabled={connection.status === "revoked" && s !== "revoked"}
+              >
                 {STATUS_TONE[s].label}
               </SelectItem>
             ))}
