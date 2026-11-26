@@ -23,7 +23,8 @@ household, DHCP, router, firewall, DNS resolver, proxy, Supabase or React UI
 changes. The integrated Network UI is deliberately deferred and is not a
 prerequisite for backend work.
 
-Related doc: [operations/security runbook](family-network-operations.md)
+Related docs: [operations/security runbook](family-network-operations.md) and
+[BYOD onboarding roadmap](network-onboarding.md)
 (accepted). The full native DNS behaviour scope is listed neutrally below
 and remains future work; none of it overrides Vantyr's scope/OIDC boundaries.
 
