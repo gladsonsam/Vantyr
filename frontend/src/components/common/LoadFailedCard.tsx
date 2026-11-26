@@ -8,7 +8,7 @@ import { Card, CardContent } from "@vantyr/ui/components/card";
  */
 export function LoadFailedCard({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <Card className="gap-0 py-0">
+    <Card className="gap-0 py-0 border-destructive/30">
       <CardContent className="p-5 text-sm">
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">

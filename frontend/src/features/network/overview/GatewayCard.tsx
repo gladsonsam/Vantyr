@@ -45,22 +45,26 @@ function Warning({ warning }: { warning: GatewayWarning }) {
 export function GatewayCard({ gateway }: { gateway: Gateway }) {
   const Icon = gateway.kind === "dns" ? Server : Network;
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="space-y-6 p-6">
-        <div className="flex items-start justify-between gap-4">
+    <Card className="gap-0 overflow-hidden py-0">
+      <div className="flex items-start justify-between gap-4 border-b border-border/50 px-5 py-4">
           <div className="flex items-center gap-3">
-            <Icon className="size-5 text-muted-foreground" aria-hidden="true" />
+            <span
+              className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+              aria-hidden="true"
+            >
+              <Icon className="size-4" />
+            </span>
             <div>
-              <h3 className="font-medium">{gateway.name}</h3>
+              <h3 className="text-sm font-semibold">{gateway.name}</h3>
               <p className="text-sm text-muted-foreground">
                 Last report <TimeAgo iso={gateway.lastSeenAt} />
               </p>
             </div>
           </div>
           <OnlineStatus online={gateway.online} />
-        </div>
-
-        <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-3 text-sm">
+      </div>
+      <CardContent className="space-y-0 divide-y divide-border/50 p-0">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-3 px-5 py-4 text-sm">
           <dt className="text-muted-foreground">Applied revision</dt>
           <dd>
             {gateway.appliedRevision === null ? (
@@ -92,7 +96,7 @@ export function GatewayCard({ gateway }: { gateway: Gateway }) {
           </dd>
         </dl>
 
-        <ul className="divide-y divide-border border-y border-border">
+        <ul className="divide-y divide-border/50 px-5">
           {gateway.capabilities.map((capability) => (
             <li
               key={capability.id}
@@ -112,7 +116,7 @@ export function GatewayCard({ gateway }: { gateway: Gateway }) {
         </ul>
 
         {gateway.warnings.length > 0 ? (
-          <ul className="space-y-3">
+          <ul className="space-y-3 px-5 py-4">
             {gateway.warnings.map((warning) => (
               <Warning key={warning.id} warning={warning} />
             ))}

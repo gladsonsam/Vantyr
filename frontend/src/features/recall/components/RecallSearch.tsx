@@ -600,7 +600,7 @@ function SearchHit({
 
 function SearchPanel({ model, props }: SearchPanelProps) {
   return (
-    <div className="recall-search rounded-xl bg-card p-4">
+    <div className="recall-search rounded-xl border border-border/70 bg-card/10 p-4">
       <SearchQueryControls model={model} props={props} />
       <ActiveFilterChips model={model} />
       <SearchOptions model={model} props={props} />

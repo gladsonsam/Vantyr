@@ -132,7 +132,7 @@ function UserRow({
   const RoleIcon = ROLE_ICON[user.role];
   const created = createdOn(user.created_at);
   return (
-    <li className="flex flex-col gap-3 border-b border-foreground/[0.06] p-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4">
+    <li className="flex flex-col gap-3 border-b border-border/50 p-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <DashboardUserAvatar
           username={user.username}
@@ -178,7 +178,7 @@ export function UsersList({
   actions: UserActions;
 }) {
   return (
-    <ul aria-label="Users" className="rounded-xl bg-card">
+    <ul aria-label="Users" className="rounded-xl border border-border/70 bg-card/10">
       {users.map((u) => (
         <UserRow key={u.id} user={u} allUsers={allUsers} meId={meId} actions={actions} />
       ))}

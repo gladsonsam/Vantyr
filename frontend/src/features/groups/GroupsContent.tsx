@@ -55,7 +55,7 @@ export function GroupsContent({
     return <LoadFailedCard message={`Couldn’t load groups: ${loadError}`} onRetry={onRetry} />;
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-xl bg-card py-12 text-sm text-muted-foreground">
+      <div className="flex items-center justify-center gap-2 rounded-xl border border-border/70 bg-card/10 py-12 text-sm text-muted-foreground">
         <Spinner /> Loading groups…
       </div>
     );

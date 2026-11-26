@@ -185,7 +185,7 @@ function EventList({
     );
   }
   return (
-    <div className="overflow-hidden rounded-xl bg-card">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
       <ul aria-label="Events, newest first">
         {displayed.map((r) => (
           <EventRow key={r.id} event={r} onScreenshot={onScreenshot} />
@@ -206,7 +206,7 @@ function EventRow({
   const { label, Icon, className } = TYPE_META[r.type];
   const when = fmtDateTime(r.time);
   return (
-    <li className="flex flex-col gap-2 border-b border-foreground/[0.06] p-4 last:border-b-0 sm:flex-row sm:items-start sm:gap-4">
+    <li className="flex flex-col gap-2 border-b border-border/60 p-4 last:border-b-0 sm:flex-row sm:items-start sm:gap-4">
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span

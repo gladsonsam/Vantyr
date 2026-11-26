@@ -78,7 +78,7 @@ export function DataTable<TData extends RowData>({
   const columnCount = table.getAllLeafColumns().length;
   return (
     <Table className={STACKED}>
-      <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+      <TableHeader className="[&_tr]:border-border/50 [&_th]:h-11 [&_th]:px-4 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
         {table.getHeaderGroups().map((group) => (
           <TableRow key={group.id} className="hover:bg-transparent">
             {group.headers.map((header) => {
@@ -101,7 +101,7 @@ export function DataTable<TData extends RowData>({
           </TableRow>
         ))}
       </TableHeader>
-      <TableBody className={cn("[&_td]:px-3 [&_td]:py-3.5", bodyClassName)}>
+      <TableBody className={cn("[&_td]:px-4 [&_td]:py-3.5 [&_td]:tabular-nums", bodyClassName)}>
         {loading && rows.length === 0 ? (
           <StateRow colSpan={columnCount}>
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
@@ -122,7 +122,7 @@ export function DataTable<TData extends RowData>({
                   <TableRow className="hover:bg-transparent">
                     <TableCell
                       colSpan={columnCount}
-                      className="bg-muted/40 py-1.5! text-xs font-medium text-muted-foreground max-sm:basis-full max-sm:-mx-3 max-sm:-my-3 max-sm:px-3! max-sm:py-1.5!"
+                      className="bg-muted/20 py-2! text-xs font-medium text-muted-foreground max-sm:basis-full max-sm:-mx-3 max-sm:-my-3 max-sm:px-3! max-sm:py-1.5!"
                     >
                       {day.label}
                     </TableCell>

@@ -60,7 +60,7 @@ export function RuleRow({
   actions: ReactNode;
 }) {
   return (
-    <li className="flex flex-col gap-3 border-b border-foreground/[0.06] p-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4">
+    <li className="flex flex-col gap-3 border-b border-border/60 p-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4 transition-colors hover:bg-muted/20">
       <div className="flex min-w-0 flex-1 items-start gap-3">
         <Switch
           className="mt-0.5 after:absolute after:-inset-1.5 after:content-['']"
@@ -70,7 +70,7 @@ export function RuleRow({
           onCheckedChange={onToggle}
         />
         <div className="min-w-0 flex-1">
-          <h3 className="break-words text-base font-medium">{title}</h3>
+          <h3 className="break-words text-sm font-medium">{title}</h3>
           {(lead || state) && (
             <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground">
               {lead}

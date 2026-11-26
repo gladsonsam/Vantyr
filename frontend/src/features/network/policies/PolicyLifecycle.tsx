@@ -1,4 +1,5 @@
-import { Card, CardContent } from "@vantyr/ui/components/card";
+import { Route } from "lucide-react";
+import { SettingsSection } from "@/features/network/components/SettingsSection";
 import StatusMark, { type StatusMarkStatus } from "@/components/react-bits/StatusMark";
 import { HelpTip } from "@/components/common/HelpTip";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
@@ -65,15 +66,17 @@ export function PolicyLifecycle({ policy, gateways }: { policy: PolicyView; gate
   const steps = stepsFor(policy, gateways);
   if (steps.length === 0) return null;
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="space-y-5 p-5">
-        <div className="flex items-center gap-1.5">
-          <h3 className="font-medium">Where this policy stands</h3>
-          <HelpTip label="About saved, applied and verified">
-            Saving only records a proposal. A gateway enforces it once it fetches and acknowledges
-            that revision, and that is separate from confirming the rules really work.
-          </HelpTip>
-        </div>
+    <SettingsSection
+      title="Where this policy stands"
+      icon={<Route />}
+      action={
+        <HelpTip label="About saved, applied and verified">
+          Saving only records a proposal. A gateway enforces it once it fetches and acknowledges
+          that revision, and that is separate from confirming the rules really work.
+        </HelpTip>
+      }
+      bodyClassName="divide-y-0 py-5"
+    >
         <ol className="space-y-4">
           {steps.map((step) => (
             <li key={step.id} className="flex items-start gap-4">
@@ -91,7 +94,6 @@ export function PolicyLifecycle({ policy, gateways }: { policy: PolicyView; gate
             </li>
           ))}
         </ol>
-      </CardContent>
-    </Card>
+    </SettingsSection>
   );
 }

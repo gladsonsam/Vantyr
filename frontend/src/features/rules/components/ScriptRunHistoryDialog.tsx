@@ -48,7 +48,7 @@ export function ScriptRunHistoryDialog({
     >
       <ul
         aria-label="Runs of this script"
-        className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-xl bg-muted/50"
+        className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-xl border border-border/60 bg-muted/20"
       >
         {events.map((row) => (
           <RunRow key={`${row.agent_id}-${row.expected_fire_time}`} row={row} />
@@ -61,7 +61,7 @@ export function ScriptRunHistoryDialog({
 function RunRow({ row }: { row: ScheduledScriptEvent }) {
   const status = runStatus(row.status);
   return (
-    <li className="flex flex-col gap-1 border-b border-foreground/[0.06] p-3 last:border-b-0">
+    <li className="flex flex-col gap-1 border-b border-border/60 p-3 last:border-b-0">
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
         <span className={`text-sm font-medium ${RUN_TONE_CLASS[status.tone]}`}>{status.label}</span>
         <span className="min-w-0 truncate text-sm">{row.agent_name || "Unknown agent"}</span>

@@ -232,7 +232,7 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
   const statusQuery = useStatusQuery(isAdmin);
   return (
     <Card className="gap-0 py-0">
-      <CardHeader className="px-5 pt-5 pb-2">
+      <CardHeader className="border-b border-border/70 px-5 py-4">
         <CardTitle className="flex items-center gap-1.5">
           Alert channels
           <HelpTip>

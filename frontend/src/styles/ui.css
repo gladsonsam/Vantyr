@@ -53,6 +53,9 @@
   --color-card: var(--ui-card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+  --color-metric-cpu: var(--metric-cpu);
+  --color-metric-memory: var(--metric-memory);
+  --color-metric-disk: var(--metric-disk);
   /* Fleet status hues (online / AFK / info). */
   --color-success: var(--success);
   --color-warning: var(--warning);
@@ -70,41 +73,85 @@
    `:root` and `.dark`), so the shadcn tokens follow suit. */
 :root,
 .dark {
-  --background: oklch(0.135 0.012 272);
-  --foreground: oklch(0.97 0.003 265);
-  --ui-card: oklch(0.175 0.014 272);
-  --ui-card-foreground: oklch(0.97 0.003 265);
-  --popover: oklch(0.195 0.014 272);
-  --popover-foreground: oklch(0.97 0.003 265);
-  --primary: oklch(0.8 0.135 185);
-  --primary-foreground: oklch(0.2 0.045 190);
-  --secondary: oklch(0.228 0.014 272);
-  --secondary-foreground: oklch(0.97 0.003 265);
-  --muted: oklch(0.228 0.014 272);
-  --muted-foreground: oklch(0.67 0.02 272);
-  --ui-accent: oklch(0.245 0.016 272);
-  --ui-accent-foreground: oklch(0.97 0.003 265);
-  --destructive: oklch(0.68 0.19 25);
-  --success: oklch(0.8 0.165 160);
-  --warning: oklch(0.78 0.14 75);
-  --info: oklch(0.72 0.12 245);
-  --ui-border: oklch(1 0 0 / 8%);
-  --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.8 0.135 185 / 60%);
-  --chart-1: oklch(0.8 0.135 185);
-  --chart-2: oklch(0.7 0.15 285);
-  --chart-3: oklch(0.78 0.14 75);
-  --chart-4: oklch(0.68 0.19 25);
-  --chart-5: oklch(0.67 0.02 272);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.152 0.012 272);
-  --sidebar-foreground: oklch(0.97 0.003 265);
-  --sidebar-primary: oklch(0.8 0.135 185);
-  --sidebar-primary-foreground: oklch(0.2 0.045 190);
-  --sidebar-accent: oklch(0.218 0.014 272);
-  --sidebar-accent-foreground: oklch(0.97 0.003 265);
-  --sidebar-border: oklch(1 0 0 / 7%);
-  --sidebar-ring: oklch(0.8 0.135 185 / 60%);
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --ui-card: oklch(0.205 0 0);
+  --ui-card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.77 0.19 160);
+  --primary-foreground: oklch(0.2 0.05 165);
+  --secondary: oklch(0.274 0.006 286);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --ui-accent: oklch(0.269 0 0);
+  --ui-accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22);
+  --success: oklch(0.765 0.177 163);
+  --warning: oklch(0.828 0.189 84);
+  --info: oklch(0.707 0.165 254);
+  --ui-border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.77 0.19 160 / 60%);
+  --chart-1: oklch(0.85 0.15 160);
+  --chart-2: oklch(0.77 0.19 160);
+  --chart-3: oklch(0.68 0.17 160);
+  --chart-4: oklch(0.58 0.14 160);
+  --chart-5: oklch(0.48 0.11 160);
+  --metric-cpu: oklch(0.77 0.19 160);
+  --metric-memory: oklch(0.72 0.13 235);
+  --metric-disk: oklch(0.82 0.16 85);
+  --radius: 0.75rem;
+  --shell-glass: color-mix(in oklch, var(--background) 90%, white 10%);
+  --sidebar: oklch(0.145 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.77 0.19 160);
+  --sidebar-primary-foreground: oklch(0.2 0.05 165);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.77 0.19 160 / 60%);
+}
+
+html {
+  font-size: 15px;
+}
+
+@utility hover-glow {
+  transition:
+    background-color 150ms ease-out,
+    box-shadow 150ms ease-out;
+  &:hover {
+    background-color: color-mix(in oklab, var(--color-primary) 6%, transparent);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklab, var(--color-primary) 14%, transparent),
+      0 0 14px -6px color-mix(in oklab, var(--color-primary) 45%, transparent);
+  }
+}
+
+@utility hover-glow-card {
+  transition:
+    color 200ms ease-out,
+    background-color 200ms ease-out,
+    border-color 200ms ease-out,
+    box-shadow 200ms ease-out;
+  &:hover {
+    border-color: color-mix(in oklab, var(--color-primary) 30%, var(--color-border));
+    box-shadow: 0 0 24px -10px color-mix(in oklab, var(--color-primary) 40%, transparent);
+  }
+}
+
+@utility hover-glow-card-subtle {
+  transition:
+    color 200ms ease-out,
+    background-color 200ms ease-out,
+    border-color 200ms ease-out,
+    box-shadow 200ms ease-out;
+  &:hover {
+    border-color: color-mix(in oklab, var(--color-primary) 20%, var(--color-border));
+    box-shadow: 0 0 16px -10px color-mix(in oklab, var(--color-primary) 25%, transparent);
+  }
 }
 
 @layer base {

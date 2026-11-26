@@ -1,4 +1,5 @@
-import { Card, CardContent } from "@vantyr/ui/components/card";
+import { ScanEye } from "lucide-react";
+import { SettingsSection } from "@/features/network/components/SettingsSection";
 import SlideCommit from "@/components/react-bits/SlideCommit";
 import Stepper, { Step } from "@/components/react-bits/Stepper";
 import { HelpTip } from "@/components/common/HelpTip";
@@ -32,16 +33,18 @@ export function InspectionCard({ inspection }: { inspection: ProxyInspection }) 
   const toggle = useSetInspectionMutation();
   const step = STEP[inspection.trust];
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="space-y-6 p-5">
-        <div className="flex items-center gap-1.5">
-          <h3 className="font-medium">HTTPS inspection</h3>
-          <HelpTip label="About HTTPS inspection">
-            Lets the proxy read encrypted web traffic so it can filter it. It needs every device to
-            trust a certificate authority that only this server holds. Apps that pin their own
-            certificates stop working, and the private key never leaves the server.
-          </HelpTip>
-        </div>
+    <SettingsSection
+      title="HTTPS inspection"
+      icon={<ScanEye />}
+      action={
+        <HelpTip label="About HTTPS inspection">
+          Lets the proxy read encrypted web traffic so it can filter it. It needs every device to
+          trust a certificate authority that only this server holds. Apps that pin their own
+          certificates stop working, and the private key never leaves the server.
+        </HelpTip>
+      }
+      bodyClassName="divide-y-0 space-y-6 py-5"
+    >
 
         <Stepper
           step={step}
@@ -102,7 +105,7 @@ export function InspectionCard({ inspection }: { inspection: ProxyInspection }) 
         {inspection.pinnedApps.length > 0 ? (
           <div className="space-y-2">
             <h4 className="text-sm font-medium">Apps that won’t work</h4>
-            <ul className="divide-y divide-border">
+            <ul className="divide-y divide-border/50">
               {inspection.pinnedApps.map((app) => (
                 <li key={app.id} className="py-2.5 text-sm">
                   <span className="font-medium">{app.name}</span>
@@ -112,7 +115,6 @@ export function InspectionCard({ inspection }: { inspection: ProxyInspection }) 
             </ul>
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+    </SettingsSection>
   );
 }

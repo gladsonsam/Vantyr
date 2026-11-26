@@ -23,7 +23,7 @@ import { AgentActionsMenu, type AgentActionHandlers } from "./AgentActionsMenu";
 import { ActivityCell } from "./ActivityCell";
 import { FavoriteToggle } from "./FavoriteToggle";
 import { PolicyBadges } from "./PolicyBadges";
-import { DeviceIcon, OsMark, StatusText } from "./FleetStatus";
+import { DeviceIcon, OsMark, StatusDot, StatusText } from "./FleetStatus";
 
 export interface FleetViewProps {
   rows: FleetRow[];
@@ -40,7 +40,7 @@ export interface FleetViewProps {
 }
 
 const ACTIONS_CELL =
-  "sticky right-0 z-10 w-28 bg-card pr-5! shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.5)] group-hover:bg-[color-mix(in_oklch,var(--ui-card),white_5%)] group-data-[state=selected]:bg-[color-mix(in_oklch,var(--ui-card),white_8%)]";
+  "sticky right-0 z-10 w-28 bg-background pr-5! shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.5)] group-hover:bg-muted group-data-[state=selected]:bg-muted";
 
 export function FleetTableView({
   rows,
@@ -55,7 +55,7 @@ export function FleetTableView({
     : 0;
   const allSelected = rows.length > 0 && selectedVisible === rows.length;
   return (
-    <div className="@container overflow-hidden rounded-xl bg-card">
+    <div className="@container overflow-hidden rounded-xl border border-border/70 bg-card/10">
       <Table>
         <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
           <TableRow className="hover:bg-transparent">
@@ -73,7 +73,7 @@ export function FleetTableView({
               </TableHead>
             )}
             <TableHead className={cn("min-w-48", !selection && "pl-5!")}>Device</TableHead>
-            <TableHead className="w-32">Status</TableHead>
+            <TableHead className="w-36">Status</TableHead>
             <TableHead className="min-w-44">Current activity</TableHead>
             <TableHead className="hidden w-32 @2xl:table-cell">Uptime</TableHead>
             <TableHead className="hidden w-28 @4xl:table-cell">Version</TableHead>
@@ -140,7 +140,10 @@ export function FleetTableView({
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col items-start gap-1.5">
-                    <StatusText row={row} className="text-[13px]" />
+                    <span className="inline-flex items-center gap-2">
+                      <StatusDot row={row} />
+                      <StatusText row={row} className="text-[13px]" />
+                    </span>
                     <PolicyBadges row={row} />
                   </div>
                 </TableCell>
@@ -156,10 +159,12 @@ export function FleetTableView({
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="hidden font-sans text-xs tabular-nums @4xl:table-cell">
+                <TableCell className="hidden text-xs tabular-nums @4xl:table-cell">
                   <div className="flex items-center gap-1.5">
                     {row.version ? (
-                      `v${normalizeVersion(row.version)}`
+                      <span className="rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]">
+                        v{normalizeVersion(row.version)}
+                      </span>
                     ) : (
                       <span className="font-sans text-muted-foreground">Unknown</span>
                     )}

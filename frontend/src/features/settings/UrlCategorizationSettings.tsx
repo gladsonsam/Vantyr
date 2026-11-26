@@ -40,7 +40,7 @@ export function UrlCategorizationSettings({ isAdmin, urlCat }: UrlCatSettingsPro
   if (!isAdmin) {
     return (
       <Card className="gap-0 py-0">
-        <CardHeader className="px-5 pt-5 pb-2">
+        <CardHeader className="border-b border-border/70 px-5 py-4">
           <CardTitle>{TITLE}</CardTitle>
           <CardDescription>{WHAT_IT_DOES}</CardDescription>
         </CardHeader>
@@ -65,7 +65,7 @@ export function UrlCategorizationSettings({ isAdmin, urlCat }: UrlCatSettingsPro
   return (
     <>
       <Card className="gap-0 py-0">
-        <CardHeader className="px-5 pt-5 pb-2">
+        <CardHeader className="border-b border-border/70 px-5 py-4">
           <CardTitle>{TITLE}</CardTitle>
           <CardDescription>{WHAT_IT_DOES}</CardDescription>
         </CardHeader>

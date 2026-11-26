@@ -34,7 +34,7 @@ export function ConfirmDeleteDialog({
         if (!open && !pending) onClose();
       }}
     >
-      <AlertDialogContent className="sm:max-w-md">
+      <AlertDialogContent className="rounded-xl border border-border/70 sm:max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{children}</AlertDialogDescription>

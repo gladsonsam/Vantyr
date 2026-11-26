@@ -48,12 +48,12 @@ export function AppBlockHistoryDialog({
     >
       <ul
         aria-label="Apps closed by this rule"
-        className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-xl bg-muted/50"
+        className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-xl border border-border/60 bg-muted/20"
       >
         {events.map((row) => (
           <li
             key={row.id}
-            className="flex flex-col gap-1 border-b border-foreground/[0.06] p-3 last:border-b-0 sm:flex-row sm:items-baseline sm:gap-4"
+            className="flex flex-col gap-1 border-b border-border/60 p-3 last:border-b-0 sm:flex-row sm:items-baseline sm:gap-4"
           >
             <time
               dateTime={row.killed_at}

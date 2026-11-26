@@ -30,10 +30,10 @@ export function DeviceCard({ row }: { row: DeviceRow }) {
       theme="dark"
       spotlightColor="#2bb6c9"
       intensity={0.2}
-      className="flex flex-col !rounded-lg !p-0"
+      className="hover-glow-card flex flex-col !rounded-xl !p-0"
       style={
         {
-          "--spotlight-card-surface": "color-mix(in oklch, var(--ui-card), white 5%)",
+          "--spotlight-card-surface": "color-mix(in oklch, var(--ui-card), transparent 90%)",
         } as React.CSSProperties
       }
     >
@@ -65,7 +65,7 @@ export function DeviceCard({ row }: { row: DeviceRow }) {
             <div className="mt-0.5 truncate text-xs text-muted-foreground">{peopleLine(row)}</div>
           </div>
         </div>
-        <div className="space-y-1.5 border-t border-border/60 bg-black/10 px-4 py-3 text-sm sm:px-5">
+        <div className="space-y-1.5 border-t border-border/60 px-4 py-3 text-sm sm:px-5">
           {present.length === 0 ? (
             <span className="text-muted-foreground">No connections yet</span>
           ) : (
@@ -99,7 +99,7 @@ export function DeviceCard({ row }: { row: DeviceRow }) {
           )}
         </div>
       </Link>
-      <div className="mt-auto flex items-center gap-1 border-t border-border/60 bg-black/20 px-2 py-1.5 sm:px-3 sm:py-2">
+      <div className="mt-auto flex items-center gap-1 border-t border-border/60 bg-muted/20 px-2 py-1.5 sm:px-3 sm:py-2">
         <Button
           variant="ghost"
           className="flex-1 font-medium text-foreground"

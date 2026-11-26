@@ -1,4 +1,5 @@
-import { Card, CardContent } from "@vantyr/ui/components/card";
+import { ShieldCheck } from "lucide-react";
+import { SettingsSection } from "@/features/network/components/SettingsSection";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { LoadFailedCard } from "@/components/common/LoadFailedCard";
 import { RuleGroup } from "@/features/devices/components/RuleList";
@@ -46,18 +47,20 @@ export function NetworkPoliciesPage() {
   const pending = proposal && (!applied || proposal.revision > applied.revision);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PolicyLifecycle policy={policy.data.data} gateways={gateways} />
       {pending ? <ProposalCard applied={applied} proposal={proposal} /> : null}
       {applied ? (
-        <Card className="gap-0 py-0">
-          <CardContent className="space-y-8 p-5">
-            <div className="flex items-baseline justify-between gap-4">
-              <h3 className="font-medium">In force: revision {applied.revision}</h3>
-              <span className="text-sm text-muted-foreground">
-                Saved <TimeAgo iso={applied.savedAt} /> · {applied.timezone}
-              </span>
-            </div>
+        <SettingsSection
+          title={`In force: revision ${applied.revision}`}
+          icon={<ShieldCheck />}
+          action={
+            <span className="text-xs text-muted-foreground">
+              Saved <TimeAgo iso={applied.savedAt} /> · {applied.timezone}
+            </span>
+          }
+          bodyClassName="divide-y-0 space-y-8 py-5"
+        >
             <RuleGroup
               title="Household baseline"
               rules={applied.baseline}
@@ -70,7 +73,7 @@ export function NetworkPoliciesPage() {
               {applied.exceptions.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No exceptions.</p>
               ) : (
-                <ul className="divide-y divide-border">
+                <ul className="divide-y divide-border/50">
                   {applied.exceptions.map((exception) => (
                     <li
                       key={exception.id}
@@ -96,8 +99,7 @@ export function NetworkPoliciesPage() {
               household default. If the server is unreachable a gateway keeps its last policy for{" "}
               {Math.round(applied.staleAfterSeconds / 60)} minutes.
             </p>
-          </CardContent>
-        </Card>
+        </SettingsSection>
       ) : null}
     </div>
   );

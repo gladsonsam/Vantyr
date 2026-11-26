@@ -139,7 +139,7 @@ export function RecallNavigation({
   };
   return (
     <section
-      className="recall-navigation rounded-xl bg-card p-4"
+      className="recall-navigation rounded-xl border border-border/70 bg-card/10 p-4"
       aria-label="Recall navigation and local bookmarks"
     >
       <h3 className="flex items-center gap-1 text-sm font-medium">

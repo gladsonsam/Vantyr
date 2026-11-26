@@ -129,11 +129,18 @@ export function SettingsPage() {
     <Tabs
       value={section}
       onValueChange={(next) => setParams({ section: String(next) }, { replace: true })}
-      className="gap-4"
+      className="gap-5"
     >
-      <TabsList aria-label="Settings sections">
+      <TabsList
+        aria-label="Settings sections"
+        className="h-auto w-full justify-start gap-1 rounded-none border-b border-border/70 bg-transparent p-0"
+      >
         {SECTIONS.map(({ id, label }) => (
-          <TabsTrigger key={id} value={id}>
+          <TabsTrigger
+            key={id}
+            value={id}
+            className="flex-none rounded-none border-b-2 border-transparent px-4 py-2.5 data-active:border-primary data-active:bg-transparent data-active:text-foreground data-active:shadow-none"
+          >
             {label}
           </TabsTrigger>
         ))}
@@ -144,7 +151,7 @@ export function SettingsPage() {
       </p>
 
       {/* Panels stay mounted so a half-edited form survives switching tabs. */}
-      <TabsContent value="agents" keepMounted className="flex flex-col gap-8">
+      <TabsContent value="agents" keepMounted className="flex flex-col gap-6">
         <AgentEnrollmentSettings
           isAdmin={isAdmin}
           enrollClaims={enrollClaims}
@@ -170,20 +177,20 @@ export function SettingsPage() {
         <SecuritySettings />
       </TabsContent>
 
-      <TabsContent value="data" keepMounted className="flex flex-col gap-8">
+      <TabsContent value="data" keepMounted className="flex flex-col gap-6">
         <DataRetentionSettings isAdmin={isAdmin} form={retention} />
         <RecallCaptureSettings isAdmin={isAdmin} />
         <UrlCategorizationSettings isAdmin={isAdmin} urlCat={urlCat} />
       </TabsContent>
 
-      <TabsContent value="alerts" keepMounted className="flex flex-col gap-8">
+      <TabsContent value="alerts" keepMounted className="flex flex-col gap-6">
         {/* This browser's switch is for everyone, so it leads for people who cannot configure channels. */}
         {!isAdmin && <BrowserPushToggle />}
         <NotificationsSettings isAdmin={isAdmin} />
         {isAdmin && <BrowserPushToggle />}
       </TabsContent>
 
-      <TabsContent value="system" keepMounted className="flex flex-col gap-8">
+      <TabsContent value="system" keepMounted className="flex flex-col gap-6">
         <SystemAboutSettings
           isAdmin={isAdmin}
           storage={{

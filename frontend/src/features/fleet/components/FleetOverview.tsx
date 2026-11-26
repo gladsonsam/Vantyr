@@ -23,6 +23,7 @@ import type { AgentActionHandlers, PowerAction } from "./AgentActionsMenu";
 import { FleetGridView } from "./FleetGridView";
 import { FleetTableView } from "./FleetTableView";
 import { FleetToolbar, type StatusCounts } from "./FleetToolbar";
+import { FleetStatStrip } from "./FleetStatStrip";
 import { BulkScriptModal } from "./BulkScriptModal";
 import { BulkAddToGroupModal } from "./BulkAddToGroupModal";
 import { DeviceCard } from "@/features/devices/components/DeviceCard";
@@ -72,7 +73,7 @@ export function FleetOverview({ loadingAgents, onAddAgent, ...props }: Props) {
   if (loadingAgents) {
     return (
       <div className="flex flex-col gap-6">
-        <Skeleton className="h-8 w-full max-w-xl" />
+        <Skeleton className="h-11 w-full max-w-md rounded-xl" />
         <FleetSkeleton />
       </div>
     );
@@ -144,6 +145,7 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
   const [bulkGroupIds, setBulkGroupIds] = useState<string[] | null>(null);
 
   const counts = useMemo(() => countFleetStatuses(rows), [rows]);
+  const updates = useMemo(() => rows.filter((row) => row.updateNeeded).length, [rows]);
 
   const setStatus = (status: FleetStatusFilter) => changeFilters({ status });
   const clearFilters = () => {
@@ -187,6 +189,7 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
 
   return (
     <div className="flex flex-col gap-6">
+      <FleetStatStrip counts={counts} updates={updates} />
       <FleetToolbar
         key={preferenceScope ?? "unverified"}
         current={{

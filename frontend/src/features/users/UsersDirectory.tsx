@@ -31,7 +31,7 @@ interface UsersDirectoryProps {
 
 function RoleGuide() {
   return (
-    <details className="rounded-xl bg-card px-4 py-3">
+    <details className="rounded-xl border border-border/70 bg-card/10 px-4 py-3">
       <summary className="cursor-pointer rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
         What each role can do
       </summary>
@@ -71,7 +71,7 @@ function DirectoryBody({
     ) : (
       <p
         role="status"
-        className="flex items-center gap-2 rounded-xl bg-card p-5 text-sm text-muted-foreground"
+        className="flex items-center gap-2 rounded-xl border border-border/70 bg-card/10 p-5 text-sm text-muted-foreground"
       >
         <Spinner /> Loading users…
       </p>
@@ -79,13 +79,13 @@ function DirectoryBody({
   }
   if (users.length === 0)
     return (
-      <p className="rounded-xl bg-card p-5 text-sm text-muted-foreground">
+      <p className="rounded-xl border border-border/70 bg-card/10 p-5 text-sm text-muted-foreground">
         No users yet. Create the first one.
       </p>
     );
   if (matches.length === 0) {
     return (
-      <div className="flex flex-wrap items-center gap-3 rounded-xl bg-card p-5 text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card/10 p-5 text-sm text-muted-foreground">
         <span className="min-w-0 break-words">No user matches “{query.trim()}”.</span>
         <Button variant="outline" size="sm" onClick={onClearSearch}>
           Clear search

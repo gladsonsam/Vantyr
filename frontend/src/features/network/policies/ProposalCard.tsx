@@ -1,5 +1,5 @@
-import { Trash2 } from "lucide-react";
-import { Card, CardContent } from "@vantyr/ui/components/card";
+import { FileClock, Trash2 } from "lucide-react";
+import { SettingsSection } from "@/features/network/components/SettingsSection";
 import HoldButton from "@/components/react-bits/HoldButton";
 import { RuleGroup } from "@/features/devices/components/RuleList";
 import { useEditPolicyMutation } from "@/features/network/runtime/useRuntimeQueries";
@@ -26,15 +26,12 @@ export function ProposalCard({
   const removed = applied ? allRules(applied).filter((r) => !after.has(r.id)) : [];
 
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="space-y-6 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h3 className="font-medium">Saved proposal r{proposal.revision}</h3>
-            <p className="text-sm text-muted-foreground">
-              Not enforced. Gateways still use the applied revision.
-            </p>
-          </div>
+    <SettingsSection
+      title={`Saved proposal r${proposal.revision}`}
+      description="Not enforced. Gateways still use the applied revision."
+      icon={<FileClock />}
+      bodyClassName="divide-y-0 space-y-6 py-5"
+      action={
           <HoldButton
             icon={<Trash2 className="size-4" />}
             holdTime={900}
@@ -48,10 +45,10 @@ export function ProposalCard({
           >
             Hold to discard
           </HoldButton>
-        </div>
+      }
+    >
         <RuleGroup title="Would add" rules={added} empty="Adds no rules." />
         <RuleGroup title="Would remove" rules={removed} empty="Removes no rules." />
-      </CardContent>
-    </Card>
+    </SettingsSection>
   );
 }

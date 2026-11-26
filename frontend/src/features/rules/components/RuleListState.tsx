@@ -23,7 +23,7 @@ export function RuleListState({
   if (loading) return <Skeleton className="h-64 w-full rounded-xl" />;
   if (empty)
     return (
-      <Empty className="bg-card">
+      <Empty className="border border-border/70 bg-card/10">
         <EmptyHeader>
           <EmptyTitle>{searching ? `No ${noun} match` : emptyTitle}</EmptyTitle>
           <EmptyDescription>

@@ -9,7 +9,7 @@ function WhoUsesIt({ device }: { device: DeviceRow }) {
   // Only an agent can say who is signed in; every other connection leaves it unknown.
   const agentConnected = device.connections.agent.state === "connected";
   return (
-    <Card className="gap-0 py-0">
+    <Card className="hover-glow-card-subtle gap-0 py-0">
       <CardContent className="space-y-4 p-5">
         <h3 className="font-medium">Who uses it</h3>
         {device.people.length === 0 ? (

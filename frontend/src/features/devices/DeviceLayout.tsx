@@ -5,8 +5,8 @@ import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { usePageHeader } from "@/app/shell/usePageHeader";
 import { DeviceContext } from "./deviceContext";
 import { useDeviceRows } from "./hooks/useDeviceRows";
-import { DEVICE_TYPE_LABEL } from "./lib/deviceIcons";
-import { CONNECTION_KINDS } from "./lib/deviceModel";
+import { DEVICE_TYPE_ICON, DEVICE_TYPE_LABEL } from "./lib/deviceIcons";
+import { CONNECTION_KINDS, connectedCount } from "./lib/deviceModel";
 import { CONNECTION_LABEL } from "./lib/identity";
 
 /**
@@ -50,6 +50,8 @@ export function DeviceLayout() {
     return <Navigate to={base} replace />;
   }
   const active = section ? `${base}/${section}` : base;
+  const TypeIcon = DEVICE_TYPE_ICON[row.type];
+  const online = connectedCount(row) > 0;
 
   return (
     <DeviceContext.Provider value={row}>
@@ -61,6 +63,36 @@ export function DeviceLayout() {
           >
             <ArrowLeft className="size-4" aria-hidden="true" /> Devices
           </Link>
+          <div className="flex items-center gap-3">
+            <div
+              className={
+                online
+                  ? "flex size-10 shrink-0 items-center justify-center rounded-xl bg-success/10 text-success"
+                  : "flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground"
+              }
+              aria-hidden="true"
+            >
+              <TypeIcon size={19} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2.5">
+                <span className="truncate text-lg font-semibold tracking-tight">{row.label}</span>
+                <span
+                  className={
+                    online
+                      ? "inline-flex items-center gap-1.5 text-xs font-medium text-success"
+                      : "inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+                  }
+                >
+                  <span className="size-2 rounded-full bg-current" aria-hidden="true" />
+                  {online ? "Connected" : "Not connected"}
+                </span>
+              </div>
+              <div className="truncate text-xs text-muted-foreground">
+                {[DEVICE_TYPE_LABEL[row.type], people].filter(Boolean).join(" · ")}
+              </div>
+            </div>
+          </div>
           <Tabs value={active} onValueChange={(value) => navigate(String(value))}>
             <TabsList variant="line" aria-label="Device sections">
               <TabsTrigger value={base}>Overview</TabsTrigger>

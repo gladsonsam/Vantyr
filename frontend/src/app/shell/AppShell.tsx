@@ -57,6 +57,7 @@ import { cn } from "@/lib/utils";
 import { VI } from "@/components/common/Icons";
 import { HelpTip } from "@/components/common/HelpTip";
 import { DashboardUserAvatar } from "@/features/users/DashboardUserAvatar";
+import { useServerVersionPayload } from "@/api/serverVersionStore";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import type { NotificationItem } from "@/app/providers/useNotificationStore";
 import type { Agent, DashboardNavUser } from "@/api/types";
@@ -139,7 +140,7 @@ function SidebarSearch({ onOpen }: { onOpen: () => void }) {
       type="button"
       onClick={onOpen}
       aria-label="Search devices and pages"
-      className="flex h-9 w-full items-center gap-2.5 rounded-md bg-sidebar-accent/60 px-2.5 text-sm text-sidebar-foreground/55 outline-none hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring [&_svg]:size-4"
+      className="flex h-9 w-full items-center gap-2.5 rounded-lg border border-border/60 bg-transparent px-2.5 text-sm text-sidebar-foreground/55 outline-none hover:bg-sidebar-accent/60 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring [&_svg]:size-4"
     >
       <Search />
       <span>Search…</span>
@@ -150,6 +151,17 @@ function SidebarSearch({ onOpen }: { onOpen: () => void }) {
         </KbdGroup>
       )}
     </button>
+  );
+}
+
+/** App version in mono, hidden when the sidebar is collapsed to icons. */
+function SidebarVersion() {
+  const version = useServerVersionPayload()?.server_version;
+  if (!version) return null;
+  return (
+    <div className="px-2.5 pb-1 font-mono text-[11px] text-sidebar-foreground/40 group-data-[collapsible=icon]:hidden">
+      v{version.replace(/^v/, "")}
+    </div>
   );
 }
 
@@ -429,6 +441,7 @@ export function AppShell({
           </SidebarContent>
 
           <SidebarFooter className="p-3 group-data-[collapsible=icon]:p-2">
+            <SidebarVersion />
             <SidebarMenu>
               <SidebarMenuItem>
                 <DropdownMenu>
@@ -484,7 +497,7 @@ export function AppShell({
           <SidebarRail />
         </Sidebar>
 
-        <SidebarInset className="min-w-0 overflow-hidden">
+        <SidebarInset className="min-w-0 overflow-hidden md:peer-data-[variant=inset]:backdrop-blur-xl">
           {!hideTopBar && (
             // Phones only: desktop navigates and searches from the sidebar.
             <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border/60 px-3 md:hidden">

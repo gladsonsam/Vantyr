@@ -32,9 +32,9 @@ export function NetworkOverviewPage() {
 
   const { revisions, gateways } = overview.data;
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <RevisionSummary revisions={revisions} />
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         {gateways.map((gateway) => (
           <GatewayCard key={gateway.id} gateway={gateway} />
         ))}

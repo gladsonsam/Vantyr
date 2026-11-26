@@ -30,7 +30,11 @@ function SectionTabs() {
       ?.path ?? "/network";
   return (
     <Tabs value={active} onValueChange={(value) => navigate(String(value))}>
-      <TabsList variant="line" aria-label="Network sections" className="overflow-x-auto">
+      <TabsList
+        variant="line"
+        aria-label="Network sections"
+        className="max-w-full justify-start overflow-x-auto border-b border-border/50"
+      >
         {TABS.map((tab) => (
           <TabsTrigger key={tab.path} value={tab.path}>
             {tab.label}
@@ -133,7 +137,7 @@ export function NetworkLayout() {
     case "ready":
       return (
         <NetworkScopeContext.Provider value={access.household}>
-          <div className="space-y-8">
+          <div className="space-y-6">
             <SectionTabs />
             <Outlet />
           </div>

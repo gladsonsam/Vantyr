@@ -222,7 +222,7 @@ function AlertRulesView({
           }
         />
       ) : (
-        <div className="overflow-hidden rounded-xl bg-card">
+        <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
           <AlertRuleList
             rules={list.displayed}
             groups={groups}

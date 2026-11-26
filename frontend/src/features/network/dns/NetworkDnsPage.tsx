@@ -27,8 +27,8 @@ export function NetworkDnsPage() {
   }
   const dns = query.data.data;
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <div className="space-y-6">
+    <div className="grid gap-4 lg:grid-cols-2">
+      <div className="space-y-4">
         <AvailabilityGate title="Filtering" value={dns.filtering}>
           {(value) => <FilteringCard filtering={value} />}
         </AvailabilityGate>
@@ -48,7 +48,7 @@ export function NetworkDnsPage() {
           )}
         </AvailabilityGate>
       </div>
-      <div className="space-y-6">
+      <div className="space-y-4">
         <AvailabilityGate title="Access" value={dns.access}>
           {(value) => <AccessCard access={value} />}
         </AvailabilityGate>

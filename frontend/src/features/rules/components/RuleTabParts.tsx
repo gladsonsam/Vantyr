@@ -35,7 +35,7 @@ export function Notice({ message, onDismiss }: { message: string; onDismiss: () 
   return (
     <p
       role="status"
-      className="flex items-center justify-between gap-3 rounded-lg bg-muted/60 px-3 py-2 text-sm"
+      className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm"
     >
       <span className="min-w-0 break-words">{message}</span>
       <Button variant="ghost" size="xs" aria-label="Dismiss message" onClick={onDismiss}>

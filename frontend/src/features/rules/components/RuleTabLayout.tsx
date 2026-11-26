@@ -149,7 +149,7 @@ function RuleTabMain({
           }
         />
       ) : (
-        <div className="overflow-hidden rounded-xl bg-card">
+        <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
           {rows}
           <ListPagination page={list.page} pages={list.pages} onPageChange={list.setPage} />
         </div>

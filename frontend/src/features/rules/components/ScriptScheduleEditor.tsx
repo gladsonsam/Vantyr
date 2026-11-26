@@ -53,7 +53,7 @@ export function ScriptScheduleEditor({
       {rows.map((s, i) => (
         <div
           key={rowKeys[i]}
-          className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3"
+          className="flex flex-wrap items-center gap-2 border-b border-border/60 pb-3"
         >
           <div className="min-w-32 flex-1">
             <FormSelect

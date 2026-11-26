@@ -1,4 +1,5 @@
-import { Card, CardContent } from "@vantyr/ui/components/card";
+import { Radio } from "lucide-react";
+import { SettingsSection } from "@/features/network/components/SettingsSection";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { LoadFailedCard } from "@/components/common/LoadFailedCard";
 import {
@@ -29,13 +30,11 @@ export function NetworkProxyPage() {
   }
   const proxy = query.data.data;
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <AvailabilityGate title="Listener" value={proxy.listener}>
         {(listener) => (
-          <Card className="gap-0 py-0">
-            <CardContent className="space-y-3 p-5">
-              <h3 className="font-medium">Listener</h3>
-              <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-2 text-sm">
+          <SettingsSection title="Listener" icon={<Radio />} bodyClassName="divide-y-0 py-4">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-3 text-sm">
                 <dt className="text-muted-foreground">Address</dt>
                 <dd className="font-mono text-[0.8125rem]">{listener.address}</dd>
                 <dt className="text-muted-foreground">Accepts</dt>
@@ -47,8 +46,7 @@ export function NetworkProxyPage() {
                 <dt className="text-muted-foreground">Destinations</dt>
                 <dd>{listener.destinationPolicy}</dd>
               </dl>
-            </CardContent>
-          </Card>
+          </SettingsSection>
         )}
       </AvailabilityGate>
       <AvailabilityGate title="Credentials" value={proxy.credentials}>

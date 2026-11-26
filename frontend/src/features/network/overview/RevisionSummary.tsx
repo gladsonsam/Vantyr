@@ -8,9 +8,9 @@ import type { RevisionState } from "@/features/network/runtime/types";
 
 function Revision({ label, value }: { label: string; value: number | null }) {
   return (
-    <div>
-      <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="mt-1 text-4xl font-semibold tabular-nums tracking-tight">
+    <div className="min-w-24">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-0.5 text-xl font-semibold tabular-nums tracking-tight">
         {value === null ? (
           <span className="text-muted-foreground">—</span>
         ) : (
@@ -40,12 +40,12 @@ export function RevisionSummary({ revisions }: { revisions: RevisionState }) {
 
   return (
     <Card className="gap-0 py-0">
-      <CardContent className="flex flex-wrap items-end justify-between gap-6 p-6">
-        <div className="flex flex-wrap gap-12">
+      <CardContent className="flex flex-wrap items-center justify-between gap-x-10 gap-y-4 px-5 py-4">
+        <div className="flex flex-wrap gap-x-10 gap-y-3">
           <Revision label="Applied by gateways" value={applied} />
           <Revision label="Saved proposal" value={pending ? proposal : null} />
         </div>
-        <div className="max-w-md space-y-3 text-sm">
+        <div className="max-w-md space-y-2 text-sm">
           <p className="flex items-start gap-1.5 text-muted-foreground">
             <span>{message}</span>
             <HelpTip label="About saved and applied">

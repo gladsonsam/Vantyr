@@ -33,8 +33,12 @@ export function ConnectionCard({
       theme="dark"
       spotlightColor="#2bb6c9"
       intensity={0.25}
-      className="!rounded-xl !p-0"
-      style={{ "--spotlight-card-surface": "var(--ui-card)" } as React.CSSProperties}
+      className="hover-glow-card-subtle !rounded-xl !p-0"
+      style={
+        {
+          "--spotlight-card-surface": "color-mix(in oklch, var(--ui-card), transparent 90%)",
+        } as React.CSSProperties
+      }
     >
       <div className="flex h-full flex-col gap-4 p-5">
         <div className="flex items-center justify-between gap-3">

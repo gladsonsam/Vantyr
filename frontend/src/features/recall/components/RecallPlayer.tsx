@@ -198,7 +198,7 @@ export function RecallPlayer({
   const monitorId = String(monitor ?? monitors[0]?.monitor ?? 0);
 
   return (
-    <div className="overflow-hidden rounded-xl bg-card">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
       <RecallPlayerStage
         agentId={agentId}
         current={current}

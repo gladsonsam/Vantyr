@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Card, CardContent } from "@vantyr/ui/components/card";
+import { Database, FileText, Filter, List, ShieldCheck, type LucideIcon } from "lucide-react";
+import { SettingsSection } from "@/features/network/components/SettingsSection";
 import RubberSegment from "@/components/react-bits/RubberSegment";
 import ScrubField from "@/components/react-bits/ScrubField";
 import SquishSwitch from "@/components/react-bits/SquishSwitch";
@@ -21,14 +22,19 @@ const SWITCH = {
 
 const SCRUB = { accent: "var(--primary)", chipColor: "var(--muted)", label: "↔" } as const;
 
+const PANEL_ICON: Record<string, LucideIcon> = {
+  Filtering: Filter,
+  Cache: Database,
+  Access: ShieldCheck,
+  "Query log": FileText,
+};
+
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  const Icon = PANEL_ICON[title] ?? List;
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="p-5">
-        <h3 className="font-medium">{title}</h3>
-        <div className="divide-y divide-border">{children}</div>
-      </CardContent>
-    </Card>
+    <SettingsSection title={title} icon={<Icon />}>
+      {children}
+    </SettingsSection>
   );
 }
 

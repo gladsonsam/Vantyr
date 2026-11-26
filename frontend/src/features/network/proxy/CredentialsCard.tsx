@@ -1,5 +1,5 @@
-import { UserX } from "lucide-react";
-import { Card, CardContent } from "@vantyr/ui/components/card";
+import { KeyRound, UserX } from "lucide-react";
+import { SettingsSection } from "@/features/network/components/SettingsSection";
 import HoldButton from "@/components/react-bits/HoldButton";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { useRevokeCredentialMutation } from "@/features/network/runtime/useRuntimeQueries";
@@ -14,14 +14,12 @@ type Credentials = Extract<ProxyView["credentials"], { state: "ready" }>["data"]
 export function CredentialsCard({ credentials }: { credentials: Credentials }) {
   const revoke = useRevokeCredentialMutation();
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="space-y-1 p-5">
-        <h3 className="font-medium">Credentials</h3>
-        <ul className="divide-y divide-border">
+    <SettingsSection title="Credentials" icon={<KeyRound />}>
+        <ul className="divide-y divide-border/50">
           {credentials.map((credential) => (
             <li
               key={credential.id}
-              className="flex flex-wrap items-center justify-between gap-4 py-3.5"
+              className="flex flex-wrap items-center justify-between gap-4 py-4"
             >
               <div className="space-y-0.5">
                 <div className="text-sm font-medium">{credential.label}</div>
@@ -56,7 +54,6 @@ export function CredentialsCard({ credentials }: { credentials: Credentials }) {
             </li>
           ))}
         </ul>
-      </CardContent>
-    </Card>
+    </SettingsSection>
   );
 }

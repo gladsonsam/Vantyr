@@ -81,7 +81,7 @@ function RefreshHeader({
   onClick: () => void;
 }) {
   return (
-    <CardHeader className="px-5 pt-5 pb-2">
+    <CardHeader className="border-b border-border/70 px-5 py-4">
       <CardTitle className="flex items-center gap-1.5">
         {title}
         <HelpTip>{help}</HelpTip>

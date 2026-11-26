@@ -170,7 +170,7 @@ function DayPanelHeader({ context, model }: PanelSectionProps) {
   const { summary, segments, timezone, loading } = context;
   const { dayLabel, empty, activeSecs, totals, byCategory, focusPct, filterValue } = model;
   return (
-    <section className="rounded-xl bg-card p-5">
+    <section className="rounded-xl border border-border/70 bg-card/10 p-5">
       <div className="min-w-0">
         <h2 className="text-lg font-semibold tracking-tight">
           {dayLabel}
@@ -224,7 +224,7 @@ function DayPanelContent({ context, model }: PanelSectionProps) {
   if (context.loading) return null;
   if (model.empty)
     return (
-      <section className="rounded-xl bg-card p-5">
+      <section className="rounded-xl border border-border/70 bg-card/10 p-5">
         <p className="text-sm text-muted-foreground">
           {context.dayError
             ? "Could not load the day summary and activity. Recording coverage is shown separately; choose another date or reload to retry."
@@ -250,7 +250,7 @@ function DayBreakdown({ model }: { model: DayPanelModel }) {
       {(byCategory.rows.length > 0 || topApps.length > 0) && (
         <div className="grid gap-6 md:grid-cols-2">
           {byCategory.rows.length > 0 && (
-            <section className="rounded-xl bg-card p-5">
+            <section className="rounded-xl border border-border/70 bg-card/10 p-5">
               <CardTitle
                 title="Where the time went"
                 sub={`${formatDuration(byCategory.total)} active`}
@@ -287,7 +287,7 @@ function DayBreakdown({ model }: { model: DayPanelModel }) {
           )}
 
           {topApps.length > 0 && (
-            <section className="rounded-xl bg-card p-5">
+            <section className="rounded-xl border border-border/70 bg-card/10 p-5">
               <CardTitle title="Top apps" sub="share of active time" />
               <div className="mt-3.5 flex flex-col gap-3">
                 {topApps.map((a) => (
@@ -330,7 +330,7 @@ function DayHighlights({ context, model }: PanelSectionProps) {
     <>
       {" "}
       {highlights.length > 0 && (
-        <section className="rounded-xl bg-card p-5">
+        <section className="rounded-xl border border-border/70 bg-card/10 p-5">
           <CardTitle title="Highlights" sub="derived activity — open source time" />
           <div className="mt-3.5 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
             {highlights.slice(0, 6).map((h) => {
@@ -372,7 +372,7 @@ function DayTimeline({ context, model }: PanelSectionProps) {
     <>
       {" "}
       {sourceSegments.length > 0 && (
-        <section className="rounded-xl bg-card p-5">
+        <section className="rounded-xl border border-border/70 bg-card/10 p-5">
           <CardTitle
             title="Day timeline"
             sub={`${sourceSegments.length} activity segments · choose any source time below`}
@@ -465,7 +465,7 @@ function DaySessions({ context, model }: PanelSectionProps) {
     <>
       {" "}
       {sessions.length > 0 && (
-        <section className="rounded-xl bg-card p-5">
+        <section className="rounded-xl border border-border/70 bg-card/10 p-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <CardTitle
               title="Sessions"

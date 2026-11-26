@@ -32,7 +32,7 @@ export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRo
     showDevice && row.agent_id ? (deviceName ?? `Device ${row.agent_id.slice(0, 8)}`) : null;
 
   return (
-    <li className="flex flex-col gap-0.5 border-b border-foreground/[0.06] px-4 py-3 last:border-b-0">
+    <li className="flex flex-col gap-1 border-b border-border/50 px-5 py-3.5 last:border-b-0">
       <div className="flex items-baseline justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
           <span className="min-w-0 break-words font-medium">{action}</span>
@@ -103,7 +103,7 @@ export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRo
           {open && (
             <div
               id={detailId}
-              className="mb-1 flex flex-col gap-3 rounded-lg bg-muted/40 p-3 text-[13px]"
+              className="mb-1 flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 text-[13px]"
             >
               <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[max-content_minmax(0,1fr)]">
                 <Fact label="When" value={fmtDateTimePrecise(row.ts)} />

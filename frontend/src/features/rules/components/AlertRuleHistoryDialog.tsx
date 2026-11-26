@@ -74,14 +74,14 @@ export function AlertRuleHistoryDialog({
           ) : events.length > 0 ? (
             <ul
               aria-label="Alerts raised by this rule"
-              className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-xl bg-muted/50"
+              className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-xl border border-border/60 bg-muted/20"
             >
               {events.map((row) => (
                 <HistoryRow key={row.id} row={row} onScreenshot={setPreviewEventId} />
               ))}
             </ul>
           ) : error ? null : (
-            <p className="rounded-xl bg-muted/50 px-4 py-8 text-center text-sm text-muted-foreground">
+            <p className="rounded-xl border border-border/60 bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
               No alerts yet. When this rule matches, the time, agent and matched text are recorded
               here.
             </p>
@@ -113,7 +113,7 @@ function HistoryRow({
 }) {
   const when = fmtDateTime(row.created_at);
   return (
-    <li className="flex flex-col gap-2 border-b border-foreground/[0.06] p-3 last:border-b-0 sm:flex-row sm:items-start sm:gap-4">
+    <li className="flex flex-col gap-2 border-b border-border/60 p-3 last:border-b-0 sm:flex-row sm:items-start sm:gap-4">
       <div className="min-w-0 sm:w-44 sm:shrink-0">
         <p className="font-sans text-xs tabular-nums">{when}</p>
         <p className="truncate text-sm font-medium">{row.agent_name || "Unknown agent"}</p>

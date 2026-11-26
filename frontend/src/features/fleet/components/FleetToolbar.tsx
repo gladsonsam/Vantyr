@@ -127,7 +127,7 @@ export function FleetToolbar({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-end gap-4 border-b border-foreground/[0.06]">
+      <div className="flex items-end gap-4 border-b border-border/60">
         <div
           ref={tabsScroller}
           className="-mb-px min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] max-sm:[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [&::-webkit-scrollbar]:hidden"
@@ -158,7 +158,7 @@ export function FleetToolbar({
           <ToggleGroup
             size="sm"
             spacing={0}
-            className="rounded-lg bg-muted/70 p-0.5"
+            className="rounded-lg border border-border/70 bg-card/10 p-0.5"
             aria-label="Fleet view mode"
             value={[current.view]}
             onValueChange={(value) => {
@@ -169,14 +169,14 @@ export function FleetToolbar({
             <ToggleGroupItem
               value="grid"
               aria-label="Grid view"
-              className="rounded-md! aria-pressed:bg-background"
+              className="rounded-md! aria-pressed:bg-primary/15 aria-pressed:text-primary"
             >
               <LayoutGrid />
             </ToggleGroupItem>
             <ToggleGroupItem
               value="table"
               aria-label="List view"
-              className="rounded-md! aria-pressed:bg-background"
+              className="rounded-md! aria-pressed:bg-primary/15 aria-pressed:text-primary"
             >
               <List />
             </ToggleGroupItem>
@@ -184,7 +184,7 @@ export function FleetToolbar({
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <InputGroup className="h-9 min-w-0 flex-1 basis-40 sm:max-w-md">
+        <InputGroup className="h-9 min-w-0 flex-1 basis-40 rounded-lg border-border/70 bg-card/10 sm:max-w-md">
           <InputGroupAddon>
             <Search />
           </InputGroupAddon>

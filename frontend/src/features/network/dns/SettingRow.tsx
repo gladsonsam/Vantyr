@@ -12,12 +12,12 @@ export function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3 py-3.5">
-      <div className="flex items-center gap-1.5 text-sm">
+    <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3 py-4">
+      <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
         {label}
         {help ? <HelpTip label={`About ${label}`}>{help}</HelpTip> : null}
       </div>
-      <div>{children}</div>
+      <div className="flex items-center">{children}</div>
     </div>
   );
 }

@@ -25,7 +25,7 @@ export function EmptyState({
   iconVariant = "default",
 }: EmptyStateProps) {
   return (
-    <Empty className="bg-card">
+    <Empty className="rounded-xl border border-dashed border-border/70 bg-card/10">
       <EmptyHeader>
         {icon ? <EmptyMedia variant={iconVariant}>{icon}</EmptyMedia> : null}
         <EmptyTitle>{title}</EmptyTitle>

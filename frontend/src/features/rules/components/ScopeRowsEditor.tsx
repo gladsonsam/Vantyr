@@ -30,7 +30,7 @@ export function ScopeRowsEditor({
   const groupOptions = groups.map((g) => ({ label: g.name, value: g.id }));
   const agentOptions = agents.map((a) => ({ label: a.name, value: a.id }));
   const rowClass = divided
-    ? "flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3"
+    ? "flex flex-wrap items-center gap-2 border-b border-border/60 pb-3"
     : "flex flex-wrap items-center gap-2";
 
   const rowKeys = useRowKeys(rows);

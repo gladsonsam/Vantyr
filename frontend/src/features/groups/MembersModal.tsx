@@ -326,12 +326,12 @@ function MemberRows({
   return (
     <ul
       aria-label="Devices in this group"
-      className="max-h-[40dvh] overflow-y-auto rounded-lg border border-foreground/[0.08] md:max-h-[50dvh]"
+      className="max-h-[40dvh] overflow-y-auto rounded-lg border border-border/70 md:max-h-[50dvh]"
     >
       {rows.map((p) => (
         <li
           key={p.id}
-          className="flex min-h-11 items-center gap-3 border-b border-foreground/[0.06] px-3 py-1.5 last:border-b-0"
+          className="flex min-h-11 items-center gap-3 border-b border-border/60 px-3 py-1.5 last:border-b-0"
         >
           <DeviceName person={p} />
           <Button
@@ -386,8 +386,8 @@ function AvailableRows({
   const chosenSet = new Set(chosen);
   const shownChosen = rows.filter((p) => chosenSet.has(p.id)).length;
   return (
-    <div className="rounded-lg border border-foreground/[0.08]">
-      <label className="flex min-h-11 cursor-pointer items-center gap-3 border-b border-foreground/[0.06] bg-muted/40 px-3 text-xs text-muted-foreground">
+    <div className="rounded-lg border border-border/70">
+      <label className="flex min-h-11 cursor-pointer items-center gap-3 border-b border-border/60 bg-muted/40 px-3 text-xs text-muted-foreground">
         <Checkbox
           aria-label={searching ? "Select all shown devices" : "Select all devices"}
           checked={shownChosen === rows.length}
@@ -402,7 +402,7 @@ function AvailableRows({
         className="max-h-[36dvh] overflow-y-auto md:max-h-[46dvh]"
       >
         {rows.map((p) => (
-          <li key={p.id} className="border-b border-foreground/[0.06] last:border-b-0">
+          <li key={p.id} className="border-b border-border/60 last:border-b-0">
             <label
               className={cn(
                 "flex min-h-11 cursor-pointer items-center gap-3 px-3 py-1.5",

@@ -99,7 +99,7 @@ export function RulesPage() {
         className="gap-4"
       >
         <div className="flex flex-col gap-2">
-          <div className="flex items-end gap-4 border-b border-foreground/[0.06]">
+          <div className="flex items-end gap-4 border-b border-border/60">
             <div
               ref={stripRef}
               className={`-mb-px min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${moreRight ? "[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)]" : ""}`}

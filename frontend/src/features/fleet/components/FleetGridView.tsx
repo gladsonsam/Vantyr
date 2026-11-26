@@ -40,7 +40,7 @@ export function FleetGridView({
             key={row.id}
             onClick={() => handlers.onOpen(row)}
             data-selected={checked || undefined}
-            className="cursor-pointer gap-0 rounded-lg border border-border/70 bg-[color-mix(in_oklch,var(--ui-card),white_5%)] py-0 shadow-none ring-0 transition-colors hover:border-foreground/20 data-selected:border-primary/70"
+            className="hover-glow-card cursor-pointer gap-0 py-0 shadow-none ring-0 data-selected:border-primary/70"
           >
             <div className="flex items-center gap-3 px-4 pt-3.5 pb-3 sm:px-5 sm:pt-4">
               <DeviceIcon row={row} showStatus />
@@ -80,11 +80,11 @@ export function FleetGridView({
               </div>
             </div>
 
-            <div className="border-t border-border/60 bg-black/10 px-4 py-2.5 sm:px-5">
+            <div className="border-t border-border/60 px-4 py-2.5 sm:px-5">
               <ActivityCell row={row} />
             </div>
 
-            <p className="hidden flex-wrap items-center gap-x-2 gap-y-0.5 bg-black/10 px-5 pt-0.5 pb-3 text-xs text-muted-foreground tabular-nums sm:flex">
+            <p className="hidden flex-wrap items-center gap-x-2 gap-y-0.5 px-5 pt-0.5 pb-3 text-xs text-muted-foreground tabular-nums sm:flex">
               <span title={stored}>
                 {row.online
                   ? `Up ${formatUptime(row.effectiveUptimeSecs)}`
@@ -103,7 +103,7 @@ export function FleetGridView({
                   <span aria-hidden="true">·</span>
                   <span
                     className={cn(
-                      "inline-flex items-center gap-1 font-sans whitespace-nowrap",
+                      "inline-flex items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] whitespace-nowrap",
                       row.updateNeeded ? "text-warning" : "text-foreground/80",
                     )}
                     title={
@@ -121,12 +121,12 @@ export function FleetGridView({
               )}
             </p>
 
-            <div className="bg-black/10 px-5 pb-3 empty:hidden">
+            <div className="px-5 pb-3 empty:hidden">
               <PolicyBadges row={row} />
             </div>
 
             <div
-              className="mt-auto flex items-center gap-1 border-t border-border/60 bg-black/20 px-2 py-1.5 sm:px-3 sm:py-2"
+              className="mt-auto flex items-center gap-1 border-t border-border/60 bg-muted/20 px-2 py-1.5 sm:px-3 sm:py-2"
               onClick={(event) => event.stopPropagation()}
             >
               <Button

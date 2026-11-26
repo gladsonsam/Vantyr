@@ -38,7 +38,7 @@ export function ScheduleRowsEditor({
         return (
           <div
             key={rowKeys[i]}
-            className="flex flex-col gap-1 border-b border-foreground/[0.06] pb-3"
+            className="flex flex-col gap-1 border-b border-border/60 pb-3"
           >
             <div className="flex flex-wrap items-center gap-2">
               <div className="min-w-32 flex-1">

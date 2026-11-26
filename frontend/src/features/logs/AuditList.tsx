@@ -52,11 +52,11 @@ export function AuditList({
       ref={listRef}
       tabIndex={-1}
       aria-busy={stale}
-      className={`scroll-mt-20 overflow-hidden outline-none rounded-xl bg-card ${stale ? "opacity-60" : ""}`}
+      className={`scroll-mt-20 overflow-hidden outline-none rounded-xl border border-border/70 bg-card/10 ${stale ? "opacity-60" : ""}`}
     >
       {days.map((day) => (
         <Fragment key={day.key}>
-          <h3 className="bg-muted/40 px-4 py-1.5 text-xs font-medium text-muted-foreground">
+          <h3 className="border-b border-border/50 bg-muted/20 px-5 py-2 text-xs font-medium text-muted-foreground">
             {day.label}
           </h3>
           <ul aria-label={`${title}, ${day.label}, ${newestFirst ? "newest" : "oldest"} first`}>
