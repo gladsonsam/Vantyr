@@ -96,10 +96,10 @@ Response `200` envelope:
 }
 ```
 
-- `scope` is `baseline` or the device-profile name; `change` is `added`,
+- `scope` is `baseline` or `profile:<name>` (including `profile:baseline` for a profile with that name); `change` is `added`,
   `removed` or `changed`. `before`/`after` are the **core `Rule`** values, not a
   second model. Rules are keyed by `(scope, id)` and emitted in sorted order.
-- Comparable settings: `default_effect`, `timezone`, `stale_after_secs`,
+- Comparable settings: `device_profile_ids` (sorted, including empty profiles), `default_effect`, `timezone`, `stale_after_secs`,
   `event_retention_secs`, `person_rules`, `exceptions`.
 - Revision, `source_kind`, rollback provenance, `published_at` and digest live
   only in `from`/`to`. A rollback that copies an earlier body therefore yields
@@ -140,13 +140,18 @@ Response `200`:
               "detail": {} } ],
   "total": 3,
   "has_more": true,
-  "next_offset": 2
+  "next_offset": 2,
+  "pagination_limited": false
 }
 ```
 
 `total` and `rows` use the identical parameterised tenant + filter predicates
 inside one `REPEATABLE READ` snapshot, so a concurrent insert cannot make the
-count contradict the page. `next_offset` is `null` when `has_more` is false.
+count contradict the page. `next_offset` is `null` when `has_more` is false. If more records exist but the
+next page would exceed the 100000 offset cap, `has_more` remains true,
+`next_offset` is null and `pagination_limited` is true: narrow the filters rather
+than following an invalid next offset. The enrollment-context page uses the same
+explicit pagination fields.
 
 ## 4. Self-service enrollment contexts (caller only)
 
@@ -173,7 +178,8 @@ Response `200`:
   "count": 1,
   "total": 1,
   "has_more": false,
-  "next_offset": null
+  "next_offset": null,
+  "pagination_limited": false
 }
 ```
 

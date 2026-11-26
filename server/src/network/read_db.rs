@@ -11,7 +11,8 @@ use uuid::Uuid;
 
 use super::dto::NetworkAudit;
 use super::read_dto::{
-    AuditFilters, AuditPage, EnrollmentContext, EnrollmentContextPage, StoredPolicyRow,
+    page_continuation, AuditFilters, AuditPage, EnrollmentContext, EnrollmentContextPage,
+    StoredPolicyRow,
 };
 
 /// Exact immutable policy row, or the newest saved revision when `revision` is
@@ -91,13 +92,14 @@ pub async fn audit_page(
         .await?;
 
     tx.commit().await?;
-    let has_more = filters.offset.saturating_add(rows.len() as i64) < total;
-    let next_offset = has_more.then(|| filters.offset.saturating_add(rows.len() as i64));
+    let (has_more, next_offset, pagination_limited) =
+        page_continuation(filters.offset, rows.len(), total);
     Ok(AuditPage {
         rows,
         total,
         has_more,
         next_offset,
+        pagination_limited,
     })
 }
 
@@ -151,13 +153,14 @@ pub async fn enrollment_contexts_page(
         .await?;
 
     tx.commit().await?;
-    let has_more = offset.saturating_add(contexts.len() as i64) < total;
-    let next_offset = has_more.then(|| offset.saturating_add(contexts.len() as i64));
+    let (has_more, next_offset, pagination_limited) =
+        page_continuation(offset, contexts.len(), total);
     Ok(EnrollmentContextPage {
         count: contexts.len(),
         contexts,
         total,
         has_more,
         next_offset,
+        pagination_limited,
     })
 }

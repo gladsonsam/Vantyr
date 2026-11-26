@@ -31,6 +31,20 @@ pub const MAX_DIFF_RULE_CHANGES: usize = 512;
 pub const MAX_DIFF_SETTING_CHANGES: usize = 16;
 /// Exact-match audit filters are bounded text, never parsed as a user UUID.
 pub const MAX_AUDIT_FILTER_LEN: usize = 128;
+const MAX_READ_OFFSET: i64 = 100_000;
+
+/// More records may exist beyond the supported offset range. Never advertise
+/// an unusable next page; callers can narrow their filters when limited.
+pub(super) fn page_continuation(
+    offset: i64,
+    returned: usize,
+    total: i64,
+) -> (bool, Option<i64>, bool) {
+    let next = offset.saturating_add(i64::try_from(returned).unwrap_or(i64::MAX));
+    let has_more = next < total;
+    let limited = has_more && (returned == 0 || next > MAX_READ_OFFSET);
+    (has_more, (has_more && !limited).then_some(next), limited)
+}
 
 // ─── Responses ───────────────────────────────────────────────────────────────
 
@@ -72,7 +86,8 @@ pub struct SettingChange {
 
 #[derive(Debug, Serialize)]
 pub struct RuleChange {
-    /// Profile name, or `baseline` for the non-overridable safety rules.
+    /// `baseline` for safety rules; `profile:<name>` for device profiles.
+    /// The namespace prevents a profile named `baseline` from hiding a scope move.
     pub scope: String,
     /// Core rule id (unique within a stored policy).
     pub id: String,
@@ -116,6 +131,8 @@ pub struct AuditPage {
     pub total: i64,
     pub has_more: bool,
     pub next_offset: Option<i64>,
+    /// More records exist but cannot be reached within the offset cap.
+    pub pagination_limited: bool,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -135,6 +152,8 @@ pub struct EnrollmentContextPage {
     pub total: i64,
     pub has_more: bool,
     pub next_offset: Option<i64>,
+    /// More records exist but cannot be reached within the offset cap.
+    pub pagination_limited: bool,
 }
 
 // ─── Requests ────────────────────────────────────────────────────────────────
@@ -211,7 +230,7 @@ impl AuditQuery {
         if !(1..=1000).contains(&self.limit) {
             return Err(ApiError::bad_request("limit must be between 1 and 1000"));
         }
-        if !(0..=100_000).contains(&self.offset) {
+        if !(0..=MAX_READ_OFFSET).contains(&self.offset) {
             return Err(ApiError::bad_request("offset must be between 0 and 100000"));
         }
         let parse_ts = |raw: String, name: &'static str| -> ApiResult<DateTime<Utc>> {
@@ -328,7 +347,7 @@ fn indexed_rules(policy: &Policy) -> BTreeMap<(String, String), &Rule> {
     }
     for (profile, rules) in &policy.device_profiles {
         for rule in rules {
-            out.insert((profile.clone(), rule.id.clone()), rule);
+            out.insert((format!("profile:{profile}"), rule.id.clone()), rule);
         }
     }
     out
@@ -358,6 +377,11 @@ pub fn build_diff(from: &PolicyVersionView, to: &PolicyVersionView) -> PolicyDif
         a.event_retention_secs,
         b.event_retention_secs,
         "event_retention_secs"
+    );
+    compare!(
+        a.device_profiles.keys().collect::<Vec<_>>(),
+        b.device_profiles.keys().collect::<Vec<_>>(),
+        "device_profile_ids"
     );
     compare!(a.person_rules, b.person_rules, "person_rules");
     compare!(a.exceptions, b.exceptions, "exceptions");
@@ -524,6 +548,63 @@ mod tests {
         assert!(diff.settings.iter().any(|s| s.field == "timezone"));
         assert!(diff.settings.iter().any(|s| s.field == "stale_after_secs"));
         assert!(!diff.truncated && diff.omitted_changes == 0);
+    }
+
+    #[test]
+    fn diff_preserves_baseline_and_profile_scope_when_names_collide() {
+        let mut from = view(1, "UTC");
+        let rule = Rule {
+            id: "safety".into(),
+            effect: Effect::Deny,
+            matcher: RuleMatcher::DomainSuffix("blocked.example".into()),
+            schedule: None,
+            reason: String::new(),
+        };
+        from.policy.baseline = vec![rule.clone()];
+        let mut to = view(2, "UTC");
+        to.policy
+            .device_profiles
+            .insert("baseline".into(), vec![rule]);
+        let diff = build_diff(&from, &to);
+        assert!(diff.content_changed);
+        assert_eq!(diff.counts.removed_rules, 1);
+        assert_eq!(diff.counts.added_rules, 1);
+        assert_eq!(diff.counts.changed_rules, 0);
+        assert!(diff
+            .rules
+            .iter()
+            .any(|r| r.scope == "baseline" && r.change == "removed"));
+        assert!(diff
+            .rules
+            .iter()
+            .any(|r| r.scope == "profile:baseline" && r.change == "added"));
+    }
+
+    #[test]
+    fn diff_reports_empty_profile_addition_and_removal() {
+        let from = view(1, "UTC");
+        let mut to = view(2, "UTC");
+        to.policy.device_profiles.insert("kids".into(), vec![]);
+        for diff in [build_diff(&from, &to), build_diff(&to, &from)] {
+            assert!(diff.content_changed);
+            assert!(diff.rules.is_empty());
+            assert_eq!(diff.counts.changed_settings, 1);
+            assert_eq!(diff.settings[0].field, "device_profile_ids");
+            assert!(!diff.truncated);
+        }
+    }
+
+    #[test]
+    fn pagination_never_advertises_an_offset_that_validation_rejects() {
+        assert_eq!(page_continuation(0, 2, 3), (true, Some(2), false));
+        assert_eq!(page_continuation(2, 1, 3), (false, None, false));
+        assert_eq!(
+            page_continuation(99_999, 1, 100_002),
+            (true, Some(100_000), false)
+        );
+        assert_eq!(page_continuation(100_000, 1, 100_002), (true, None, true));
+        assert_eq!(page_continuation(99_999, 1000, 102_000), (true, None, true));
+        assert_eq!(page_continuation(100_000, 1, 100_001), (false, None, false));
     }
 
     #[test]
