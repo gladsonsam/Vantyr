@@ -127,23 +127,34 @@ impl Encoder {
     }
 
     /// Reconfigure rate control on the fly (buffer of ~1.25 frames at `max_kbps`).
-    pub fn set_rate(&mut self, crf: f32, max_kbps: u32) {
+    pub fn set_rate(&mut self, crf: f32, max_kbps: u32) -> Result<(), String> {
         self.set_rate_buf(
             crf,
             max_kbps,
             vbv_buffer_kbit(max_kbps, self.param.i_fps_num),
-        );
+        )
     }
 
     /// Reconfigure rate control with an explicit VBV buffer (kbit).
-    pub fn set_rate_buf(&mut self, crf: f32, max_kbps: u32, buf_kbit: u32) {
+    pub fn set_rate_buf(&mut self, crf: f32, max_kbps: u32, buf_kbit: u32) -> Result<(), String> {
         unsafe {
+            let previous = (
+                self.param.rc.f_rf_constant,
+                self.param.rc.i_vbv_max_bitrate,
+                self.param.rc.i_vbv_buffer_size,
+            );
             self.param.rc.f_rf_constant = crf;
             if max_kbps > 0 {
                 self.param.rc.i_vbv_max_bitrate = max_kbps as i32;
                 self.param.rc.i_vbv_buffer_size = buf_kbit.max(1) as i32;
             }
-            ffi::x264_encoder_reconfig(self.h, &mut self.param);
+            if ffi::x264_encoder_reconfig(self.h, &mut self.param) < 0 {
+                self.param.rc.f_rf_constant = previous.0;
+                self.param.rc.i_vbv_max_bitrate = previous.1;
+                self.param.rc.i_vbv_buffer_size = previous.2;
+                return Err("x264 rejected live rate control".into());
+            }
+            Ok(())
         }
     }
 

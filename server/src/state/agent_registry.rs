@@ -45,6 +45,8 @@ pub struct AgentConn {
     /// Only server policy pushes keep their old unconditional delivery; a report
     /// on this connection replaces this with normal grant enforcement.
     pub legacy_policy_delivery: bool,
+    /// Negotiated on this connection only; persisted inventory may describe an older binary.
+    pub screen_live_tuning: bool,
 }
 
 /// Latest foreground / URL / activity as reported by the agent over WebSocket (for integration API).

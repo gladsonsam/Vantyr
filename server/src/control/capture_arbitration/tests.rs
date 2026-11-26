@@ -699,6 +699,18 @@ async fn retune_keeps_session_capture_and_control_lease_under_control(
         .bind(json!({"capabilities":{"screen_live_tuning":"supported"}}))
         .execute(&s.db)
         .await?;
+    // Persisted capability is not a current-connection negotiation (e.g. after rollback).
+    s.tune_mjpeg_session(agent, session, user().user_id, 55, 120)
+        .await
+        .unwrap();
+    assert_eq!(s.media.mjpeg_active_capture.lock()[&agent], old);
+    assert!(queue.try_recv().is_err());
+    s.agents
+        .connections
+        .lock()
+        .get_mut(&agent)
+        .unwrap()
+        .screen_live_tuning = true;
     s.tune_mjpeg_session(agent, session, user().user_id, 50, 150)
         .await
         .unwrap();

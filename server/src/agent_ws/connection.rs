@@ -96,6 +96,7 @@ pub(crate) async fn register_authenticated_connection(
                 session_id,
                 shutdown: shutdown_tx,
                 legacy_policy_delivery,
+                screen_live_tuning: false,
             },
         );
         state.agents.modules.lock().remove(&agent_id);

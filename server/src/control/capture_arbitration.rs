@@ -268,14 +268,13 @@ impl AppState {
         quality: u8,
         interval: u32,
     ) -> Result<(), CommandDenied> {
-        let live_tuning =
-            crate::agents::capabilities::capability_status(&self.db, agent, "screen_live_tuning")
-                .await
-                .ok()
-                .flatten()
-                .as_deref()
-                == Some("supported");
         let control = self.control.lock();
+        let live_tuning = self
+            .agents
+            .connections
+            .lock()
+            .get(&agent)
+            .is_some_and(|connection| connection.screen_live_tuning);
         let mut sessions = self.media.mjpeg_sessions.lock();
         let mapped = sessions
             .get_mut(&session)

@@ -3,4 +3,4 @@
 /**
  * Per-platform feature availability, each `"supported"`, `"unavailable"` or a platform note.
  */
-export type AgentCapabilityInfo = { platform?: string, session_type?: string, desktop?: string, screen_capture?: string, screen_h264?: string, audio_capture?: string, remote_input?: string, clipboard?: string, keyboard_monitor?: string, url_tracking?: string, active_window?: string, software_inventory?: string, terminal?: string, script_execution?: string, app_blocking?: string, network_blocking?: string, system_control?: string, };
+export type AgentCapabilityInfo = { platform?: string, session_type?: string, desktop?: string, screen_capture?: string, screen_live_tuning?: string, screen_h264?: string, audio_capture?: string, remote_input?: string, clipboard?: string, keyboard_monitor?: string, url_tracking?: string, active_window?: string, software_inventory?: string, terminal?: string, script_execution?: string, app_blocking?: string, network_blocking?: string, system_control?: string, };

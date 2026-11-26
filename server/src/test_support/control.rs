@@ -72,6 +72,7 @@ pub fn connect(
             session_id: 1,
             shutdown,
             legacy_policy_delivery: false,
+            screen_live_tuning: false,
         },
     );
     s.agents.cmds.lock().insert(agent, sender);

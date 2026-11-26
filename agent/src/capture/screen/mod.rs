@@ -383,7 +383,9 @@ fn capture_pass(
                             }
                         };
                     }
-                    video_encoder.as_mut().unwrap().set_quality(jpeg_quality);
+                    if let Err(error) = video_encoder.as_mut().unwrap().set_quality(jpeg_quality) {
+                        warn!("Live video quality update failed: {error}");
+                    }
                     let timestamp_us =
                         video_epoch.elapsed().as_micros().min(u64::MAX as u128) as u64;
                     match video_encoder

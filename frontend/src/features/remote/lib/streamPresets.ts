@@ -77,8 +77,7 @@ export const STREAM_PRESET_OPTIONS: Array<{
 }> = [
   {
     label: "Auto",
-    description:
-      "Starts sharp and adapts delivery to this browser. Detail stays fixed while control is held.",
+    description: "Starts sharp and adapts clarity and motion to this session.",
     value: "auto",
   },
   {
