@@ -39,7 +39,7 @@ use axum::extract::State;
 use axum::middleware::from_fn_with_state;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::serve::Listener;
+use axum::serve::{Listener, ListenerExt};
 use axum::Router;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use family_dns::{
@@ -67,7 +67,11 @@ use vantyr_network_subscriptions::fetcher::Fetcher;
 use vantyr_network_subscriptions::transport::{HttpTransport, ReqwestTransport};
 
 const WORKER_ID: &str = "dns-mgmt-e2e-worker";
-const STAMP: &str = "2026-11-27T09:00:00Z";
+/// One hour in the past: safely inside the worker's future-skew bound and well
+/// inside its policy freshness window, on any day the test is run.
+fn published_at() -> DateTime<Utc> {
+    Utc::now() - ChronoDuration::hours(1)
+}
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn mapped_source() -> IpAddr {
@@ -154,9 +158,16 @@ async fn tls_router(config: Arc<ServerConfig>, router: Router) -> (String, Guard
     let tls = TlsListener {
         inner: listener,
         acceptor: TlsAcceptor::from(config),
-    };
+    }
+    // axum supplies `Connected` for `TapIo<L, _>` with `L::Addr == SocketAddr`,
+    // so the real handlers get the same peer connect info as a plain listener.
+    .tap_io(|_| {});
     let handle = tokio::spawn(async move {
-        let _ = axum::serve(tls, router).await;
+        let _ = axum::serve(
+            tls,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await;
     });
     (format!("https://localhost:{port}"), Guard(handle))
 }
@@ -217,7 +228,13 @@ impl Http {
     async fn send(builder: reqwest::RequestBuilder) -> (u16, Value) {
         let response = builder.send().await.unwrap();
         let status = response.status().as_u16();
-        let body = response.json::<Value>().await.unwrap_or(Value::Null);
+        let text = response.text().await.unwrap_or_default();
+        if status >= 500 {
+            // Never echo response bodies: a credential-issue failure would
+            // contain the one-time plaintext token.
+            eprintln!("[e2e] HTTP {status} from server route");
+        }
+        let body = serde_json::from_str(&text).unwrap_or(Value::Null);
         (status, body)
     }
 
@@ -457,10 +474,10 @@ fn private(path: &std::path::Path) {
 
 /// Small, synthetic DNS fixture. No live provider and no production household
 /// data: all addresses are TEST-NET-2 and the policy is local to this run.
-fn dns_config(port: u16, revision: u64) -> Vec<u8> {
+fn dns_config(port: u16, revision: u64, published: DateTime<Utc>) -> Vec<u8> {
     serde_json::to_vec(&json!({
         "household_id": "11111111-2222-3333-4444-555555555555",
-        "policy_published_at": STAMP,
+        "policy_published_at": published,
         "policy_revision": revision,
         "bind": { "address": "127.0.0.1", "port": port },
         "deny": { "mode": "nxdomain" },
@@ -536,8 +553,7 @@ fn build_runtime(st: &Fixture, list_ca: &str) -> Arc<SubscriptionRuntime> {
             .with_tick(Duration::from_millis(250))
             .with_fetcher_factory({
                 let list_ca = list_ca.to_owned();
-                let cache = st.cache.clone();
-                move |spec, _root, _ca| {
+                move |spec, root, _ca| {
                     let limits = Limits::default();
                     let url = reqwest::Url::parse(&spec.url)
                         .map_err(|e| SubscriptionError::InvalidConfig(e.to_string()))?;
@@ -576,8 +592,10 @@ fn build_runtime(st: &Fixture, list_ca: &str) -> Arc<SubscriptionRuntime> {
                         limits.max_header_bytes,
                         limits.request_timeout(),
                     )) as Arc<dyn HttpTransport>;
+                    // Use the runtime-supplied cache root exactly as the
+                    // production factory does: no private cache override.
                     Fetcher::with_transport(
-                        cache.clone(),
+                        root.to_path_buf(),
                         &cfg,
                         FormatValidator::new(spec.format),
                         transport,
@@ -598,12 +616,13 @@ async fn start_worker(
     st: &Fixture,
     hid: Uuid,
     gid: Uuid,
+    published: DateTime<Utc>,
     list_ca: &str,
     mgmt_base: &str,
     mgmt_ca: &str,
     bearer: &str,
 ) -> (Arc<DnsServer>, Arc<ManagementWorker>) {
-    fs::write(&st.config, dns_config(0, 2)).unwrap();
+    fs::write(&st.config, dns_config(0, 2, published)).unwrap();
     fs::write(&st.credential, format!("{bearer}\n")).unwrap();
     #[cfg(unix)]
     {
@@ -645,7 +664,7 @@ async fn start_worker(
         state_path: st.state.clone(),
         worker_id: WORKER_ID.to_owned(),
         config_path: Some(st.config.clone()),
-        now: STAMP.parse().unwrap(),
+        now: published,
         hooks: None,
     };
     let server = DnsServer::start_durable_with_subscriptions(durable, Some(runtime.clone()))
@@ -653,6 +672,16 @@ async fn start_worker(
         .unwrap();
     let worker = Arc::new(ManagementWorker::new(options, client, Some(runtime)));
     (server, worker)
+}
+
+/// PostgreSQL stores microsecond precision; compare instants at that resolution.
+fn assert_same_instant(json: &Value, expected: DateTime<Utc>, what: &str) {
+    let actual: DateTime<Utc> = serde_json::from_value(json.clone()).unwrap();
+    assert_eq!(
+        actual.timestamp_micros(),
+        expected.timestamp_micros(),
+        "{what}"
+    );
 }
 
 /// Bounded readiness polling: ~30 s per phase, never a tight hammer loop.
@@ -706,8 +735,11 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
 
     // Real worker: explicit credential file, options, CA (all owner-0600),
     // production fetcher/compiler, and the background coordinator loop.
-    let (server, worker) =
-        start_worker(&st, hid, gid, &list_ca, &mgmt_base, &ca_pem, &bearer).await;
+    let published = published_at();
+    let (server, worker) = start_worker(
+        &st, hid, gid, published, &list_ca, &mgmt_base, &ca_pem, &bearer,
+    )
+    .await;
     worker.start(Arc::downgrade(&server));
 
     // Phase 1: read -> fetch -> compile -> persist -> publish -> report.
@@ -730,10 +762,7 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
     assert!(blocked(&server, "svc.block.test.", false).await);
     let install_status = server.status();
     assert_eq!(install_status.policy_revision, 2);
-    assert_eq!(
-        install_status.policy_published_at,
-        STAMP.parse::<DateTime<Utc>>().unwrap()
-    );
+    assert_eq!(install_status.policy_published_at, published);
 
     // The server admitted the worker-generated status over its real HTTP+PG.
     let status_path = format!("/api/network/households/{hid}/dns/status");
@@ -754,9 +783,10 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
     assert!(applied["generation"].as_u64().unwrap() >= 1);
     assert!(applied["filter_generation"].as_u64().unwrap() >= 1);
     assert!(applied["filter_identity"].as_str().unwrap().len() <= 64);
-    assert_eq!(
-        applied["applied_at"],
-        serde_json::to_value(state_v1.applied_at.unwrap()).unwrap()
+    assert_same_instant(
+        &applied["applied_at"],
+        state_v1.applied_at.unwrap(),
+        "reported applied_at differs from the worker bundle",
     );
     let sources = gateway["status"]["sources"].as_array().unwrap();
     assert_eq!(sources.len(), 1);
@@ -871,9 +901,10 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
         .unwrap();
     assert_eq!(gw["status"]["applied"]["config_version"], 1);
     assert_eq!(gw["status"]["applied"]["body_sha256"], json!(digest_v1));
-    assert_eq!(
-        gw["status"]["applied"]["applied_at"],
-        serde_json::to_value(state_v1.applied_at.unwrap()).unwrap()
+    assert_same_instant(
+        &gw["status"]["applied"]["applied_at"],
+        state_v1.applied_at.unwrap(),
+        "refresh freshened the server-reported applied_at",
     );
     let (code, read) = http.worker_read(&bearer, hid, gid).await;
     assert_eq!(code, 200);
@@ -886,19 +917,23 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
         .as_str()
         .unwrap()
         .to_string();
+    // Cache-view evidence captured BEFORE restart. The post-restart runtime
+    // must rehydrate the managed fetcher with the same cache root and report
+    // the same downloaded hash/fetched_at -- not merely serve bundle bytes.
+    let before_restart = server
+        .subscription_status()
+        .expect("original runtime missing")
+        .0
+        .into_iter()
+        .find(|source| source.id == "remote-list")
+        .expect("no managed source before restart");
 
     // Clean shutdown, then an OFFLINE restart from the single bundle only.
-    // Cache files are deleted and the external config rewritten: the answer
+    // The external config is rewritten; with no runtime attached the answer
     // can only come from the persisted bundle, never from a live provider.
     worker.shutdown().await;
     server.stop_shared().await;
-    for entry in fs::read_dir(&st.cache).unwrap() {
-        let path = entry.unwrap().path();
-        if path.is_file() {
-            fs::remove_file(path).unwrap();
-        }
-    }
-    fs::write(&st.config, dns_config(0, 99)).unwrap();
+    fs::write(&st.config, dns_config(0, 99, published)).unwrap();
     let offline = DnsServer::start_durable(DurableOptions {
         state_path: st.state.clone(),
         worker_id: WORKER_ID.to_owned(),
@@ -910,6 +945,7 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
     .unwrap();
     assert_eq!(offline.status(), final_status);
     assert_eq!(offline.management_state().unwrap(), state_v2);
+    assert!(offline.subscription_status().is_none());
     assert!(blocked(&offline, "changed.block.test.", false).await);
     assert!(!blocked(&offline, "managed.block.test.", false).await);
     offline.stop().await;
@@ -944,6 +980,39 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
         "restart lost applied management state"
     );
     assert!(blocked(&online, "changed.block.test.", false).await);
+
+    // Cache-view proof: the rehydrated managed fetcher reports the SAME
+    // downloaded hash and fetched_at as before the restart, with no new
+    // failure/quarantine. Bundle DNS alone would not catch cache loss.
+    let after_restart = online
+        .subscription_status()
+        .expect("restarted runtime missing")
+        .0
+        .into_iter()
+        .find(|source| source.id == "remote-list")
+        .expect("managed fetcher was not rehydrated");
+    assert_eq!(
+        after_restart.content_version, before_restart.content_version,
+        "restart lost the downloaded list hash"
+    );
+    assert_eq!(
+        after_restart.fetched_at.map(|t| t.timestamp_micros()),
+        before_restart.fetched_at.map(|t| t.timestamp_micros()),
+        "restart lost the original fetched_at"
+    );
+    assert_eq!(
+        after_restart
+            .content_changed_at
+            .map(|t| t.timestamp_micros()),
+        before_restart
+            .content_changed_at
+            .map(|t| t.timestamp_micros())
+    );
+    assert_eq!(after_restart.bytes, before_restart.bytes);
+    assert_eq!(after_restart.rule_count, before_restart.rule_count);
+    assert_eq!(after_restart.download, before_restart.download);
+    assert_eq!(after_restart.failure_count, before_restart.failure_count);
+    assert!(!after_restart.stale, "rehydrated source reported stale");
 
     // Negative: the list cannot be fetched. One full 10 s poll cycle later,
     // no new ack and no new receipt may exist -- an ack without a fetch is the
