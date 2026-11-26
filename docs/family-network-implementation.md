@@ -555,12 +555,13 @@ No substantive UI or Supabase changes were made in this step.
   and end-to-end acceptance are required before dashboard controls are presented
   as functional. Existing cache/rate/retention and coverage placeholders remain
   pending; accepting list configuration does not implement those capabilities.
-- Verified encrypted upstreams (DoT/DoH) are in progress separately from encrypted
-  inbound listeners. Literal bootstrap addresses, normal certificate verification,
-  bounded explicit CA material and no implicit plaintext fallback are required.
-  Implementation `d59e99e1` is committed and awaiting independent security
-  acceptance. The implementer reports 150 affected tests passing, including
-  eight real-TLS upstream tests. Parent lock inspection confirms only `h2
-  0.4.21` is newly added, with no existing version/checksum changes. Review also
-  checks whether per-upstream CA configuration preserves the intended trust
-  scope when multiple encrypted endpoints are configured.
+- Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
+  accepted separately from encrypted inbound listeners. Fresh review passed all
+  91 DNS tests, including eight real-TLS upstream tests, and strict clippy.
+  Literal bootstrap addresses, normal certificate verification, bounded explicit
+  CA material and no implicit plaintext/system fallback are confirmed. All
+  operator CA entries form a shared trust pool across encrypted endpoints;
+  per-endpoint CA isolation is not provided and the README states this limit.
+  Lock inspection confirms only `h2 0.4.21` is newly added, with no existing
+  version/checksum changes. DoQ/H3/DNSCrypt, routing, fallback and encrypted
+  inbound listeners remain separate open requirements.

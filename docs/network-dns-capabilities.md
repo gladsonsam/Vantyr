@@ -56,7 +56,7 @@ written for a `Missing` row.
 | ID | Behavior contract | Status | Local code | Acceptance test |
 |---|---|---|---|---|
 | UP-01 | Plain UDP/TCP forwarding plus authoritative local zones, A/AAAA/CNAME and SOA | `AcceptedRuntime` | [runtime.rs](../crates/family-dns/src/runtime.rs), [handler.rs](../crates/family-dns/src/handler.rs) | Local zone, forwarded answer and negative SOA each returned through the handler |
-| UP-02 | Encrypted upstream schemes (DoT, DoH, DoQ, DNSCrypt, H3) | `Missing` | [config.rs](../crates/family-dns/src/config.rs) accepts only IP:port literals | Route one query per scheme; certificate failure keeps last-known-good policy and answers fail closed |
+| UP-02 | Encrypted upstream schemes (DoT, DoH, DoQ, DNSCrypt, H3) | `PartialRuntime` | Accepted `d59e99e1`: [upstream.rs](../crates/family-dns/src/upstream.rs) provides verified DoT/DoH using literal bootstrap and separate verification hostname; shared CA pool. DoQ/DNSCrypt/H3 remain missing | Route one query per scheme; certificate failure keeps last-known-good policy and answers fail closed |
 | UP-03 | Bootstrap resolvers for hostname-named upstreams | `Missing` | no hostname upstream accepted | Hostname-only upstream resolves via bootstrap then answers |
 | UP-04 | Fallback upstream when primary is unreachable | `Missing` | none in `crates/family-dns` | Kill primary; fallback answers; policy revision unchanged |
 | UP-05 | Domain-selected upstream routing, more-specific override and return-to-default marker | `Missing` | local split zones only in [runtime.rs](../crates/family-dns/src/runtime.rs) | `*.internal` routes only to its upstream; broader rule overridden; default marker restores root |

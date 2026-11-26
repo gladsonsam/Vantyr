@@ -204,7 +204,10 @@ resolved a second time; for DoT the name is used for verification (SNI is
 disabled upstream), for DoH it is also the TLS SNI with HTTP/2 ALPN.
 
 Trust is WebPKI roots plus the operator's explicit CA material, verified by
-maintained rustls/Hickory code. No certificate-verification bypass or
+maintained rustls/Hickory code. All configured `ca_pem` values are pooled across
+all encrypted upstreams; a CA added on one entry is trusted for every entry's
+verification hostname. This is shared operator trust, not per-endpoint CA
+isolation. No certificate-verification bypass or
 plain/system fallback flag exists. All upstreams share one 8-entry cap; invalid
 URLs, hostnames, zero ports, self-loops (including mapped IPs), malformed CA
 material and oversized values are rejected before any listener binds. The
