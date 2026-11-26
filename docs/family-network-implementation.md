@@ -548,91 +548,36 @@ No substantive UI or Supabase changes were made in this step.
   Retained enrollment/binding references block deletion even when ended/revoked;
   gateway re-enable never revives a revoked gateway or credential. Exact accepted
   routes, DTOs, permission rules and limitations have been sent to the frontend.
-- Dashboard DNS management is in progress as a separate control-plane slice:
-  versioned desired list/service settings, scoped outbound worker retrieval,
-  bounded download/local-apply reports and per-gateway refresh acknowledgments.
-  Policy history and its publication age remain independent. The worker consumer
-  and end-to-end acceptance are required before dashboard controls are presented
-  as functional. Existing cache/rate/retention and coverage placeholders remain
-  pending; accepting list configuration does not implement those capabilities.
-  Server control-plane commits `a8b5b994` + `eadf36d4` are independently accepted
-  with 19 targeted tests and strict scoped clippy passing. Independent database
-  probes confirmed 40 concurrent inserts admit exactly 32 requests without
-  deadlock; updates at the cap and destination-household move checks pass.
-  Desired configuration, scoped worker read/report commands, bounded delivery
-  evidence and per-gateway refresh acknowledgments are implemented. The worker
-  consumer is being built against that committed wire contract. No dashboard
-  handoff or end-to-end acceptance is claimed yet.
-  Initial review found repeated refresh receipts stayed stuck on the old token
-  and timestamp windows rejected valid seven-day scheduling or old applied
-  content. Parent fix `eadf36d4` passes 19 targeted tests and strict scoped
-  clippy and fresh independent acceptance. It also returns stored token
-  version/expiry on deduplication, prevents false historical delivery evidence,
-  pins the latest status's delivered version, bounds numeric casts and corrects
-  the database request cap with additive migration 0080 (0079 unchanged).
-  Worker consumer commit `4f47d6d0` is under independent review. The implementer
-  reports 159 affected tests, including eight real-TLS management tests, and
-  clean scoped clippy with no dependency changes. Review checks the actual
-  client/coordinator lifecycle, current-local-state races, automatic refresh
-  after initial apply, failed-candidate isolation and server report compatibility.
-  Follow-up `590aacc1` adds coordinator-loop, current-token and unchanged-age
-  coverage plus an enabled-only fetch correction; the implementer reports 162
-  affected tests. These additions are included as context for the active review.
-  Worker review rejected this slice: a missing refresh-expiry field rejects real
-  server responses, automatic list refresh can discard managed state, delayed
-  preparation can restore stale local material, failed candidates replace active
-  fetchers, receipt reporting exceeds the server contract, and management version
-  rollback/conflict checks are missing. Substantive fixes and fresh independent
-  review are required. It is not accepted or ready for dashboard handoff.
-  The six original fixes in `8277aefd` passed fresh review. The implementer reports 170 affected
-  tests and no dependency changes; the fix unifies applied management/material
-  authority, stages fetchers, guards the preparation basis, bounds receipts and
-  checks management versions. A separate real-server/worker test harness is being
-  built to exercise status admission against the migrated PostgreSQL-backed
-  router; shared wire fixtures alone do not establish that end-to-end result.
-  Fresh review accepts the six original fixes and confirms real server DTO/status
-  validator parity. Integration handoff remains blocked on two residual gaps:
-  rebuilding managed fetchers after restart (including real subsequent download,
-  not an acknowledgment without work), and reporting only the bounded desired
-  management source scope. These are required lifecycle behavior even though the
-  reviewer classified them as unchanged limitations. A separate fix and real
-  server/worker restart-refresh test are in progress. Test-harness dependency
-  inspection confirms only server dev-dependency edges change, with no new
-  registry package, version or checksum drift.
-  Harness commit `e6db26b0` implements the real TLS/router/worker/UDP+TCP flow
-  and a post-restart changed-list/no-false-ack phase. It has not yet compiled or
-  run: the first compile was blocked by the worker owner's active cache edits.
-  Its assertions are intended coverage, not passing evidence. It will be run
-  against the scoped PostgreSQL after a committed compile-clean worker fix.
-  Residual fix `fd46b48f` is under independent review; the implementer reports
-  175 affected tests passing, including restart rehydration, actual subsequent
-  downloads, no false manual receipts and bounded desired-source reporting.
-  The real-server harness has now been resumed against this committed revision;
-  its result remains pending. Cache ownership and cleanup are also reviewed.
-  Review of `fd46b48f` found open cache-lifecycle issues: quarantined managed
-  specs are not retained for retry, restart can delete/lose the active cache,
-  pid-only ownership collides across same-process runtimes, and `/proc` liveness
-  checks are not portable across Unix. Lifecycle test factories also ignored
-  the supplied cache root and masked the production layout. These findings are
-  being fixed; both worker and real-server tests must honor that root before
-  their results can close the integration gate.
-  Harness follow-up `a1b7b3e5` corrects its resolver factory to honor the supplied
-  cache root and checks the downloaded cache identity/timestamps after restart.
-  The tester reports an earlier successful compile and real worker application
-  with server-admitted status; the final corrected restart/refresh flow has not
-  yet been rerun and is not claimed as passing.
-  Fix `4fcac755` is under fresh independent review. It adds a validated active
-  cache locator, retained quarantine specs, per-instance staged ownership,
-  portable process liveness and production-root-faithful tests. The implementer
-  reports 120 DNS tests passing and old-code failures for five new lifecycle
-  tests. The real-server harness has been resumed on this exact committed fix;
-  neither its final pass nor cache-lifecycle acceptance is claimed yet.
-  Review confirms all four cache/recovery defects are fixed, but found locator
-  write/removal failures were silently ignored. Parent correction `bd062ef1`
-  exposes bounded runtime diagnostics in management reports, preserving the live
-  bundle and original times; all 27 management tests and strict scoped clippy
-  pass, including deterministic rename/removal failure cases. Focused independent
-  acceptance of that correction and the real-server result remain pending.
+- Dashboard DNS management control plane, commits `a8b5b994` + `eadf36d4`,
+  is independently accepted with 19 targeted tests, strict clippy and concurrent
+  database cap probes. It stores versioned desired list/service settings,
+  delivers them through explicitly scoped worker commands and records bounded
+  downloaded-versus-locally-applied observations. Refresh acknowledgments are
+  per gateway. Policy history, its revision and publication age stay separate.
+- DNS management worker authority/protocol fixes in `8277aefd` passed independent
+  review: strict full-envelope parsing, current local + managed material,
+  generation-guarded preparation, prospective fetcher isolation, management
+  version admission and bounded current receipts. Cache-lifecycle fix `4fcac755`
+  also closes the reviewed recovery, active-cache identity, shared-root ownership
+  and portable liveness findings with production-root-faithful tests.
+  Parent diagnostic correction `bd062ef1` makes locator write/removal failures
+  visible in runtime and management status without freshening applied time or
+  churning generations. All 27 management tests and strict scoped clippy pass;
+  focused independent acceptance of that correction remains pending.
+- Real-server/worker test harness `e6db26b0` + `a1b7b3e5` + `561d8248` passed on
+  worker basis `4fcac755`: one fresh-PostgreSQL test, zero failures, about 34.8 s.
+  The run uses the actual scoped server routes over verified TLS, actual worker
+  client/coordinator, production compiler/fetcher and runtime-supplied cache root.
+  It checks UDP/TCP list/service decisions, server status admission, manual
+  refresh, offline bundle recovery, retained cache metadata and post-restart
+  changed-list download with no false acknowledgment during a 503 failure.
+  Policy age and applied management time remain original. Only the list-fetch
+  resolver and test CA are injected; no live provider or production SSRF bypass
+  is exercised. The later locator diagnostic correction was separately tested,
+  not part of that original run. Independent harness review is in progress.
+  Combined acceptance and dashboard handoff remain gated on those final reviews.
+  Existing cache/rate/retention controls, statistics and verified coverage remain
+  separate open requirements; the service catalogue is operator-declared.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
   accepted separately from encrypted inbound listeners. Fresh review passed all
   91 DNS tests, including eight real-TLS upstream tests, and strict clippy.
