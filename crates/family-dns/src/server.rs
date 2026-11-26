@@ -1,9 +1,17 @@
 //! Listener lifecycle, first-run bootstrap and atomic reload for Vantyr DNS.
 //!
 //! Durable mode is opt-in: an explicit state path and worker id turn on a
-//! single atomic config+policy bundle. Without them the worker runs exactly as
-//! before, entirely in memory. A reload validates and builds a complete new
-//! snapshot off the request path, persists it first, then publishes one `Arc`.
+//! single atomic config+policy+material bundle. Without them the worker runs
+//! exactly as before, entirely in memory. A reload validates and builds a
+//! complete new snapshot off the request path, persists it first, then
+//! publishes one `Arc`.
+//!
+//! Three counters are deliberately independent. `policy.revision` belongs to
+//! the household/controller policy space; `bundle_generation` advances on
+//! every durable commit (policy OR list refresh); `filter_generation` advances
+//! only when the applied material content changes. A list refresh never
+//! invents a policy revision and cannot make the next controller revision
+//! stale.
 
 use std::fmt;
 use std::io;
@@ -26,17 +34,22 @@ use crate::compile::compile;
 use crate::config::{read_bounded, Config};
 use crate::controller::{ControllerError, SyncCapability};
 use crate::filter::{
-    compile_from_material, empty_filter, prepare as prepare_filter, FilterMaterial,
-    MAX_FILTER_BUNDLE_BYTES,
+    compile_from_material, empty_filter, material_identity, no_remote, prepare as prepare_filter,
+    FilterMaterial, MAX_FILTER_BUNDLE_BYTES,
 };
 use crate::handler::FilteringHandler;
 use crate::observe::{DecisionObservation, ObservationLog};
 use crate::runtime::{
-    build_snapshot, reject_upstream_self_loop, same_transport, RuntimeSnapshot, SnapshotHandle,
+    build_snapshot, reject_upstream_self_loop, same_transport, BundleState, RuntimeSnapshot,
+    SnapshotHandle,
 };
+use crate::subscription::{AppliedStatus, SourceStatus, SubscriptionRuntime};
 
 const TCP_TIMEOUT_SECS: u64 = 5;
 const TCP_MAX_BYTES: usize = 32 * 1024;
+/// Upper bound on integrator reaction time; never shorter than a configured
+/// subscription interval, which the fetcher still enforces.
+const SUBSCRIPTION_TICK_SECS: u64 = 60;
 
 /// Opt-in durable mode. `now` is supplied by the caller so tests and the CLI
 /// use the same code path; the binary passes `Utc::now()`.
@@ -88,11 +101,41 @@ impl fmt::Display for ReloadError {
 
 impl std::error::Error for ReloadError {}
 
-/// What actually became current after a successful reload.
+/// What actually became current after a successful durable commit. The policy
+/// revision and both independent counters are reported separately.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReloadOutcome {
     pub revision: u64,
     pub published_at: DateTime<Utc>,
+    pub generation: u64,
+    pub filter_generation: u64,
+}
+
+/// Result of an idempotent material-only update. An unchanged material never
+/// advances a generation or writes a file.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MaterialOutcome {
+    Applied {
+        generation: u64,
+        filter_generation: u64,
+        policy_revision: u64,
+    },
+    Unchanged {
+        generation: u64,
+        filter_generation: u64,
+        policy_revision: u64,
+    },
+}
+
+/// Labeled status for a running worker. Nothing here claims a download was
+/// enforced or that a controller acknowledged anything.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DnsStatus {
+    pub policy_revision: u64,
+    pub policy_published_at: DateTime<Utc>,
+    pub bundle_generation: u64,
+    pub filter_generation: u64,
+    pub filter_identity: String,
 }
 
 /// A running Vantyr DNS listener. The public API stays small: bind address,
@@ -104,10 +147,10 @@ pub struct DnsServer {
     observations: ObservationLog,
     current: SnapshotHandle,
     store: Option<BundleStore>,
-    /// Serialises ALL mutations (local reload and controller pull). Held only
-    /// off the query path: queries clone an Arc from `current` and never take
-    /// this lock. This makes the compile basis, persist and publish of one
-    /// update atomic with respect to every other update.
+    subscriptions: Option<Arc<SubscriptionRuntime>>,
+    /// Serialises ALL mutations (local reload, controller pull and material
+    /// update). Held only off the query path: queries clone an Arc from
+    /// `current` and never take this lock.
     update: Mutex<()>,
 }
 
@@ -116,12 +159,13 @@ impl DnsServer {
     /// No socket exists until configuration has passed full validation.
     pub async fn start(config: Config) -> Result<Self> {
         config.validate()?;
-        let (material, filter) = prepare_filter(&config.filter, config.policy_revision)
+        let (material, filter) = prepare_filter(&config.filter, config.policy_revision, &no_remote)
             .map_err(|error| anyhow::anyhow!(error.to_string()))?
             .map_or_else(
                 || (None, empty_filter()),
                 |(material, filter)| (Some(material), filter),
             );
+        let state = initial_state(&config, material.as_ref());
         let observations = ObservationLog::default();
         let snapshot = build_snapshot(
             config.clone(),
@@ -129,19 +173,25 @@ impl DnsServer {
             observations.clone(),
             filter,
             material,
+            state,
         )?;
-        Self::serve(config, snapshot, observations, None).await
+        Self::serve(config, snapshot, observations, None, None).await
     }
 
     /// Start in opt-in durable mode. On a lost-ack restart the local bundle is
     /// authoritative: an existing state file is loaded and validated before a
     /// listener exists, and the config file is never used as a newer policy.
-    /// A config is read only for first-run bootstrap.
     pub async fn start_durable(options: DurableOptions) -> Result<Self> {
+        Self::start_durable_with_subscriptions(options, None).await
+    }
+
+    /// Durable start with an operator-opted-in subscription runtime. No URL is
+    /// fetched until the runtime's integrator loop starts after binding.
+    pub async fn start_durable_with_subscriptions(
+        options: DurableOptions,
+        subscriptions: Option<Arc<SubscriptionRuntime>>,
+    ) -> Result<Self> {
         let validator = BundleValidator;
-        // The one bundle now carries bounded filter material as well as small
-        // settings. Raise this store's serialization ceiling explicitly; the
-        // runtime default (1 MiB) and every other store stay unchanged.
         let store = match BundleStore::open_from_snapshot_with_limit(
             &options.state_path,
             &options.worker_id,
@@ -173,7 +223,12 @@ impl DnsServer {
                     MAX_FILTER_BUNDLE_BYTES,
                 )?;
                 let published_at = config.policy_published_at.unwrap_or(options.now);
-                let material = prepare_filter(&config.filter, config.policy_revision)
+                let remote_subscriptions = subscriptions.clone();
+                let remote = |id: &str| match &remote_subscriptions {
+                    Some(runtime) => runtime.last_good(id),
+                    None => no_remote(id),
+                };
+                let material = prepare_filter(&config.filter, config.policy_revision, &remote)
                     .map_err(|error| anyhow::anyhow!(error.to_string()))?
                     .map(|(material, _snapshot)| material);
                 let bundle = Bundle::build_with_filter(&config, published_at, material)?;
@@ -194,19 +249,41 @@ impl DnsServer {
             .expect("a durable store always has a loaded or bootstrapped bundle");
         let observations = ObservationLog::default();
         // Recompile from the persisted bytes, never from the source paths. A
-        // source file that changed or vanished while the worker was down does
-        // not silently change the filter that was actually applied.
+        // source file/cache that changed or vanished while the worker was down
+        // does not change the filter that was actually applied.
         let filter = compile_from_material(bundle.filter.as_ref(), &bundle.config.filter)
             .map_err(|error| anyhow::anyhow!(error.to_string()))?
             .unwrap_or_else(empty_filter);
+        let state = BundleState {
+            generation: bundle.generation(),
+            policy_highwater: bundle.policy_highwater(),
+            filter_generation: bundle.filter_generation(),
+            filter_identity: material_identity(bundle.filter.as_ref()),
+        };
         let snapshot = build_snapshot(
             bundle.config.clone(),
             bundle.policy.clone(),
             observations.clone(),
             filter,
             bundle.filter.clone(),
+            state,
         )?;
-        Self::serve(bundle.config, snapshot, observations, Some(store)).await
+        let mut server =
+            Self::serve(bundle.config, snapshot, observations, Some(store), None).await?;
+        server.subscriptions = subscriptions;
+        let runtime = server.subscriptions.clone();
+        if let Some(runtime) = &runtime {
+            runtime.initialize(&server.status());
+        }
+        if let Some(runtime) = runtime {
+            let shared = Arc::new(server);
+            let weak = Arc::downgrade(&shared);
+            runtime.start(weak, Duration::from_secs(SUBSCRIPTION_TICK_SECS));
+            return Ok(Arc::try_unwrap(shared)
+                .ok()
+                .expect("the integrator holds only a weak reference"));
+        }
+        Ok(server)
     }
 
     async fn serve(
@@ -214,18 +291,15 @@ impl DnsServer {
         snapshot: Arc<RuntimeSnapshot>,
         observations: ObservationLog,
         store: Option<BundleStore>,
+        subscriptions: Option<Arc<SubscriptionRuntime>>,
     ) -> Result<Self> {
         let current: SnapshotHandle = Arc::new(RwLock::new(snapshot));
         let handler = FilteringHandler::new(current.clone());
         let mut server = Server::new(handler);
-        // With an ephemeral port the OS may hand back a UDP port whose TCP
-        // side is already held by another worker. Retry a bounded number of
-        // times instead of failing a valid config on that accidental collision.
         let mut attempts = 0;
         let (udp, tcp, bound) = loop {
             let udp = UdpSocket::bind(config.bind.configured_addr()).await?;
             let bound = udp.local_addr()?;
-            // Re-check against the actual port (port 0 is assigned by the OS).
             reject_upstream_self_loop(&config, bound)?;
             match TcpListener::bind(bound).await {
                 Ok(tcp) => break (udp, tcp, bound),
@@ -241,7 +315,6 @@ impl DnsServer {
         };
         server.register_socket(udp);
         server.register_listener(tcp, Duration::from_secs(TCP_TIMEOUT_SECS), TCP_MAX_BYTES);
-
         let shutdown = server.shutdown_token().clone();
         let task = tokio::spawn(async move {
             if let Err(error) = server.block_until_done().await {
@@ -255,46 +328,91 @@ impl DnsServer {
             observations,
             current,
             store,
+            subscriptions,
             update: Mutex::new(()),
         })
     }
 
     /// Validate a full candidate, build its catalog and policy off the request
     /// path, persist it before publishing, then swap one immutable snapshot.
-    /// Any failure at any stage leaves both disk and runtime on the old version.
     pub fn reload(
         &self,
         candidate: &[u8],
         now: DateTime<Utc>,
     ) -> Result<ReloadOutcome, ReloadError> {
-        let _update = self
-            .update
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _update = self.update.lock().unwrap_or_else(|p| p.into_inner());
         use ReloadError::*;
         let config = Config::parse(candidate).map_err(|e| InvalidConfig(e.to_string()))?;
-        self.check_candidate(&config)?;
-        // Source files are read and the filter compiled here, off the query
-        // path and before any persistence or swap. A missing, oversized or
-        // malformed candidate file rejects the whole candidate.
-        let (material, filter) = prepare_filter(&config.filter, config.policy_revision)
+        let active = self.active_snapshot();
+        self.check_candidate(&config, &active)?;
+        let remote = |id: &str| match &self.subscriptions {
+            Some(runtime) => runtime.last_good(id),
+            None => no_remote(id),
+        };
+        let (material, filter) = prepare_filter(&config.filter, config.policy_revision, &remote)
             .map_err(|error| FilterFailed(error.to_string()))?
             .map_or_else(
                 || (None, empty_filter()),
                 |(material, filter)| (Some(material), filter),
             );
+        let (filter_generation, identity) =
+            self.next_filter_generation(&active, material.as_ref())?;
         let published_at = config.policy_published_at.unwrap_or(now);
         let bundle = Bundle::build_with_filter(&config, published_at, material.clone())
             .map_err(|e| InvalidConfig(e.to_string()))?;
-        self.publish_bundle(config, bundle, now, filter, material)
+        let bundle = self.next_bundle(&bundle, &active, filter_generation)?;
+        self.publish_bundle(bundle, now, filter, material, identity)
     }
 
-    /// Validate the replayable local-control preconditions shared by SIGHUP
-    /// reloads and controller candidates. A controller candidate uses the same
-    /// transport and household checks; only its content source differs.
-    fn check_candidate(&self, config: &Config) -> Result<(), ReloadError> {
+    fn next_filter_generation(
+        &self,
+        active: &RuntimeSnapshot,
+        material: Option<&FilterMaterial>,
+    ) -> Result<(u64, String), ReloadError> {
+        match material {
+            None => Ok((0, String::new())),
+            Some(material) => {
+                let identity = material_identity(Some(material));
+                if identity == active.state.filter_identity {
+                    Ok((active.state.filter_generation, identity))
+                } else {
+                    let next = active
+                        .state
+                        .filter_generation
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            ReloadError::InvalidConfig(
+                                "filter generation overflow; refusing to wrap".into(),
+                            )
+                        })?;
+                    Ok((next, identity))
+                }
+            }
+        }
+    }
+
+    fn next_bundle(
+        &self,
+        bundle: &Bundle,
+        active: &RuntimeSnapshot,
+        filter_generation: u64,
+    ) -> Result<Bundle, ReloadError> {
+        let generation = active.state.generation.checked_add(1).ok_or_else(|| {
+            ReloadError::InvalidConfig("bundle generation overflow; refusing to wrap".into())
+        })?;
+        bundle
+            .with_generation(generation, filter_generation)
+            .map_err(|error| ReloadError::BuildFailed(error.to_string()))
+    }
+
+    /// Shared preconditions for local reloads and controller candidates. The
+    /// revision space here is the POLICY space, never the bundle generation.
+    fn check_candidate(
+        &self,
+        config: &Config,
+        active: &RuntimeSnapshot,
+    ) -> Result<(), ReloadError> {
         use ReloadError::*;
-        let active = self.active_snapshot();
         if !same_transport(config, &active.config) {
             return Err(TransportChange(
                 "bind address, port or loopback opt-in differs from the listener".into(),
@@ -305,7 +423,7 @@ impl DnsServer {
                 "candidate belongs to another household".into(),
             ));
         }
-        let highwater = self.highwater(active.revision);
+        let highwater = active.state.policy_highwater.max(active.policy.revision);
         if config.policy_revision <= highwater {
             return Err(NotNewer {
                 found: config.policy_revision,
@@ -322,33 +440,35 @@ impl DnsServer {
             .clone()
     }
 
-    fn highwater(&self, active_revision: u64) -> u64 {
-        self.store
-            .as_ref()
-            .map_or(active_revision, |store| store.highwater())
-            .max(active_revision)
-    }
-
-    /// Persist first, then swap one immutable snapshot. A concurrent local
-    /// reload or controller pull can only win with a strictly newer revision;
-    /// the store enforces the same monotonicity on disk.
+    /// Persist first, then swap one immutable snapshot. Every caller holds the
+    /// updates mutex, so generation assignment, disk commit and publication are
+    /// atomic with respect to each other.
     fn publish_bundle(
         &self,
-        config: Config,
         bundle: Bundle,
         now: DateTime<Utc>,
-        filter: std::sync::Arc<vantyr_network_filter::FilterSnapshot>,
+        filter: Arc<vantyr_network_filter::FilterSnapshot>,
         material: Option<FilterMaterial>,
+        identity: String,
     ) -> Result<ReloadOutcome, ReloadError> {
         use ReloadError::*;
         let revision = bundle.revision();
+        let generation = bundle.generation();
+        let filter_generation = bundle.filter_generation();
         let published_at = bundle.published_at();
+        let state = BundleState {
+            generation,
+            policy_highwater: bundle.policy_highwater(),
+            filter_generation,
+            filter_identity: identity,
+        };
         let snapshot = build_snapshot(
-            config,
+            bundle.config.clone(),
             bundle.policy.clone(),
             self.observations.clone(),
             filter,
             material,
+            state,
         )
         .map_err(|e| BuildFailed(e.to_string()))?;
 
@@ -362,36 +482,29 @@ impl DnsServer {
             .current
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if revision <= current.revision {
+        if generation <= current.state.generation {
             return Err(NotNewer {
-                found: revision,
-                highwater: current.revision,
+                found: generation,
+                highwater: current.state.generation,
             });
         }
         *current = snapshot;
         Ok(ReloadOutcome {
             revision,
             published_at,
+            generation,
+            filter_generation,
         })
     }
 
     /// Compile a verified controller policy onto the worker's local transport
-    /// config and apply it through the same monotonic persist/swap path as a
-    /// local reload. Same revision + same whole policy is an idempotent no-op;
-    /// same revision + different content is rejected before any write.
+    /// config and apply it through the same monotonic persist/swap path.
     pub fn apply_controller_policy(
         &self,
         policy: &Policy,
         now: DateTime<Utc>,
     ) -> Result<SyncCapability, ControllerError> {
-        // One update at a time, and the compile basis is the CURRENT whole
-        // snapshot (not a startup capture). A local reload that won earlier is
-        // therefore the basis for this pull; a local reload that comes later
-        // cannot be reverted by an older pull's stale basis.
-        let _update = self
-            .update
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _update = self.update.lock().unwrap_or_else(|p| p.into_inner());
         let active = self.active_snapshot();
         let candidate = compile(&active.config, policy)?;
         if !same_transport(&candidate, &active.config) {
@@ -405,19 +518,16 @@ impl DnsServer {
             ));
         }
         let published_at = candidate.policy_published_at.unwrap_or(now);
-        // `compile` carries every local field, including the filter settings,
-        // and the active material/snapshot are reused verbatim. A pull can
-        // therefore neither drop filtering nor restore a startup filter after
-        // a newer local filter change.
+        // Every local field, including filter settings, travels with the pull;
+        // the current material and snapshot are reused verbatim.
         let filter = active.filter.clone();
         let material = active.filter_material.clone();
         let bundle = Bundle::build_with_filter(&candidate, published_at, material.clone())
             .map_err(|error| ControllerError::Unsupported(error.to_string()))?;
         let revision = candidate.policy_revision;
-        let highwater = self.highwater(active.revision);
+        let highwater = active.state.policy_highwater.max(active.policy.revision);
         if revision == active.revision {
             if bundle.policy == active.policy {
-                // No reset, no fresh save time, no age freshening.
                 return Ok(SyncCapability::Unchanged { revision });
             }
             return Err(ControllerError::SameRevisionConflict(revision));
@@ -428,8 +538,23 @@ impl DnsServer {
                 highwater,
             });
         }
+        let bundle =
+            bundle
+                .with_generation(
+                    active.state.generation.checked_add(1).ok_or_else(|| {
+                        ControllerError::Unsupported("generation overflow".into())
+                    })?,
+                    active.state.filter_generation,
+                )
+                .map_err(|error| ControllerError::Unsupported(error.to_string()))?;
         let outcome = self
-            .publish_bundle(candidate, bundle, now, filter, material)
+            .publish_bundle(
+                bundle,
+                now,
+                filter,
+                material,
+                active.state.filter_identity.clone(),
+            )
             .map_err(|error| match error {
                 ReloadError::NotNewer { found, highwater } => {
                     ControllerError::StaleRevision { found, highwater }
@@ -442,38 +567,55 @@ impl DnsServer {
         })
     }
 
-    /// Apply already validated, typed list material through the *same*
+    /// Apply already validated, typed material through the *same*
     /// compile -> persist -> publish path as a local reload. This is the sole
-    /// seam a future fetch layer uses; it introduces no second filter state,
-    /// store or error-swallowing path. No URL is fetched or retained here and
-    /// the policy's original publication age is preserved.
-    ///
-    /// The caller supplies a strictly newer policy revision (the store's
-    /// monotonic high-water mark applies) and material whose source ids and
-    /// selected services match the current local filter settings.
+    /// seam used by the subscription integrator: no second filter state or
+    /// store, no swallowed errors, and NO policy revision is advanced.
     pub fn apply_filter_material(
         &self,
-        revision: u64,
         material: FilterMaterial,
         now: DateTime<Utc>,
-    ) -> Result<ReloadOutcome, ReloadError> {
-        let _update = self
-            .update
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        use ReloadError::*;
+    ) -> Result<MaterialOutcome, ReloadError> {
+        let _update = self.update.lock().unwrap_or_else(|p| p.into_inner());
         let active = self.active_snapshot();
-        let mut config = active.config.clone();
-        config.policy_revision = revision;
-        config.policy_published_at = Some(active.policy.published_at);
-        self.check_candidate(&config)?;
-        let filter = compile_from_material(Some(&material), &config.filter)
-            .map_err(|error| FilterFailed(error.to_string()))?
+        let identity = material_identity(Some(&material));
+        let policy_revision = active.policy.revision;
+        if identity == active.state.filter_identity {
+            return Ok(MaterialOutcome::Unchanged {
+                generation: active.state.generation,
+                filter_generation: active.state.filter_generation,
+                policy_revision,
+            });
+        }
+        let generation = active.state.generation.checked_add(1).ok_or_else(|| {
+            ReloadError::InvalidConfig("bundle generation overflow; refusing to wrap".into())
+        })?;
+        let filter_generation = active
+            .state
+            .filter_generation
+            .checked_add(1)
+            .ok_or_else(|| {
+                ReloadError::InvalidConfig("filter generation overflow; refusing to wrap".into())
+            })?;
+        let filter = compile_from_material(Some(&material), &active.config.filter)
+            .map_err(|error| ReloadError::FilterFailed(error.to_string()))?
             .unwrap_or_else(empty_filter);
-        let bundle =
-            Bundle::build_with_filter(&config, active.policy.published_at, Some(material.clone()))
-                .map_err(|error| InvalidConfig(error.to_string()))?;
-        self.publish_bundle(config, bundle, now, filter, Some(material))
+        // The policy and its original publication age are carried untouched.
+        let bundle = Bundle::build_with_filter(
+            &active.config,
+            active.policy.published_at,
+            Some(material.clone()),
+        )
+        .map_err(|error| ReloadError::InvalidConfig(error.to_string()))?;
+        let bundle = bundle
+            .with_generation(generation, filter_generation)
+            .map_err(|error| ReloadError::BuildFailed(error.to_string()))?;
+        self.publish_bundle(bundle, now, filter, Some(material), identity)?;
+        Ok(MaterialOutcome::Applied {
+            generation,
+            filter_generation,
+            policy_revision,
+        })
     }
 
     /// Local worker config currently serving. Kept read-only: callers must go
@@ -482,11 +624,43 @@ impl DnsServer {
         self.active_snapshot().config.clone()
     }
 
+    /// Labeled current versions. A list refresh changes only the two
+    /// generation counters, never `policy_revision` or `policy_published_at`.
+    pub fn status(&self) -> DnsStatus {
+        let active = self.active_snapshot();
+        DnsStatus {
+            policy_revision: active.revision,
+            policy_published_at: active.published_at,
+            bundle_generation: active.state.generation,
+            filter_generation: active.state.filter_generation,
+            filter_identity: active.state.filter_identity.clone(),
+        }
+    }
+
+    /// Download state versus what DNS actually applied, plus the last
+    /// combined error. No badge or enforcement claim is made.
+    pub fn subscription_status(&self) -> Option<(Vec<SourceStatus>, AppliedStatus)> {
+        self.subscriptions.as_ref().map(|runtime| runtime.status())
+    }
+
+    /// Request a bounded manual refresh of one configured source.
+    pub fn request_subscription_refresh(&self, id: &str) -> Result<(), ReloadError> {
+        match &self.subscriptions {
+            Some(runtime) => {
+                runtime.handle().request_refresh(id);
+                Ok(())
+            }
+            None => Err(ReloadError::InvalidConfig(
+                "no subscription runtime is enabled".to_owned(),
+            )),
+        }
+    }
+
     pub fn bind_addr(&self) -> SocketAddr {
         self.bind_addr
     }
 
-    /// Revision of the snapshot currently answering queries.
+    /// Policy revision of the snapshot currently answering queries.
     pub fn revision(&self) -> u64 {
         self.current
             .read()
@@ -494,7 +668,6 @@ impl DnsServer {
             .revision
     }
 
-    /// Original publication time of the currently active policy.
     pub fn published_at(&self) -> DateTime<Utc> {
         self.current
             .read()
@@ -506,7 +679,6 @@ impl DnsServer {
         self.store.is_some()
     }
 
-    /// Bounded decision observations. Never includes raw request bytes.
     pub fn observations(&self) -> Vec<DecisionObservation> {
         self.observations.snapshot()
     }
@@ -516,10 +688,22 @@ impl DnsServer {
     }
 
     pub async fn stop(mut self) {
+        if let Some(runtime) = &self.subscriptions {
+            runtime.shutdown();
+        }
         self.shutdown.cancel();
         if let Some(task) = self.task.take() {
             let _ = task.await;
         }
+    }
+}
+
+fn initial_state(config: &Config, material: Option<&FilterMaterial>) -> BundleState {
+    BundleState {
+        generation: config.policy_revision,
+        policy_highwater: config.policy_revision,
+        filter_generation: if material.is_some() { 1 } else { 0 },
+        filter_identity: material_identity(material),
     }
 }
 
@@ -531,6 +715,9 @@ fn uuid_from_household(raw: &str) -> Result<family_policy::HouseholdId> {
 
 impl Drop for DnsServer {
     fn drop(&mut self) {
+        if let Some(runtime) = &self.subscriptions {
+            runtime.shutdown();
+        }
         self.shutdown.cancel();
     }
 }

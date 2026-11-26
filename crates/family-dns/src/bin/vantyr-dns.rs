@@ -1,6 +1,6 @@
 //! Vantyr DNS command-line entry point.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -8,7 +8,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use family_dns::{
     read_bounded, sync_once, BundleStore, BundleValidator, Config, ControllerClient,
-    ControllerOptions, ControllerPoller, DnsServer, DurableOptions, ReloadOutcome, SyncCapability,
+    ControllerOptions, ControllerPoller, DnsServer, DurableOptions, ReloadOutcome,
+    SubscriptionRuntime, SubscriptionSettings, SyncCapability, MAX_FILTER_BUNDLE_BYTES,
 };
 
 const USAGE: &str = "\
@@ -28,6 +29,9 @@ Usage:
                                              opt in to one HTTPS controller policy pull
                                              at startup (durable mode required)
   vantyr-dns ... --controller <FILE> --poll  also poll with bounded backoff
+  vantyr-dns --config <FILE> --state <FILE> --worker <ID> --subscriptions <FILE>
+                                             opt in to scheduled public-list refresh
+                                             (durable mode required; no fetch without it)
   vantyr-dns --help                          show this help
   vantyr-dns --version                       show the version
 
@@ -45,6 +49,7 @@ struct Args {
     state: Option<PathBuf>,
     worker: Option<String>,
     controller: Option<PathBuf>,
+    subscriptions: Option<PathBuf>,
     poll: bool,
     check_only: bool,
     state_status: bool,
@@ -66,7 +71,7 @@ fn parse_args() -> Result<Args> {
             "--check-config" => args.check_only = true,
             "--state-status" => args.state_status = true,
             "--poll" => args.poll = true,
-            "--config" | "--state" | "--worker" | "--controller" => {
+            "--config" | "--state" | "--worker" | "--controller" | "--subscriptions" => {
                 let value = iter
                     .next()
                     .ok_or_else(|| anyhow!("{arg} needs a value\n{USAGE}"))?;
@@ -74,6 +79,7 @@ fn parse_args() -> Result<Args> {
                     "--config" => args.config = Some(PathBuf::from(value)),
                     "--state" => args.state = Some(PathBuf::from(value)),
                     "--controller" => args.controller = Some(PathBuf::from(value)),
+                    "--subscriptions" => args.subscriptions = Some(PathBuf::from(value)),
                     _ => args.worker = Some(value),
                 }
             }
@@ -114,15 +120,22 @@ async fn run() -> Result<()> {
         let worker = args
             .worker
             .ok_or_else(|| anyhow!("--state-status needs --worker\n{USAGE}"))?;
-        let store = BundleStore::open_from_snapshot(&path, worker, BundleValidator)
-            .map_err(|e| anyhow!("{e}"))?;
+        let store = BundleStore::open_from_snapshot_with_limit(
+            &path,
+            worker,
+            BundleValidator,
+            MAX_FILTER_BUNDLE_BYTES,
+        )
+        .map_err(|e| anyhow!("{e}"))?;
         let snapshot = store.snapshot().expect("loaded state has a snapshot");
         println!(
-            "Vantyr DNS: schema {}, household {}, worker {}, revision {}, published_at {}, saved_at {}",
+            "Vantyr DNS: schema {}, household {}, worker {}, bundle_generation {}, policy_revision {}, filter_generation {}, published_at {}, saved_at {}",
             snapshot.schema,
             snapshot.household_id,
             snapshot.worker_id,
             snapshot.highwater,
+            snapshot.policy.revision(),
+            snapshot.policy.filter_generation(),
             snapshot.policy.published_at().to_rfc3339(),
             snapshot.saved_at.to_rfc3339()
         );
@@ -146,6 +159,11 @@ async fn run() -> Result<()> {
     if args.poll && args.controller.is_none() {
         bail!("--poll requires --controller\n{USAGE}");
     }
+    if args.subscriptions.is_some()
+        && (args.state.is_none() || args.worker.is_none() || args.config.is_none())
+    {
+        bail!("--subscriptions requires --state, --worker and --config (durable mode)\n{USAGE}");
+    }
     if args.controller.is_some() {
         if args.state.is_none() || args.worker.is_none() {
             bail!("--controller requires --state and --worker (durable mode)\n{USAGE}");
@@ -166,15 +184,38 @@ async fn run() -> Result<()> {
         None => None,
     };
 
+    // Subscription settings are small and validated before any listener or
+    // fetcher exists. With no opt-in there is no network list traffic at all.
+    let subscription_runtime = match &args.subscriptions {
+        Some(path) => {
+            let settings: SubscriptionSettings = serde_json::from_slice(&read_bounded(path)?)?;
+            settings.validate()?;
+            let ca = match &settings.trusted_ca_pem {
+                Some(path) => Some(read_bounded(Path::new(path))?),
+                None => None,
+            };
+            Some(Arc::new(SubscriptionRuntime::new(
+                &settings,
+                ca.as_deref()
+                    .map(|bytes| std::str::from_utf8(bytes))
+                    .transpose()?,
+            )?))
+        }
+        None => None,
+    };
+
     let server = match (&args.state, &args.worker) {
         (Some(state), Some(worker)) => {
-            DnsServer::start_durable(DurableOptions {
-                state_path: state.clone(),
-                worker_id: worker.clone(),
-                config_path: args.config.clone(),
-                now: Utc::now(),
-                hooks: None,
-            })
+            DnsServer::start_durable_with_subscriptions(
+                DurableOptions {
+                    state_path: state.clone(),
+                    worker_id: worker.clone(),
+                    config_path: args.config.clone(),
+                    now: Utc::now(),
+                    hooks: None,
+                },
+                subscription_runtime,
+            )
             .await?
         }
         (None, None) => {

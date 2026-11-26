@@ -27,6 +27,19 @@ pub struct Bundle {
     pub policy: Policy,
     #[serde(default)]
     pub filter: Option<FilterMaterial>,
+    /// Monotonic generation of the whole bundle, independent of the policy
+    /// revision. Every durable commit (policy change OR list refresh) advances
+    /// it. `Option` preserves the distinction between an absent legacy counter
+    /// and a present-but-invalid one.
+    #[serde(default)]
+    pub generation: Option<u64>,
+    /// Highest policy revision ever applied. Distinct from `generation`.
+    #[serde(default)]
+    pub policy_highwater: Option<u64>,
+    /// Generation of the applied filter material. Advances only when the
+    /// compiled material content actually changes.
+    #[serde(default)]
+    pub filter_generation: Option<u64>,
 }
 
 impl Bundle {
@@ -59,10 +72,16 @@ impl Bundle {
         filter: Option<FilterMaterial>,
     ) -> Result<Self> {
         consistency(&config, &policy, filter.as_ref()).map_err(anyhow::Error::msg)?;
+        let generation = policy.revision;
+        let policy_highwater = policy.revision;
+        let filter_generation = if filter.is_some() { 1 } else { 0 };
         Ok(Self {
             config,
             policy,
             filter,
+            generation: Some(generation),
+            policy_highwater: Some(policy_highwater),
+            filter_generation: Some(filter_generation),
         })
     }
 
@@ -71,8 +90,42 @@ impl Bundle {
         self.policy.published_at
     }
 
+    /// Policy revision — its own monotonic space, never changed by a refresh.
     pub fn revision(&self) -> u64 {
         self.policy.revision
+    }
+
+    /// Monotonic whole-bundle generation, including policy and list commits.
+    pub fn generation(&self) -> u64 {
+        self.generation
+            .expect("bundle counters are normalized or initialized")
+    }
+
+    pub fn policy_highwater(&self) -> u64 {
+        self.policy_highwater
+            .expect("bundle counters are normalized or initialized")
+    }
+
+    pub fn filter_generation(&self) -> u64 {
+        self.filter_generation
+            .expect("bundle counters are normalized or initialized")
+    }
+
+    /// Build a new candidate with the next whole-bundle generation. The policy
+    /// revision and publication time are carried through untouched.
+    pub fn with_generation(
+        &self,
+        generation: u64,
+        filter_generation: u64,
+    ) -> std::result::Result<Self, LkgError> {
+        let mut candidate = self.clone();
+        candidate.generation = Some(generation);
+        candidate.filter_generation = Some(filter_generation);
+        candidate
+            .policy_highwater
+            .get_or_insert(self.policy.revision);
+        check_counters(&candidate)?;
+        Ok(candidate)
     }
 }
 
@@ -166,9 +219,51 @@ fn check_filter_consistency(
     Ok(())
 }
 
+/// Internal consistency of the three independent counter spaces. Never called
+/// on a partially migrated payload.
+fn check_counters(bundle: &Bundle) -> std::result::Result<(), LkgError> {
+    let (Some(generation), Some(policy_highwater), Some(filter_generation)) = (
+        bundle.generation,
+        bundle.policy_highwater,
+        bundle.filter_generation,
+    ) else {
+        return Err(LkgError::Malformed(
+            "bundle generation counters are missing".into(),
+        ));
+    };
+    if generation == 0 || policy_highwater == 0 {
+        return Err(LkgError::Malformed(
+            "bundle/policy generation counters must be positive".into(),
+        ));
+    }
+    if policy_highwater != bundle.policy.revision {
+        return Err(LkgError::Malformed(
+            "policy high-water mark disagrees with the policy revision".into(),
+        ));
+    }
+    // Generations are independent spaces: a newly published policy revision
+    // can exceed the current bundle generation, so no ordering is asserted
+    // between them. Only per-space monotonicity (enforced by the store and the
+    // worker) and the internal filter-generation bound are checked here.
+    match bundle.filter {
+        None if filter_generation != 0 => Err(LkgError::Malformed(
+            "filter generation is set without filter material".into(),
+        )),
+        Some(_) if filter_generation == 0 => Err(LkgError::Malformed(
+            "filter material has no filter generation".into(),
+        )),
+        Some(_) if filter_generation > generation => Err(LkgError::Malformed(
+            "filter generation exceeds the bundle generation".into(),
+        )),
+        _ => Ok(()),
+    }
+}
+
 impl Persistable for Bundle {
+    /// The store's generic high-water mark is the whole-bundle generation,
+    /// NOT the controller policy revision.
     fn revision(&self) -> u64 {
-        self.policy.revision
+        self.generation()
     }
 
     fn household_id(&self) -> HouseholdId {
@@ -177,7 +272,43 @@ impl Persistable for Bundle {
     }
 
     fn check(&self) -> std::result::Result<(), LkgError> {
+        check_counters(self)?;
         consistency(&self.config, &self.policy, self.filter.as_ref())
+    }
+
+    fn normalize(&mut self, envelope_highwater: u64) -> std::result::Result<(), LkgError> {
+        let present = [
+            self.generation.is_some(),
+            self.policy_highwater.is_some(),
+            self.filter_generation.is_some(),
+        ]
+        .into_iter()
+        .filter(|present| *present)
+        .count();
+        if present == 0 {
+            // The only recognized legacy shape: schema-1 bundle without any
+            // generation counters, where the envelope high-water mark was the
+            // policy revision. No timestamps or bytes are touched.
+            if envelope_highwater == 0 || envelope_highwater != self.policy.revision {
+                return Err(LkgError::Malformed(
+                    "legacy bundle high-water mark disagrees with its policy revision".into(),
+                ));
+            }
+            self.generation = Some(envelope_highwater);
+            self.policy_highwater = Some(self.policy.revision);
+            // A legacy bundle may already carry filter material from the local
+            // list slice; its first material generation is 1.
+            self.filter_generation = Some(if self.filter.is_some() { 1 } else { 0 });
+        } else if present != 3 {
+            return Err(LkgError::Malformed(
+                "bundle has a partial set of generation counters".into(),
+            ));
+        }
+        check_counters(self)?;
+        if self.generation() != envelope_highwater {
+            return Err(LkgError::RevisionMismatch);
+        }
+        Ok(())
     }
 }
 

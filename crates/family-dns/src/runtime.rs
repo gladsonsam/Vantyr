@@ -145,6 +145,16 @@ pub(crate) fn build_catalog(config: &Config) -> Result<Catalog> {
     Ok(catalog)
 }
 
+/// Independent counters/status published with one immutable snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct BundleState {
+    pub(crate) generation: u64,
+    pub(crate) policy_highwater: u64,
+    pub(crate) filter_generation: u64,
+    /// SHA-256 identity of the applied material, empty when no filter is set.
+    pub(crate) filter_identity: String,
+}
+
 /// Everything a query needs, built together and never mutated.
 pub(crate) struct RuntimeSnapshot {
     pub(crate) revision: u64,
@@ -163,6 +173,7 @@ pub(crate) struct RuntimeSnapshot {
     /// The validated material behind `filter`, reused verbatim by a controller
     /// pull so it cannot restore a startup filter after a local filter change.
     pub(crate) filter_material: Option<FilterMaterial>,
+    pub(crate) state: BundleState,
 }
 
 /// Shared handle to the current snapshot. The lock is held only for an `Arc`
@@ -176,6 +187,7 @@ pub(crate) fn build_snapshot(
     observations: ObservationLog,
     filter: Arc<FilterSnapshot>,
     filter_material: Option<FilterMaterial>,
+    state: BundleState,
 ) -> Result<Arc<RuntimeSnapshot>> {
     let revision = policy.revision;
     let published_at = policy.published_at;
@@ -195,6 +207,7 @@ pub(crate) fn build_snapshot(
         evaluator,
         filter,
         filter_material,
+        state,
     }))
 }
 
@@ -242,6 +255,12 @@ mod tests {
             ObservationLog::default(),
             empty_filter(),
             None,
+            BundleState {
+                generation: 1,
+                policy_highwater: 1,
+                filter_generation: 0,
+                filter_identity: String::new(),
+            },
         )
         .unwrap();
         let second = build_snapshot(
@@ -250,6 +269,12 @@ mod tests {
             ObservationLog::default(),
             empty_filter(),
             None,
+            BundleState {
+                generation: 1,
+                policy_highwater: 1,
+                filter_generation: 0,
+                filter_identity: String::new(),
+            },
         )
         .unwrap();
         assert_eq!(first.revision, second.revision);

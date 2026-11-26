@@ -15,6 +15,10 @@ vantyr-network-runtime = { path = "../network-runtime" }
 # Accepted bounded filter compiler (Hickory + maintained adblock, default `abp`
 # feature). Family DNS consumes the immutable snapshot; it never fetches bytes.
 vantyr-network-filter  = { path = "../network-filter" }
+# Accepted bounded HTTPS subscription fetcher. Family DNS reuses its fetcher
+# and revalidates cached bytes with the maintained filter compiler; this crate
+# adds no HTTP/SSRF/TLS policy of its own.
+vantyr-network-subscriptions = { path = "../network-subscriptions" }
 # Durable base64 of validated list material inside the one bundle file. Already
 # pinned in the workspace lock by network-subscriptions; no new version.
 base64           = "=0.22.1"

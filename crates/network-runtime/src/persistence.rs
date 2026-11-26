@@ -59,6 +59,15 @@ pub trait Persistable: Clone + Serialize + DeserializeOwned {
     fn household_id(&self) -> HouseholdId;
     /// Payload-specific shape checks shared by disk loads and new candidates.
     fn check(&self) -> Result<(), LkgError>;
+    /// Explicit one-time migration of a *recognized legacy* schema-1 payload
+    /// after deserialization and before any accessor or envelope check runs.
+    /// The default is a no-op, so non-DNS payloads keep their exact behaviour.
+    /// Implementations must reject impossible or partially present counters
+    /// instead of silently repairing them, and must not freshen timestamps or
+    /// replay any history.
+    fn normalize(&mut self, _envelope_highwater: PolicyRevision) -> Result<(), LkgError> {
+        Ok(())
+    }
 }
 
 /// The caller's "can this worker enforce this payload?" seam. Persistence calls
@@ -414,7 +423,7 @@ fn validate_snapshot<T: Persistable, V: Validator<T>>(
     worker_id: &str,
     validator: &V,
 ) -> Result<TypedSnapshot<T>, LkgError> {
-    let snapshot: TypedSnapshot<T> =
+    let mut snapshot: TypedSnapshot<T> =
         serde_json::from_slice(bytes).map_err(|e| LkgError::Malformed(e.to_string()))?;
     if snapshot.schema != SNAPSHOT_SCHEMA {
         return Err(LkgError::SchemaMismatch {
@@ -422,6 +431,10 @@ fn validate_snapshot<T: Persistable, V: Validator<T>>(
             expected: SNAPSHOT_SCHEMA,
         });
     }
+    // Migrate a recognized legacy payload before any accessor that assumes
+    // normalized counters runs, then compare the envelope high-water mark with
+    // the migrated generation. Candidates are never normalized here.
+    snapshot.policy.normalize(snapshot.highwater)?;
     // Deserialized payloads have not passed their shape checks yet. Accessors
     // may rely on those invariants (for example a validated UUID string).
     check_payload(&snapshot.policy, validator)?;

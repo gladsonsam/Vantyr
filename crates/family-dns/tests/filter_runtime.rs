@@ -542,7 +542,9 @@ async fn controller_pull_after_local_filter_change_keeps_the_new_filter() {
     assert_denied(&query(&server, false, "other.filter.example.", mapped()).await);
     let new_sha = {
         let cfg = server.local_config();
-        let (material, _) = prepare_filter_material(&cfg.filter, 3).unwrap().unwrap();
+        let (material, _) = prepare_filter_material(&cfg.filter, 3, &family_dns::no_remote)
+            .unwrap()
+            .unwrap();
         material
             .lists
             .iter()
@@ -590,14 +592,26 @@ async fn typed_material_apply_seam_uses_the_same_persist_publish_path() {
         serde_json::to_string(&cfg.filter.catalog).unwrap()
     ))
     .unwrap();
-    let (material, _snapshot) = prepare_filter_material(&candidate_cfg.filter, 2)
-        .unwrap()
-        .unwrap();
+    let (material, _snapshot) =
+        prepare_filter_material(&candidate_cfg.filter, 2, &family_dns::no_remote)
+            .unwrap()
+            .unwrap();
 
-    let outcome = server
-        .apply_filter_material(3, material.clone(), now)
-        .unwrap();
-    assert_eq!(outcome.revision, 3);
+    let before = server.status();
+    let outcome = server.apply_filter_material(material.clone(), now).unwrap();
+    assert!(matches!(
+        outcome,
+        family_dns::MaterialOutcome::Applied {
+            policy_revision: 2,
+            ..
+        }
+    ));
+    let after = server.status();
+    assert_eq!(after.policy_revision, before.policy_revision);
+    assert_eq!(after.policy_published_at, before.policy_published_at);
+    assert_eq!(after.bundle_generation, before.bundle_generation + 1);
+    assert_eq!(after.filter_generation, before.filter_generation + 1);
+    assert_eq!(server.revision(), 2);
     assert_allowed(&query(&server, false, "blocked.filter.example.", mapped()).await);
     assert_denied(&query(&server, false, "other.filter.example.", mapped()).await);
     assert_ne!(st.disk(), committed);
@@ -606,11 +620,22 @@ async fn typed_material_apply_seam_uses_the_same_persist_publish_path() {
     // live filter or the durable bundle.
     let mut bad = material;
     bad.lists[0].id = "not-configured".to_owned();
+    let committed_after_apply = st.disk();
     assert!(matches!(
-        server.apply_filter_material(4, bad, now),
+        server.apply_filter_material(bad, now),
         Err(ReloadError::FilterFailed(_))
     ));
-    assert_eq!(server.revision(), 3);
+    assert_eq!(
+        st.disk(),
+        committed_after_apply,
+        "rejected apply never writes disk"
+    );
+    assert_eq!(
+        server.status(),
+        after,
+        "rejected apply never advances a counter"
+    );
+    assert_eq!(server.revision(), 2);
     assert_allowed(&query(&server, true, "blocked.filter.example.", mapped()).await);
     server.stop().await;
 }

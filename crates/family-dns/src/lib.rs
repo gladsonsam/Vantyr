@@ -31,13 +31,15 @@ pub mod observe;
 pub mod policy;
 pub mod runtime;
 pub mod server;
+pub mod subscription;
 
 pub use bundle::{Bundle, BundleStore, BundleValidator};
 pub use compile::{compile, CompileError};
 pub use config::{
     read_bounded, BindConfig, Config, DenyConfig, DeviceConfig, FilterConfig, FilterSourceSpec,
     ListFormatSpec, MatchSpec, RecordSpec, RuleSpec, ScheduleSpec, ServiceCatalogSpec,
-    ServiceDomainSpec, ServiceSpec, MAX_CONFIG_BYTES,
+    ServiceDomainSpec, ServiceSpec, SourceOrigin, SubscriptionSettings, SubscriptionSourceSpec,
+    MAX_CONFIG_BYTES,
 };
 pub use controller::{
     policy_digest, sync_once, ControllerClient, ControllerError, ControllerOptions,
@@ -45,12 +47,19 @@ pub use controller::{
     CONTROLLER_KIND, CONTROLLER_POLICY_SCHEMA_VERSION, READ_PATH,
 };
 pub use filter::{
-    compile_from_material, empty_filter, prepare as prepare_filter_material,
-    validate_material_shape, FilterDerivation, FilterError, FilterMaterial, StoredList,
-    StoredListDerivation, StoredServiceDerivation, MAX_FILTER_BUNDLE_BYTES,
+    compile_from_material, empty_filter, material_identity, no_remote,
+    prepare as prepare_filter_material, validate_material_shape, FilterDerivation, FilterError,
+    FilterMaterial, StoredList, StoredListDerivation, StoredServiceDerivation,
+    MAX_FILTER_BUNDLE_BYTES,
 };
 pub use observe::{DecisionObservation, ObservationLog, MAX_OBSERVATIONS};
-pub use server::{DnsServer, DurableOptions, ReloadError, ReloadOutcome};
+pub use server::{
+    DnsServer, DnsStatus, DurableOptions, MaterialOutcome, ReloadError, ReloadOutcome,
+};
+pub use subscription::{
+    AppliedStatus, FormatValidator, SourceStatus, SubscriptionError, SubscriptionHandle,
+    SubscriptionRuntime,
+};
 // Re-exported so callers can use the same injectable pre/post-rename seam that
 // the worker itself uses for durability tests.
 pub use vantyr_network_runtime::WriteHooks;

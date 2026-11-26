@@ -191,6 +191,44 @@ config; the validated list **bytes** never live in that config:
   material under the updates mutex, so a local filter change cannot be
   reverted to the startup filter by a later pull.
 
+## Independent counters and scheduled subscriptions
+
+The one durable bundle carries three independent counter spaces:
+
+- `policy.revision` / `policy.published_at` — the household/controller policy
+  space. **List refreshes never touch either value.**
+- `bundle_generation` — advances on every durable commit (policy change,
+  local reload or list refresh). It is the store's monotonic high-water mark.
+- `filter_generation` — advances only when the applied list material content
+  actually changes. Identical re-downloads are idempotent: no new generation,
+  no disk write.
+
+`--state-status` prints all three separately. A schema-1 bundle written before
+these counters existed is migrated explicitly on load from its old high-water
+mark; impossible, partial or inconsistent counters are rejected before a
+listener exists. No timestamp or policy content is freshened by migration, and
+a generation overflow is an explicit error rather than a wrap.
+
+An **explicit** `--subscriptions <FILE>` (durable mode required) enables a
+single cancellable integrator loop that reuses the accepted
+`vantyr-network-subscriptions` fetchers. The small settings file holds source
+ids, HTTPS URLs, formats, enablement, intervals, required operator metadata, a
+cache directory and an optional trusted CA — never bytes. Each candidate is
+compiled with the maintained parser for its configured format before the cache
+promotes it. The integrator then assembles ALL current enabled sources plus
+the local service catalog, compiles within the 8 MiB aggregate bound and uses
+the same material path as a local reload. No URL is fetched without that opt-in
+and no provider is bundled.
+
+Download state is not enforcement state: `DnsServer::subscription_status()`
+reports per-source download status/checked time/error alongside what DNS
+actually applied (generation, filter identity, applied time, last combined
+error). A failed download, bad syntax, empty/oversized candidate, redirect,
+429/503, TLS failure or failed persist leaves the whole last-known-good filter
+and disk untouched and reports the error. An enabled source with no cache on
+first boot fails closed — there is no empty-list fallback. On restart the
+bundle is authoritative even if the cache or config changed while down.
+
 ## Scope and limits (honest)
 
 - Local-disk state is unauthenticated local durability. No gateway credential,
@@ -202,10 +240,11 @@ config; the validated list **bytes** never live in that config:
 - Bounded runtime events exist in `vantyr-network-runtime` but are **not**
   wired into this worker in this slice; decision observations are a small
   in-process ring, not a durable event store.
-- No list subscription/fetch is wired here. A fetch layer must supply already
-  validated bytes through the typed material seam; ABP Unicode/IDN rules are
+- Scheduled downloads are opt-in and use only public HTTPS URLs the operator
+  configured; there is no HTTP management API, UI badge or "safe" claim, and
+  no host resolver/DHCP/firewall/CA-trust change. ABP Unicode/IDN rules are
   rejected by the accepted upstream adapter with a diagnostic (hosts-source
-  IDNA is supported), and no exhaustive service catalog is shipped.
+  IDNA is supported); no exhaustive service catalog is shipped.
 - Alias inspection covers CNAME and differing-owner A/AAAA answers only.
   SVCB/HTTPS, DNAME, other redirection mechanisms and TSIG-signed queries are
   out of scope. RD/CD are preserved on every response path; multiple A/AAAA
@@ -228,7 +267,13 @@ coverage, truthful evidence, alias-target blocking, explicit unsupported query
 types, whole-version concurrent reload, missing/malformed/unsupported/oversized
 candidate rejection, restart from persisted bytes, controller-pull material
 preservation, and the typed material seam.
-`cargo test -p family-dns --test controller` adds real-TLS mock-controller
+`cargo test -p family-dns --test subscription_dns` adds real verified-TLS
+list-server tests for first-boot fail-closed, 200/304/changed-200 behaviour,
+bad/outage responses, counter-space separation, offline restart, persist
+failure retry, idempotent refreshes and baseline authority.
+`cargo test -p family-dns --test generation_migration` covers legacy counter
+migration, impossible/mixed/zero/overflow counters and on-disk material
+tampering. `cargo test -p family-dns --test controller` adds real-TLS mock-controller
 tests: the exact read-policy request/contract, scoped bearer custody, digest
 and outer-field mismatch rejection, bad-CA/plain-HTTP rejection, 401/404
 outage preservation, unsupported person/category policies, idempotent and

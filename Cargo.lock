@@ -1603,6 +1603,7 @@ dependencies = [
  "uuid",
  "vantyr-network-filter",
  "vantyr-network-runtime",
+ "vantyr-network-subscriptions",
 ]
 
 [[package]]

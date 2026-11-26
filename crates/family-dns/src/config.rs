@@ -20,6 +20,10 @@ use family_policy::{
     Schedule,
 };
 use serde::{Deserialize, Serialize};
+use vantyr_network_subscriptions::config::{
+    Limits as SubscriptionLimits, QueryPolicy, SourceMetadata, SubscriptionConfig,
+    SubscriptionSource,
+};
 
 /// Hard cap on the configuration file itself (bytes).
 pub const MAX_CONFIG_BYTES: usize = 64 * 1024;
@@ -52,6 +56,8 @@ pub const MAX_FILTER_PATH_LEN: usize = 512;
 pub const MAX_FILTER_FIELD_LEN: usize = 200;
 pub const MAX_SELECTED_SERVICES: usize = 64;
 pub const MAX_SERVICE_DOMAINS: usize = 512;
+pub const MAX_SUBSCRIPTION_SOURCES: usize = 32;
+pub const MAX_CACHE_PATH_LEN: usize = 512;
 
 /// Canonicalise only IPv4-mapped IPv6 (`::ffff:a.b.c.d`) to IPv4. Native IPv6
 /// loopback (`::1`) and deprecated IPv4-compatible addresses (`::a.b.c.d`)
@@ -462,6 +468,57 @@ pub struct ServiceCatalogSpec {
     pub services: Vec<ServiceSpec>,
 }
 
+/// One operator-declared public HTTPS list. The URL is only fetched when the
+/// worker opt-in enables the subscription runtime; it is never derived from a
+/// local path and never guessed.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubscriptionSourceSpec {
+    pub id: String,
+    pub url: String,
+    pub format: ListFormatSpec,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub interval_secs: Option<u64>,
+    #[serde(default)]
+    pub max_stale_secs: Option<u64>,
+    pub metadata: SourceMetadata,
+}
+
+/// Small subscription settings. Cached bytes stay under `cache_path`, never in
+/// this config or in the 64 KiB config file.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubscriptionSettings {
+    pub cache_path: String,
+    #[serde(default)]
+    pub trusted_ca_pem: Option<String>,
+    #[serde(default)]
+    pub sources: Vec<SubscriptionSourceSpec>,
+}
+
+impl SubscriptionSettings {
+    /// Validate the small settings with exactly the same bounds used when they
+    /// are embedded in a DNS config. No socket is opened here.
+    pub fn validate(&self) -> Result<()> {
+        FilterConfig {
+            subscriptions: Some(self.clone()),
+            ..Default::default()
+        }
+        .validate("subscriptions")
+    }
+}
+
+/// Explicit provenance of one compiled list, carried with durable material.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceOrigin {
+    #[default]
+    Local,
+    Subscription,
+}
+
 /// Small, validated filter *settings*. No bytes and no fetcher live here.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -472,6 +529,8 @@ pub struct FilterConfig {
     pub catalog: Option<ServiceCatalogSpec>,
     #[serde(default)]
     pub selected_services: Vec<String>,
+    #[serde(default)]
+    pub subscriptions: Option<SubscriptionSettings>,
 }
 
 impl FilterConfig {
@@ -483,10 +542,48 @@ impl FilterConfig {
             .iter()
             .filter(|source| source.enabled)
             .map(|source| source.id.clone())
+            .chain(
+                self.subscriptions
+                    .iter()
+                    .flat_map(|settings| &settings.sources)
+                    .filter(|source| source.enabled)
+                    .map(|source| source.id.clone()),
+            )
             .collect();
         ids.sort();
         ids.dedup();
         ids
+    }
+
+    /// Maintained parser for one enabled source id.
+    pub fn source_format(&self, id: &str) -> Option<ListFormatSpec> {
+        self.sources
+            .iter()
+            .find(|source| source.enabled && source.id == id)
+            .map(|source| source.format)
+            .or_else(|| {
+                self.subscriptions
+                    .iter()
+                    .flat_map(|settings| &settings.sources)
+                    .find(|source| source.enabled && source.id == id)
+                    .map(|source| source.format)
+            })
+    }
+
+    /// Explicit local-vs-subscription provenance for one source id.
+    pub fn source_origin(&self, id: &str) -> Option<SourceOrigin> {
+        if self
+            .sources
+            .iter()
+            .any(|source| source.enabled && source.id == id)
+        {
+            return Some(SourceOrigin::Local);
+        }
+        self.subscriptions
+            .iter()
+            .flat_map(|settings| &settings.sources)
+            .any(|source| source.enabled && source.id == id)
+            .then_some(SourceOrigin::Subscription)
     }
 
     /// Canonical selected service ids (sorted, deduplicated).
@@ -519,6 +616,57 @@ impl FilterConfig {
             if let Some(url) = &source.source_url {
                 check_filter_field(url, "filter source_url", place)?;
             }
+        }
+        if let Some(subscriptions) = &self.subscriptions {
+            if subscriptions.cache_path.is_empty()
+                || subscriptions.cache_path.len() > MAX_CACHE_PATH_LEN
+                || subscriptions.cache_path.chars().any(char::is_control)
+            {
+                bail!("{place} subscription cache_path is empty, unbounded or malformed");
+            }
+            if subscriptions.sources.len() > MAX_SUBSCRIPTION_SOURCES {
+                bail!("{place} has more than {MAX_SUBSCRIPTION_SOURCES} subscription sources");
+            }
+            for source in &subscriptions.sources {
+                check_filter_field(&source.id, "subscription id", place)?;
+                if !seen.insert(source.id.clone()) {
+                    bail!(
+                        "{place} source id {} is ambiguous across local and subscription sources",
+                        source.id
+                    );
+                }
+                if source.url.is_empty()
+                    || source.url.len() > MAX_FILTER_PATH_LEN
+                    || source.url.chars().any(char::is_control)
+                {
+                    bail!(
+                        "{place} subscription {} url is unbounded or malformed",
+                        source.id
+                    );
+                }
+            }
+            // Accepted library validation covers HTTPS-only URLs, no
+            // userinfo/query/fragment, metadata and interval bounds. It never
+            // opens a socket.
+            let library_config = SubscriptionConfig {
+                sources: subscriptions
+                    .sources
+                    .iter()
+                    .map(|source| SubscriptionSource {
+                        id: source.id.clone(),
+                        url: source.url.clone(),
+                        enabled: source.enabled,
+                        interval_secs: source.interval_secs,
+                        max_stale_secs: source.max_stale_secs,
+                        metadata: source.metadata.clone(),
+                    })
+                    .collect(),
+                limits: SubscriptionLimits::default(),
+                query_policy: QueryPolicy::Reject,
+            };
+            library_config
+                .validate()
+                .map_err(|error| anyhow::anyhow!("{place}: {error}"))?;
         }
         if self.selected_services.len() > MAX_SELECTED_SERVICES {
             bail!("{place} selects more than {MAX_SELECTED_SERVICES} services");

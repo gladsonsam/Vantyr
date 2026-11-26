@@ -33,7 +33,8 @@ use vantyr_network_filter::{
 };
 
 use crate::config::{
-    FilterConfig, ListFormatSpec, ServiceCatalogSpec, MAX_FILTER_FIELD_LEN, MAX_SELECTED_SERVICES,
+    FilterConfig, ListFormatSpec, ServiceCatalogSpec, SourceOrigin, MAX_FILTER_FIELD_LEN,
+    MAX_SELECTED_SERVICES,
 };
 
 /// Serialization ceiling for the one durable bundle *when it carries filter
@@ -79,6 +80,9 @@ impl From<vantyr_network_filter::CompileError> for FilterError {
 pub struct StoredList {
     pub id: String,
     pub format: ListFormatSpec,
+    /// Local file or operator subscription. Defaults to local for old bundles.
+    #[serde(default)]
+    pub origin: SourceOrigin,
     pub bytes_b64: String,
     pub sha256_hex: String,
     pub byte_len: usize,
@@ -128,16 +132,28 @@ pub struct FilterMaterial {
 struct LoadedList {
     id: String,
     format: ListFormatSpec,
+    origin: SourceOrigin,
     bytes: Vec<u8>,
     sha256_hex: String,
     source_url: Option<String>,
 }
 
-/// Build the filter snapshot and its durable material from the configured
-/// local regular files. Called at bootstrap/reload only, never per query.
+/// Remote material provider. It returns already validated bytes from a cache;
+/// no URL is fetched here. A `None` for an enabled subscription fails closed.
+pub type RemoteMaterial<'a> = dyn Fn(&str) -> Result<Option<Vec<u8>>, FilterError> + 'a;
+
+/// Default provider for workers with no subscription runtime.
+pub fn no_remote(_id: &str) -> Result<Option<Vec<u8>>, FilterError> {
+    Ok(None)
+}
+
+/// Build the filter snapshot and its durable material from configured local
+/// regular files and/or already validated subscription cache bytes. Called at
+/// bootstrap/reload only, never per query.
 pub fn prepare(
     config: &FilterConfig,
     revision: u64,
+    remote: &RemoteMaterial<'_>,
 ) -> Result<Option<(FilterMaterial, Arc<FilterSnapshot>)>, FilterError> {
     let ids = config.enabled_source_ids();
     let selected = config.selected_service_ids();
@@ -153,20 +169,58 @@ pub fn prepare(
     let mut loaded: Vec<LoadedList> = Vec::with_capacity(ids.len());
     let mut total = 0usize;
     for id in &ids {
-        let spec = config
-            .sources
-            .iter()
-            .find(|source| source.id == *id)
-            .ok_or_else(|| FilterError::Invalid(format!("source {id} is not configured")))?;
         let remaining = MAX_TOTAL_SOURCE_BYTES.saturating_sub(total);
-        let bytes = read_bounded_regular(&spec.path, remaining)?;
+        let format = config
+            .source_format(id)
+            .ok_or_else(|| FilterError::Invalid(format!("source {id} is not enabled")))?;
+        let origin = config
+            .source_origin(id)
+            .ok_or_else(|| FilterError::Invalid(format!("source {id} has unknown origin")))?;
+        let (bytes, source_url) = match origin {
+            SourceOrigin::Local => {
+                let spec = config
+                    .sources
+                    .iter()
+                    .find(|source| source.enabled && source.id == *id)
+                    .ok_or_else(|| {
+                        FilterError::Invalid(format!("source {id} is not configured"))
+                    })?;
+                (
+                    read_bounded_regular(&spec.path, remaining)?,
+                    spec.source_url.clone(),
+                )
+            }
+            SourceOrigin::Subscription => {
+                let bytes = remote(id)?.ok_or_else(|| {
+                    FilterError::Invalid(format!(
+                        "enabled subscription {id} has no cached material; failing closed"
+                    ))
+                })?;
+                if bytes.len() > remaining {
+                    return Err(FilterError::Invalid(format!(
+                        "subscription {id} exceeds the remaining aggregate byte bound"
+                    )));
+                }
+                let settings = config.subscriptions.as_ref().and_then(|settings| {
+                    settings
+                        .sources
+                        .iter()
+                        .find(|source| source.enabled && source.id == *id)
+                });
+                // Attribution only; the full URL is never fetched here and a
+                // safe display form is used when one is available.
+                let url = settings.map(|source| source.url.clone());
+                (bytes, url)
+            }
+        };
         total = total.saturating_add(bytes.len());
         loaded.push(LoadedList {
             id: id.clone(),
-            format: spec.format,
+            format,
+            origin,
             sha256_hex: hex(&Sha256::digest(&bytes)),
             bytes,
-            source_url: spec.source_url.clone(),
+            source_url,
         });
     }
 
@@ -177,6 +231,7 @@ pub fn prepare(
             .map(|list| StoredList {
                 id: list.id.clone(),
                 format: list.format,
+                origin: list.origin,
                 bytes_b64: BASE64.encode(&list.bytes),
                 sha256_hex: list.sha256_hex.clone(),
                 byte_len: list.bytes.len(),
@@ -213,19 +268,27 @@ pub fn compile_from_material(
     let config_formats: Vec<ListFormatSpec> = ids
         .iter()
         .map(|id| {
-            config
-                .sources
-                .iter()
-                .find(|source| source.id == *id && source.enabled)
-                .map(|source| source.format)
-                .ok_or_else(|| {
-                    FilterError::Invalid(format!("persisted list {id} is not enabled in config"))
-                })
+            config.source_format(id).ok_or_else(|| {
+                FilterError::Invalid(format!("persisted list {id} is not enabled in config"))
+            })
         })
         .collect::<Result<_, _>>()?;
-    if material_ids != ids || material_formats != config_formats {
+    let material_origins: Vec<SourceOrigin> =
+        material.lists.iter().map(|list| list.origin).collect();
+    let config_origins: Vec<SourceOrigin> = ids
+        .iter()
+        .map(|id| {
+            config.source_origin(id).ok_or_else(|| {
+                FilterError::Invalid(format!("persisted list {id} has no configured origin"))
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    if material_ids != ids
+        || material_formats != config_formats
+        || material_origins != config_origins
+    {
         return Err(FilterError::Invalid(
-            "persisted list ids/formats differ from local settings".to_owned(),
+            "persisted list ids/formats/origins differ from local settings".to_owned(),
         ));
     }
     let selected = config.selected_service_ids();
@@ -243,6 +306,7 @@ pub fn compile_from_material(
         loaded.push(LoadedList {
             id: list.id.clone(),
             format: list.format,
+            origin: list.origin,
             sha256_hex: list.sha256_hex.clone(),
             bytes,
             source_url: list.source_url.clone(),
@@ -348,6 +412,33 @@ pub fn validate_material_shape(material: &FilterMaterial) -> Result<(), FilterEr
         }
     }
     Ok(())
+}
+
+/// Content identity of the applied material. It is derived only from persisted
+/// fields, so a byte-for-byte identical refresh never creates a phantom new
+/// filter generation or whole-bundle generation.
+pub fn material_identity(material: Option<&FilterMaterial>) -> String {
+    let Some(material) = material else {
+        return String::new();
+    };
+    let mut hasher = Sha256::new();
+    for list in &material.lists {
+        hasher.update(list.id.as_bytes());
+        hasher.update(match list.format {
+            ListFormatSpec::Hosts => b"hosts".as_slice(),
+            ListFormatSpec::Abp => b"abp".as_slice(),
+        });
+        hasher.update(list.sha256_hex.as_bytes());
+        hasher.update(list.byte_len.to_le_bytes());
+        if let Some(url) = &list.source_url {
+            hasher.update(url.as_bytes());
+        }
+    }
+    for id in &material.derivation.selected_services {
+        hasher.update(id.as_bytes());
+    }
+    hasher.update(material.derivation.catalog_version.as_bytes());
+    hex(&hasher.finalize())
 }
 
 /// An immutable empty snapshot for workers with no configured lists/services.
@@ -525,7 +616,7 @@ mod tests {
     #[test]
     fn empty_settings_have_no_material() {
         let config = FilterConfig::default();
-        assert!(prepare(&config, 3).unwrap().is_none());
+        assert!(prepare(&config, 3, &no_remote).unwrap().is_none());
         assert!(compile_from_material(None, &config).unwrap().is_none());
     }
 
@@ -538,7 +629,7 @@ mod tests {
             hosts.display()
         ))
         .unwrap();
-        let (material, snapshot) = prepare(&config, 4).unwrap().unwrap();
+        let (material, snapshot) = prepare(&config, 4, &no_remote).unwrap().unwrap();
         assert_eq!(snapshot.total_rules(), 1);
         assert_eq!(material.derivation.revision, 4);
         assert_eq!(material.lists[0].sha256_hex.len(), 64);
