@@ -115,7 +115,7 @@ fn rule_active(rule: &Rule, ctx: &EvaluationContext<'_>) -> bool {
         && rule
             .schedule
             .as_ref()
-            .map_or(true, |schedule| schedule_active(schedule, ctx.now))
+            .is_none_or(|schedule| schedule_active(schedule, ctx.now))
 }
 
 /// Within one layer a matching deny wins over a matching allow, so adding an

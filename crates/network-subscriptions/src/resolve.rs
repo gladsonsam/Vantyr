@@ -140,7 +140,9 @@ impl AddressLookup for SystemLookup {
         // getaddrinfo is blocking; keep it off the async worker.
         let resolved = tokio::task::spawn_blocking(move || {
             use std::net::ToSocketAddrs;
-            (owned.as_str(), 0u16).to_socket_addrs().map(|it| it.take(MAX_RESOLVED_ADDRS + 1).collect::<Vec<_>>())
+            (owned.as_str(), 0u16)
+                .to_socket_addrs()
+                .map(|it| it.take(MAX_RESOLVED_ADDRS + 1).collect::<Vec<_>>())
         })
         .await
         .map_err(|e| Error::Transport("dns".into(), e.to_string()))?

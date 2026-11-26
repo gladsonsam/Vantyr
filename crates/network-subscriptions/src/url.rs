@@ -130,7 +130,11 @@ impl fmt::Display for ValidatedUrl {
     }
 }
 
-fn validate_query(query: Option<&str>, policy: &QueryPolicy, max_header_bytes: usize) -> Result<(), Error> {
+fn validate_query(
+    query: Option<&str>,
+    policy: &QueryPolicy,
+    max_header_bytes: usize,
+) -> Result<(), Error> {
     let Some(query) = query else {
         return Ok(());
     };
@@ -153,9 +157,7 @@ fn validate_query(query: Option<&str>, policy: &QueryPolicy, max_header_bytes: u
                 Error::bounded_detail(key, 64)
             )));
         }
-        if value.len() > max_header_bytes
-            || value.bytes().any(|b| b < 0x20 || b == 0x7f)
-        {
+        if value.len() > max_header_bytes || value.bytes().any(|b| b < 0x20 || b == 0x7f) {
             return Err(Error::InvalidUrl(
                 "query value is oversized or has control characters".into(),
             ));

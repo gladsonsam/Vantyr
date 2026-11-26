@@ -28,11 +28,7 @@ impl Default for RefreshScheduler {
 
 impl RefreshScheduler {
     pub fn new(clock: SharedClock, rng: SharedRng, policy: BackoffPolicy) -> Self {
-        Self {
-            clock,
-            rng,
-            policy,
-        }
+        Self { clock, rng, policy }
     }
 
     pub fn now(&self) -> DateTime<Utc> {
@@ -67,18 +63,15 @@ impl RefreshScheduler {
         let delay = self.policy.delay(attempt, retry_after, self.rng.as_ref());
         let until = self
             .now()
-            .checked_add_signed(chrono::Duration::from_std(delay).unwrap_or_else(|_| {
-                chrono::Duration::from_std(self.policy.max).unwrap()
-            }))
+            .checked_add_signed(
+                chrono::Duration::from_std(delay)
+                    .unwrap_or_else(|_| chrono::Duration::from_std(self.policy.max).unwrap()),
+            )
             .unwrap_or_else(|| self.now());
         (until, delay)
     }
 
-    pub fn is_stale(
-        &self,
-        last_check: Option<DateTime<Utc>>,
-        max_stale: Duration,
-    ) -> bool {
+    pub fn is_stale(&self, last_check: Option<DateTime<Utc>>, max_stale: Duration) -> bool {
         match last_check {
             None => true,
             Some(at) => {

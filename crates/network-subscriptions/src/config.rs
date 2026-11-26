@@ -35,7 +35,9 @@ pub const MAX_TEXT_LEN: usize = 256;
 pub enum QueryPolicy {
     #[default]
     Reject,
-    AllowPublic { keys: Vec<String> },
+    AllowPublic {
+        keys: Vec<String>,
+    },
 }
 
 /// Required operator-declared metadata. This crate never bundles a third-party
@@ -109,9 +111,7 @@ impl Default for Limits {
 
 impl Limits {
     pub fn validate(&self) -> Result<(), Error> {
-        let bad = |field: &str, msg: &str| {
-            Error::InvalidConfig(format!("limits.{field}: {msg}"))
-        };
+        let bad = |field: &str, msg: &str| Error::InvalidConfig(format!("limits.{field}: {msg}"));
         if self.max_sources == 0 || self.max_sources > MAX_SOURCES {
             return Err(bad("max_sources", "must be 1..=32"));
         }
@@ -137,7 +137,10 @@ impl Limits {
             return Err(bad("request_timeout_secs", "outside 1..=3600"));
         }
         if self.connect_timeout_secs > self.request_timeout_secs {
-            return Err(bad("connect_timeout_secs", "must not exceed request timeout"));
+            return Err(bad(
+                "connect_timeout_secs",
+                "must not exceed request timeout",
+            ));
         }
         if self.min_interval_secs != MIN_INTERVAL_SECS
             || self.max_interval_secs > MAX_INTERVAL_SECS
@@ -249,13 +252,17 @@ impl SubscriptionConfig {
                 )));
             }
             source.metadata.validate()?;
-            let url = ValidatedUrl::parse(&source.url, &self.query_policy, self.limits.max_header_bytes)?;
-            let interval = self
-                .limits
-                .interval(source.interval_secs.unwrap_or(self.limits.default_interval_secs))?;
-            let stale_secs = source
-                .max_stale_secs
-                .unwrap_or(self.limits.max_stale_secs);
+            let url = ValidatedUrl::parse(
+                &source.url,
+                &self.query_policy,
+                self.limits.max_header_bytes,
+            )?;
+            let interval = self.limits.interval(
+                source
+                    .interval_secs
+                    .unwrap_or(self.limits.default_interval_secs),
+            )?;
+            let stale_secs = source.max_stale_secs.unwrap_or(self.limits.max_stale_secs);
             if stale_secs < MIN_STALE_SECS || stale_secs > self.limits.max_stale_secs {
                 return Err(Error::InvalidConfig(format!(
                     "source {} max_stale_secs outside {MIN_STALE_SECS}..={}",

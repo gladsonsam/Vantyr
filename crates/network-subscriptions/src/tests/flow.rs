@@ -58,9 +58,15 @@ fn header(resp: &mut Response<axum::body::Body>, name: HeaderName, value: &str) 
     }
 }
 
-async fn list_handler(State(state): State<Arc<ServerState>>, headers: HeaderMap) -> Response<axum::body::Body> {
+async fn list_handler(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+) -> Response<axum::body::Body> {
     state.hits.fetch_add(1, Ordering::SeqCst);
-    let conditional = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok()).map(str::to_owned);
+    let conditional = headers
+        .get(IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
     if conditional.is_some() {
         state.conditional_hits.fetch_add(1, Ordering::SeqCst);
     }
@@ -106,7 +112,9 @@ async fn list_handler(State(state): State<Arc<ServerState>>, headers: HeaderMap)
 async fn spawn() -> (String, String, Arc<ServerState>) {
     let state = Arc::new(ServerState::default());
     state.set_content(FIRST, "\"v1\"");
-    let router = Router::new().route("/list", axum::routing::get(list_handler)).with_state(state.clone());
+    let router = Router::new()
+        .route("/list", axum::routing::get(list_handler))
+        .with_state(state.clone());
     let (base, ca) = crate::test_support::spawn_tls_server(router).await;
     (base, ca, state)
 }
@@ -182,37 +190,64 @@ async fn real_tls_conditional_get_last_good_and_restart_flow() {
     let cfg = config(&base, Limits::default());
     let first_fetcher = fetcher(dir.path(), &base, &ca, &cfg, clock.clone());
 
-    assert_eq!(first_fetcher.status("public").unwrap().status, SubscriptionStatus::NeverFetched);
-    assert_eq!(first_fetcher.refresh("public", false).await.unwrap(), FetchOutcome::Fetched { revision: 1 });
-    assert_eq!(first_fetcher.last_good_bytes("public").unwrap().unwrap(), FIRST);
+    assert_eq!(
+        first_fetcher.status("public").unwrap().status,
+        SubscriptionStatus::NeverFetched
+    );
+    assert_eq!(
+        first_fetcher.refresh("public", false).await.unwrap(),
+        FetchOutcome::Fetched { revision: 1 }
+    );
+    assert_eq!(
+        first_fetcher.last_good_bytes("public").unwrap().unwrap(),
+        FIRST
+    );
     let report = first_fetcher.status("public").unwrap();
     assert_eq!(report.status, SubscriptionStatus::Fresh);
     assert_eq!(report.revision, 1);
     assert_eq!(report.rule_count, Some(1));
-    assert!(report.content_updated_at.is_some(), "Last-Modified is content metadata");
+    assert!(
+        report.content_updated_at.is_some(),
+        "Last-Modified is content metadata"
+    );
     assert_eq!(state.hits.load(Ordering::SeqCst), 1);
     assert_eq!(state.conditional_hits.load(Ordering::SeqCst), 0);
 
     // Not due: no network I/O.
-    assert_eq!(first_fetcher.refresh("public", false).await.unwrap(), FetchOutcome::Skipped);
+    assert_eq!(
+        first_fetcher.refresh("public", false).await.unwrap(),
+        FetchOutcome::Skipped
+    );
     assert_eq!(state.hits.load(Ordering::SeqCst), 1);
 
     // 304 keeps content timestamps and bytes; only checked_at advances.
     clock.advance_ms(60_000);
-    assert_eq!(first_fetcher.refresh("public", true).await.unwrap(), FetchOutcome::NotModified);
+    assert_eq!(
+        first_fetcher.refresh("public", true).await.unwrap(),
+        FetchOutcome::NotModified
+    );
     assert_eq!(state.conditional_hits.load(Ordering::SeqCst), 1);
     let after_304 = first_fetcher.status("public").unwrap();
     assert_eq!(after_304.revision, 1);
     assert_eq!(after_304.fetched_at, report.fetched_at);
     assert_eq!(after_304.content_updated_at, report.content_updated_at);
     assert_eq!(after_304.checked_at, Some(clock.now()));
-    assert_eq!(first_fetcher.last_good_bytes("public").unwrap().unwrap(), FIRST);
+    assert_eq!(
+        first_fetcher.last_good_bytes("public").unwrap().unwrap(),
+        FIRST
+    );
 
     // Changed content produces a new revision.
     state.set_content(SECOND, "\"v2\"");
     clock.advance_ms(60_000);
-    assert_eq!(first_fetcher.refresh("public", true).await.unwrap(), FetchOutcome::Fetched { revision: 2 });
-    assert_eq!(first_fetcher.last_good_bytes("public").unwrap().unwrap(), SECOND);
+    assert_eq!(
+        first_fetcher.refresh("public", true).await.unwrap(),
+        FetchOutcome::Fetched { revision: 2 }
+    );
+    assert_eq!(
+        first_fetcher.last_good_bytes("public").unwrap().unwrap(),
+        SECOND
+    );
     let second_report = first_fetcher.status("public").unwrap();
     assert_eq!(second_report.revision, 2);
     assert_eq!(second_report.fetched_at, Some(clock.now()));
@@ -228,14 +263,20 @@ async fn real_tls_conditional_get_last_good_and_restart_flow() {
     assert_eq!(failed.status, SubscriptionStatus::FailedWithLastGood);
     assert_eq!(failed.failure_count, 1);
     assert_eq!(failed.consecutive_failures, 1);
-    assert_eq!(first_fetcher.last_good_bytes("public").unwrap().unwrap(), SECOND);
+    assert_eq!(
+        first_fetcher.last_good_bytes("public").unwrap().unwrap(),
+        SECOND
+    );
 
     // An empty body is also rejected by the real compile callback.
     state.set_mode(Mode::Empty);
     clock.advance_ms(60_000);
     let err = first_fetcher.refresh("public", true).await.unwrap_err();
     assert!(matches!(err, Error::ValidationFailed(..)), "{err:?}");
-    assert_eq!(first_fetcher.last_good_bytes("public").unwrap().unwrap(), SECOND);
+    assert_eq!(
+        first_fetcher.last_good_bytes("public").unwrap().unwrap(),
+        SECOND
+    );
 
     // 429 sets an abuse cooldown that even force respects.
     state.set_mode(Mode::RateLimited);
@@ -245,13 +286,24 @@ async fn real_tls_conditional_get_last_good_and_restart_flow() {
     let hits_after_429 = state.hits.load(Ordering::SeqCst);
     let err = first_fetcher.refresh("public", true).await.unwrap_err();
     assert!(matches!(err, Error::AbuseCooldown(..)), "{err:?}");
-    assert_eq!(state.hits.load(Ordering::SeqCst), hits_after_429, "cooldown blocked the fetch");
-    assert!(first_fetcher.status("public").unwrap().cooldown_until.is_some());
+    assert_eq!(
+        state.hits.load(Ordering::SeqCst),
+        hits_after_429,
+        "cooldown blocked the fetch"
+    );
+    assert!(first_fetcher
+        .status("public")
+        .unwrap()
+        .cooldown_until
+        .is_some());
 
     clock.advance_ms(250_000);
     state.set_mode(Mode::Ok);
     state.set_content(b"domain=recovered.example\n", "\"v3\"");
-    assert_eq!(first_fetcher.refresh("public", true).await.unwrap(), FetchOutcome::Fetched { revision: 3 });
+    assert_eq!(
+        first_fetcher.refresh("public", true).await.unwrap(),
+        FetchOutcome::Fetched { revision: 3 }
+    );
     let healed = first_fetcher.status("public").unwrap();
     assert_eq!(healed.consecutive_failures, 0);
     assert!(healed.cooldown_until.is_none());
@@ -265,7 +317,10 @@ async fn real_tls_conditional_get_last_good_and_restart_flow() {
     assert_eq!(restarted.last_good_bytes("public").unwrap().unwrap(), saved);
     let reloaded = restarted.status("public").unwrap();
     assert_eq!(reloaded.revision, 3);
-    assert_eq!(reloaded.fetched_at, saved_fetched_at, "restart never freshens content time");
+    assert_eq!(
+        reloaded.fetched_at, saved_fetched_at,
+        "restart never freshens content time"
+    );
     assert_ne!(reloaded.status, SubscriptionStatus::NeverFetched);
     assert_eq!(state.hits.load(Ordering::SeqCst), hits_before_restart);
 
@@ -286,8 +341,14 @@ async fn real_tls_conditional_get_last_good_and_restart_flow() {
     // Disabling is immediate and non-blocking; no further fetch occurs.
     let hits_before_disable = state.hits.load(Ordering::SeqCst);
     restarted.set_enabled("public", false).unwrap();
-    assert_eq!(restarted.status("public").unwrap().status, SubscriptionStatus::Disabled);
-    assert!(matches!(restarted.refresh("public", true).await, Err(Error::Disabled(_))));
+    assert_eq!(
+        restarted.status("public").unwrap().status,
+        SubscriptionStatus::Disabled
+    );
+    assert!(matches!(
+        restarted.refresh("public", true).await,
+        Err(Error::Disabled(_))
+    ));
     assert_eq!(state.hits.load(Ordering::SeqCst), hits_before_disable);
 }
 
@@ -327,11 +388,8 @@ async fn bad_certificate_oversize_and_stall_preserve_last_good() {
     // A well-formed but unrelated CA fails verification with TLS still on.
     let wrong_ca = crate::test_support::unrelated_ca_pem();
     let client = crate::test_support::loopback_client(&base, &wrong_ca, &limits);
-    let transport = ReqwestTransport::from_client(
-        client,
-        limits.max_header_bytes,
-        limits.request_timeout(),
-    );
+    let transport =
+        ReqwestTransport::from_client(client, limits.max_header_bytes, limits.request_timeout());
     let bad = crate::Fetcher::with_transport(
         dir.path().to_path_buf(),
         &cfg,
@@ -342,5 +400,9 @@ async fn bad_certificate_oversize_and_stall_preserve_last_good() {
     clock.advance_ms(120_000);
     let err = bad.refresh("public", true).await.unwrap_err();
     assert!(matches!(err, Error::Transport(..)), "{err:?}");
-    assert_eq!(bad.last_good_bytes("public").unwrap().unwrap(), FIRST, "same cache, unchanged");
+    assert_eq!(
+        bad.last_good_bytes("public").unwrap().unwrap(),
+        FIRST,
+        "same cache, unchanged"
+    );
 }

@@ -60,12 +60,7 @@ impl BackoffPolicy {
 
     /// Exponential delay for `attempt` (0-based), floored by an explicit
     /// `Retry-After`, plus RNG jitter bounded to a quarter of the base delay.
-    pub fn delay(
-        &self,
-        attempt: u32,
-        retry_after: Option<Duration>,
-        rng: &dyn Rng,
-    ) -> Duration {
+    pub fn delay(&self, attempt: u32, retry_after: Option<Duration>, rng: &dyn Rng) -> Duration {
         let mut base = self.initial.min(self.max);
         for _ in 0..attempt.min(32) {
             base = base.checked_mul(2).unwrap_or(self.max).min(self.max);

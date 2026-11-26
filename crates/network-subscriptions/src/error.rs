@@ -69,9 +69,7 @@ impl Error {
         }
         // Diagnostics must not carry control characters that could fake a
         // new log line or a header.
-        out.chars()
-            .filter(|c| !c.is_control())
-            .collect()
+        out.chars().filter(|c| !c.is_control()).collect()
     }
 
     pub fn for_url(_url: &ValidatedUrl, detail: impl Into<String>) -> Self {

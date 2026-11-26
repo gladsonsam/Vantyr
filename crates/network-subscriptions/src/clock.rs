@@ -30,9 +30,7 @@ pub struct TestClock {
 impl TestClock {
     pub fn new(epoch: DateTime<Utc>) -> Self {
         Self {
-            ticks: AtomicU64::new(
-                epoch.timestamp_millis().max(0) as u64,
-            ),
+            ticks: AtomicU64::new(epoch.timestamp_millis().max(0) as u64),
         }
     }
 
