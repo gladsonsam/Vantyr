@@ -14,8 +14,8 @@ afterEach(() => {
 });
 
 describe("stream preset storage", () => {
-  it("defaults to balanced and round-trips a saved preset", () => {
-    expect(loadStreamPreset()).toBe("balanced");
+  it("defaults to Auto and round-trips a saved preset", () => {
+    expect(loadStreamPreset()).toBe("auto");
     saveStreamPreset("sharp");
     expect(localStorage.getItem(STREAM_PRESET_STORAGE_KEY)).toBe("sharp");
     expect(loadStreamPreset()).toBe("sharp");
@@ -23,14 +23,14 @@ describe("stream preset storage", () => {
 
   it("ignores unknown stored values and storage failures", () => {
     localStorage.setItem(STREAM_PRESET_STORAGE_KEY, "4k");
-    expect(loadStreamPreset()).toBe("balanced");
+    expect(loadStreamPreset()).toBe("auto");
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("denied");
     });
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("denied");
     });
-    expect(loadStreamPreset()).toBe("balanced");
+    expect(loadStreamPreset()).toBe("auto");
     expect(() => saveStreamPreset("ultra")).not.toThrow();
   });
 });
@@ -52,5 +52,12 @@ it("keeps desktop presets legible within the deployed server quality range", () 
     expect(tuning.jpegQ).toBeLessThanOrEqual(85);
     expect(tuning.intervalMs).toBeGreaterThanOrEqual(33);
     if (i) expect(tuning.jpegQ).toBeGreaterThan(STREAM_PRESET_TUNING[ordered[i - 1]].jpegQ);
+  }
+});
+
+it("preserves every explicit manual choice", () => {
+  for (const preset of ["saver", "balanced", "sharp", "ultra"] as const) {
+    saveStreamPreset(preset);
+    expect(loadStreamPreset()).toBe(preset);
   }
 });

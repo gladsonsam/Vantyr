@@ -258,6 +258,27 @@ impl AppState {
         }
         result
     }
+    /// Retune a live viewer without ending its HTTP session or control lease.
+    /// Capture settings remain frozen under a lease; delivery cadence updates immediately.
+    pub(crate) fn tune_mjpeg_session(
+        &self,
+        agent: Uuid,
+        session: Uuid,
+        user: Uuid,
+        quality: u8,
+        interval: u32,
+    ) -> Result<(), CommandDenied> {
+        let control = self.control.lock();
+        let mut sessions = self.media.mjpeg_sessions.lock();
+        let mapped = sessions
+            .get_mut(&session)
+            .filter(|s| s.agent_id == agent && s.user_id == user)
+            .ok_or_else(|| denied("capture_session_stale", "Live session is missing."))?;
+        mapped.prefs.jpeg_quality = quality.clamp(20, 85);
+        mapped.prefs.interval_ms = interval.clamp(33, 1000);
+        drop(sessions);
+        self.sync_capture_locked(&control, agent, None)
+    }
     pub(crate) fn end_mjpeg_session(&self, agent: Uuid, session: Uuid, user: Option<Uuid>) -> bool {
         let mut control = self.control.lock();
         let mapped = self.media.mjpeg_sessions.lock().get(&session).copied();
@@ -321,7 +342,7 @@ impl AppState {
         let control = self.control.lock();
         let _ = self.sync_capture_locked(&control, agent, None);
     }
-    fn sync_capture_locked(
+    pub(crate) fn sync_capture_locked(
         &self,
         control: &ControlRuntime,
         agent: Uuid,

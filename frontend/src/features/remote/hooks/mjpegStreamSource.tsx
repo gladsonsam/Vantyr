@@ -19,9 +19,11 @@ export function useMjpegFrameSource({
   enabled,
   onBeforeDisplay,
   report,
+  metrics,
 }: FrameSourceOptions): FrameSource {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mjpeg = useMjpegFrames(streamUrl, enabled, canvasRef, {
+    metrics,
     beforeDisplay: onBeforeDisplay,
     presented: (frame, error) =>
       report({

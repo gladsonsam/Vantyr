@@ -23,6 +23,10 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/agents/{id}/mjpeg", get(live_media::agent_mjpeg))
         .route("/agents/{id}/video", get(live_media::agent_video))
         .route(
+            "/agents/{id}/mjpeg/tuning",
+            post(live_media::agent_mjpeg_tuning),
+        )
+        .route(
             "/agents/{id}/mjpeg/leave",
             post(live_media::agent_mjpeg_leave),
         )

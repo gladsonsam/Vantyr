@@ -59,3 +59,12 @@ export const remoteEndpoints = {
       signal,
     }),
 };
+
+/** Updates delivery without replacing the live session (and its input lease). */
+export function tuneScreenStream(agentId: string, session: string, tuning: MjpegStreamTuning) {
+  return requestJson(`/agents/${encodeURIComponent(agentId)}/mjpeg/tuning`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...csrfHeaders() },
+    body: JSON.stringify({ session, jpeg_q: tuning.jpegQ, interval_ms: tuning.intervalMs }),
+  });
+}

@@ -67,6 +67,11 @@ function useVideoFrames(options: FrameSourceOptions): FrameSource {
     clear();
     if (!scope) return;
     const transport = startVideoStream(scope, {
+      metrics: {
+        frame: (bytes, ms, timing) => callbacks.current.metrics?.frame(bytes, ms, timing),
+        decoded: (ms) => callbacks.current.metrics?.decoded(ms),
+        dropped: () => callbacks.current.metrics?.dropped(),
+      },
       present: (frame, packet) => {
         const element = canvas.current;
         if (!element) return;

@@ -665,3 +665,36 @@ async fn video_http_framing_lease_and_revocation(db: sqlx::PgPool) -> anyhow::Re
     assert!(s.control.lock().capture.is_empty());
     Ok(())
 }
+
+#[tokio::test]
+async fn retune_keeps_session_capture_and_control_lease_under_control() {
+    let (s, agent, _, mut queue) = setup();
+    let session = Uuid::new_v4();
+    let viewer = Uuid::new_v4();
+    s.begin_mjpeg_session(agent, session, user().user_id, prefs(Some(0), 80), Some(0))
+        .unwrap();
+    queue.try_recv().unwrap();
+    s.media.store_frame(agent, tagged_frame(0));
+    assert_eq!(acquire(&s, agent, session, viewer)["status"], "granted");
+    let old = s.media.mjpeg_active_capture.lock()[&agent];
+    assert!(s
+        .tune_mjpeg_session(agent, session, Uuid::new_v4(), 55, 100)
+        .is_err());
+    s.tune_mjpeg_session(agent, session, user().user_id, 55, 100)
+        .unwrap();
+    assert_eq!(s.media.mjpeg_active_capture.lock()[&agent], old);
+    assert_eq!(
+        s.media.mjpeg_sessions.lock()[&session].prefs.interval_ms,
+        100
+    );
+    assert_eq!(s.control.lock().capture[&agent].session_id, session);
+    assert!(queue.try_recv().is_err());
+    s.revoke_viewer_control(viewer);
+    assert_eq!(
+        s.media.mjpeg_active_capture.lock()[&agent]
+            .prefs
+            .jpeg_quality,
+        55
+    );
+    assert!(s.media.mjpeg_sessions.lock().contains_key(&session));
+}

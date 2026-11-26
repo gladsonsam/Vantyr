@@ -1,6 +1,8 @@
+import type { StreamMetricsSink } from "./streamMetrics";
 import { VideoPacketParser, type VideoPacket } from "./videoFrame";
 
 interface VideoStreamOptions {
+  metrics?: StreamMetricsSink;
   present: (frame: VideoFrame, packet: VideoPacket) => void;
   stopped: (error: string) => void;
 }
@@ -15,6 +17,8 @@ export function startVideoStream(url: string, options: VideoStreamOptions): { ca
   let decoder: VideoDecoder | null = null;
   let configuration = "";
   let serial = 0;
+  const decodeStarted = new Map<number, number>();
+  let transferStarted = 0;
   const pending = new Map<number, VideoPacket>();
   const end = (error = "") => {
     if (!alive) return;
@@ -32,7 +36,9 @@ export function startVideoStream(url: string, options: VideoStreamOptions): { ca
   );
   const receive = (packet: VideoPacket) => {
     if (!alive || !decoder || decoder.state === "closed") return;
-    if (pending.size >= 3 || decoder.decodeQueueSize >= 2) return;
+    options.metrics?.frame(packet.data.byteLength, transferStarted ? performance.now() - transferStarted : 0, { sourceMs: packet.timestamp / 1000, arrivalMs: Date.now(), capture: packet.geometry.capture_id });
+    transferStarted = 0;
+    if (pending.size >= 3 || decoder.decodeQueueSize >= 2) { options.metrics?.dropped(); return; }
     if (configuration !== packet.codec) {
       if (pending.size) return;
       decoder.configure({ codec: packet.codec, optimizeForLatency: true });
@@ -40,6 +46,7 @@ export function startVideoStream(url: string, options: VideoStreamOptions): { ca
     }
     const timestamp = ++serial;
     pending.set(timestamp, packet);
+    decodeStarted.set(timestamp, performance.now());
     decoder.decode(
       new EncodedVideoChunk({ type: "key", timestamp, data: packet.data.slice().buffer }),
     );
@@ -54,6 +61,8 @@ export function startVideoStream(url: string, options: VideoStreamOptions): { ca
           try {
             const packet = pending.get(frame.timestamp);
             pending.delete(frame.timestamp);
+            options.metrics?.decoded(performance.now() - (decodeStarted.get(frame.timestamp) ?? performance.now()));
+            decodeStarted.delete(frame.timestamp);
             if (!alive || !packet) return;
             options.present(frame, packet);
             clearTimeout(connectionTimeout);
@@ -85,7 +94,10 @@ export function startVideoStream(url: string, options: VideoStreamOptions): { ca
       await readableVideoBytes(reader).pipeTo(
         new WritableStream<Uint8Array>({
           write: (chunk) => {
-            if (alive) parser.push(chunk, receive);
+            if (alive) {
+              if (!transferStarted) transferStarted = performance.now();
+              parser.push(chunk, receive);
+            }
           },
         }),
         { signal: abort.signal },

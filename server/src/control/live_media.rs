@@ -150,7 +150,7 @@ async fn agent_live_stream(
     };
 
     let stream_state = s;
-    let poll_ms = u64::from(viewer_prefs.interval_ms).clamp(33, 2000);
+    let poll_ms = 33;
     let stream = async_stream::stream! {
         // Moving the guard into the stream keeps it alive until the HTTP
         // connection drops, at which point Drop ends the session (if not already ended).
@@ -176,6 +176,9 @@ async fn agent_live_stream(
             let current = stream_state.agents.connections.lock().get(&id).map(|c| c.conn_id);
             if !stream_state.media.mjpeg_sessions.lock().get(&session_id).is_some_and(|s| Some(s.conn_id)==current) {break;}
 
+            let cadence = stream_state.media.mjpeg_sessions.lock().get(&session_id)
+                .map(|s| s.prefs.interval_ms).unwrap_or(1000);
+            if last_seq != 0 && last_emit.elapsed() < Duration::from_millis(u64::from(cadence)) { continue; }
             let agent_online = stream_state.agents.connections.lock().contains_key(&id);
 
             // Agent just (re)connected while we're still watching — send a
@@ -255,6 +258,30 @@ pub async fn agent_mjpeg_leave(
     Json(serde_json::json!({ "ok": true })).into_response()
 }
 
+#[derive(Deserialize)]
+pub struct TuningBody {
+    session: Uuid,
+    jpeg_q: u8,
+    interval_ms: u32,
+}
+pub async fn agent_mjpeg_tuning(
+    Path(id): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Json(body): Json<TuningBody>,
+) -> Response {
+    match s.tune_mjpeg_session(
+        id,
+        body.session,
+        user.user_id,
+        body.jpeg_q,
+        body.interval_ms,
+    ) {
+        Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
+        Err(error) => error.response(),
+    }
+}
+
 // --- CaptureGuard (MJPEG refcount)
 
 struct CaptureGuard {
@@ -271,7 +298,7 @@ impl Drop for CaptureGuard {
 }
 
 fn clamp_mjpeg_viewer_prefs(q: &MjpegQuery) -> MjpegViewerPrefs {
-    let jpeg_quality = q.jpeg_q.unwrap_or(40).clamp(20, 85);
+    let jpeg_quality = q.jpeg_q.unwrap_or(80).clamp(20, 85);
     let interval_ms = q.interval_ms.unwrap_or(200).clamp(33, 1000);
     let monitor = q.monitor;
     MjpegViewerPrefs {

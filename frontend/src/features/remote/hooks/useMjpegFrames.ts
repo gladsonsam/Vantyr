@@ -1,3 +1,4 @@
+import type { StreamMetricsSink } from "../lib/streamMetrics";
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
 const jpegSofMarkers = new Set([
   0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
@@ -19,6 +20,7 @@ export interface DecodedRemoteFrame extends DisplayedRemoteFrame {
 }
 type Decode = (jpeg: Uint8Array) => Promise<ImageBitmap>;
 interface DecodeJob {
+  metrics?: StreamMetricsSink;
   owner: symbol;
   frame: RemoteFrame;
   alive: () => boolean;
@@ -69,6 +71,7 @@ export class MjpegDecodeLane {
   private pending: DecodeJob | null = null;
   constructor(private readonly decode: Decode = decodeBrowserFrame) {}
   offer(job: DecodeJob): void {
+    if (this.pending) this.pending.metrics?.dropped();
     this.pending = job;
     if (!this.busy) void this.pump();
   }
@@ -85,8 +88,10 @@ export class MjpegDecodeLane {
       let bitmap: ImageBitmap | null = null;
       try {
         const expected = jpegDecodeSize(job.frame.jpeg);
+        const decodeStart = performance.now();
         // react-doctor-disable-next-line react-doctor/async-await-in-loop
         bitmap = await this.decode(job.frame.jpeg);
+        job.metrics?.decoded(performance.now() - decodeStart);
         if (!job.alive()) continue;
         if (
           !Number.isSafeInteger(bitmap.width) ||
@@ -119,6 +124,7 @@ export class MjpegDecodeLane {
 }
 
 interface StreamOptions {
+  metrics?: StreamMetricsSink;
   lane: MjpegDecodeLane;
   present: (frame: DecodedRemoteFrame) => void;
   stopped: (error: Error | null) => void;
@@ -137,6 +143,7 @@ export function startMjpegStream(
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   let parser: MultipartJpegParser | null = null;
   let active = true;
+  let transferStarted = 0;
   const stop = (error: Error | null) => {
     if (!active) return;
     active = false;
@@ -205,17 +212,22 @@ export function startMjpegStream(
           stop(new Error("Screen stream ended. Reconnect to continue."));
           break;
         }
+        if (!transferStarted) transferStarted = performance.now();
         for (let p = 0; p < value.length && active; p += 256) {
           parser.push(value.subarray(p, p + 256));
           let frame: RemoteFrame | undefined;
-          while ((frame = parser.takeFrame()) && active)
+          while ((frame = parser.takeFrame()) && active) {
+            options.metrics?.frame(frame.jpeg.byteLength, transferStarted ? performance.now() - transferStarted : 0);
+            transferStarted = 0;
             options.lane.offer({
+              metrics: options.metrics,
               owner,
               frame,
               alive: () => active,
               present: options.present,
               failed: (error) => stop(error),
             });
+          }
           if (parser.closed) {
             stop(new Error("Screen stream ended. Reconnect to continue."));
             break;
@@ -236,6 +248,7 @@ export function startMjpegStream(
 }
 
 interface HookOptions {
+  metrics?: StreamMetricsSink;
   beforeDisplay: (frame: DisplayedRemoteFrame | null) => void;
   stopped: () => void;
   presented?: (frame: DisplayedRemoteFrame | null, error?: string) => void;
@@ -305,6 +318,11 @@ export function useMjpegFrames(
       };
     const stream = startMjpegStream(scope, {
       lane: lane.current!,
+      metrics: {
+        frame: (bytes, ms, timing) => callbacks.current.metrics?.frame(bytes, ms, timing),
+        decoded: (ms) => callbacks.current.metrics?.decoded(ms),
+        dropped: () => callbacks.current.metrics?.dropped(),
+      },
       present: (frame) => {
         if (!live || currentScope.current !== scope) return;
         if (!element) throw new Error("Screen display is unavailable");
