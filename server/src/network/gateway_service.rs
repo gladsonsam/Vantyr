@@ -1,0 +1,255 @@
+//! Atomic gateway/credential transitions and the worker heartbeat path.
+//!
+//! Issuance, rotation, revocation and report persistence are each a single
+//! transaction. The worker credential is verified against the database on
+//! EVERY request (row locked against concurrent rotate/revoke), with a
+//! constant-time digest comparison and scope/expiry/kind/command checks.
+
+use axum::http::StatusCode;
+use chrono::{DateTime, Utc};
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::error::{ApiError, ApiResult};
+
+use super::gateway_dto::HeartbeatBody;
+use super::{db as base_db, gateway_auth, gateway_db, gateway_dto};
+
+fn worker_auth_error() -> ApiError {
+    ApiError::Status(
+        StatusCode::UNAUTHORIZED,
+        "invalid gateway credential".to_string(),
+    )
+}
+
+/// Metadata only: no secret, digest or claimed ids beyond the worker's own scope.
+pub struct HeartbeatOutcome {
+    pub household_id: Uuid,
+    pub gateway_id: Uuid,
+    pub report_id: i64,
+}
+
+pub async fn create_gateway(
+    pool: &PgPool,
+    actor: Uuid,
+    household_id: Uuid,
+    kind: &str,
+    label: &str,
+) -> ApiResult<Uuid> {
+    let mut tx = pool.begin().await?;
+    base_db::lock_household(&mut tx, household_id).await?;
+    let id = gateway_db::insert_gateway(&mut tx, household_id, kind, label, actor).await?;
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// Issue a credential for an ACTIVE gateway in this household. The plaintext
+/// secret is generated here, hashed, and only the hash reaches the database.
+pub async fn issue_credential(
+    pool: &PgPool,
+    household_id: Uuid,
+    gateway_id: Uuid,
+    issued_by: Uuid,
+    expires_at: DateTime<Utc>,
+) -> ApiResult<(Uuid, String)> {
+    let Some(kind) = gateway_db::active_gateway_kind(pool, household_id, gateway_id).await? else {
+        return Err(ApiError::not_found(
+            "active gateway not found in this household",
+        ));
+    };
+    let id = gateway_auth::new_token_id();
+    let secret = gateway_auth::new_secret();
+    let hash = gateway_auth::hash_secret(&secret);
+    let mut tx = pool.begin().await?;
+    base_db::lock_household(&mut tx, household_id).await?;
+    gateway_db::insert_credential(
+        &mut tx,
+        id,
+        household_id,
+        gateway_id,
+        &kind,
+        &hash,
+        expires_at,
+        issued_by,
+        None,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((id, secret))
+}
+
+/// Revoke the old credential and issue its replacement atomically. The old
+/// plaintext stops working as soon as the transaction commits.
+pub async fn rotate_credential(
+    pool: &PgPool,
+    household_id: Uuid,
+    gateway_id: Uuid,
+    credential_id: Uuid,
+    issued_by: Uuid,
+    expires_at: DateTime<Utc>,
+) -> ApiResult<(Uuid, String)> {
+    let mut tx = pool.begin().await?;
+    base_db::lock_household(&mut tx, household_id).await?;
+    gateway_db::lock_gateway(&mut tx, household_id, gateway_id).await?;
+    let Some(kind) =
+        gateway_db::active_gateway_kind_on_conn(&mut tx, household_id, gateway_id).await?
+    else {
+        return Err(ApiError::not_found(
+            "active gateway not found in this household",
+        ));
+    };
+    if !gateway_db::revoke_credential_conn(&mut tx, household_id, gateway_id, credential_id).await?
+    {
+        return Err(ApiError::not_found("credential not found in this gateway"));
+    }
+    let id = gateway_auth::new_token_id();
+    let secret = gateway_auth::new_secret();
+    let hash = gateway_auth::hash_secret(&secret);
+    gateway_db::insert_credential(
+        &mut tx,
+        id,
+        household_id,
+        gateway_id,
+        &kind,
+        &hash,
+        expires_at,
+        issued_by,
+        Some(credential_id),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((id, secret))
+}
+
+pub async fn revoke_credential(
+    pool: &PgPool,
+    household_id: Uuid,
+    gateway_id: Uuid,
+    credential_id: Uuid,
+) -> ApiResult<bool> {
+    let mut tx = pool.begin().await?;
+    base_db::lock_household(&mut tx, household_id).await?;
+    let removed =
+        gateway_db::revoke_credential_conn(&mut tx, household_id, gateway_id, credential_id)
+            .await?;
+    tx.commit().await?;
+    Ok(removed)
+}
+
+pub async fn revoke_gateway(
+    pool: &PgPool,
+    household_id: Uuid,
+    gateway_id: Uuid,
+) -> ApiResult<bool> {
+    let mut tx = pool.begin().await?;
+    base_db::lock_household(&mut tx, household_id).await?;
+    let removed = gateway_db::revoke_gateway_conn(&mut tx, household_id, gateway_id).await?;
+    tx.commit().await?;
+    Ok(removed)
+}
+
+/// The ONLY gateway credential use in this slice: a bounded heartbeat report.
+/// All bound checks happen before the report is written; nothing here writes
+/// agent tokens, module grants or control state, and no self-reported flag can
+/// set verification/enforcement (the schema forbids it).
+pub async fn heartbeat(
+    pool: &PgPool,
+    bearer: Option<&str>,
+    body: HeartbeatBody,
+    now: DateTime<Utc>,
+) -> ApiResult<HeartbeatOutcome> {
+    // Bounds checked before any database work.
+    let (credential_id, secret) =
+        gateway_auth::parse_bearer(bearer).ok_or_else(worker_auth_error)?;
+    if body.audience != gateway_auth::AUDIENCE || body.command != gateway_auth::COMMAND_HEARTBEAT {
+        return Err(worker_auth_error());
+    }
+    let capabilities = gateway_auth::normalize_capabilities(body.capabilities.as_deref())
+        .map_err(|()| ApiError::bad_request("capabilities are not in the worker allowlist"))?;
+    let observed_at = body.observed_at.unwrap_or(now);
+    if !gateway_auth::observed_at_in_window(observed_at, now) {
+        return Err(ApiError::bad_request(
+            "observed_at is outside the heartbeat window",
+        ));
+    }
+    let desired = gateway_auth::bounded_text(
+        body.desired_revision.as_deref(),
+        gateway_auth::MAX_REVISION_LEN,
+    )
+    .map_err(|()| ApiError::bad_request("desired_revision is unbounded"))?;
+    let applied = gateway_auth::bounded_text(
+        body.applied_revision.as_deref(),
+        gateway_auth::MAX_REVISION_LEN,
+    )
+    .map_err(|()| ApiError::bad_request("applied_revision is unbounded"))?;
+    let failure =
+        gateway_auth::bounded_text(body.failure.as_deref(), gateway_auth::MAX_FAILURE_LEN)
+            .map_err(|()| ApiError::bad_request("failure is unbounded"))?;
+
+    let mut tx = pool.begin().await?;
+    let Some(cred) = gateway_db::auth_credential(&mut tx, credential_id, true).await? else {
+        return Err(worker_auth_error());
+    };
+    // Constant-time proof of possession of the one-time secret.
+    if !gateway_auth::verify_secret(secret, &cred.secret_hash) {
+        return Err(worker_auth_error());
+    }
+    // Revocation and expiry are checked against the database on every request.
+    if cred.revoked_at.is_some()
+        || cred.gateway_revoked_at.is_some()
+        || !cred.gateway_enabled
+        || cred.expires_at <= now
+    {
+        return Err(worker_auth_error());
+    }
+    if cred.audience != gateway_auth::AUDIENCE
+        || !cred
+            .allowed_commands
+            .iter()
+            .any(|c| c == gateway_auth::COMMAND_HEARTBEAT)
+    {
+        return Err(worker_auth_error());
+    }
+    // A worker may only report its OWN gateway / household / kind.
+    let claimed_kind = gateway_dto::normalize_kind(&body.kind).map_err(|_| worker_auth_error())?;
+    if body.household_id != cred.household_id
+        || body.gateway_id != cred.gateway_id
+        || claimed_kind != cred.kind
+    {
+        return Err(worker_auth_error());
+    }
+
+    let caps = serde_json::Value::Array(
+        capabilities
+            .into_iter()
+            .map(serde_json::Value::String)
+            .collect(),
+    );
+    let report_id = gateway_db::insert_report(
+        &mut tx,
+        cred.household_id,
+        cred.gateway_id,
+        cred.id,
+        observed_at,
+        &caps,
+        desired.as_deref(),
+        applied.as_deref(),
+        failure.as_deref(),
+    )
+    .await?;
+    gateway_db::touch_gateway_from_report(
+        &mut tx,
+        cred.household_id,
+        cred.gateway_id,
+        &caps,
+        observed_at,
+    )
+    .await?;
+    gateway_db::mark_credential_used(&mut tx, cred.id).await?;
+    tx.commit().await?;
+    Ok(HeartbeatOutcome {
+        household_id: cred.household_id,
+        gateway_id: cred.gateway_id,
+        report_id,
+    })
+}

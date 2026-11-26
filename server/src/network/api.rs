@@ -21,7 +21,7 @@ use crate::http::{audit_ip, AuthUser, RequireAdmin};
 use crate::network::{authz, db, dto, service};
 use crate::state::AppState;
 
-async fn audit_network(
+pub(super) async fn audit_network(
     state: &AppState,
     user: &AuthUser,
     ip: Option<&str>,

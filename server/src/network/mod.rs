@@ -29,10 +29,19 @@ mod api;
 mod authz;
 mod db;
 mod dto;
+mod gateway_api;
+mod gateway_auth;
+mod gateway_db;
+mod gateway_dto;
+mod gateway_service;
 mod service;
 
 #[cfg(test)]
+mod gateway_tests;
+#[cfg(test)]
 mod tests;
+
+pub use gateway_api::worker_routes;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -92,5 +101,30 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route(
             "/network/households/{hid}/grants/{uid}/{grant}",
             axum::routing::delete(api::grant_delete),
+        )
+        // Vantyr Network gateways (DNS/Proxy) and their scoped worker credentials.
+        .route(
+            "/network/households/{hid}/gateways",
+            get(gateway_api::gateways_list).post(gateway_api::gateway_create),
+        )
+        .route(
+            "/network/households/{hid}/gateways/{gid}",
+            axum::routing::delete(gateway_api::gateway_revoke),
+        )
+        .route(
+            "/network/households/{hid}/gateways/{gid}/credentials",
+            get(gateway_api::credentials_list).post(gateway_api::credential_issue),
+        )
+        .route(
+            "/network/households/{hid}/gateways/{gid}/credentials/{cid}",
+            axum::routing::delete(gateway_api::credential_revoke),
+        )
+        .route(
+            "/network/households/{hid}/gateways/{gid}/credentials/{cid}/rotate",
+            post(gateway_api::credential_rotate),
+        )
+        .route(
+            "/network/households/{hid}/gateways/{gid}/reports",
+            get(gateway_api::reports_list),
         )
 }
