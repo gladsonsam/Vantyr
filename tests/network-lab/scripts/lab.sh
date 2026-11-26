@@ -17,11 +17,11 @@ VANTYR_IMAGE="${PROJECT}-vantyr-dns:local"
 assert_state_counters() {
   local label="$1" status="$2" generation="$3" policy="$4" filter="$5"
   assert_has_line "${label}: bundle_generation ${generation}" \
-    "bundle_generation ${generation}" "${status}"
+    "bundle_generation ${generation}," "${status}"
   assert_has_line "${label}: policy_revision ${policy}" \
-    "policy_revision ${policy}" "${status}"
+    "policy_revision ${policy}," "${status}"
   assert_has_line "${label}: filter_generation ${filter}" \
-    "filter_generation ${filter}" "${status}"
+    "filter_generation ${filter}," "${status}"
 }
 
 up() {
