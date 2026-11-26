@@ -405,3 +405,21 @@ No substantive UI or Supabase changes were made in this step.
 - BYOD enrollment and reversible client setup follow the responsibility
   boundaries in [network-onboarding.md](network-onboarding.md). Router DHCP
   stays outside Vantyr. Frontend implementation is managed independently.
+
+### Integration increments awaiting independent acceptance
+
+- Versioned policy control API: immutable saved revisions, monotonic historical
+  rollback, desired gateway assignment and explicitly scoped worker retrieval.
+  Implementation reports 46 network tests passing. This serves typed policy;
+  DNS bundle delivery, application receipts and verification remain unfinished.
+- Optional HTTPS inspection: unique signer, upstream TLS validation before
+  CONNECT acknowledgment, authority-bound downstream TLS, scoped expiring raw
+  exceptions and bounded streams. Implementation reports 53 proxy tests passing.
+  Independent security review is pending; client trust setup is not delivered.
+- Durable container lab: implementation reports base/full-stack/durable smoke
+  passing, including higher-revision reload, invalid reload preservation,
+  restart with a changed external config and preserved stale-policy behavior.
+  Independent rerun and cleanup review are pending.
+- Parent integration check: server and proxy compile together with the committed
+  dependency graph using `cargo check --locked --offline`. No deployment follows
+  from a successful build or a pushed feature-branch commit.
