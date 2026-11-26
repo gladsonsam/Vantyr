@@ -50,6 +50,17 @@ impl ListSnapshot {
             .map_err(|e| Error::Cache(self.source_id.clone(), format!("bad base64: {e}")))
     }
 
+    /// Decoded content length, after cache/base64 validation.
+    pub fn content_len(&self) -> usize {
+        self.bytes_b64.len() / 4 * 3
+            - self
+                .bytes_b64
+                .bytes()
+                .rev()
+                .take_while(|b| *b == b'=')
+                .count()
+    }
+
     pub fn content_version(&self) -> &str {
         &self.sha256
     }
@@ -109,12 +120,19 @@ pub fn read_snapshot(
         return Err(Error::UnsafeCachePath(path.clone()));
     }
     if !meta.file_type().is_file() {
-        return Err(Error::Cache(id.into(), "cache entry is not a regular file".into()));
+        return Err(Error::Cache(
+            id.into(),
+            "cache entry is not a regular file".into(),
+        ));
     }
     if meta.len() > limits.max_snapshot_bytes {
         return Err(Error::Cache(
             id.into(),
-            format!("cache entry is {} bytes, limit {}", meta.len(), limits.max_snapshot_bytes),
+            format!(
+                "cache entry is {} bytes, limit {}",
+                meta.len(),
+                limits.max_snapshot_bytes
+            ),
         ));
     }
     let file = open_snapshot(&path)?;
@@ -247,7 +265,10 @@ pub fn write_snapshot(
             return Err(Error::UnsafeCachePath(path.clone()));
         }
     }
-    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
     let mut temp = tempfile::Builder::new()
         .prefix(".sub-")
         .suffix(".tmp")
@@ -266,8 +287,9 @@ pub fn write_snapshot(
         file.sync_all()
             .map_err(|e| Error::CacheWrite(snapshot.source_id.clone(), e.to_string()))?;
     }
-    (hooks.before_rename)(&path)
-        .map_err(|e| Error::CacheWrite(snapshot.source_id.clone(), format!("before rename: {e}")))?;
+    (hooks.before_rename)(&path).map_err(|e| {
+        Error::CacheWrite(snapshot.source_id.clone(), format!("before rename: {e}"))
+    })?;
     temp.persist(&path)
         .map_err(|e| Error::CacheWrite(snapshot.source_id.clone(), e.to_string()))?;
     // Best effort by contract: the rename already committed.

@@ -147,3 +147,13 @@ atomicity/permissions/symlink/URL-identity, and concurrent same-id refresh.
 
 Workspace membership is added by the root `Cargo.toml` owner; this crate alone
 does not modify the workspace manifest or `Cargo.lock`.
+
+Production fetching deliberately disables system and environment proxies. Every
+direct destination is vetted before dialing; proxy support would require a
+separate explicit policy. Injected transports remain the embedding caller's
+responsibility. Cached bytes are revalidated by the current compiler callback
+on every restart, regardless of the stored validator version; rejection fails
+startup without rewriting the cache. Reports distinguish current and cached
+validator versions, and count decoded content bytes. The address policy rejects
+private/metadata/translation and common reserved ranges; it is not an exhaustive
+registry of every globally scoped special-purpose allocation.

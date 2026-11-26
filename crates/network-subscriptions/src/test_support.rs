@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use axum::serve::Listener;
 use axum::Router;
-use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType};
+use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::ServerConfig;
 use tokio::net::{TcpListener, TcpStream};
@@ -135,7 +135,11 @@ impl AddressLookup for StaticLookup {
     }
 }
 
-pub fn loopback_client(base: &str, ca_pem: &str, limits: &crate::config::Limits) -> reqwest::Client {
+pub fn loopback_client(
+    base: &str,
+    ca_pem: &str,
+    limits: &crate::config::Limits,
+) -> reqwest::Client {
     let url = crate::url::ValidatedUrl::parse(
         &format!("{base}/list"),
         &crate::config::QueryPolicy::Reject,
@@ -146,6 +150,7 @@ pub fn loopback_client(base: &str, ca_pem: &str, limits: &crate::config::Limits)
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
     let cert = reqwest::Certificate::from_pem(ca_pem.as_bytes()).unwrap();
     reqwest::Client::builder()
+        .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(limits.connect_timeout())
         .timeout(limits.request_timeout())
@@ -169,13 +174,14 @@ pub fn fetcher_with_loopback<V: CandidateValidator>(
 ) -> Fetcher<V> {
     let (limits, _) = config.validate().unwrap();
     let client = loopback_client(base, ca_pem, &limits);
-    let transport = ReqwestTransport::from_client(
-        client,
-        limits.max_header_bytes,
-        limits.request_timeout(),
-    );
-    let fetcher =
-        Fetcher::with_transport(root.as_ref().to_path_buf(), config, validator, Arc::new(transport))
-            .unwrap();
+    let transport =
+        ReqwestTransport::from_client(client, limits.max_header_bytes, limits.request_timeout());
+    let fetcher = Fetcher::with_transport(
+        root.as_ref().to_path_buf(),
+        config,
+        validator,
+        Arc::new(transport),
+    )
+    .unwrap();
     fetcher.with_timing(clock, rng)
 }

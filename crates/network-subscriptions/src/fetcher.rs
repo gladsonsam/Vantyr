@@ -14,7 +14,7 @@ use chrono::{DateTime, Utc};
 use crate::backoff::BackoffPolicy;
 use crate::cache::{self, ListSnapshot, WriteHooks};
 use crate::clock::{SharedClock, SharedRng};
-use crate::config::{Limits, ValidatedSource, SubscriptionConfig};
+use crate::config::{Limits, SubscriptionConfig, ValidatedSource};
 use crate::error::Error;
 use crate::scheduler::RefreshScheduler;
 use crate::status::{SubscriptionReport, SubscriptionStatus};
@@ -40,7 +40,9 @@ pub struct ListState {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FetchOutcome {
-    Fetched { revision: u64 },
+    Fetched {
+        revision: u64,
+    },
     NotModified,
     /// Not due yet; no network I/O happened.
     Skipped,
@@ -62,12 +64,18 @@ pub struct Fetcher<V> {
     states: Mutex<HashMap<String, ListState>>,
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     hooks: WriteHooks,
+    // Serialize aggregate-cap check through disk/memory promotion across sources.
+    promotion: Mutex<()>,
 }
 
 impl<V: CandidateValidator> Fetcher<V> {
     /// Production constructor: builds a reqwest client with the vetted
     /// resolver, redirects disabled and the maintained rustls stack.
-    pub fn new(root: impl Into<PathBuf>, config: &SubscriptionConfig, validator: V) -> Result<Self, Error> {
+    pub fn new(
+        root: impl Into<PathBuf>,
+        config: &SubscriptionConfig,
+        validator: V,
+    ) -> Result<Self, Error> {
         let (limits, _sources) = config.validate()?;
         let transport = Arc::new(ReqwestTransport::new(&limits, None, None)?);
         Self::with_transport(root, config, validator, transport)
@@ -114,8 +122,29 @@ impl<V: CandidateValidator> Fetcher<V> {
         let root = root.into();
         let mut states = HashMap::new();
         let mut locks = HashMap::new();
+        let mut aggregate = 0u64;
         for source in sources {
-            let snapshot = cache::read_snapshot(&root, &source.id, &source.url, &limits)?;
+            let mut snapshot = cache::read_snapshot(&root, &source.id, &source.url, &limits)?;
+            if let Some(cached) = snapshot.as_mut() {
+                // A digest authenticates neither syntax nor compiler compatibility.
+                // Always apply the CURRENT callback before exposing cached bytes.
+                let bytes = cached.bytes()?;
+                let summary = validator.validate(&bytes).map_err(|err| {
+                    Error::ValidationFailed(
+                        source.id.clone(),
+                        Error::bounded_detail(&err.detail, limits.max_diagnostic_bytes),
+                    )
+                })?;
+                cached.rule_count = summary.rule_count;
+                aggregate += bytes.len() as u64;
+                if aggregate > limits.max_aggregate_bytes {
+                    return Err(Error::LimitExceeded(
+                        source.id.clone(),
+                        "aggregate bytes",
+                        limits.max_aggregate_bytes,
+                    ));
+                }
+            }
             let checked_at = snapshot.as_ref().map(|s| s.checked_at);
             let last_success_at = snapshot.as_ref().map(|s| s.fetched_at);
             states.insert(
@@ -151,6 +180,7 @@ impl<V: CandidateValidator> Fetcher<V> {
             states: Mutex::new(states),
             locks: Mutex::new(locks),
             hooks: options.hooks,
+            promotion: Mutex::new(()),
         })
     }
 
@@ -205,24 +235,29 @@ impl<V: CandidateValidator> Fetcher<V> {
         let now = self.scheduler.now();
         if let Some(until) = state.cooldown_until {
             if now < until {
-                return Err(Error::AbuseCooldown(
-                    id.to_owned(),
-                    until.to_rfc3339(),
-                ));
+                return Err(Error::AbuseCooldown(id.to_owned(), until.to_rfc3339()));
             }
         }
         if !self.scheduler.is_due(state.next_due_at, force) {
             return Ok(FetchOutcome::Skipped);
         }
 
-        let conditional = state.snapshot.as_ref().map(|s| ConditionalHeaders {
-            if_none_match: s.etag.clone(),
-            if_modified_since: s.last_modified.clone(),
-        }).unwrap_or_default();
+        let conditional = state
+            .snapshot
+            .as_ref()
+            .map(|s| ConditionalHeaders {
+                if_none_match: s.etag.clone(),
+                if_modified_since: s.last_modified.clone(),
+            })
+            .unwrap_or_default();
 
         let response = match self
             .transport
-            .get(&state.source.url, conditional, self.limits.max_candidate_bytes)
+            .get(
+                &state.source.url,
+                conditional,
+                self.limits.max_candidate_bytes,
+            )
             .await
         {
             Ok(response) => response,
@@ -236,11 +271,10 @@ impl<V: CandidateValidator> Fetcher<V> {
             304 => self.handle_not_modified(id, state, now),
             200 => self.handle_content(id, state, response, now),
             429 | 503 => {
-                let retry = response.retry_after.as_deref().and_then(|value| {
-                    self.scheduler
-                        .policy()
-                        .parse_retry_after(value, now)
-                });
+                let retry = response
+                    .retry_after
+                    .as_deref()
+                    .and_then(|value| self.scheduler.policy().parse_retry_after(value, now));
                 let err = Error::HttpStatus(response.status, id.to_owned());
                 self.record_failure(id, &err.to_string(), retry);
                 Err(err)
@@ -299,15 +333,24 @@ impl<V: CandidateValidator> Fetcher<V> {
         if !self.is_enabled(id) {
             return Err(Error::Disabled(id.to_owned()));
         }
+        let _promotion = self.promotion.lock().unwrap();
         let bytes = response.body;
         if bytes.len() as u64 > self.limits.max_candidate_bytes {
-            let err = Error::LimitExceeded(id.to_owned(), "candidate bytes", self.limits.max_candidate_bytes);
+            let err = Error::LimitExceeded(
+                id.to_owned(),
+                "candidate bytes",
+                self.limits.max_candidate_bytes,
+            );
             self.record_failure(id, &err.to_string(), None);
             return Err(err);
         }
         let aggregate = self.aggregate_bytes_except(id) + bytes.len() as u64;
         if aggregate > self.limits.max_aggregate_bytes {
-            let err = Error::LimitExceeded(id.to_owned(), "aggregate bytes", self.limits.max_aggregate_bytes);
+            let err = Error::LimitExceeded(
+                id.to_owned(),
+                "aggregate bytes",
+                self.limits.max_aggregate_bytes,
+            );
             self.record_failure(id, &err.to_string(), None);
             return Err(err);
         }
@@ -321,7 +364,10 @@ impl<V: CandidateValidator> Fetcher<V> {
                 return Err(failure);
             }
         };
-        let revision = state.snapshot.as_ref().map_or(1, |s| s.revision.saturating_add(1));
+        let revision = state
+            .snapshot
+            .as_ref()
+            .map_or(1, |s| s.revision.saturating_add(1));
         let digest = cache::sha256_hex(&bytes);
         let content_updated_at = response.last_modified.as_deref().and_then(parse_http_date);
         let snapshot = ListSnapshot {
@@ -369,7 +415,7 @@ impl<V: CandidateValidator> Fetcher<V> {
             .iter()
             .filter(|(id, _)| id.as_str() != skip)
             .filter_map(|(_, s)| s.snapshot.as_ref())
-            .map(|s| s.bytes_b64.len() as u64)
+            .map(|s| s.content_len() as u64)
             .sum()
     }
 
@@ -383,7 +429,10 @@ impl<V: CandidateValidator> Fetcher<V> {
             state.failure_count = state.failure_count.saturating_add(1);
             state.consecutive_failures = state.consecutive_failures.saturating_add(1);
             state.backoff_attempt = state.backoff_attempt.saturating_add(1);
-            state.last_error = Some(Error::bounded_detail(detail, self.limits.max_diagnostic_bytes));
+            state.last_error = Some(Error::bounded_detail(
+                detail,
+                self.limits.max_diagnostic_bytes,
+            ));
             state.next_due_at = Some(until);
             // Cooldown is only an abuse signal (429/503). A generic failure
             // clears a stale one so reports stay truthful.
@@ -443,7 +492,9 @@ impl<V: CandidateValidator> Fetcher<V> {
     }
 
     fn report(&self, state: &ListState) -> SubscriptionReport {
-        let stale = self.scheduler.is_stale(state.checked_at, state.source.max_stale);
+        let stale = self
+            .scheduler
+            .is_stale(state.checked_at, state.source.max_stale);
         let status = if !state.source.enabled {
             SubscriptionStatus::Disabled
         } else if state.snapshot.is_none() {
@@ -473,7 +524,9 @@ impl<V: CandidateValidator> Fetcher<V> {
             revision: snapshot.map_or(0, |s| s.revision),
             content_version: snapshot.map(|s| s.content_version().to_owned()),
             rule_count: snapshot.map(|s| s.rule_count),
-            bytes: snapshot.map_or(0, |s| s.bytes_b64.len()),
+            bytes: snapshot.map_or(0, |s| s.content_len()),
+            validator_version: self.validator_version,
+            cached_validator_version: snapshot.map(|s| s.validator_version),
             failure_count: state.failure_count,
             consecutive_failures: state.consecutive_failures,
             last_error: state.last_error.clone(),

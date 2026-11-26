@@ -71,6 +71,7 @@ impl ReqwestTransport {
         let lookup = lookup.unwrap_or_else(|| Arc::new(SystemLookup));
         let resolver: Arc<dyn reqwest::dns::Resolve> = Arc::new(VettedResolver::new(lookup));
         let mut builder = Client::builder()
+            .no_proxy()
             .redirect(Policy::none())
             .connect_timeout(limits.connect_timeout())
             .timeout(limits.request_timeout())

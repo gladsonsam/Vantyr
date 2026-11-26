@@ -20,7 +20,12 @@ fn epoch() -> DateTime<Utc> {
 }
 
 fn url() -> ValidatedUrl {
-    ValidatedUrl::parse("https://example.com/lists/ads.txt", &QueryPolicy::Reject, 512).unwrap()
+    ValidatedUrl::parse(
+        "https://example.com/lists/ads.txt",
+        &QueryPolicy::Reject,
+        512,
+    )
+    .unwrap()
 }
 
 fn snapshot(id: &str, revision: u64, body: &[u8]) -> ListSnapshot {
@@ -44,7 +49,10 @@ fn snapshot(id: &str, revision: u64, body: &[u8]) -> ListSnapshot {
 #[test]
 fn retry_after_is_bounded_and_dates_are_honest() {
     let policy = BackoffPolicy::default();
-    assert_eq!(policy.parse_retry_after("3", epoch()), Some(Duration::from_secs(3)));
+    assert_eq!(
+        policy.parse_retry_after("3", epoch()),
+        Some(Duration::from_secs(3))
+    );
     assert_eq!(
         policy.parse_retry_after("999999999", epoch()),
         Some(Duration::from_secs(86_400))
@@ -55,7 +63,10 @@ fn retry_after_is_bounded_and_dates_are_honest() {
         Some(Duration::ZERO)
     );
     let far = "Wed, 21 Oct 2099 07:28:00 GMT";
-    assert_eq!(policy.parse_retry_after(far, epoch()), Some(Duration::from_secs(86_400)));
+    assert_eq!(
+        policy.parse_retry_after(far, epoch()),
+        Some(Duration::from_secs(86_400))
+    );
 }
 
 #[test]
@@ -76,7 +87,10 @@ fn backoff_is_deterministic_with_an_injected_rng() {
         Duration::from_secs(86_400)
     );
     let jitter = TestRng::new(vec![15_000]);
-    assert_eq!(policy.delay(0, None, &jitter), Duration::from_millis(75_000));
+    assert_eq!(
+        policy.delay(0, None, &jitter),
+        Duration::from_millis(75_000)
+    );
 }
 
 #[test]
@@ -94,7 +108,10 @@ fn scheduler_due_force_and_stale_use_the_injected_clock() {
     assert!(!scheduler.is_stale(Some(epoch()), Duration::from_secs(3600)));
     clock.advance_ms(2 * 3600 * 1000);
     assert!(scheduler.is_stale(Some(epoch()), Duration::from_secs(3600)));
-    assert!(!scheduler.is_due(Some(due), false), "2 h is not the 24 h interval");
+    assert!(
+        !scheduler.is_due(Some(due), false),
+        "2 h is not the 24 h interval"
+    );
     clock.advance_ms(23 * 3600 * 1000);
     assert!(scheduler.is_due(Some(due), false));
 }
@@ -109,7 +126,12 @@ fn cache_roundtrip_and_wrong_url_identity_is_rejected() {
         .unwrap()
         .unwrap();
     assert_eq!(loaded, original);
-    let other = ValidatedUrl::parse("https://example.com/lists/other.txt", &QueryPolicy::Reject, 512).unwrap();
+    let other = ValidatedUrl::parse(
+        "https://example.com/lists/other.txt",
+        &QueryPolicy::Reject,
+        512,
+    )
+    .unwrap();
     assert!(matches!(
         cache::read_snapshot(dir.path(), "public", &other, &limits),
         Err(Error::CacheUrlMismatch(_))
@@ -190,7 +212,11 @@ fn cache_write_is_atomic_owner_only_and_failure_keeps_old_bytes() {
     };
     let err = cache::write_snapshot(dir.path(), &second, &limits, hooks).unwrap_err();
     assert!(err.to_string().contains("before rename"), "{err}");
-    assert_eq!(std::fs::read(&path).unwrap(), committed, "old file retained");
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        committed,
+        "old file retained"
+    );
 
     // A post-rename sync failure is best effort and does not fail the write.
     let hooks = WriteHooks {
@@ -203,4 +229,68 @@ fn cache_write_is_atomic_owner_only_and_failure_keeps_old_bytes() {
         .unwrap();
     assert_eq!(loaded.revision, 2);
     assert_eq!(loaded.bytes().unwrap(), b"domain=two.example\n");
+}
+
+#[test]
+fn restart_revalidates_cached_bytes_and_reports_raw_content_size() {
+    use crate::config::{SourceMetadata, SubscriptionConfig, SubscriptionSource};
+    use crate::{CompilationSummary, Fetcher, ValidationError};
+    let dir = tempfile::tempdir().unwrap();
+    let bytes = b"blocked.example\n";
+    let cached = snapshot("public", 4, bytes);
+    let limits = Limits::default();
+    cache::write_snapshot(dir.path(), &cached, &limits, WriteHooks::default()).unwrap();
+    let path = dir.path().join("public.json");
+    // Cache path is private to the cache module; locate the one published file.
+    let path = if path.exists() {
+        path
+    } else {
+        std::fs::read_dir(dir.path())
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path()
+    };
+    let original = std::fs::read(&path).unwrap();
+    let config = SubscriptionConfig {
+        sources: vec![SubscriptionSource {
+            id: "public".into(),
+            url: url().as_str().into(),
+            enabled: true,
+            interval_secs: None,
+            max_stale_secs: None,
+            metadata: SourceMetadata {
+                title: "test".into(),
+                publisher: "operator".into(),
+                license: "MIT".into(),
+            },
+        }],
+        ..Default::default()
+    };
+    let reject = |_: &[u8]| {
+        Err::<CompilationSummary, _>(ValidationError {
+            detail: "new compiler rejects old syntax".into(),
+        })
+    };
+    assert!(matches!(
+        Fetcher::new(dir.path(), &config, reject),
+        Err(Error::ValidationFailed(_, _))
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    let accept = |body: &[u8]| {
+        assert_eq!(body, bytes);
+        Ok::<_, ValidationError>(CompilationSummary { rule_count: 7 })
+    };
+    let fetcher = Fetcher::new(dir.path(), &config, accept)
+        .unwrap()
+        .with_validator_version(2);
+    let report = fetcher.status("public").unwrap();
+    assert_eq!(report.bytes, bytes.len());
+    assert_eq!(report.rule_count, Some(7));
+    assert_eq!(report.validator_version, 2);
+    assert_eq!(report.cached_validator_version, Some(1));
+    assert_eq!(report.fetched_at, Some(epoch()));
+    assert_eq!(report.revision, 4);
+    assert_eq!(std::fs::read(path).unwrap(), original);
 }

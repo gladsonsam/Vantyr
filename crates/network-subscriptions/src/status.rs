@@ -45,7 +45,12 @@ pub struct SubscriptionReport {
     pub revision: u64,
     pub content_version: Option<String>,
     pub rule_count: Option<u64>,
+    /// Raw decoded content bytes, not base64 storage size.
     pub bytes: usize,
+    /// Current callback version; cached bytes are revalidated on every load.
+    pub validator_version: u32,
+    /// Version recorded when the cache file was last promoted.
+    pub cached_validator_version: Option<u32>,
     pub failure_count: u64,
     pub consecutive_failures: u32,
     pub last_error: Option<String>,
