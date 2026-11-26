@@ -13,6 +13,8 @@ members  = [
   "crates/network-runtime",
   # Backend PKI foundation: dedicated inspection CA and encrypted key custody.
   "crates/network-pki",
+  # Optional UniFi Network adapter: read-only discovery and a pure setup planner.
+  "crates/network-unifi",
 ]
 exclude  = ["agent"]   # built separately (cargo xwin for the Windows release); depends on ./protocol by path
 resolver = "2"
