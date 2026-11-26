@@ -515,3 +515,9 @@ No substantive UI or Supabase changes were made in this step.
   failures must not discard working filtering data. Freshness, update errors and
   disabled lists remain visible separately from enforcement. Parser, fetcher and
   worker integration each require independent acceptance.
+  Scheduled worker integration `39c467e9` is not accepted: review found a
+  dangling background-task server reference, stale-basis material publication,
+  per-source manual-refresh scope loss, shutdown ordering and cache-recovery
+  gaps. Direct refresh tests do not prove the production scheduler runs. Fixes
+  must exercise the actual loop and binary lifecycle, preserve the latest local
+  settings, and keep bundle recovery independent of a broken download cache.
