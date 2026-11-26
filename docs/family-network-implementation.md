@@ -483,8 +483,12 @@ No substantive UI or Supabase changes were made in this step.
   that fetched lists already affect worker answers.
   Service blocking is DNS-domain coverage, not proof of application identity or
   every feature hosted on a shared CDN.
-- Public list subscriptions: operator-configured HTTPS URLs (including raw
-  GitHub files), per-list refresh intervals, manual refresh, conditional requests,
+- Public list subscriptions: library commits `f52d069e`, `f2b5805c` and
+  `6196d6d8` independently accepted with 22 tests. Production disables implicit
+  system/environment proxies; restored bytes are revalidated by the current
+  compiler callback. Aggregate limits serialize promotion and count raw bytes.
+  Operator-configured HTTPS URLs (including raw GitHub files), per-list refresh
+  intervals, manual refresh, conditional requests,
   bounded retries/backoff and atomic last-good caches. Failed downloads or parse
   failures must not discard working filtering data. Freshness, update errors and
   disabled lists remain visible separately from enforcement. Parser, fetcher and

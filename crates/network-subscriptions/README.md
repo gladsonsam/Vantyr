@@ -137,7 +137,7 @@ to `[A-Za-z0-9_-]` and at most 64 characters so they are safe cache filenames.
 
 ## Tests
 
-`cargo test -p vantyr-network-subscriptions` (18 tests). They include a real
+`cargo test -p vantyr-network-subscriptions` (22 tests). They include a real
 TLS loopback server with an in-test generated CA verified by reqwest (no
 `danger_*` switches), covering 200 → conditional 304 → changed content →
 empty/malformed content retaining last-good, 429 cooldown, offline restart,
