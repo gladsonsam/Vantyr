@@ -409,7 +409,7 @@ export function AppShell({
                           <span>{item.label}</span>
                         </SidebarMenuButton>
                         {item.badge && (
-                          <SidebarMenuBadge className="font-mono text-[11px] text-sidebar-foreground/55 tabular-nums">
+                          <SidebarMenuBadge className="font-sans text-[11px] text-sidebar-foreground/55 tabular-nums">
                             {item.badge}
                           </SidebarMenuBadge>
                         )}
