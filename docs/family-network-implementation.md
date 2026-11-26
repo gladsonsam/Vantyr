@@ -533,9 +533,19 @@ No substantive UI or Supabase changes were made in this step.
   gaps. Direct refresh tests do not prove the production scheduler runs. Fixes
   must exercise the actual loop and binary lifecycle, preserve the latest local
   settings, and keep bundle recovery independent of a broken download cache.
+  Fix `7027b7da` is committed and under fresh independent review. The implementer
+  reports 142 passing tests, including the canonical background-loop path,
+  generation-guarded material apply, per-source manual refresh, production cache
+  quarantine/bootstrap and a binary SIGINT test. This is pending acceptance.
 - Management mutations: commit `8a665f08` is implemented and awaiting independent
   acceptance. It adds household name/timezone and gateway label/enabled PATCH,
   conservative unreferenced inventory DELETE, and atomic person default-profile
   selection. The implementer reports 400 passing server tests and clean scoped
   clippy. Do not hand these routes to the frontend as accepted until the review
   verifies authorization, reference races and irreversible gateway revocation.
+  Initial review accepted those boundaries but found a concurrent create could
+  surface a foreign-key failure as HTTP 500 after deletion. Parent correction
+  `daf96446` maps assignment/connection create/PATCH reference failures to 409;
+  all six mutation tests and strict scoped clippy pass, including an HTTP test
+  that observes the insert's lock wait before committing the deletion. Fresh
+  independent acceptance is pending.
