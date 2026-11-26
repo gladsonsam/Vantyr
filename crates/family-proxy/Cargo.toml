@@ -2,29 +2,31 @@
 name = "family-proxy"
 version = "0.1.0"
 edition = "2021"
-description = "Rama-based HTTP/S proxy worker for the Vantyr family network layer (loopback spike)"
+description = "Vantyr Proxy: bounded HTTP/CONNECT forward proxy worker for Vantyr Network"
 publish = false
+
+[[bin]]
+name = "vantyr-proxy"
+path = "src/bin/vantyr-proxy.rs"
 
 [dependencies]
 family-policy = { path = "../family-policy" }
 anyhow        = "=1.0.105"
-tokio         = { version = "=1.54.1", features = ["macros", "rt", "net", "sync", "time", "io-util"] }
+serde         = { version = "=1.0.229", features = ["derive"] }
+serde_json    = "=1.0.154"
+tokio         = { version = "=1.54.1", features = ["macros", "rt", "rt-multi-thread", "net", "sync", "time", "io-util"] }
 tracing       = "=0.1.44"
 uuid          = { version = "=1.29.3", features = ["v4"] }
 chrono        = { version = "=0.4.45", features = ["clock"] }
 
-# ONE proxy engine. Hudsucker 0.25 was evaluated and rejected: its CONNECT
-# handler has an internal raw-tunnel branch that uses system DNS and bypasses
-# any validated destination (src/proxy/internal.rs ~282-310 in that crate).
-# Rama 0.4.0 lets us establish egress before CONNECT ack and validate every
-# resolved socket address. See docs/family-network-implementation.md.
+# One maintained HTTP engine. Rama 0.4 gives us the HTTP/1 parser, the eager
+# CONNECT upgrade (egress before 200), a resolver-aware TCP connector, and a
+# bounded relay. No custom HTTP/DNS parser and no TLS termination in step5a:
+# upstream TLS inside a raw CONNECT tunnel is validated end to end by the
+# client, not by this proxy. Hudsucker was evaluated and rejected because its
+# CONNECT fallback uses system DNS outside the validated destination path.
+# `ring`/`rustls`/`rcgen` features are deliberately absent: step5a does no MITM
+# and introduces no ring use.
 rama = { version = "=0.4.0", features = [
-  "std", "net", "tcp", "dns", "dns-hickory", "http-full", "tls", "rustls", "ring", "proxy",
+  "std", "net", "tcp", "dns", "dns-hickory", "http-full", "proxy",
 ] }
-
-# Inspection CA leaf issuer (Rama 0.4 has no RustlsMitmCertIssuer).
-rcgen   = { version = "=0.14.10", default-features = false, features = ["crypto", "pem", "ring", "x509-parser"] }
-rustls  = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
-
-[dev-dependencies]
-tokio-rustls = "=0.26.6"
