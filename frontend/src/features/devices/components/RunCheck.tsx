@@ -3,6 +3,7 @@ import { Button } from "@vantyr/ui/components/button";
 import CallChip from "@/components/react-bits/CallChip";
 import { useRunCheckMutation } from "@/features/network/runtime/useRuntimeQueries";
 import type { ConnectionCheck } from "@/features/network/runtime/types";
+import { HelpTip } from "@/components/common/HelpTip";
 import { cn } from "@/lib/utils";
 
 const NAME = { dns: "Check DNS", proxy: "Check proxy" } as const;
@@ -44,7 +45,7 @@ export function RunCheck({
           variant="ghost"
           size="icon-sm"
           aria-label="Run check"
-          title={NAME[kind]}
+          title={`${NAME[kind]}. One check cannot prove gateway reachability, the DNS decision, proxy sign-in, certificate trust and coverage.`}
           disabled={state === "running"}
           onClick={run}
         >
@@ -71,9 +72,16 @@ export function RunCheck({
   return (
     <div className="space-y-2">
       {state === "idle" ? (
+        <div className="flex items-center gap-1.5">
         <Button variant="outline" size="sm" onClick={run}>
           Run check
         </Button>
+        <HelpTip label="About running a check">
+          Gateway reachability, the DNS decision, proxy sign-in, certificate trust and canary
+          coverage are different checks. One generic result can’t prove all of them, so read it as
+          only what the gateway answered.
+        </HelpTip>
+        </div>
       ) : (
         <CallChip
           icon="search"

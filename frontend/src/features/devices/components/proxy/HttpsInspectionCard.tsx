@@ -96,7 +96,7 @@ export function HttpsInspectionCard({ label }: { label: string }) {
           </Row>
         ) : null}
         {info.pinnedApps.length > 0 ? (
-          <Row label="Apps that can’t be inspected">
+          <Row label="Apps you listed as not inspectable">
             <span className="min-w-0 truncate">{info.pinnedApps.map((a) => a.name).join(", ")}</span>
           </Row>
         ) : null}

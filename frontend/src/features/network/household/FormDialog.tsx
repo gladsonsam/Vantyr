@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { errorText } from "@/api";
 import { Button } from "@vantyr/ui/components/button";
 import {
@@ -16,6 +16,7 @@ import { Spinner } from "@vantyr/ui/components/spinner";
 /** A short admin form in a dialog. `onSubmit` rejects to show its message; resolving closes it. */
 export function FormDialog({
   trigger,
+  edit = false,
   title,
   description,
   submitLabel,
@@ -26,6 +27,8 @@ export function FormDialog({
   children,
 }: {
   trigger: string;
+  /** An edit dialog: a quiet ghost trigger with a pencil instead of the outlined add button. */
+  edit?: boolean;
   title: string;
   description?: string;
   submitLabel: string;
@@ -67,8 +70,8 @@ export function FormDialog({
 
   return (
     <Dialog open={open} onOpenChange={change}>
-      <DialogTrigger render={<Button variant="outline" size="sm" />}>
-        <Plus /> {trigger}
+      <DialogTrigger render={<Button variant={edit ? "ghost" : "outline"} size="sm" />}>
+        {edit ? <Pencil /> : <Plus />} {trigger}
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <form onSubmit={(event) => void submit(event)} className="grid gap-4">

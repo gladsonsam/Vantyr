@@ -40,9 +40,10 @@ export function InspectionCard({ inspection }: { inspection: ProxyInspection }) 
         <HelpTip label="About HTTPS inspection">
           Lets the proxy read encrypted web traffic so it can filter it. It needs every device to
           trust a certificate authority that only this server holds. Apps that pin their own
-          certificates stop working, and the private key never leaves the server. HTTP/1.1 traffic
-          can be inspected. HTTP/2 and WebSocket connections are limited: they may pass through
-          uninspected or fail, so inspection does not mean full coverage.
+          certificates stop working, and the private key never leaves the server. The proxy and its
+          inspection speak HTTP/1.1 only: HTTP/2 is rejected and WebSocket upgrades are refused. A
+          device that opens an explicit CONNECT tunnel carries its own TLS unchanged, and that
+          traffic is not inspected.
         </HelpTip>
       }
     >
@@ -149,7 +150,7 @@ export function InspectionCard({ inspection }: { inspection: ProxyInspection }) 
 
         {inspection.pinnedApps.length > 0 ? (
           <div className="space-y-2">
-            <h4 className="text-sm font-medium">Apps that won’t work</h4>
+            <h4 className="text-sm font-medium">Apps you listed as not inspectable</h4>
             <ul className="divide-y divide-border/50">
               {inspection.pinnedApps.map((app) => (
                 <li key={app.id} className="py-2.5 text-sm">

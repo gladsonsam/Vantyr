@@ -1,5 +1,6 @@
 import { FileClock, Trash2 } from "lucide-react";
 import { SettingsCardBody, SettingsSection } from "@/features/network/components/SettingsSection";
+import { HelpTip } from "@/components/common/HelpTip";
 import HoldButton from "@/components/react-bits/HoldButton";
 import { RuleGroup } from "@/features/devices/components/RuleList";
 import { useEditPolicyMutation } from "@/features/network/runtime/useRuntimeQueries";
@@ -11,7 +12,11 @@ const allRules = (s: PolicySnapshot): PolicyRule[] => [
   ...s.personRules.flatMap((scope) => scope.rules),
 ];
 
-/** The rules a saved proposal adds or removes, and a deliberate way to throw it away. */
+/**
+ * The rules a saved proposal adds or removes. "Saved" means a stored, immutable policy revision; the real
+ * product has no draft or discard endpoint, and discarding only applies to an unsaved local composer
+ * draft. The hold-to-discard below exists for the demo only and is labelled so.
+ */
 export function ProposalCard({
   applied,
   proposal,
@@ -28,9 +33,14 @@ export function ProposalCard({
   return (
     <SettingsSection
       title={`Saved proposal r${proposal.revision}`}
-      description="Not enforced. Gateways still use the applied revision."
+      description="Saved revisions are stored and can’t be deleted. Not enforced: gateways still use the applied revision."
       icon={<FileClock />}
       action={
+        <div className="flex items-center gap-2">
+          <HelpTip label="About discarding">
+            Demo only. In the real product a saved revision is permanent history and can’t be
+            discarded; only an unsaved draft in the composer can be thrown away.
+          </HelpTip>
           <HoldButton
             icon={<Trash2 className="size-4" />}
             holdTime={900}
@@ -42,8 +52,9 @@ export function ProposalCard({
             disabled={discard.isPending}
             onHold={() => discard.mutate({ kind: "discard_proposal" })}
           >
-            Hold to discard
+            Demo only: hold to discard
           </HoldButton>
+        </div>
       }
     >
       <SettingsCardBody>

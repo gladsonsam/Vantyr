@@ -1,5 +1,6 @@
 import {
   queryOptions,
+  useInfiniteQuery,
   useMutation,
   useQueries,
   useQuery,
@@ -12,6 +13,8 @@ import type {
   NetworkGatewayKind,
   NetworkGatewayReport,
   NetworkPageParams,
+  NetworkSetupGrantConsume,
+  NetworkVerifiedSession,
 } from "@/api/types";
 
 /** Everything Vantyr Network sits under `networkKeys.all`; every key below it is household-scoped. */
@@ -57,7 +60,23 @@ export const networkKeys = {
     [...networkKeys.all, household, "policies", page ?? {}] as const,
   policiesRoot: (household: string) =>
     [...networkKeys.all, household, "policies"] as const,
+  // BYOD
+  bindings: (household: string) =>
+    [...networkKeys.all, household, "bindings"] as const,
+  deviceAuthorizations: (household: string, binding: string) =>
+    [...networkKeys.bindings(household), binding, "device-authorizations"] as const,
+  enrollRoot: (household: string) =>
+    [...networkKeys.all, household, "enroll"] as const,
+  ownDevices: (household: string) =>
+    [...networkKeys.enrollRoot(household), "devices"] as const,
+  ownGrants: (household: string) =>
+    [...networkKeys.enrollRoot(household), "grants"] as const,
+  ownSessions: (household: string) =>
+    [...networkKeys.enrollRoot(household), "sessions"] as const,
 };
+
+/** Rows per page of the device-authorization list. */
+export const DEVICE_AUTHORIZATION_PAGE = 25;
 
 export const networkQueries = {
   households: () =>
@@ -133,7 +152,160 @@ export const networkQueries = {
       queryKey: networkKeys.policies(household, page),
       queryFn: () => api.networkPolicies(household, page),
     }),
+  bindings: (household: string) =>
+    queryOptions({
+      queryKey: networkKeys.bindings(household),
+      queryFn: () => api.networkBindings(household),
+    }),
+  // The enroll reads are person-scoped: a 403/404 is an answer ("no BYOD here"), not a glitch.
+  ownDevices: (household: string) =>
+    queryOptions({
+      queryKey: networkKeys.ownDevices(household),
+      queryFn: () => api.networkOwnDevices(household),
+      retry: false,
+    }),
+  ownGrants: (household: string) =>
+    queryOptions({
+      queryKey: networkKeys.ownGrants(household),
+      queryFn: () => api.networkOwnGrants(household),
+      retry: false,
+    }),
+  ownSessions: (household: string) =>
+    queryOptions({
+      queryKey: networkKeys.ownSessions(household),
+      queryFn: () => api.networkOwnSessions(household),
+      retry: false,
+    }),
 };
+
+export function useBindings(household: string) {
+  return useQuery(networkQueries.bindings(household));
+}
+
+/** Add and revoke principal bindings. Revoking also drops everything that hung off the binding. */
+export function useBindingMutations(household: string) {
+  const queryClient = useQueryClient();
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: networkKeys.bindings(household) });
+  return {
+    create: useMutation({
+      mutationFn: (body: { person_id: string; user_id: string }) =>
+        api.networkBindingCreate(household, body),
+      onSuccess: invalidate,
+    }),
+    revoke: useMutation({
+      mutationFn: (binding: string) => api.networkBindingDelete(household, binding),
+      onSuccess: () =>
+        Promise.all([
+          invalidate(),
+          queryClient.invalidateQueries({ queryKey: networkKeys.enrollRoot(household) }),
+        ]),
+    }),
+  };
+}
+
+/** Pages of one binding's device authorizations, loaded on demand with `fetchNextPage`. */
+export function useDeviceAuthorizations(
+  household: string,
+  binding: string,
+  enabled = true,
+) {
+  return useInfiniteQuery({
+    queryKey: networkKeys.deviceAuthorizations(household, binding),
+    queryFn: ({ pageParam }) =>
+      api.networkDeviceAuthorizations(household, binding, {
+        limit: DEVICE_AUTHORIZATION_PAGE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (last) =>
+      last.truncated ? last.offset + last.returned : undefined,
+    enabled,
+  });
+}
+
+export function useAuthorizeDevice(household: string, binding: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (deviceId: string) =>
+      api.networkDeviceAuthorize(household, binding, { device_id: deviceId }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: networkKeys.deviceAuthorizations(household, binding),
+      }),
+  });
+}
+
+export function useOwnEnrollDevices(household: string) {
+  return useQuery(networkQueries.ownDevices(household));
+}
+
+export function useOwnGrants(household: string, enabled = true) {
+  return useQuery({ ...networkQueries.ownGrants(household), enabled });
+}
+
+export function useOwnSessions(household: string, enabled = true) {
+  return useQuery({ ...networkQueries.ownSessions(household), enabled });
+}
+
+export function useRegisterEnrollDevice(household: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof api.networkOwnDeviceRegister>[1]) =>
+      api.networkOwnDeviceRegister(household, body),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: networkKeys.ownDevices(household) }),
+  });
+}
+
+/** Ending an enrollment also ends that device's grants and sessions on the server. */
+export function useEndEnrolledDevice(household: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (device: string) => api.networkOwnDeviceEnd(household, device),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: networkKeys.enrollRoot(household) }),
+  });
+}
+
+/** Resolves with the one-time `secret`. Keep it in component state only, never in the cache. */
+export function useIssueSetupGrant(household: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof api.networkSetupGrantIssue>[1]) =>
+      api.networkSetupGrantIssue(household, body),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: networkKeys.ownGrants(household) }),
+  });
+}
+
+export function useConsumeSetupGrant(household: string) {
+  const queryClient = useQueryClient();
+  return useMutation<NetworkVerifiedSession, Error, NetworkSetupGrantConsume>({
+    mutationFn: (body) => api.networkSetupGrantConsume(household, body),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: networkKeys.enrollRoot(household) }),
+  });
+}
+
+export function useEndSession(household: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (session: string) => api.networkOwnSessionEnd(household, session),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: networkKeys.enrollRoot(household) }),
+  });
+}
+
+/** Network sign-out for this binding. The dashboard session is untouched. */
+export function useEndAllSessions(household: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.networkOwnSessionsEndAll(household),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: networkKeys.enrollRoot(household) }),
+  });
+}
 
 /**
  * What a gateway last SAID about itself. Every field is an unverified observation from a worker

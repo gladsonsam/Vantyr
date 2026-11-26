@@ -95,7 +95,7 @@ export function NetworkAuditPage() {
         <QueryError
           title="Audit"
           error={first.error}
-          scope="network_events"
+          scope="network_admin"
           onRetry={() => void first.refetch()}
         />
       </div>

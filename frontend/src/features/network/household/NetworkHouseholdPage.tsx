@@ -22,7 +22,16 @@ import {
   SettingsSection,
 } from "@/features/settings/components/SettingsLayout";
 import { useState, type ReactNode } from "react";
-import { AddConnectionForm, AddDeviceForm, AddPersonForm, AssignForm } from "./HouseholdForms";
+import {
+  AddConnectionForm,
+  AddDeviceForm,
+  AddPersonForm,
+  AssignForm,
+  EditAssignmentForm,
+  EditConnectionForm,
+  EditDeviceForm,
+  EditPersonForm,
+} from "./HouseholdForms";
 import { KIND_LABEL, ROLE_LABEL, STATUS_TONE, TYPE_LABEL } from "./labels";
 
 function Dot({ text, label }: { text: string; label: string }) {
@@ -41,12 +50,21 @@ const Empty = ({ children }: { children: string }) => (
 function PeopleSection({
   persons,
   action,
+  household,
+  isAdmin,
 }: {
   persons: NetworkPerson[];
   action: ReactNode;
+  household: string;
+  isAdmin: boolean;
 }) {
   return (
-    <SettingsSection title="People" icon={<Users />} action={action}>
+    <SettingsSection
+      title="People"
+      icon={<Users />}
+      action={action}
+      help="Admins can rename a person or change the default profile. People can’t be deleted."
+    >
       {persons.length === 0 ? (
         <Empty>No people yet.</Empty>
       ) : (
@@ -56,7 +74,9 @@ function PeopleSection({
             label={person.display_name}
             description={person.is_default_profile ? "Default profile" : undefined}
             layout="switch"
-          />
+          >
+            {isAdmin ? <EditPersonForm household={household} person={person} /> : null}
+          </SettingsRow>
         ))
       )}
     </SettingsSection>
@@ -67,17 +87,21 @@ function DevicesSection({
   devices,
   ownerOf,
   action,
+  household,
+  isAdmin,
 }: {
   devices: NetworkDevice[];
   ownerOf: (device: NetworkDevice) => string | null;
   action: ReactNode;
+  household: string;
+  isAdmin: boolean;
 }) {
   return (
     <SettingsSection
       title="Devices"
       icon={<Laptop />}
       action={action}
-      help="Devices belong to the household. A person is linked through an assignment, and a device can have none. Devices can’t be edited or deleted here."
+      help="Devices belong to the household. A person is linked through an assignment, and a device can have none. Admins can edit a device’s name, type and shared flag. Devices can’t be deleted."
     >
       {devices.length === 0 ? (
         <Empty>No devices yet.</Empty>
@@ -91,9 +115,12 @@ function DevicesSection({
               description={`${TYPE_LABEL[device.device_type]}${device.shared ? " · Shared" : ""}`}
               layout="switch"
             >
-              <span className="text-sm text-muted-foreground">
-                {owner ? `Owner: ${owner}` : "No owner"}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  {owner ? `Owner: ${owner}` : "No owner"}
+                </span>
+                {isAdmin ? <EditDeviceForm household={household} device={device} /> : null}
+              </div>
             </SettingsRow>
           );
         })
@@ -107,14 +134,23 @@ function AssignmentsSection({
   personName,
   deviceName,
   action,
+  household,
+  isAdmin,
 }: {
   assignments: NetworkAssignment[];
   personName: (id: string) => string;
   deviceName: (id: string) => string;
   action: ReactNode;
+  household: string;
+  isAdmin: boolean;
 }) {
   return (
-    <SettingsSection title="Assignments" icon={<Link2 />} action={action}>
+    <SettingsSection
+      title="Assignments"
+      icon={<Link2 />}
+      action={action}
+      help="Admins can change the role or set an assignment inactive. Assignments can’t be deleted, so inactive is how one ends."
+    >
       {assignments.length === 0 ? (
         <Empty>Nobody is assigned to a device.</Empty>
       ) : (
@@ -125,10 +161,19 @@ function AssignmentsSection({
             description={ROLE_LABEL[a.role]}
             layout="switch"
           >
-            <Dot
-              text={a.active ? "text-success" : "text-muted-foreground"}
-              label={a.active ? "Active" : "Inactive"}
-            />
+            <div className="flex items-center gap-2">
+              <Dot
+                text={a.active ? "text-success" : "text-muted-foreground"}
+                label={a.active ? "Active" : "Inactive"}
+              />
+              {isAdmin ? (
+                <EditAssignmentForm
+                  household={household}
+                  assignment={a}
+                  title={`${personName(a.person_id)} uses ${deviceName(a.device_id)}`}
+                />
+              ) : null}
+            </div>
           </SettingsRow>
         ))
       )}
@@ -139,10 +184,14 @@ function AssignmentsSection({
 function ConnectionRow({
   connection,
   agentLabel,
+  agents,
+  title,
   household,
   isAdmin,
 }: {
   connection: NetworkConnection;
+  agents: string[];
+  title: string;
   agentLabel: string | null;
   household: string;
   isAdmin: boolean;
@@ -165,6 +214,14 @@ function ConnectionRow({
             {agentLabel ? `Linked agent ${agentLabel}` : "No linked agent"}
           </div>
         </div>
+        {isAdmin ? (
+          <EditConnectionForm
+            household={household}
+            connection={connection}
+            agents={agents}
+            title={title}
+          />
+        ) : null}
         {isAdmin && !revoked ? (
           <HoldAction
             icon={<Ban className="size-4" />}
@@ -199,6 +256,7 @@ export function NetworkHouseholdPage() {
   const devices = useQuery(networkQueries.devices(household.id));
   const assignments = useQuery(networkQueries.assignments(household.id));
   const connections = useQuery(networkQueries.connections(household.id));
+  const enrollments = useQuery({ ...networkQueries.enrollments(household.id), enabled: isAdmin });
 
   const failed = [persons, devices, assignments, connections].find((q) => q.isError);
   const header = (
@@ -207,8 +265,8 @@ export function NetworkHouseholdPage() {
         <span className="flex items-center gap-2">
           Household
           <HelpTip label="About the household">
-            Connection status and last seen are reports, not verified. People and devices can’t be
-            deleted or renamed from here.
+            Connection status and last seen are reports, not verified. Admins can edit people,
+            devices, assignments and connections. Nothing can be deleted from here.
           </HelpTip>
         </span>
       }
@@ -270,16 +328,22 @@ export function NetworkHouseholdPage() {
       <PeopleSection
         persons={personList}
         action={isAdmin ? <AddPersonForm household={household.id} /> : null}
+        household={household.id}
+        isAdmin={isAdmin}
       />
       <DevicesSection
         devices={deviceList}
         ownerOf={ownerOf}
         action={isAdmin ? <AddDeviceForm household={household.id} /> : null}
+        household={household.id}
+        isAdmin={isAdmin}
       />
       <AssignmentsSection
         assignments={assignmentList}
         personName={personName}
         deviceName={deviceName}
+        household={household.id}
+        isAdmin={isAdmin}
         action={
           isAdmin ? (
             <AssignForm household={household.id} persons={personList} devices={deviceList} />
@@ -290,7 +354,7 @@ export function NetworkHouseholdPage() {
         title="Connections"
         icon={<Cable />}
         variant="plain"
-        help="How each device reaches Vantyr. Status and last seen are what was reported or entered, not verified."
+        help="How each device reaches Vantyr. Status and last seen are what was reported or entered, not verified. Admins can edit the status and linked agent, or revoke."
         action={isAdmin ? <AddConnectionForm household={household.id} devices={deviceList} /> : null}
       >
         {withConnections.length === 0 ? (
@@ -315,6 +379,8 @@ export function NetworkHouseholdPage() {
                         key={c.id}
                         connection={c}
                         agentLabel={agentFor(c)}
+                        agents={(enrollments.data?.enrollments ?? []).map((e) => e.agent_id)}
+                        title={`${device.label} · ${KIND_LABEL[c.kind]} connection`}
                         household={household.id}
                         isAdmin={isAdmin}
                       />

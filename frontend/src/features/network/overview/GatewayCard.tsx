@@ -102,7 +102,10 @@ export function GatewayCard({ gateway }: { gateway: Gateway }) {
             help={capability.detail}
             layout="switch"
           >
-            <CoverageStatus coverage={capability.coverage} />
+            <span className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Gateway reports</span>
+              <CoverageStatus coverage={capability.coverage} />
+            </span>
           </SettingsRow>
         ))}
         {gateway.warnings.length > 0 ? (

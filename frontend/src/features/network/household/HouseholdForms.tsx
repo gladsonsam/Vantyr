@@ -4,12 +4,20 @@ import {
   useCreateConnectionMutation,
   useCreateDeviceMutation,
   useCreatePersonMutation,
+  useUpdateAssignmentMutation,
+  useUpdateConnectionMutation,
+  useUpdateDeviceMutation,
+  useUpdatePersonMutation,
 } from "@/api/queries/network";
 import {
   NETWORK_ASSIGNMENT_ROLES,
   NETWORK_CONNECTION_KINDS,
+  NETWORK_CONNECTION_STATUSES,
   NETWORK_DEVICE_TYPES,
+  type NetworkAssignment,
   type NetworkAssignmentRole,
+  type NetworkConnection,
+  type NetworkConnectionStatus,
   type NetworkConnectionKind,
   type NetworkDevice,
   type NetworkDeviceType,
@@ -27,7 +35,7 @@ import {
 } from "@vantyr/ui/components/select";
 import { HelpTip } from "@/components/common/HelpTip";
 import { FormDialog } from "./FormDialog";
-import { KIND_LABEL, ROLE_LABEL, TYPE_LABEL } from "./labels";
+import { KIND_LABEL, ROLE_LABEL, STATUS_TONE, TYPE_LABEL } from "./labels";
 
 function Field({ label, id, help, children }: { label: string; id: string; help?: string; children: ReactNode }) {
   return (
@@ -257,6 +265,269 @@ export function AddConnectionForm({
             {NETWORK_CONNECTION_KINDS.map((k) => (
               <SelectItem key={k} value={k}>
                 {KIND_LABEL[k]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+    </FormDialog>
+  );
+}
+
+const NONE = "none";
+
+export function EditPersonForm({ household, person }: { household: string; person: NetworkPerson }) {
+  const update = useUpdatePersonMutation(household);
+  const [name, setName] = useState(person.display_name);
+  const [isDefault, setIsDefault] = useState(person.is_default_profile);
+  const changed = name.trim() !== person.display_name || isDefault !== person.is_default_profile;
+  return (
+    <FormDialog
+      edit
+      trigger="Edit"
+      title={`Edit ${person.display_name}`}
+      submitLabel="Save"
+      canSubmit={name.trim().length > 0 && changed}
+      onSubmit={() =>
+        update.mutateAsync({
+          id: person.id,
+          ...(name.trim() !== person.display_name ? { display_name: name.trim() } : {}),
+          ...(isDefault !== person.is_default_profile ? { is_default_profile: isDefault } : {}),
+        })
+      }
+      onReset={() => {
+        setName(person.display_name);
+        setIsDefault(person.is_default_profile);
+      }}
+    >
+      <Field label="Name" id={`person-name-${person.id}`}>
+        <Input
+          id={`person-name-${person.id}`}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={80}
+          autoFocus
+        />
+      </Field>
+      <div className="flex items-center gap-2 text-sm">
+        <Checkbox
+          id={`person-default-${person.id}`}
+          checked={isDefault}
+          onCheckedChange={(c) => setIsDefault(c === true)}
+        />
+        <Label htmlFor={`person-default-${person.id}`} className="font-normal">
+          Default profile
+        </Label>
+        <HelpTip label="About the default profile">
+          The profile used for devices that have no person assigned. The server decides whether more
+          than one person can hold it.
+        </HelpTip>
+      </div>
+    </FormDialog>
+  );
+}
+
+export function EditDeviceForm({ household, device }: { household: string; device: NetworkDevice }) {
+  const update = useUpdateDeviceMutation(household);
+  const [label, setLabel] = useState(device.label);
+  const [type, setType] = useState<NetworkDeviceType>(device.device_type);
+  const [shared, setShared] = useState(device.shared);
+  const changed =
+    label.trim() !== device.label || type !== device.device_type || shared !== device.shared;
+  return (
+    <FormDialog
+      edit
+      trigger="Edit"
+      title={`Edit ${device.label}`}
+      submitLabel="Save"
+      canSubmit={label.trim().length > 0 && changed}
+      onSubmit={() =>
+        update.mutateAsync({
+          id: device.id,
+          ...(label.trim() !== device.label ? { label: label.trim() } : {}),
+          ...(type !== device.device_type ? { device_type: type } : {}),
+          ...(shared !== device.shared ? { shared } : {}),
+        })
+      }
+      onReset={() => {
+        setLabel(device.label);
+        setType(device.device_type);
+        setShared(device.shared);
+      }}
+    >
+      <Field label="Name" id={`device-name-${device.id}`}>
+        <Input
+          id={`device-name-${device.id}`}
+          value={label}
+          onChange={(event) => setLabel(event.target.value)}
+          maxLength={80}
+          autoFocus
+        />
+      </Field>
+      <Field label="Type" id={`device-type-${device.id}`}>
+        <Select value={type} onValueChange={(v) => setType(v as NetworkDeviceType)}>
+          <SelectTrigger id={`device-type-${device.id}`} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {NETWORK_DEVICE_TYPES.map((t) => (
+              <SelectItem key={t} value={t}>
+                {TYPE_LABEL[t]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      <div className="flex items-center gap-2 text-sm">
+        <Checkbox
+          id={`device-shared-${device.id}`}
+          checked={shared}
+          onCheckedChange={(c) => setShared(c === true)}
+        />
+        <Label htmlFor={`device-shared-${device.id}`} className="font-normal">
+          Shared by the household
+        </Label>
+      </div>
+    </FormDialog>
+  );
+}
+
+export function EditAssignmentForm({
+  household,
+  assignment,
+  title,
+}: {
+  household: string;
+  assignment: NetworkAssignment;
+  title: string;
+}) {
+  const update = useUpdateAssignmentMutation(household);
+  const [role, setRole] = useState<NetworkAssignmentRole>(assignment.role);
+  const [active, setActive] = useState(assignment.active);
+  const changed = role !== assignment.role || active !== assignment.active;
+  return (
+    <FormDialog
+      edit
+      trigger="Edit"
+      title={title}
+      description="Assignments can’t be deleted. To end one, set it inactive."
+      submitLabel="Save"
+      canSubmit={changed}
+      onSubmit={() =>
+        update.mutateAsync({
+          id: assignment.id,
+          ...(role !== assignment.role ? { role } : {}),
+          ...(active !== assignment.active ? { active } : {}),
+        })
+      }
+      onReset={() => {
+        setRole(assignment.role);
+        setActive(assignment.active);
+      }}
+    >
+      <Field label="Role" id={`assign-role-${assignment.id}`}>
+        <Select value={role} onValueChange={(v) => setRole(v as NetworkAssignmentRole)}>
+          <SelectTrigger id={`assign-role-${assignment.id}`} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {NETWORK_ASSIGNMENT_ROLES.map((r) => (
+              <SelectItem key={r} value={r}>
+                {ROLE_LABEL[r]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      <div className="flex items-center gap-2 text-sm">
+        <Checkbox
+          id={`assign-active-${assignment.id}`}
+          checked={active}
+          onCheckedChange={(c) => setActive(c === true)}
+        />
+        <Label htmlFor={`assign-active-${assignment.id}`} className="font-normal">
+          Active
+        </Label>
+      </div>
+    </FormDialog>
+  );
+}
+
+/** Status is an entered report, not a check. Revoking also stamps the revoked time. */
+export function EditConnectionForm({
+  household,
+  connection,
+  agents,
+  title,
+}: {
+  household: string;
+  connection: NetworkConnection;
+  /** Agent ids enrolled in this household. */
+  agents: string[];
+  title: string;
+}) {
+  const update = useUpdateConnectionMutation(household);
+  const [status, setStatus] = useState<NetworkConnectionStatus>(connection.status);
+  const [agent, setAgent] = useState<string>(connection.enrolled_agent_id ?? NONE);
+  const current = connection.enrolled_agent_id ?? NONE;
+  const options = current !== NONE && !agents.includes(current) ? [current, ...agents] : agents;
+  const changed = status !== connection.status || agent !== current;
+  return (
+    <FormDialog
+      edit
+      trigger="Edit"
+      title={title}
+      description="Status is what you enter here, not a check. Connections can’t be deleted; revoke one instead."
+      submitLabel="Save"
+      canSubmit={changed}
+      onSubmit={() =>
+        update.mutateAsync({
+          id: connection.id,
+          ...(status !== connection.status
+            ? {
+                status,
+                ...(status === "revoked" && !connection.revoked_at
+                  ? { revoked_at: new Date().toISOString() }
+                  : {}),
+                ...(status !== "revoked" && connection.revoked_at ? { revoked_at: null } : {}),
+              }
+            : {}),
+          ...(agent !== current ? { enrolled_agent_id: agent === NONE ? null : agent } : {}),
+        })
+      }
+      onReset={() => {
+        setStatus(connection.status);
+        setAgent(current);
+      }}
+    >
+      <Field label="Status" id={`conn-status-${connection.id}`}>
+        <Select value={status} onValueChange={(v) => setStatus(v as NetworkConnectionStatus)}>
+          <SelectTrigger id={`conn-status-${connection.id}`} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {NETWORK_CONNECTION_STATUSES.map((s) => (
+              <SelectItem key={s} value={s}>
+                {STATUS_TONE[s].label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field
+        label="Linked agent"
+        id={`conn-agent-${connection.id}`}
+        help="Only agents already enrolled in this household can be linked."
+      >
+        <Select value={agent} onValueChange={(v) => setAgent(v as string)}>
+          <SelectTrigger id={`conn-agent-${connection.id}`} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>No linked agent</SelectItem>
+            {options.map((id) => (
+              <SelectItem key={id} value={id}>
+                {id.slice(0, 8)}
               </SelectItem>
             ))}
           </SelectContent>

@@ -1,8 +1,15 @@
-import type { ApiClient } from "@/api";
+import { ApiError, type ApiClient } from "@/api";
 import type {
   NetworkAgentEnrollment,
   NetworkAssignment,
   NetworkAuditRow,
+  NetworkBinding,
+  NetworkDeviceAuthorization,
+  NetworkGrantName,
+  NetworkOwnDevice,
+  NetworkOwnGrant,
+  NetworkOwnSession,
+  NetworkSetupPurpose,
   NetworkConnection,
   NetworkDesiredPolicy,
   NetworkDevice,
@@ -349,7 +356,97 @@ export function demoNetworkApi(): Partial<ApiClient> {
       grant_name: "network_events",
       granted_at: ago(60 * 24 * 30),
     },
+    {
+      household_id: HOUSEHOLD,
+      user_id: "demo-user-admin",
+      grant_name: "network_enroll",
+      granted_at: ago(60 * 24 * 7),
+    },
   ];
+
+  // ─── BYOD: one binding (Jo <-> the demo user), one self-enrolled device, sessions ────────────
+  const DEMO_USER = "demo-user-admin";
+  const bindings: NetworkBinding[] = [
+    {
+      id: "bnd-jo",
+      dashboard_user: DEMO_USER,
+      person_id: "per-jo",
+      generation: 1,
+      active: true,
+      created_at: ago(60 * 24 * 7),
+      revoked_at: null,
+    },
+  ];
+  const deviceAuths: NetworkDeviceAuthorization[] = [
+    {
+      id: "enr-tablet",
+      binding_id: "bnd-jo",
+      device_id: "dev-tablet",
+      generation: 1,
+      status: "enrolled",
+      authorized_by: DEMO_USER,
+      created_at: ago(60 * 24 * 6),
+    },
+  ];
+  const ownDevices: NetworkOwnDevice[] = [
+    {
+      id: "dev-tablet",
+      label: "Kitchen tablet",
+      device_type: "tablet",
+      shared: true,
+      enrollment_id: "enr-tablet",
+      enrollment_status: "enrolled",
+    },
+    {
+      id: "dev-jo-phone",
+      label: "Jo’s phone",
+      device_type: "phone",
+      shared: false,
+      enrollment_id: "enr-phone",
+      enrollment_status: "enrolled",
+    },
+  ];
+  const ownGrants: NetworkOwnGrant[] = [];
+  const grantSecrets = new Map<string, string>();
+  const ownSessions: NetworkOwnSession[] = [
+    {
+      id: "ses-demo-1",
+      device_id: "dev-jo-phone",
+      purpose: "proxy_setup",
+      verification_method: "oidc_session",
+      verified_at: ago(90),
+      expires_at: new Date(Date.now() + 6 * 3600_000).toISOString(),
+      ended_at: null,
+    },
+  ];
+  const activeBinding = () =>
+    bindings.find((b) => b.active && b.dashboard_user === DEMO_USER);
+  const requireBinding = () => {
+    const binding = activeBinding();
+    if (!binding)
+      throw new ApiError(
+        "You don’t have BYOD enrollment for this household. Ask an administrator.",
+        403,
+      );
+    return binding;
+  };
+  const randomSecret = () =>
+    Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join("");
+  const endSessionsOf = (deviceId?: string) => {
+    let n = 0;
+    for (const x of ownSessions)
+      if (!x.ended_at && (!deviceId || x.device_id === deviceId)) {
+        x.ended_at = new Date().toISOString();
+        n++;
+      }
+    let g = 0;
+    for (const x of ownGrants)
+      if (!x.revoked_at && !x.consumed_at && (!deviceId || x.device_id === deviceId)) {
+        x.revoked_at = new Date().toISOString();
+        g++;
+      }
+    return { ended: n, grants: g };
+  };
 
   // Gateway: online, reporting capabilities and a REPORTED applied revision r14 while desired is r15.
   // The reported value is an unverified worker observation, matching the demo policy (r14 applied,
@@ -577,8 +674,220 @@ export function demoNetworkApi(): Partial<ApiClient> {
     networkAgentEnroll: async () => ({ ok: true }),
 
     networkGrants: async () => ({ grants }),
-    networkGrantCreate: async () => ({ ok: true, created: true }),
-    networkGrantDelete: async () => ({ ok: true }),
+    networkGrantCreate: async (_household, body) => {
+      const b = asRecord(body);
+      const user = text(b.user_id);
+      const grant = text(b.grant) as NetworkGrantName;
+      if (grants.some((g) => g.user_id === user && g.grant_name === grant))
+        return { ok: true, created: false };
+      grants.push({ household_id: HOUSEHOLD, user_id: user, grant_name: grant, granted_at: now() });
+      return { ok: true, created: true };
+    },
+    networkGrantDelete: async (_household, userId, grant) => {
+      if (
+        grant === "network_admin" &&
+        grants.filter((g) => g.grant_name === "network_admin").length <= 1
+      )
+        throw new ApiError("The last network administrator cannot be removed.", 409);
+      const index = grants.findIndex((g) => g.user_id === userId && g.grant_name === grant);
+      if (index >= 0) grants.splice(index, 1);
+      return { ok: true };
+    },
+
+    networkBindings: async () => ({ bindings }),
+    networkBindingCreate: async (_household, body) => {
+      const b = asRecord(body);
+      if (bindings.some((x) => x.active && x.person_id === text(b.person_id)))
+        throw new ApiError("That person is already mapped to a dashboard user.", 409);
+      const created = id("bnd");
+      bindings.push({
+        id: created,
+        dashboard_user: text(b.user_id),
+        person_id: text(b.person_id),
+        generation: 1,
+        active: true,
+        created_at: now(),
+        revoked_at: null,
+      });
+      return { ok: true, binding_id: created };
+    },
+    networkBindingDelete: async (_household, bindingId) => {
+      const binding = bindings.find((x) => x.id === bindingId);
+      if (binding && binding.active) {
+        binding.active = false;
+        binding.revoked_at = now();
+        binding.generation += 1;
+        for (const a of deviceAuths) if (a.binding_id === bindingId) a.status = "revoked";
+        if (binding.dashboard_user === DEMO_USER) {
+          ownDevices.length = 0;
+          endSessionsOf();
+        }
+      }
+      return { ok: true };
+    },
+    networkDeviceAuthorizations: async (_household, bindingId, params) => {
+      const rows = deviceAuths.filter((a) => a.binding_id === bindingId);
+      const p = asRecord(params);
+      const limit = typeof p.limit === "number" ? p.limit : rows.length;
+      const offset = typeof p.offset === "number" ? p.offset : 0;
+      const slice = rows.slice(offset, offset + limit);
+      return {
+        enrollments: slice,
+        limit,
+        offset,
+        returned: slice.length,
+        truncated: slice.length === limit,
+      };
+    },
+    networkDeviceAuthorize: async (_household, bindingId, body) => {
+      const deviceId = text(asRecord(body).device_id);
+      if (deviceAuths.some((a) => a.binding_id === bindingId && a.device_id === deviceId && a.status === "enrolled"))
+        throw new ApiError("That device is already authorized for this person.", 409);
+      const created = id("enr");
+      deviceAuths.push({
+        id: created,
+        binding_id: bindingId,
+        device_id: deviceId,
+        generation: 1,
+        status: "enrolled",
+        authorized_by: DEMO_USER,
+        created_at: now(),
+      });
+      const binding = bindings.find((x) => x.id === bindingId);
+      const device = devices.find((d) => d.id === deviceId);
+      if (binding?.dashboard_user === DEMO_USER && device && !ownDevices.some((d) => d.id === deviceId))
+        ownDevices.push({
+          id: device.id,
+          label: device.label,
+          device_type: device.device_type,
+          shared: device.shared,
+          enrollment_id: created,
+          enrollment_status: "enrolled",
+        });
+      return { ok: true, enrollment_id: created };
+    },
+
+    networkOwnDevices: async () => {
+      requireBinding();
+      return { devices: ownDevices };
+    },
+    networkOwnDeviceRegister: async (_household, body) => {
+      requireBinding();
+      const b = asRecord(body);
+      const created = id("dev-own");
+      ownDevices.push({
+        id: created,
+        label: text(b.label),
+        device_type: text(b.device_type) || "other",
+        shared: b.shared === true,
+        enrollment_id: id("enr"),
+        enrollment_status: "enrolled",
+      });
+      return { ok: true, device_id: created, status: "enrolled", network_coverage: "unverified" };
+    },
+    networkOwnDeviceEnd: async (_household, deviceId) => {
+      requireBinding();
+      const index = ownDevices.findIndex((d) => d.id === deviceId);
+      if (index >= 0) ownDevices.splice(index, 1);
+      endSessionsOf(deviceId);
+      return { ok: true };
+    },
+    networkOwnGrants: async () => {
+      requireBinding();
+      return { grants: ownGrants };
+    },
+    networkSetupGrantIssue: async (_household, body) => {
+      requireBinding();
+      const b = body;
+      if (!ownDevices.some((d) => d.id === b.device_id))
+        throw new ApiError("That device is not enrolled to you.", 404);
+      const grantId = id("grt");
+      const secret = randomSecret();
+      const expires = new Date(Date.now() + b.expires_in_secs * 1000).toISOString();
+      grantSecrets.set(grantId, secret);
+      ownGrants.unshift({
+        id: grantId,
+        device_id: b.device_id,
+        purpose: b.purpose,
+        expires_at: expires,
+        consumed_at: null,
+        revoked_at: null,
+        created_at: now(),
+      });
+      return {
+        grant_id: grantId,
+        secret,
+        household_id: HOUSEHOLD,
+        device_id: b.device_id,
+        purpose: b.purpose,
+        expires_at: expires,
+        status: "issued",
+        setup: "pending_setup",
+        network_coverage: "unverified",
+        note: "Scoped receipt only. No proxy credential, client trust material or DNS person identity is delivered by this endpoint.",
+      };
+    },
+    networkSetupGrantConsume: async (_household, body) => {
+      requireBinding();
+      const grant = ownGrants.find((g) => g.id === body.grant_id);
+      if (
+        !grant ||
+        grantSecrets.get(body.grant_id) !== body.secret.trim() ||
+        grant.device_id !== body.device_id ||
+        grant.purpose !== body.purpose ||
+        grant.consumed_at ||
+        grant.revoked_at ||
+        new Date(grant.expires_at).getTime() < Date.now()
+      )
+        throw new ApiError("Setup grant is invalid, expired or already used.", 403);
+      grant.consumed_at = now();
+      grantSecrets.delete(grant.id);
+      endSessionsOf(body.device_id);
+      const verified = now();
+      const expires = new Date(Date.now() + 8 * 3600_000).toISOString();
+      const sessionId = id("ses");
+      ownSessions.unshift({
+        id: sessionId,
+        device_id: body.device_id,
+        purpose: body.purpose as NetworkSetupPurpose,
+        verification_method: "oidc_session",
+        verified_at: verified,
+        expires_at: expires,
+        ended_at: null,
+      });
+      return {
+        session_id: sessionId,
+        household_id: HOUSEHOLD,
+        device_id: body.device_id,
+        purpose: body.purpose,
+        verification_method: "oidc_session",
+        verified_at: verified,
+        expires_at: expires,
+        status: "verified_session",
+        network_coverage: "unverified_runtime_identity",
+        note: "OIDC/session evidence only. This does not establish that DNS or proxy traffic is routed, inspected or protected for a person on a shared device.",
+      };
+    },
+    networkOwnSessions: async () => {
+      requireBinding();
+      return { sessions: ownSessions };
+    },
+    networkOwnSessionsEndAll: async () => {
+      requireBinding();
+      const r = endSessionsOf();
+      return {
+        ok: true,
+        ended: r.ended,
+        grants_revoked: r.grants,
+        scope: "this household and binding only; dashboard session unaffected",
+      };
+    },
+    networkOwnSessionEnd: async (_household, sessionId) => {
+      requireBinding();
+      const session = ownSessions.find((x) => x.id === sessionId);
+      if (session && !session.ended_at) session.ended_at = now();
+      return { ok: true, grants_revoked: 0, scope: "this device and binding only" };
+    },
 
     networkAudit: async (_household, params) => ({ rows: page(audit, params) }),
 

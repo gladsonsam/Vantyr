@@ -88,6 +88,14 @@ const NetworkHouseholdPage = lazy(() =>
     default: m.NetworkHouseholdPage,
   })),
 );
+const NetworkAccessPage = lazy(() =>
+  import("@/features/network/access-admin/NetworkAccessPage").then((m) => ({
+    default: m.NetworkAccessPage,
+  })),
+);
+const EnrollPage = lazy(() =>
+  import("@/features/network/enroll/EnrollPage").then((m) => ({ default: m.EnrollPage })),
+);
 const UsersPage = lazy(() =>
   import("@/features/users/UsersPage").then((m) => ({ default: m.UsersPage })),
 );
@@ -207,6 +215,8 @@ export function AppRoutes() {
           <Route path="dns" element={<DeviceDnsPage />} />
           <Route path="proxy" element={<DeviceProxyPage />} />
         </Route>
+        {/* Self-service BYOD enrollment stays outside the administrator-gated Network layout. */}
+        <Route path="/network/enroll/:householdId" element={<EnrollPage />} />
         <Route path="/network" element={<NetworkLayout />}>
           <Route index element={<NetworkOverviewPage />} />
           <Route path="policies" element={<NetworkPoliciesPage />} />
@@ -216,6 +226,7 @@ export function AppRoutes() {
           <Route path="gateways/:gatewayId" element={<GatewayDetailPage />} />
           <Route path="household" element={<NetworkHouseholdPage />} />
           <Route path="audit" element={<NetworkAuditPage />} />
+          <Route path="access" element={<NetworkAccessPage />} />
           <Route path="*" element={<Navigate to="/network" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

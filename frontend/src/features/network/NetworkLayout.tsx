@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 import {
   Globe,
   Home,
+  KeyRound,
   LayoutDashboard,
   Network,
   ScrollText,
@@ -21,7 +22,8 @@ import { usePageHeader } from "@/app/shell/usePageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadFailedCard } from "@/components/common/LoadFailedCard";
 import { SettingsArea, SettingsNavLinks } from "@/features/settings/components/SettingsLayout";
-import { NetworkScopeContext } from "./access/networkScope";
+import { NetworkScopeContext, useNetworkHousehold } from "./access/networkScope";
+import { useNetworkAdmin } from "./access/useNetworkAdmin";
 import { useNetworkAccess } from "./access/useNetworkAccess";
 
 const SECTIONS = [
@@ -34,9 +36,20 @@ const SECTIONS = [
   { id: "audit", to: "/network/audit", label: "Audit", icon: ScrollText },
 ] as const;
 
+/** Administrators only: who may enroll their own devices (BYOD). */
+const ACCESS_SECTION = {
+  id: "access",
+  to: "/network/access",
+  label: "Access",
+  icon: KeyRound,
+} as const;
+
 /** The longest matching path wins, so "/network" is only active on the overview itself. */
 function SectionNav() {
-  return <SettingsNavLinks items={SECTIONS} label="Network sections" />;
+  const household = useNetworkHousehold();
+  const isAdmin = useNetworkAdmin(household.id);
+  const items = isAdmin ? [...SECTIONS, ACCESS_SECTION] : SECTIONS;
+  return <SettingsNavLinks items={items} label="Network sections" />;
 }
 
 /** Admin-only, one time: creates the first household and the first `network_admin` grant. */

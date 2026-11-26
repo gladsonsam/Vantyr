@@ -6,8 +6,11 @@
  * path, never in request bodies.
  */
 
-export type NetworkGrantName = "network_admin" | "network_events";
-// `network_enroll` (BYOD) exists server-side but is intentionally not modelled here yet.
+/**
+ * `network_enroll` lets a person enroll their own devices (BYOD) once an administrator has mapped
+ * them to a person. It grants no events, inventory or policy permissions.
+ */
+export type NetworkGrantName = "network_admin" | "network_events" | "network_enroll";
 
 export interface NetworkHousehold {
   id: string;
@@ -304,4 +307,133 @@ export interface NetworkDesiredPolicy {
   revision: number;
   assigned_by: string | null;
   assigned_at: string;
+}
+
+
+// ─── BYOD enrollment ─────────────────────────────────────────────────────────
+
+/** Admin-created mapping of one existing dashboard user to one existing person. */
+export interface NetworkBinding {
+  id: string;
+  dashboard_user: string;
+  person_id: string;
+  generation: number;
+  active: boolean;
+  created_at: string;
+  revoked_at: string | null;
+}
+
+export interface NetworkDeviceAuthorization {
+  id: string;
+  binding_id: string;
+  device_id: string;
+  generation: number;
+  status: string;
+  authorized_by: string | null;
+  created_at: string;
+}
+
+export interface NetworkDeviceAuthorizationPage {
+  enrollments: NetworkDeviceAuthorization[];
+  limit: number;
+  offset: number;
+  returned: number;
+  /** True when the page was full: more rows may exist. */
+  truncated: boolean;
+}
+
+/** Device types a person may self-register (the server rejects anything else). */
+export const NETWORK_SELF_DEVICE_TYPES = [
+  "computer",
+  "phone",
+  "tablet",
+  "tv",
+  "iot",
+  "other",
+] as const;
+export type NetworkSelfDeviceType = (typeof NETWORK_SELF_DEVICE_TYPES)[number];
+
+export const NETWORK_SETUP_PURPOSES = ["proxy_setup", "dns_setup"] as const;
+export type NetworkSetupPurpose = (typeof NETWORK_SETUP_PURPOSES)[number];
+
+/** Setup grant lifetime bounds in seconds (the server rejects, never clamps). */
+export const NETWORK_GRANT_MIN_SECS = 60;
+export const NETWORK_GRANT_MAX_SECS = 600;
+
+export interface NetworkOwnDevice {
+  id: string;
+  label: string;
+  /** Free text from the server; self-registered devices use `NetworkSelfDeviceType`. */
+  device_type: string;
+  shared: boolean;
+  enrollment_id: string;
+  enrollment_status: string;
+}
+
+export interface NetworkOwnGrant {
+  id: string;
+  device_id: string;
+  purpose: string;
+  expires_at: string;
+  consumed_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+export interface NetworkOwnSession {
+  id: string;
+  device_id: string;
+  purpose: string;
+  verification_method: string;
+  verified_at: string;
+  expires_at: string;
+  ended_at: string | null;
+}
+
+export interface NetworkEnrolledDevice {
+  ok: boolean;
+  device_id: string;
+  status: "enrolled";
+  network_coverage: "unverified";
+}
+
+/** The one-time issuance receipt. `secret` is never returned again; never persist it. */
+export interface NetworkSetupGrantIssued {
+  grant_id: string;
+  secret: string;
+  household_id: string;
+  device_id: string;
+  purpose: NetworkSetupPurpose;
+  expires_at: string;
+  status: "issued";
+  setup: "pending_setup";
+  network_coverage: "unverified";
+  note: string;
+}
+
+export interface NetworkSetupGrantConsume {
+  grant_id: string;
+  secret: string;
+  purpose: NetworkSetupPurpose;
+  device_id: string;
+}
+
+export interface NetworkVerifiedSession {
+  session_id: string;
+  household_id: string;
+  device_id: string;
+  purpose: NetworkSetupPurpose;
+  verification_method: "oidc_session";
+  verified_at: string;
+  expires_at: string;
+  status: "verified_session";
+  network_coverage: "unverified_runtime_identity";
+  note: string;
+}
+
+export interface NetworkSessionEndResult {
+  ok: boolean;
+  grants_revoked: number;
+  /** Server wording of what was ended, shown verbatim. */
+  scope: string;
 }

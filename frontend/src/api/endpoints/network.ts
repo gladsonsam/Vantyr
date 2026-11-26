@@ -10,6 +10,18 @@ import type {
   NetworkAgentEnrollment,
   NetworkAssignment,
   NetworkAssignmentRole,
+  NetworkBinding,
+  NetworkDeviceAuthorizationPage,
+  NetworkEnrolledDevice,
+  NetworkOwnDevice,
+  NetworkOwnGrant,
+  NetworkOwnSession,
+  NetworkSelfDeviceType,
+  NetworkSessionEndResult,
+  NetworkSetupGrantConsume,
+  NetworkSetupGrantIssued,
+  NetworkSetupPurpose,
+  NetworkVerifiedSession,
   NetworkConnection,
   NetworkConnectionKind,
   NetworkConnectionStatus,
@@ -279,4 +291,87 @@ export const networkEndpoints = {
     body: { revision: number },
   ): Promise<{ desired: NetworkDesiredPolicy }> =>
     putJson(`${base(household)}/gateways/${gateway}/desired-policy`, body),
+
+  // ─── BYOD: principal bindings and device authorizations (network_admin) ─────
+  networkBindings: (
+    household: string,
+  ): Promise<{ bindings: NetworkBinding[] }> =>
+    get(`${base(household)}/bindings`),
+  networkBindingCreate: (
+    household: string,
+    body: { person_id: string; user_id: string },
+  ): Promise<{ ok: boolean; binding_id: string }> =>
+    postJsonRes(`${base(household)}/bindings`, body),
+  /** Invalidates the person's enrolled devices, grants and sessions. */
+  networkBindingDelete: (
+    household: string,
+    binding: string,
+  ): Promise<{ ok: boolean }> =>
+    delJson(`${base(household)}/bindings/${binding}`),
+  networkDeviceAuthorizations: (
+    household: string,
+    binding: string,
+    page?: NetworkPageParams,
+  ): Promise<NetworkDeviceAuthorizationPage> =>
+    get(
+      `${base(household)}/bindings/${binding}/device-authorizations${limitOffsetQuery(page)}`,
+    ),
+  networkDeviceAuthorize: (
+    household: string,
+    binding: string,
+    body: { device_id: string },
+  ): Promise<{ ok: boolean; enrollment_id: string }> =>
+    postJsonRes(
+      `${base(household)}/bindings/${binding}/device-authorizations`,
+      body,
+    ),
+
+  // ─── BYOD self-service (network_enroll + an active binding) ──────────────────
+  networkOwnDevices: (
+    household: string,
+  ): Promise<{ devices: NetworkOwnDevice[] }> =>
+    get(`${base(household)}/enroll/devices`),
+  networkOwnDeviceRegister: (
+    household: string,
+    body: { label: string; device_type: NetworkSelfDeviceType; shared?: boolean },
+  ): Promise<NetworkEnrolledDevice> =>
+    postJsonRes(`${base(household)}/enroll/devices`, body),
+  networkOwnDeviceEnd: (
+    household: string,
+    device: string,
+  ): Promise<{ ok: boolean }> =>
+    delJson(`${base(household)}/enroll/devices/${device}`),
+  networkOwnGrants: (
+    household: string,
+  ): Promise<{ grants: NetworkOwnGrant[] }> =>
+    get(`${base(household)}/enroll/grants`),
+  /** The returned `secret` is shown once; it cannot be fetched again. */
+  networkSetupGrantIssue: (
+    household: string,
+    body: {
+      device_id: string;
+      purpose: NetworkSetupPurpose;
+      expires_in_secs: number;
+    },
+  ): Promise<NetworkSetupGrantIssued> =>
+    postJsonRes(`${base(household)}/enroll/grants`, body),
+  networkSetupGrantConsume: (
+    household: string,
+    body: NetworkSetupGrantConsume,
+  ): Promise<NetworkVerifiedSession> =>
+    postJsonRes(`${base(household)}/enroll/grants/consume`, body),
+  networkOwnSessions: (
+    household: string,
+  ): Promise<{ sessions: NetworkOwnSession[] }> =>
+    get(`${base(household)}/enroll/sessions`),
+  /** Network sign-out only: it does not end the dashboard session. */
+  networkOwnSessionsEndAll: (
+    household: string,
+  ): Promise<NetworkSessionEndResult & { ended: number }> =>
+    delJson(`${base(household)}/enroll/sessions`),
+  networkOwnSessionEnd: (
+    household: string,
+    session: string,
+  ): Promise<NetworkSessionEndResult> =>
+    delJson(`${base(household)}/enroll/sessions/${session}`),
 };
