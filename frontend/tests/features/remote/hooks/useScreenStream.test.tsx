@@ -83,3 +83,15 @@ test("preset replacement cancels backoff and applies the latest tuning", async (
   expect(view.preset).toBe("ultra");
   expect(view.tuningError).toBe(false);
 });
+
+test("a previously failed preset clears its error after a successful retry", async () => {
+  await mount();
+  tune.mockRejectedValue(new Error("offline"));
+  await act(async () => view.changePreset("balanced"));
+  await wait(1700);
+  expect(view.tuningError).toBe(true);
+  tune.mockResolvedValue(undefined);
+  await act(async () => view.changePreset("ultra"));
+  await act(async () => view.changePreset("balanced"));
+  expect(view.tuningError).toBe(false);
+});

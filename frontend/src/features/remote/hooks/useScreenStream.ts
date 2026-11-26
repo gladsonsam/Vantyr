@@ -103,7 +103,7 @@ export function useScreenStream({
       appliedTuning.current = { session, tuning: initialTuning };
     // Always queue the latest value: an earlier in-flight request may still settle.
     return tuningQueue.enqueue(
-      async () => {
+      async (signal) => {
         const applied = appliedTuning.current;
         if (
           applied.session === session &&
@@ -111,7 +111,11 @@ export function useScreenStream({
           tuning.intervalMs === applied.tuning.intervalMs
         )
           return;
-        await tuneScreenStream(agentId, session, tuning);
+        await tuneScreenStream(agentId, session, tuning, signal);
+        if (signal.aborted) return;
+        setFailedTuning((current) =>
+          current?.session === session && current.tuning === tuning ? null : current,
+        );
         if (appliedTuning.current.session === session) appliedTuning.current = { session, tuning };
       },
       () => setFailedTuning({ session, tuning }),

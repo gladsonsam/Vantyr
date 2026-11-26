@@ -79,3 +79,36 @@ test("a transient failure retries without needing a new render", async () => {
   expect(attempts).toBe(2);
   expect(failures).toBe(0);
 });
+
+test("cancelling an in-flight request aborts it and allows the next tuning through", async () => {
+  const queue = new StreamTuningQueue();
+  let aborted = false;
+  let latest = false;
+  const cancel = queue.enqueue(
+    (signal) =>
+      new Promise<void>((_resolve, reject) => {
+        signal.addEventListener(
+          "abort",
+          () => {
+            aborted = true;
+            reject(new Error("cancelled"));
+          },
+          { once: true },
+        );
+      }),
+    () => {
+      throw new Error("obsolete failure");
+    },
+  );
+  await wait(0);
+  cancel();
+  queue.enqueue(
+    async () => {
+      latest = true;
+    },
+    () => {},
+  );
+  await wait(10);
+  expect(aborted).toBe(true);
+  expect(latest).toBe(true);
+});
