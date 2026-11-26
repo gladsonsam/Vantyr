@@ -495,3 +495,33 @@ async fn durable_restart_keeps_encrypted_route_after_external_config_change() {
     assert_answered(&answer(&restarted).await);
     restarted.stop().await;
 }
+
+/// The encrypted resolver receives the same bounded cache options and the same
+/// clear handle as the plaintext path. Stopping the only verified upstream
+/// proves the answer came from that cache; clearing it removes the answer
+/// without changing any policy version. No plaintext fallback is introduced.
+#[tokio::test]
+async fn encrypted_upstream_uses_the_shared_cache_settings_and_clear_handle() {
+    let (port, ca, guard) = spawn_dot(&["dns.example.test"], &["dot"]).await;
+    let st = fixture("dot-cache");
+    let mut candidate: serde_json::Value =
+        serde_json::from_slice(&config(0, 2, dot_spec(port, "dns.example.test", Some(&ca))))
+            .unwrap();
+    candidate["cache"] = json!({ "max_entries": 16, "positive_max_ttl_secs": 45 });
+    fs::write(&st.config, serde_json::to_vec(&candidate).unwrap()).unwrap();
+    let server = DnsServer::start(Config::parse(&fs::read(&st.config).unwrap()).unwrap())
+        .await
+        .unwrap();
+    assert_answered(&answer(&server).await);
+
+    drop(guard);
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert_answered(&answer(&server).await);
+
+    let before = server.status();
+    server.clear_cache();
+    assert_eq!(server.status(), before, "clear must not bump any version");
+    let failed = answer(&server).await;
+    assert_code(&failed, hickory_server::proto::op::ResponseCode::ServFail);
+    server.stop().await;
+}

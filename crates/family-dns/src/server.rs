@@ -23,6 +23,7 @@ use std::time::Duration;
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
 use family_policy::Policy;
+use hickory_resolver::Hosts;
 use hickory_server::server::Server;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::task::JoinHandle;
@@ -40,8 +41,8 @@ use crate::filter::{
 use crate::handler::FilteringHandler;
 use crate::observe::{DecisionObservation, ObservationLog};
 use crate::runtime::{
-    build_snapshot, reject_upstream_self_loop, same_transport, BundleState, RuntimeSnapshot,
-    SnapshotHandle,
+    build_snapshot, build_snapshot_with_hosts, reject_upstream_self_loop, same_transport,
+    BundleState, RuntimeSnapshot, SnapshotHandle,
 };
 use crate::subscription::{AppliedStatus, SourceStatus, SubscriptionRuntime};
 
@@ -166,6 +167,17 @@ impl DnsServer {
     /// Validate, build, bind UDP and TCP on the same port, and start serving.
     /// No socket exists until configuration has passed full validation.
     pub async fn start(config: Config) -> Result<Self> {
+        Self::start_inner(config, None).await
+    }
+
+    /// Test-only seam: start with a maintained Hickory `Hosts` table injected
+    /// instead of reading the machine's hosts file. No host file is changed.
+    #[doc(hidden)]
+    pub async fn start_with_hosts(config: Config, hosts: Arc<Hosts>) -> Result<Self> {
+        Self::start_inner(config, Some(hosts)).await
+    }
+
+    async fn start_inner(config: Config, hosts: Option<Arc<Hosts>>) -> Result<Self> {
         config.validate()?;
         let (material, filter) = prepare_filter(&config.filter, config.policy_revision, &no_remote)
             .map_err(|error| anyhow::anyhow!(error.to_string()))?
@@ -175,7 +187,7 @@ impl DnsServer {
             );
         let state = initial_state(&config, material.as_ref());
         let observations = ObservationLog::default();
-        let snapshot = build_snapshot(
+        let snapshot = build_snapshot_with_hosts(
             config.clone(),
             config.policy(Utc::now()),
             observations.clone(),
@@ -183,6 +195,7 @@ impl DnsServer {
             material,
             state,
             None,
+            hosts,
         )?;
         Self::serve(config, snapshot, observations, None, None).await
     }
@@ -811,6 +824,32 @@ impl DnsServer {
             filter_generation: active.state.filter_generation,
             filter_identity: active.state.filter_identity.clone(),
         }
+    }
+
+    /// Clear the maintained response caches of the CURRENTLY applied snapshot.
+    /// This is a runtime primitive only: no dashboard/HTTP route claims to
+    /// deliver it, and no policy revision or generation is advanced.
+    ///
+    /// Coherent semantics: the mutation lock (the same one that serialises
+    /// reloads) and the snapshot read lock are held while selecting the current
+    /// snapshot. A concurrent reload cannot publish between selection and clear.
+    /// Queries already in flight cloned the same `Arc`; their resolvers are the
+    /// ones cleared here, but a lookup that finishes after this returns may
+    /// repopulate an entry. This is a clear, not a flush barrier, and no
+    /// "no repopulation" guarantee is claimed. A fresh snapshot swap builds
+    /// new resolvers and therefore starts with empty caches without touching
+    /// any older snapshot.
+    pub fn clear_cache(&self) {
+        let _update = self
+            .update
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let snapshot = self
+            .current
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        snapshot.cache.clear();
     }
 
     /// Download state versus what DNS actually applied, plus the last

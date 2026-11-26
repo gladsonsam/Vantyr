@@ -62,6 +62,15 @@ pub const MAX_SERVICE_DOMAINS: usize = 512;
 pub const MAX_SUBSCRIPTION_SOURCES: usize = 32;
 pub const MAX_CACHE_PATH_LEN: usize = 512;
 
+// Bounded response-cache settings. The entry cap counts cached RESPONSES, not
+// bytes: one response may be large, so this is a count bound only and is not a
+// memory-size guarantee. The default preserves the previously fixed 4096-entry
+// cache exactly; the maximum is deliberately modest (no unbounded admission).
+pub const DEFAULT_CACHE_ENTRIES: u64 = 4096;
+pub const MAX_CACHE_ENTRIES: u64 = 65_536;
+/// Hard bound on operator-supplied bogus-NXDOMAIN answer IPs.
+pub const MAX_BOGUS_NXDOMAIN_IPS: usize = 64;
+
 /// Canonicalise only IPv4-mapped IPv6 (`::ffff:a.b.c.d`) to IPv4. Native IPv6
 /// loopback (`::1`) and deprecated IPv4-compatible addresses (`::a.b.c.d`)
 /// stay IPv6 and are never silently reinterpreted as an IPv4 address.
@@ -180,6 +189,9 @@ fn default_bind() -> BindConfig {
 }
 fn default_true() -> bool {
     true
+}
+fn default_cache_entries() -> u64 {
+    DEFAULT_CACHE_ENTRIES
 }
 fn default_personal_computer() -> DeviceKind {
     DeviceKind::PersonalComputer
@@ -790,6 +802,115 @@ fn check_filter_field(value: &str, what: &str, place: &str) -> Result<()> {
     Ok(())
 }
 
+/// Bounded response-cache and answer-shaping settings. Absent in older
+/// bundles/configs; the defaults reproduce the previously fixed behaviour.
+/// This configures the maintained Hickory resolver cache only. It does NOT
+/// configure a DNSSEC validator, EDNS Client Subnet, optimistic stale serving
+/// or any local DNS response wire format.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheConfig {
+    /// Disable the response cache entirely. `max_entries = 0` has the same
+    /// effect through the maintained resolver cache.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Cached RESPONSE count bound (not a byte bound). 0 disables the cache.
+    #[serde(default = "default_cache_entries")]
+    pub max_entries: u64,
+    #[serde(default)]
+    pub positive_min_ttl_secs: Option<u32>,
+    #[serde(default)]
+    pub positive_max_ttl_secs: Option<u32>,
+    #[serde(default)]
+    pub negative_min_ttl_secs: Option<u32>,
+    #[serde(default)]
+    pub negative_max_ttl_secs: Option<u32>,
+    /// Operator-local opt-in to the system hosts file. OFF by default; the
+    /// worker never writes a hosts file.
+    #[serde(default)]
+    pub use_hosts_file: bool,
+    /// Strip A/AAAA answer data (including CNAME glue in the additional
+    /// section). HTTPS/SVCB IPv6 hints are NOT covered by this setting.
+    #[serde(default)]
+    pub disable_ipv6: bool,
+    /// An answer containing one of these IPs becomes NXDOMAIN.
+    #[serde(default)]
+    pub bogus_nxdomain_ips: Vec<String>,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_entries: DEFAULT_CACHE_ENTRIES,
+            positive_min_ttl_secs: None,
+            positive_max_ttl_secs: None,
+            negative_min_ttl_secs: None,
+            negative_max_ttl_secs: None,
+            use_hosts_file: false,
+            disable_ipv6: false,
+            bogus_nxdomain_ips: Vec::new(),
+        }
+    }
+}
+
+impl CacheConfig {
+    /// Effective resolver cache capacity; zero means no cache at all.
+    pub fn cache_size(&self) -> u64 {
+        if self.enabled {
+            self.max_entries
+        } else {
+            0
+        }
+    }
+
+    /// Parsed, validated bogus-NXDOMAIN answer addresses.
+    pub fn bogus_ips(&self) -> Vec<IpAddr> {
+        self.bogus_nxdomain_ips
+            .iter()
+            .filter_map(|raw| raw.parse::<IpAddr>().ok())
+            .collect()
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        if self.max_entries > MAX_CACHE_ENTRIES {
+            bail!("cache.max_entries must be 0..={MAX_CACHE_ENTRIES} (response count, not bytes)");
+        }
+        for (name, min, max) in [
+            (
+                "positive TTL",
+                self.positive_min_ttl_secs,
+                self.positive_max_ttl_secs,
+            ),
+            (
+                "negative TTL",
+                self.negative_min_ttl_secs,
+                self.negative_max_ttl_secs,
+            ),
+        ] {
+            if min.is_some_and(|ttl| ttl == 0 || ttl > MAX_TTL_SECS)
+                || max.is_some_and(|ttl| ttl == 0 || ttl > MAX_TTL_SECS)
+            {
+                bail!("cache {name} bounds must be 1..={MAX_TTL_SECS} seconds");
+            }
+            if let (Some(min), Some(max)) = (min, max) {
+                if min > max {
+                    bail!("cache {name} minimum exceeds its maximum");
+                }
+            }
+        }
+        if self.bogus_nxdomain_ips.len() > MAX_BOGUS_NXDOMAIN_IPS {
+            bail!("cache.bogus_nxdomain_ips exceeds {MAX_BOGUS_NXDOMAIN_IPS} entries");
+        }
+        for raw in &self.bogus_nxdomain_ips {
+            if raw.len() > MAX_NAME_LEN || raw.parse::<IpAddr>().is_err() {
+                bail!("cache.bogus_nxdomain_ips contains an invalid IP literal '{raw}'");
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Complete, validated worker configuration. Deserialized values are kept
 /// private to the module's methods after validation so callers cannot bypass
 /// validation by mutating a field.
@@ -836,6 +957,10 @@ pub struct Config {
     /// the worker exactly as it was before list filtering existed.
     #[serde(default)]
     pub filter: FilterConfig,
+    /// Bounded response-cache/answer-shaping settings. Absent in older
+    /// bundles; defaults preserve the previous fixed-cache behaviour.
+    #[serde(default)]
+    pub cache: CacheConfig,
 }
 
 impl Config {
@@ -880,6 +1005,7 @@ impl Config {
             bail!("stale_after_secs must be 1..={MAX_STALE_SECS}");
         }
         self.filter.validate("filter")?;
+        self.cache.validate()?;
 
         // Parse fallibly before any accessor that assumes validation.
         parsed_ip(&self.bind.address, "bind address")?;

@@ -15,25 +15,24 @@ use std::time::Duration;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use family_policy::Policy;
-use hickory_resolver::config::{LookupIpStrategy, NameServerConfig, ResolveHosts, ResolverOpts};
+use hickory_resolver::config::{LookupIpStrategy, ResolveHosts, ResolverOpts};
+use hickory_resolver::Hosts;
 use hickory_server::net::runtime::TokioRuntimeProvider;
 use hickory_server::proto::rr::rdata::{A as AData, AAAA as AaaaData, CNAME as CnameData, SOA};
 use hickory_server::proto::rr::{Name, RData, Record, RecordSet, RecordType, RrKey};
-use hickory_server::store::forwarder::{ForwardConfig, ForwardZoneHandler};
 use hickory_server::store::in_memory::InMemoryZoneHandler;
 use hickory_server::zone_handler::{AxfrPolicy, Catalog, ZoneType};
 use vantyr_network_filter::FilterSnapshot;
 
-use crate::config::{forwards_to_self, Config, DenyConfig, RecordSpec};
+use crate::config::{forwards_to_self, CacheConfig, Config, DenyConfig, RecordSpec};
 use crate::filter::FilterMaterial;
 use crate::management::ManagementState;
 use crate::observe::ObservationLog;
 use crate::policy::PolicyEvaluator;
-use crate::upstream::EncryptedZoneHandler;
+use crate::upstream::{CacheControl, EncryptedZoneHandler, PlaintextZoneHandler};
 
 const FORWARD_TIMEOUT_SECS: u64 = 2;
 const FORWARD_ATTEMPTS: usize = 1;
-const FORWARD_CACHE_ENTRIES: u64 = 4096;
 const FORWARD_CONCURRENCY: usize = 2;
 const MAX_ACTIVE_REQUESTS: usize = 256;
 
@@ -100,62 +99,75 @@ fn local_zone_handler(
     .map_err(anyhow::Error::msg)
 }
 
-fn forwarder_handler(upstreams: &[SocketAddr]) -> Result<ForwardZoneHandler<TokioRuntimeProvider>> {
-    let mut servers = Vec::with_capacity(upstreams.len());
-    for upstream in upstreams {
-        let mut server = NameServerConfig::udp_and_tcp(upstream.ip());
-        for connection in &mut server.connections {
-            connection.port = upstream.port();
-        }
-        servers.push(server);
-    }
-    let options = resolver_options();
-    let config = ForwardConfig {
-        name_servers: servers,
-        options: Some(options),
-    };
-    ForwardZoneHandler::builder_tokio(config)
-        .with_origin(Name::root())
-        .build()
-        .map_err(anyhow::Error::msg)
-}
-
-fn resolver_options() -> ResolverOpts {
+/// Map validated settings onto the maintained resolver options. Both
+/// plaintext and encrypted forwarders receive this exact same value.
+pub(crate) fn resolver_options(cache: &CacheConfig) -> ResolverOpts {
     let mut options = ResolverOpts::default();
     options.timeout = Duration::from_secs(FORWARD_TIMEOUT_SECS);
     options.attempts = FORWARD_ATTEMPTS;
-    options.cache_size = FORWARD_CACHE_ENTRIES;
+    options.cache_size = cache.cache_size();
     options.num_concurrent_reqs = FORWARD_CONCURRENCY;
     options.max_active_requests = MAX_ACTIVE_REQUESTS;
-    options.use_hosts_file = ResolveHosts::Never;
+    options.use_hosts_file = if cache.use_hosts_file {
+        ResolveHosts::Always
+    } else {
+        ResolveHosts::Never
+    };
+    // `ip_strategy` only affects `lookup_ip`; the zone handlers issue
+    // record-type lookups. IPv6 answers are therefore shaped explicitly by the
+    // handler, not assumed away by this strategy.
     options.ip_strategy = LookupIpStrategy::Ipv4AndIpv6;
     // Keep CNAME records visible so the handler can check every alias target
     // before releasing an answer.
     options.preserve_intermediates = true;
+    options.positive_min_ttl = cache
+        .positive_min_ttl_secs
+        .map(|t| Duration::from_secs(t.into()));
+    options.positive_max_ttl = cache
+        .positive_max_ttl_secs
+        .map(|t| Duration::from_secs(t.into()));
+    options.negative_min_ttl = cache
+        .negative_min_ttl_secs
+        .map(|t| Duration::from_secs(t.into()));
+    options.negative_max_ttl = cache
+        .negative_max_ttl_secs
+        .map(|t| Duration::from_secs(t.into()));
+    // No DNSSEC validator, no AD authentication and no per-query DO/ECS hook:
+    // those rows stay open rather than bypassing the maintained cache path.
     options
 }
 
 /// Build a complete catalog atomically. Construction always goes through a
-/// validated config; a failure leaves any running snapshot untouched.
-pub(crate) fn build_catalog(config: &Config) -> Result<Catalog> {
+/// validated config; a failure leaves any running snapshot untouched. Returns
+/// the catalog together with the one clear handle shared by both resolver
+/// paths. `hosts` is a test seam using Hickory's maintained `Hosts` table.
+pub(crate) fn build_catalog(
+    config: &Config,
+    hosts: Option<Arc<Hosts>>,
+) -> Result<(Catalog, CacheControl)> {
     let mut catalog = Catalog::new();
+    let mut cache = CacheControl::default();
     for (origin, records) in &config.local_zones {
         let origin = Name::from_str(origin)?;
         let handler = local_zone_handler(&origin, records)?;
         catalog.upsert(origin.into(), vec![Arc::new(handler)]);
     }
+    let options = resolver_options(&config.cache);
     let upstreams = config.upstreams();
     if !upstreams.is_empty() {
-        let handler = forwarder_handler(&upstreams)?;
+        let handler = PlaintextZoneHandler::with_hosts(&upstreams, options.clone(), hosts.clone())?;
+        cache.register(handler.resolver());
         catalog.upsert(Name::root().into(), vec![Arc::new(handler)]);
     }
     if !config.encrypted_upstreams.is_empty() {
         // Config validation forbids mixing plaintext and encrypted upstreams,
         // so this is an isolated verified route, never a silent fallback.
-        let handler = EncryptedZoneHandler::new(&config.encrypted_upstreams, resolver_options())?;
+        let handler =
+            EncryptedZoneHandler::with_hosts(&config.encrypted_upstreams, options, hosts)?;
+        cache.register(handler.resolver());
         catalog.upsert(Name::root().into(), vec![Arc::new(handler)]);
     }
-    Ok(catalog)
+    Ok((catalog, cache))
 }
 
 /// Independent counters/status published with one immutable snapshot.
@@ -178,6 +190,9 @@ pub(crate) struct RuntimeSnapshot {
     pub(crate) policy: Policy,
     pub(crate) deny: DenyConfig,
     pub(crate) catalog: Arc<Catalog>,
+    /// Clear handle for the resolver caches created with this snapshot. A
+    /// replacement snapshot builds new resolvers and therefore starts empty.
+    pub(crate) cache: CacheControl,
     pub(crate) evaluator: Arc<PolicyEvaluator>,
     /// Immutable compiled filter state. Blocking is applied only after the
     /// household evaluator has allowed the question; a list exception can
@@ -204,9 +219,34 @@ pub(crate) fn build_snapshot(
     state: BundleState,
     management: Option<ManagementState>,
 ) -> Result<Arc<RuntimeSnapshot>> {
+    build_snapshot_with_hosts(
+        config,
+        policy,
+        observations,
+        filter,
+        filter_material,
+        state,
+        management,
+        None,
+    )
+}
+
+/// Same as `build_snapshot`, with a maintained `Hosts` table injected for
+/// tests. Production always passes `None`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_snapshot_with_hosts(
+    config: Config,
+    policy: Policy,
+    observations: ObservationLog,
+    filter: Arc<FilterSnapshot>,
+    filter_material: Option<FilterMaterial>,
+    state: BundleState,
+    management: Option<ManagementState>,
+    hosts: Option<Arc<Hosts>>,
+) -> Result<Arc<RuntimeSnapshot>> {
     let revision = policy.revision;
     let published_at = policy.published_at;
-    let catalog = Arc::new(build_catalog(&config)?);
+    let (catalog, cache) = build_catalog(&config, hosts)?;
     let evaluator = Arc::new(PolicyEvaluator::with_policy(
         config.clone(),
         policy.clone(),
@@ -218,7 +258,8 @@ pub(crate) fn build_snapshot(
         deny: config.deny.clone(),
         config,
         policy,
-        catalog,
+        catalog: Arc::new(catalog),
+        cache,
         evaluator,
         filter,
         filter_material,
