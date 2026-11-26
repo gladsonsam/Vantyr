@@ -1,160 +1,95 @@
-//! Immutable catalog snapshot and listener lifecycle for Vantyr DNS.
+//! Listener lifecycle, first-run bootstrap and atomic reload for Vantyr DNS.
 //!
-//! A complete catalog is built from validated configuration before the
-//! listener starts. Requests briefly take a read lock to clone an `Arc` and
-//! then perform all I/O on that immutable snapshot, so a slow upstream cannot
-//! serialise unrelated queries. Updates rebuild a whole snapshot off-path.
+//! Durable mode is opt-in: an explicit state path and worker id turn on a
+//! single atomic config+policy bundle. Without them the worker runs exactly as
+//! before, entirely in memory. A reload validates and builds a complete new
+//! snapshot off the request path, persists it first, then publishes one `Arc`.
 
-use std::collections::BTreeMap;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::str::FromStr;
-use std::sync::Arc;
+use std::fmt;
+use std::io;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use anyhow::{bail, Result};
-use hickory_resolver::config::{LookupIpStrategy, NameServerConfig, ResolveHosts, ResolverOpts};
-use hickory_server::net::runtime::TokioRuntimeProvider;
-use hickory_server::proto::rr::rdata::{A as AData, AAAA as AaaaData, CNAME as CnameData, SOA};
-use hickory_server::proto::rr::{Name, RData, Record, RecordSet, RecordType, RrKey};
+use chrono::{DateTime, Utc};
 use hickory_server::server::Server;
-use hickory_server::store::forwarder::{ForwardConfig, ForwardZoneHandler};
-use hickory_server::store::in_memory::InMemoryZoneHandler;
-use hickory_server::zone_handler::{AxfrPolicy, Catalog, ZoneType};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use vantyr_network_runtime::{LkgError, WriteHooks};
 
-use crate::config::{forwards_to_self, Config, RecordSpec};
+use crate::bundle::{Bundle, BundleStore, BundleValidator};
+use crate::config::{read_bounded, Config};
 use crate::handler::FilteringHandler;
 use crate::observe::{DecisionObservation, ObservationLog};
-use crate::policy::PolicyEvaluator;
+use crate::runtime::{
+    build_snapshot, reject_upstream_self_loop, same_transport, RuntimeSnapshot, SnapshotHandle,
+};
 
-const FORWARD_TIMEOUT_SECS: u64 = 2;
-const FORWARD_ATTEMPTS: usize = 1;
-const FORWARD_CACHE_ENTRIES: u64 = 4096;
-const FORWARD_CONCURRENCY: usize = 2;
-const MAX_ACTIVE_REQUESTS: usize = 256;
 const TCP_TIMEOUT_SECS: u64 = 5;
 const TCP_MAX_BYTES: usize = 32 * 1024;
 
-fn local_zone_handler(
-    origin: &Name,
-    records: &[RecordSpec],
-) -> Result<InMemoryZoneHandler<TokioRuntimeProvider>> {
-    let mut map: BTreeMap<RrKey, RecordSet> = BTreeMap::new();
-    let soa = Record::from_rdata(
-        origin.clone(),
-        3600,
-        RData::SOA(SOA::new(
-            origin.clone(),
-            Name::from_str("hostmaster.invalid.")?,
-            1,
-            3600,
-            600,
-            86_400,
-            60,
-        )),
-    );
-    map.insert(
-        RrKey::new(origin.clone().into(), RecordType::SOA),
-        soa.into(),
-    );
+/// Opt-in durable mode. `now` is supplied by the caller so tests and the CLI
+/// use the same code path; the binary passes `Utc::now()`.
+#[derive(Clone, Debug)]
+pub struct DurableOptions {
+    pub state_path: PathBuf,
+    pub worker_id: String,
+    /// Read for first-run bootstrap and for reloads. When a snapshot already
+    /// exists, the config file is read only to confirm the household identity;
+    /// served policy always comes from the bundle.
+    pub config_path: Option<PathBuf>,
+    pub now: DateTime<Utc>,
+    /// Injectable pre/post-rename seams for the durability tests.
+    pub hooks: Option<WriteHooks>,
+}
 
-    for record in records {
-        let name = Name::from_str(record.name())?;
-        let (record_type, rdata, ttl) = match record {
-            RecordSpec::A { ttl, addr, .. } => (
-                RecordType::A,
-                RData::A(AData::from(addr.parse::<Ipv4Addr>()?)),
-                *ttl,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReloadError {
+    InvalidConfig(String),
+    TransportChange(String),
+    NotNewer { found: u64, highwater: u64 },
+    BuildFailed(String),
+    PersistFailed(String),
+}
+
+impl fmt::Display for ReloadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidConfig(detail) => write!(f, "invalid reload config: {detail}"),
+            Self::TransportChange(detail) => {
+                write!(f, "listener transport cannot change: {detail}")
+            }
+            Self::NotNewer { found, highwater } => write!(
+                f,
+                "revision {found} is not newer than the applied revision {highwater}"
             ),
-            RecordSpec::Aaaa { ttl, addr, .. } => (
-                RecordType::AAAA,
-                RData::AAAA(AaaaData::from(addr.parse::<Ipv6Addr>()?)),
-                *ttl,
-            ),
-            RecordSpec::Cname { ttl, target, .. } => (
-                RecordType::CNAME,
-                RData::CNAME(CnameData(Name::from_str(target)?)),
-                *ttl,
-            ),
-        };
-        let key = RrKey::new(name.clone().into(), record_type);
-        let set = map
-            .entry(key)
-            .or_insert_with(|| RecordSet::with_ttl(name.clone(), record_type, ttl));
-        // Accumulate every address at one owner instead of replacing the
-        // previous record set with `map.insert`.
-        set.insert(Record::from_rdata(name, ttl, rdata), 0);
-        if set.ttl() > ttl {
-            set.set_ttl(ttl);
+            Self::BuildFailed(detail) => write!(f, "candidate build failed: {detail}"),
+            Self::PersistFailed(detail) => write!(f, "candidate persistence failed: {detail}"),
         }
     }
-
-    InMemoryZoneHandler::<TokioRuntimeProvider>::new(
-        origin.clone(),
-        map,
-        ZoneType::Primary,
-        AxfrPolicy::Deny,
-    )
-    .map_err(anyhow::Error::msg)
 }
 
-fn forwarder_handler(upstreams: &[SocketAddr]) -> Result<ForwardZoneHandler<TokioRuntimeProvider>> {
-    let mut servers = Vec::with_capacity(upstreams.len());
-    for upstream in upstreams {
-        let mut server = NameServerConfig::udp_and_tcp(upstream.ip());
-        for connection in &mut server.connections {
-            connection.port = upstream.port();
-        }
-        servers.push(server);
-    }
-    let mut options = ResolverOpts::default();
-    options.timeout = Duration::from_secs(FORWARD_TIMEOUT_SECS);
-    options.attempts = FORWARD_ATTEMPTS;
-    options.cache_size = FORWARD_CACHE_ENTRIES;
-    options.num_concurrent_reqs = FORWARD_CONCURRENCY;
-    options.max_active_requests = MAX_ACTIVE_REQUESTS;
-    options.use_hosts_file = ResolveHosts::Never;
-    options.ip_strategy = LookupIpStrategy::Ipv4AndIpv6;
-    // Keep CNAME records visible so the handler can check every alias target
-    // before releasing an answer.
-    options.preserve_intermediates = true;
-    let config = ForwardConfig {
-        name_servers: servers,
-        options: Some(options),
-    };
-    ForwardZoneHandler::builder_tokio(config)
-        .with_origin(Name::root())
-        .build()
-        .map_err(anyhow::Error::msg)
+impl std::error::Error for ReloadError {}
+
+/// What actually became current after a successful reload.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReloadOutcome {
+    pub revision: u64,
+    pub published_at: DateTime<Utc>,
 }
 
-/// Build a complete catalog atomically. Internal only: construction always
-/// goes through `DnsServer::start`, which validates the configuration first.
-/// A failure leaves any running snapshot untouched.
-pub(crate) fn build_catalog(config: &Config) -> Result<Catalog> {
-    let mut catalog = Catalog::new();
-    for (origin, records) in &config.local_zones {
-        let origin = Name::from_str(origin)?;
-        let handler = local_zone_handler(&origin, records)?;
-        catalog.upsert(origin.into(), vec![Arc::new(handler)]);
-    }
-    let upstreams = config.upstreams();
-    if !upstreams.is_empty() {
-        let handler = forwarder_handler(&upstreams)?;
-        catalog.upsert(Name::root().into(), vec![Arc::new(handler)]);
-    }
-    Ok(catalog)
-}
-
-/// A running Vantyr DNS listener. The public API is deliberately small:
-/// bind address, bounded observations, and an orderly shutdown.
+/// A running Vantyr DNS listener. The public API stays small: bind address,
+/// bounded observations, reload, status and orderly shutdown.
 pub struct DnsServer {
     shutdown: CancellationToken,
     bind_addr: SocketAddr,
     task: Option<JoinHandle<()>>,
     observations: ObservationLog,
+    current: SnapshotHandle,
+    store: Option<BundleStore>,
 }
 
 impl DnsServer {
@@ -163,20 +98,104 @@ impl DnsServer {
     pub async fn start(config: Config) -> Result<Self> {
         config.validate()?;
         let observations = ObservationLog::default();
-        let evaluator = Arc::new(PolicyEvaluator::new(config.clone(), observations.clone()));
-        let catalog = Arc::new(build_catalog(&config)?);
-        let handler = FilteringHandler::new(catalog, evaluator, config.deny.clone());
+        let snapshot = build_snapshot(
+            config.clone(),
+            config.policy(Utc::now()),
+            observations.clone(),
+        )?;
+        Self::serve(config, snapshot, observations, None).await
+    }
 
-        let mut server = Server::new(handler);
-        let udp = UdpSocket::bind(config.bind.configured_addr()).await?;
-        let bound = udp.local_addr()?;
-        // Re-check against the actual port (port 0 is assigned by the OS).
-        for upstream in config.upstreams() {
-            if forwards_to_self(&upstream, &bound) {
-                bail!("upstream {upstream} points back at the bound listener {bound}");
+    /// Start in opt-in durable mode. On a lost-ack restart the local bundle is
+    /// authoritative: an existing state file is loaded and validated before a
+    /// listener exists, and the config file is never used as a newer policy.
+    /// A config is read only for first-run bootstrap.
+    pub async fn start_durable(options: DurableOptions) -> Result<Self> {
+        let validator = BundleValidator;
+        let store = match BundleStore::open_from_snapshot(
+            &options.state_path,
+            &options.worker_id,
+            validator,
+        ) {
+            Ok(store) => {
+                let household = store.household_id();
+                if let Some(path) = &options.config_path {
+                    let config = Config::parse(&read_bounded(path)?)?;
+                    if config.household_id != household.to_string() {
+                        bail!("state file belongs to another household; refusing to serve it");
+                    }
+                }
+                store
             }
-        }
-        let tcp = TcpListener::bind(bound).await?;
+            Err(LkgError::Missing) => {
+                let path = options
+                    .config_path
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("no state file and no bootstrap config"))?;
+                let config = Config::parse(&read_bounded(path)?)?;
+                let household = config.household_id.clone();
+                let store = BundleStore::open(
+                    &options.state_path,
+                    uuid_from_household(&household)?,
+                    &options.worker_id,
+                    validator,
+                )?;
+                let published_at = config.policy_published_at.unwrap_or(options.now);
+                let bundle = Bundle::build(&config, published_at)?;
+                // Persist before the listener exists. A failure here leaves no
+                // listener and no partly written state.
+                store.apply(bundle, options.now)?;
+                store
+            }
+            Err(error) => return Err(error.into()),
+        };
+
+        let store = match options.hooks {
+            Some(hooks) => store.with_hooks(hooks),
+            None => store,
+        };
+        let bundle = store
+            .current()
+            .expect("a durable store always has a loaded or bootstrapped bundle");
+        let observations = ObservationLog::default();
+        let snapshot = build_snapshot(
+            bundle.config.clone(),
+            bundle.policy.clone(),
+            observations.clone(),
+        )?;
+        Self::serve(bundle.config, snapshot, observations, Some(store)).await
+    }
+
+    async fn serve(
+        config: Config,
+        snapshot: Arc<RuntimeSnapshot>,
+        observations: ObservationLog,
+        store: Option<BundleStore>,
+    ) -> Result<Self> {
+        let current: SnapshotHandle = Arc::new(RwLock::new(snapshot));
+        let handler = FilteringHandler::new(current.clone());
+        let mut server = Server::new(handler);
+        // With an ephemeral port the OS may hand back a UDP port whose TCP
+        // side is already held by another worker. Retry a bounded number of
+        // times instead of failing a valid config on that accidental collision.
+        let mut attempts = 0;
+        let (udp, tcp, bound) = loop {
+            let udp = UdpSocket::bind(config.bind.configured_addr()).await?;
+            let bound = udp.local_addr()?;
+            // Re-check against the actual port (port 0 is assigned by the OS).
+            reject_upstream_self_loop(&config, bound)?;
+            match TcpListener::bind(bound).await {
+                Ok(tcp) => break (udp, tcp, bound),
+                Err(error) if config.bind.port == 0 && error.kind() == io::ErrorKind::AddrInUse => {
+                    attempts += 1;
+                    if attempts >= 32 {
+                        return Err(error.into());
+                    }
+                    drop(udp);
+                }
+                Err(error) => return Err(error.into()),
+            }
+        };
         server.register_socket(udp);
         server.register_listener(tcp, Duration::from_secs(TCP_TIMEOUT_SECS), TCP_MAX_BYTES);
 
@@ -191,11 +210,106 @@ impl DnsServer {
             bind_addr: bound,
             task: Some(task),
             observations,
+            current,
+            store,
+        })
+    }
+
+    /// Validate a full candidate, build its catalog and policy off the request
+    /// path, persist it before publishing, then swap one immutable snapshot.
+    /// Any failure at any stage leaves both disk and runtime on the old version.
+    pub fn reload(
+        &self,
+        candidate: &[u8],
+        now: DateTime<Utc>,
+    ) -> Result<ReloadOutcome, ReloadError> {
+        use ReloadError::*;
+        let config = Config::parse(candidate).map_err(|e| InvalidConfig(e.to_string()))?;
+        let active = {
+            self.current
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone()
+        };
+        if !same_transport(&config, &active.config) {
+            return Err(TransportChange(
+                "bind address, port or loopback opt-in differs from the listener".into(),
+            ));
+        }
+        if config.household_id != active.config.household_id {
+            return Err(InvalidConfig(
+                "candidate belongs to another household".into(),
+            ));
+        }
+        let revision = config.policy_revision;
+        let highwater = self
+            .store
+            .as_ref()
+            .map_or(active.revision, |store| store.highwater())
+            .max(active.revision);
+        if revision <= highwater {
+            return Err(NotNewer {
+                found: revision,
+                highwater,
+            });
+        }
+
+        let published_at = config.policy_published_at.unwrap_or(now);
+        let bundle =
+            Bundle::build(&config, published_at).map_err(|e| InvalidConfig(e.to_string()))?;
+        let snapshot = build_snapshot(
+            bundle.config.clone(),
+            bundle.policy.clone(),
+            self.observations.clone(),
+        )
+        .map_err(|e| BuildFailed(e.to_string()))?;
+
+        if let Some(store) = &self.store {
+            store
+                .apply(bundle, now)
+                .map_err(|e| PersistFailed(e.to_string()))?;
+        }
+
+        let mut current = self
+            .current
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // A concurrent reload may have won the race between build and swap.
+        if revision <= current.revision {
+            return Err(NotNewer {
+                found: revision,
+                highwater: current.revision,
+            });
+        }
+        *current = snapshot;
+        Ok(ReloadOutcome {
+            revision,
+            published_at,
         })
     }
 
     pub fn bind_addr(&self) -> SocketAddr {
         self.bind_addr
+    }
+
+    /// Revision of the snapshot currently answering queries.
+    pub fn revision(&self) -> u64 {
+        self.current
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .revision
+    }
+
+    /// Original publication time of the currently active policy.
+    pub fn published_at(&self) -> DateTime<Utc> {
+        self.current
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .published_at
+    }
+
+    pub fn is_durable(&self) -> bool {
+        self.store.is_some()
     }
 
     /// Bounded decision observations. Never includes raw request bytes.
@@ -213,6 +327,12 @@ impl DnsServer {
             let _ = task.await;
         }
     }
+}
+
+fn uuid_from_household(raw: &str) -> Result<family_policy::HouseholdId> {
+    use std::str::FromStr;
+    family_policy::HouseholdId::from_str(raw)
+        .map_err(|_| anyhow::anyhow!("household_id is not a UUID"))
 }
 
 impl Drop for DnsServer {

@@ -1531,6 +1531,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "vantyr-network-runtime",
 ]
 
 [[package]]

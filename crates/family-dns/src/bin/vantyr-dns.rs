@@ -3,58 +3,124 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use anyhow::{anyhow, bail, Result};
-use family_dns::{Config, DnsServer};
+use anyhow::{anyhow, bail, Context, Result};
+use chrono::Utc;
+use family_dns::{
+    read_bounded, BundleStore, BundleValidator, Config, DnsServer, DurableOptions, ReloadOutcome,
+};
 
 const USAGE: &str = "\
 Vantyr DNS — policy-connected filtering resolver
 
 Usage:
-  vantyr-dns --config <FILE>      load FILE, validate it, then serve until Ctrl-C
-  vantyr-dns --check-config FILE  validate FILE without binding a listener
-  vantyr-dns --help               show this help
-  vantyr-dns --version            show the version
+  vantyr-dns --config <FILE>                 validate FILE, then serve in memory
+  vantyr-dns --config <FILE> --state <FILE> --worker <ID>
+                                             opt in to one durable config+policy bundle
+  vantyr-dns --state <FILE> --worker <ID> [--config <FILE>]
+                                             restart from the local bundle (config only
+                                             for first-run bootstrap and SIGHUP reload)
+  vantyr-dns --check-config <FILE>           validate FILE without binding a listener
+  vantyr-dns --state-status --state <FILE> --worker <ID>
+                                             print local bundle metadata, no listener
+  vantyr-dns --help                          show this help
+  vantyr-dns --version                       show the version
 
-The default listener is a high loopback port shared by UDP and TCP. No host
-resolver, DHCP, firewall or router setting is changed.";
+The default listener is a high loopback port shared by UDP and TCP. On Unix,
+SIGHUP re-reads --config (bounded to 64 KiB) and performs one atomic reload;
+changes to the bind address or port require a full restart. No host resolver,
+DHCP, firewall or router setting is changed.";
 
-async fn run() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        println!("{USAGE}");
-        return Ok(());
-    }
-    if args.iter().any(|arg| arg == "--version") {
-        println!("Vantyr DNS {}", env!("CARGO_PKG_VERSION"));
-        return Ok(());
-    }
+#[derive(Default)]
+struct Args {
+    config: Option<PathBuf>,
+    state: Option<PathBuf>,
+    worker: Option<String>,
+    check_only: bool,
+    state_status: bool,
+}
 
-    let mut check_only = false;
-    let mut path: Option<PathBuf> = None;
-    let mut iter = args.into_iter();
+fn parse_args() -> Result<Args> {
+    let mut args = Args::default();
+    let mut iter = std::env::args().skip(1);
     while let Some(arg) = iter.next() {
         match arg.as_str() {
-            "--check-config" => check_only = true,
-            "--config" => {
+            "--help" | "-h" => {
+                println!("{USAGE}");
+                return Ok(Args::default());
+            }
+            "--version" => {
+                println!("Vantyr DNS {}", env!("CARGO_PKG_VERSION"));
+                return Ok(Args::default());
+            }
+            "--check-config" => args.check_only = true,
+            "--state-status" => args.state_status = true,
+            "--config" | "--state" | "--worker" => {
                 let value = iter
                     .next()
-                    .ok_or_else(|| anyhow!("--config needs a file path\n{USAGE}"))?;
-                path = Some(PathBuf::from(value));
+                    .ok_or_else(|| anyhow!("{arg} needs a value\n{USAGE}"))?;
+                match arg.as_str() {
+                    "--config" => args.config = Some(PathBuf::from(value)),
+                    "--state" => args.state = Some(PathBuf::from(value)),
+                    _ => args.worker = Some(value),
+                }
             }
             other if other.starts_with('-') => bail!("unknown option '{other}'\n{USAGE}"),
             other => {
-                if path.is_some() {
+                if args.config.is_some() {
                     bail!("configuration file supplied more than once\n{USAGE}");
                 }
-                path = Some(PathBuf::from(other));
+                args.config = Some(PathBuf::from(other));
             }
         }
     }
-    let path = path.ok_or_else(|| anyhow!("a configuration file is required\n{USAGE}"))?;
+    Ok(args)
+}
 
-    // Validation completes here, before DnsServer::start binds a socket.
-    let config = Config::load(&path)?;
-    if check_only {
+fn reload_from_file(server: &DnsServer, path: &std::path::Path) -> Result<ReloadOutcome> {
+    let bytes = read_bounded(path)?;
+    Ok(server.reload(&bytes, Utc::now())?)
+}
+
+fn show_help_requested() -> bool {
+    std::env::args()
+        .skip(1)
+        .any(|a| a == "--help" || a == "-h" || a == "--version")
+}
+
+async fn run() -> Result<()> {
+    if show_help_requested() {
+        let _ = parse_args()?;
+        return Ok(());
+    }
+    let args = parse_args()?;
+
+    if args.state_status {
+        let path = args
+            .state
+            .ok_or_else(|| anyhow!("--state-status needs --state\n{USAGE}"))?;
+        let worker = args
+            .worker
+            .ok_or_else(|| anyhow!("--state-status needs --worker\n{USAGE}"))?;
+        let store = BundleStore::open_from_snapshot(&path, worker, BundleValidator)
+            .map_err(|e| anyhow!("{e}"))?;
+        let snapshot = store.snapshot().expect("loaded state has a snapshot");
+        println!(
+            "Vantyr DNS: schema {}, household {}, worker {}, revision {}, published_at {}, saved_at {}",
+            snapshot.schema,
+            snapshot.household_id,
+            snapshot.worker_id,
+            snapshot.highwater,
+            snapshot.policy.published_at().to_rfc3339(),
+            snapshot.saved_at.to_rfc3339()
+        );
+        return Ok(());
+    }
+
+    if args.check_only {
+        let path = args
+            .config
+            .ok_or_else(|| anyhow!("--check-config needs a file\n{USAGE}"))?;
+        let config = Config::load(&path)?;
         println!(
             "Vantyr DNS: configuration valid (policy revision {}, {} upstream(s), {} device(s))",
             config.policy_revision,
@@ -64,9 +130,61 @@ async fn run() -> Result<()> {
         return Ok(());
     }
 
-    let server = DnsServer::start(config).await?;
-    eprintln!("Vantyr DNS: listening on udp+tcp {}", server.bind_addr());
+    let server = match (&args.state, &args.worker) {
+        (Some(state), Some(worker)) => {
+            DnsServer::start_durable(DurableOptions {
+                state_path: state.clone(),
+                worker_id: worker.clone(),
+                config_path: args.config.clone(),
+                now: Utc::now(),
+                hooks: None,
+            })
+            .await?
+        }
+        (None, None) => {
+            let path = args
+                .config
+                .as_ref()
+                .ok_or_else(|| anyhow!("a configuration file is required\n{USAGE}"))?;
+            DnsServer::start(Config::load(path)?).await?
+        }
+        _ => bail!("--state and --worker must be supplied together\n{USAGE}"),
+    };
+    eprintln!(
+        "Vantyr DNS: listening on udp+tcp {} (durable: {})",
+        server.bind_addr(),
+        server.is_durable()
+    );
+
+    #[cfg(unix)]
+    {
+        let mut hup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+            .context("cannot install SIGHUP handler")?;
+        loop {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => break,
+                _ = hup.recv() => {
+                    match &args.config {
+                        Some(path) => {
+                            let outcome = reload_from_file(&server, path);
+                            match outcome {
+                                Ok(outcome) => eprintln!(
+                                    "Vantyr DNS: reload applied revision {} (published_at {})",
+                                    outcome.revision,
+                                    outcome.published_at.to_rfc3339()
+                                ),
+                                Err(error) => eprintln!("Vantyr DNS: reload rejected: {error:#}"),
+                            }
+                        }
+                        None => eprintln!("Vantyr DNS: SIGHUP ignored; no --config path to reload"),
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(not(unix))]
     tokio::signal::ctrl_c().await?;
+
     eprintln!("Vantyr DNS: shutting down");
     server.stop().await;
     eprintln!("Vantyr DNS: stopped");

@@ -38,7 +38,12 @@ pub struct PolicyEvaluator {
 
 impl PolicyEvaluator {
     pub fn new(config: Config, observe: ObservationLog) -> Self {
-        let policy = config.policy(Utc::now());
+        Self::with_policy(config.clone(), config.policy(Utc::now()), observe)
+    }
+
+    /// Build an evaluator from an already validated policy. Durable snapshots
+    /// pass the stored policy so its original `published_at` survives restarts.
+    pub fn with_policy(config: Config, policy: Policy, observe: ObservationLog) -> Self {
         Self {
             config,
             policy,

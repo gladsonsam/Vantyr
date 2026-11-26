@@ -18,7 +18,7 @@ use chrono::{DateTime, Utc};
 use family_policy::{
     Capability, Device, DeviceId, DeviceKind, Effect, HouseholdId, Policy, Rule, RuleMatcher,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Hard cap on the configuration file itself (bytes).
 pub const MAX_CONFIG_BYTES: usize = 64 * 1024;
@@ -116,7 +116,7 @@ fn default_device_profile() -> String {
 
 /// Explicit listener settings. The default is a high loopback port shared by
 /// UDP and TCP; privileged ports are always rejected.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BindConfig {
     #[serde(default = "default_loopback")]
@@ -146,7 +146,7 @@ impl BindConfig {
 
 /// How a denied query is answered. NXDOMAIN is the default: it is a stable,
 /// cacheable denial that does not depend on a synthetic address.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DenyConfig {
     #[default]
@@ -178,7 +178,7 @@ impl DenyConfig {
 
 /// One authoritative local record. Multiple A/AAAA records for one owner are
 /// accumulated into one record set by the catalog builder.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RecordSpec {
     A {
@@ -213,7 +213,7 @@ impl RecordSpec {
 
 /// A domain rule. Exact and suffix matchers are the only syntax in this slice:
 /// there is no external list parser and no category feed.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuleSpec {
     pub effect: Effect,
@@ -223,7 +223,7 @@ pub struct RuleSpec {
     pub reason: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MatchSpec {
     Exact { value: String },
@@ -240,7 +240,7 @@ impl MatchSpec {
 
 /// A device is selected by an explicitly configured source IP. IPs are weak
 /// association only: they never identify a person or a current session.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeviceConfig {
     pub id: String,
@@ -258,11 +258,16 @@ pub struct DeviceConfig {
 /// Complete, validated worker configuration. Deserialized values are kept
 /// private to the module's methods after validation so callers cannot bypass
 /// validation by mutating a field.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub household_id: String,
     pub policy_revision: u64,
+    /// Explicit publication time for a bootstrap/reload policy. When absent,
+    /// the worker's clock at bootstrap/reload is used and the resulting value is
+    /// persisted in the durable bundle. It is never refreshed on restart.
+    #[serde(default)]
+    pub policy_published_at: Option<DateTime<Utc>>,
     #[serde(default = "default_timezone")]
     pub timezone: String,
     #[serde(default = "default_stale_secs")]
@@ -287,17 +292,7 @@ impl Config {
     /// Read, size-bound, parse and validate a configuration file. Validation
     /// completes before the caller is allowed to bind any socket.
     pub fn load(path: &Path) -> Result<Self> {
-        let file = File::open(path)?;
-        // Bound the allocation itself: read at most one byte over the limit,
-        // then reject without ever holding the whole oversized file.
-        let mut bytes = Vec::new();
-        let read = file
-            .take(MAX_CONFIG_BYTES as u64 + 1)
-            .read_to_end(&mut bytes)?;
-        if read > MAX_CONFIG_BYTES {
-            bail!("configuration exceeds {MAX_CONFIG_BYTES} bytes");
-        }
-        Self::parse(&bytes)
+        Self::parse(&read_bounded(path)?)
     }
 
     /// Parse and validate an in-memory JSON document (used by the binary and
@@ -509,6 +504,13 @@ impl Config {
     /// DNS never sees a verified identity, so no untrusted field can select a
     /// person-specific profile.
     pub fn policy(&self, now: DateTime<Utc>) -> Policy {
+        self.policy_at(now)
+    }
+
+    /// Build the policy with an explicit publication time. Durable bundles call
+    /// this with the persisted original timestamp so a restart cannot make an
+    /// old policy look freshly published.
+    pub fn policy_at(&self, published_at: DateTime<Utc>) -> Policy {
         let mut device_profiles = BTreeMap::new();
         for (profile, rules) in &self.profiles {
             let built = rules
@@ -551,7 +553,7 @@ impl Config {
             timezone: self.timezone.clone(),
             stale_after_secs: self.stale_after_secs,
             event_retention_secs: EVENT_RETENTION_SECS,
-            published_at: now,
+            published_at,
         }
     }
 
@@ -606,6 +608,23 @@ impl Config {
             })
             .collect()
     }
+}
+
+/// Read a configuration file with the same fixed 64 KiB bound used by
+/// [`Config::parse`]. Callers that reload a file use this directly so an
+/// oversized file is rejected before it is ever parsed or applied.
+pub fn read_bounded(path: &Path) -> Result<Vec<u8>> {
+    let file = File::open(path)?;
+    // Bound the allocation itself: read at most one byte over the limit,
+    // then reject without ever holding the whole oversized file.
+    let mut bytes = Vec::new();
+    let read = file
+        .take(MAX_CONFIG_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if read > MAX_CONFIG_BYTES {
+        bail!("configuration exceeds {MAX_CONFIG_BYTES} bytes");
+    }
+    Ok(bytes)
 }
 
 /// Conservative public-address check that does not depend on unstable

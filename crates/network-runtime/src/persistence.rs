@@ -35,6 +35,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use chrono::{DateTime, Utc};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use vantyr_network_policy::store::MAX_NETWORK_EVENT_RETENTION_SECS;
 use vantyr_network_policy::{HouseholdId, Policy, PolicyRevision};
@@ -46,9 +47,25 @@ pub const SNAPSHOT_SCHEMA: u32 = 1;
 /// written. Config snapshots are small, so 1 MiB is generous.
 pub const MAX_SNAPSHOT_BYTES: u64 = 1 << 20;
 
-/// The caller's "can this worker enforce this config?" seam. Persistence calls
+/// One typed payload that can be kept as last-known-good. The payload may be a
+/// bare `Policy` (the original worker contract) or a complete config+policy
+/// bundle; the store itself is format-agnostic and never interprets fields.
+pub trait Persistable: Clone + Serialize + DeserializeOwned {
+    fn revision(&self) -> PolicyRevision;
+    fn household_id(&self) -> HouseholdId;
+    /// Payload-specific shape checks shared by disk loads and new candidates.
+    fn check(&self) -> Result<(), LkgError>;
+}
+
+/// The caller's "can this worker enforce this payload?" seam. Persistence calls
 /// it both when loading from disk and when accepting a new candidate, so an
-/// unsupported config is never promoted to last-known-good by the file layer.
+/// unsupported payload is never promoted to last-known-good by the file layer.
+pub trait Validator<T> {
+    fn validate(&self, payload: &T) -> Result<(), String>;
+}
+
+/// Original policy-only validator seam, retained so existing callers keep
+/// working unchanged. It bridges into the generic [`Validator`].
 pub trait PolicyValidator {
     fn validate(&self, policy: &Policy) -> Result<(), String>;
 }
@@ -62,25 +79,62 @@ where
     }
 }
 
+impl<V: PolicyValidator> Validator<Policy> for V {
+    fn validate(&self, policy: &Policy) -> Result<(), String> {
+        PolicyValidator::validate(self, policy)
+    }
+}
+
+/// Shape checks that every `Policy` payload must pass, regardless of whether
+/// it is stored alone or inside a larger bundle.
+pub fn check_policy_shape(policy: &Policy) -> Result<(), LkgError> {
+    if policy.revision == 0 {
+        return Err(LkgError::InvalidRevision);
+    }
+    if policy.event_retention_secs == 0
+        || policy.event_retention_secs > MAX_NETWORK_EVENT_RETENTION_SECS
+    {
+        return Err(LkgError::InvalidRetention);
+    }
+    Ok(())
+}
+
+impl Persistable for Policy {
+    fn revision(&self) -> PolicyRevision {
+        self.revision
+    }
+    fn household_id(&self) -> HouseholdId {
+        self.household_id
+    }
+    fn check(&self) -> Result<(), LkgError> {
+        check_policy_shape(self)
+    }
+}
+
 /// Exactly the state written by one apply. `highwater` is the highest
 /// revision this worker has applied; a candidate must be strictly newer.
-/// Every snapshot we write has `highwater == policy.revision`; a mismatch on
-/// load is treated as corruption.
+/// Every snapshot we write has `highwater == payload.revision()`; a mismatch on
+/// load is treated as corruption. The field name `policy` is retained for the
+/// policy-only alias; for a generic store it holds that store's typed payload.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct LkgSnapshot {
+pub struct TypedSnapshot<T = Policy> {
     pub schema: u32,
     pub household_id: HouseholdId,
     pub worker_id: String,
     pub highwater: PolicyRevision,
-    pub policy: Policy,
+    pub policy: T,
     pub saved_at: DateTime<Utc>,
 }
+
+/// Backwards-compatible name for the policy-only snapshot.
+pub type LkgSnapshot = TypedSnapshot<Policy>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LkgError {
     WrongHousehold,
     WrongWorker,
     StaleRevision,
+    Missing,
     InvalidRevision,
     InvalidRetention,
     SchemaMismatch { found: u32, expected: u32 },
@@ -100,6 +154,7 @@ impl fmt::Display for LkgError {
             Self::WrongHousehold => write!(f, "snapshot belongs to another household"),
             Self::WrongWorker => write!(f, "snapshot belongs to another worker"),
             Self::StaleRevision => write!(f, "revision is not newer than the last applied one"),
+            Self::Missing => write!(f, "no snapshot exists"),
             Self::InvalidRevision => write!(f, "policy revision must be positive"),
             Self::InvalidRetention => write!(f, "event retention is outside the allowed range"),
             Self::SchemaMismatch { found, expected } => {
@@ -121,15 +176,17 @@ impl fmt::Display for LkgError {
 
 impl std::error::Error for LkgError {}
 
-type IoHook = fn(&Path) -> io::Result<()>;
+/// Type of the injectable file-system seam. Production hooks are a no-op before
+/// the rename and a best-effort directory sync after it; tests inject failures
+/// to pin down the pre/post-rename distinction.
+pub type IoHook = fn(&Path) -> io::Result<()>;
 
-/// Internal seams for the two file-system steps around the rename. Production
-/// uses a no-op before the rename and a best-effort directory fsync after it;
-/// tests inject failures to pin down the pre/post-rename distinction.
-#[derive(Clone, Copy)]
-struct WriteHooks {
-    before_rename: IoHook,
-    after_rename: IoHook,
+/// Seams for the two file-system steps around the rename. Exposed so a worker
+/// can inject a failure in tests without weakening the production contract.
+#[derive(Clone, Copy, Debug)]
+pub struct WriteHooks {
+    pub before_rename: IoHook,
+    pub after_rename: IoHook,
 }
 
 impl Default for WriteHooks {
@@ -149,17 +206,20 @@ fn sync_parent_dir(path: &Path) -> io::Result<()> {
     File::open(path).and_then(|dir| dir.sync_all())
 }
 
-/// A worker-local last-known-good store bound to one household and one worker.
-pub struct LkgStore<V> {
+/// A worker-local last-known-good store for one typed payload, bound to one
+/// immutable household and one immutable worker identity. The same atomic file
+/// protocol is shared by all payload types: there is never a second file that
+/// could disagree with the first.
+pub struct TypedLkgStore<T: Persistable, V> {
     path: PathBuf,
     household_id: HouseholdId,
     worker_id: String,
     validator: V,
-    state: Mutex<Option<LkgSnapshot>>,
+    state: Mutex<Option<TypedSnapshot<T>>>,
     hooks: WriteHooks,
 }
 
-impl<V: PolicyValidator> LkgStore<V> {
+impl<T: Persistable, V: Validator<T>> TypedLkgStore<T, V> {
     /// Load and validate any existing snapshot. A missing file is a valid
     /// empty start state; a present-but-invalid file is an error, never an
     /// ignored file.
@@ -174,7 +234,7 @@ impl<V: PolicyValidator> LkgStore<V> {
         let loaded = match read_snapshot(&path)? {
             Some(bytes) => Some(validate_snapshot(
                 &bytes,
-                &household_id,
+                Some(&household_id),
                 &worker_id,
                 &validator,
             )?),
@@ -190,28 +250,59 @@ impl<V: PolicyValidator> LkgStore<V> {
         })
     }
 
-    /// Apply a strictly newer policy to the local snapshot file. A returned
+    /// Open a store whose household identity comes from the snapshot itself.
+    /// Used on worker restart: the local durable file is authoritative for the
+    /// instance identity, and its worker id is still checked against the flag.
+    /// A missing file is reported as [`LkgError::Missing`], never as an empty
+    /// store that a caller could accidentally bootstrap over an existing file.
+    pub fn open_from_snapshot(
+        path: impl Into<PathBuf>,
+        worker_id: impl Into<String>,
+        validator: V,
+    ) -> Result<Self, LkgError> {
+        let path = path.into();
+        let worker_id = worker_id.into();
+        let bytes = read_snapshot(&path)?.ok_or(LkgError::Missing)?;
+        let loaded = validate_snapshot(&bytes, None, &worker_id, &validator)?;
+        let household_id = loaded.household_id;
+        Ok(Self {
+            path,
+            household_id,
+            worker_id,
+            validator,
+            state: Mutex::new(Some(loaded)),
+            hooks: WriteHooks::default(),
+        })
+    }
+
+    /// Replace the injectable write seams (test-only hook contract).
+    pub fn with_hooks(mut self, hooks: WriteHooks) -> Self {
+        self.hooks = hooks;
+        self
+    }
+
+    /// Apply a strictly newer payload to the local snapshot file. A returned
     /// `Ok` is durable across process restart; a returned `Err` happened before
     /// the rename and left the previous snapshot on disk and in memory. A
     /// best-effort parent-directory sync failure after the rename is not
     /// returned — see the module's durability contract.
-    pub fn apply(&self, candidate: Policy, now: DateTime<Utc>) -> Result<(), LkgError> {
+    pub fn apply(&self, candidate: T, now: DateTime<Utc>) -> Result<(), LkgError> {
         let mut state = self.state.lock().unwrap();
-        if candidate.household_id != self.household_id {
+        if candidate.household_id() != self.household_id {
             return Err(LkgError::WrongHousehold);
         }
         if let Some(current) = state.as_ref() {
-            if candidate.revision <= current.highwater {
+            if candidate.revision() <= current.highwater {
                 return Err(LkgError::StaleRevision);
             }
         }
-        check_policy(&candidate, &self.validator)?;
+        check_payload(&candidate, &self.validator)?;
 
-        let snapshot = LkgSnapshot {
+        let snapshot = TypedSnapshot {
             schema: SNAPSHOT_SCHEMA,
             household_id: self.household_id,
             worker_id: self.worker_id.clone(),
-            highwater: candidate.revision,
+            highwater: candidate.revision(),
             policy: candidate,
             saved_at: now,
         };
@@ -229,8 +320,8 @@ impl<V: PolicyValidator> LkgStore<V> {
         Ok(())
     }
 
-    /// In-memory last-known-good policy, if any snapshot has been applied.
-    pub fn current(&self) -> Option<Policy> {
+    /// In-memory last-known-good payload, if any snapshot has been applied.
+    pub fn current(&self) -> Option<T> {
         self.state
             .lock()
             .unwrap()
@@ -248,30 +339,42 @@ impl<V: PolicyValidator> LkgStore<V> {
     }
 
     /// Full worker-local snapshot for status/display, including schema and worker.
-    pub fn snapshot(&self) -> Option<LkgSnapshot> {
+    pub fn snapshot(&self) -> Option<TypedSnapshot<T>> {
         self.state.lock().unwrap().clone()
     }
+
+    pub fn household_id(&self) -> HouseholdId {
+        self.household_id
+    }
+
+    pub fn worker_id(&self) -> &str {
+        &self.worker_id
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 }
 
-fn check_policy<V: PolicyValidator>(policy: &Policy, validator: &V) -> Result<(), LkgError> {
-    if policy.revision == 0 {
-        return Err(LkgError::InvalidRevision);
-    }
-    if policy.event_retention_secs == 0
-        || policy.event_retention_secs > MAX_NETWORK_EVENT_RETENTION_SECS
-    {
-        return Err(LkgError::InvalidRetention);
-    }
-    validator.validate(policy).map_err(LkgError::Unsupported)
+/// Backwards-compatible policy-only store. New callers can use
+/// [`TypedLkgStore`] directly with a bundle payload.
+pub type LkgStore<V> = TypedLkgStore<Policy, V>;
+
+fn check_payload<T: Persistable, V: Validator<T>>(
+    payload: &T,
+    validator: &V,
+) -> Result<(), LkgError> {
+    payload.check()?;
+    validator.validate(payload).map_err(LkgError::Unsupported)
 }
 
-fn validate_snapshot<V: PolicyValidator>(
+fn validate_snapshot<T: Persistable, V: Validator<T>>(
     bytes: &[u8],
-    household_id: &HouseholdId,
+    household_id: Option<&HouseholdId>,
     worker_id: &str,
     validator: &V,
-) -> Result<LkgSnapshot, LkgError> {
-    let snapshot: LkgSnapshot =
+) -> Result<TypedSnapshot<T>, LkgError> {
+    let snapshot: TypedSnapshot<T> =
         serde_json::from_slice(bytes).map_err(|e| LkgError::Malformed(e.to_string()))?;
     if snapshot.schema != SNAPSHOT_SCHEMA {
         return Err(LkgError::SchemaMismatch {
@@ -279,16 +382,25 @@ fn validate_snapshot<V: PolicyValidator>(
             expected: SNAPSHOT_SCHEMA,
         });
     }
-    if snapshot.household_id != *household_id || snapshot.policy.household_id != *household_id {
-        return Err(LkgError::WrongHousehold);
+    match household_id {
+        Some(expected)
+            if snapshot.household_id != *expected
+                || snapshot.policy.household_id() != *expected =>
+        {
+            return Err(LkgError::WrongHousehold);
+        }
+        None if snapshot.household_id != snapshot.policy.household_id() => {
+            return Err(LkgError::WrongHousehold);
+        }
+        _ => {}
     }
     if snapshot.worker_id != worker_id {
         return Err(LkgError::WrongWorker);
     }
-    if snapshot.highwater != snapshot.policy.revision {
+    if snapshot.highwater != snapshot.policy.revision() {
         return Err(LkgError::RevisionMismatch);
     }
-    check_policy(&snapshot.policy, validator)?;
+    check_payload(&snapshot.policy, validator)?;
     Ok(snapshot)
 }
 
@@ -828,5 +940,84 @@ mod tests {
 
         let reopened = LkgStore::open(path, h, WORKER, accepting()).unwrap();
         assert_eq!(reopened.current().unwrap().revision, 2);
+    }
+
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+    struct MiniPayload {
+        owner: HouseholdId,
+        revision: PolicyRevision,
+        note: String,
+    }
+
+    impl Persistable for MiniPayload {
+        fn revision(&self) -> PolicyRevision {
+            self.revision
+        }
+        fn household_id(&self) -> HouseholdId {
+            self.owner
+        }
+        fn check(&self) -> Result<(), LkgError> {
+            if self.revision == 0 || self.note.is_empty() {
+                Err(LkgError::Malformed("bad mini payload".into()))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct MiniValidator;
+
+    impl Validator<MiniPayload> for MiniValidator {
+        fn validate(&self, payload: &MiniPayload) -> Result<(), String> {
+            if payload.note == "unsupported" {
+                Err("mini payload not enforceable".into())
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn typed_store_reuses_one_protocol_for_a_non_policy_payload() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bundle.json");
+        let h = household();
+        let now = ts("2026-11-26T10:00:00Z");
+        let payload = |revision, note: &str| MiniPayload {
+            owner: h,
+            revision,
+            note: note.to_owned(),
+        };
+
+        let store = TypedLkgStore::open(path.clone(), h, WORKER, MiniValidator).unwrap();
+        assert!(store.current().is_none());
+        store.apply(payload(1, "base"), now).unwrap();
+        assert_eq!(
+            store.apply(payload(1, "same"), now),
+            Err(LkgError::StaleRevision)
+        );
+        assert_eq!(
+            store.apply(payload(2, "unsupported"), now),
+            Err(LkgError::Unsupported("mini payload not enforceable".into()))
+        );
+        store.apply(payload(3, "next"), now).unwrap();
+        drop(store);
+
+        // Restart takes the household identity from the single file and still
+        // checks the worker id and every payload rule.
+        let reopened = TypedLkgStore::open_from_snapshot(&path, WORKER, MiniValidator).unwrap();
+        assert_eq!(reopened.household_id(), h);
+        assert_eq!(reopened.highwater(), 3);
+        assert_eq!(reopened.current().unwrap().note, "next");
+        assert_eq!(
+            TypedLkgStore::open_from_snapshot(&path, "other-worker", MiniValidator).err(),
+            Some(LkgError::WrongWorker)
+        );
+        assert_eq!(
+            fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "one file for one typed bundle"
+        );
     }
 }

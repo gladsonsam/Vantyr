@@ -649,8 +649,10 @@ mod tests {
     fn config_validation_is_identical_for_initial_and_update() {
         let h = household();
         let now = ts("2026-11-26T10:00:00Z");
-        let mut bad = EventQueueConfig::default();
-        bad.max_events = 0;
+        let mut bad = EventQueueConfig {
+            max_events: 0,
+            ..EventQueueConfig::default()
+        };
         assert!(matches!(
             EventQueue::new(h, bad.clone()),
             Err(EventError::InvalidConfig(_))

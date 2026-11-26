@@ -26,11 +26,11 @@ use hickory_server::proto::rr::rdata::{A as AData, AAAA as AaaaData};
 use hickory_server::proto::rr::{Name, RData, Record, RecordType};
 use hickory_server::proto::serialize::binary::BinEncoder;
 use hickory_server::server::{Request, RequestHandler, ResponseHandler, ResponseInfo};
-use hickory_server::zone_handler::{Catalog, MessageResponse, MessageResponseBuilder};
+use hickory_server::zone_handler::{MessageResponse, MessageResponseBuilder};
 use tracing::{debug, warn};
 
 use crate::config::DenyConfig;
-use crate::policy::PolicyEvaluator;
+use crate::runtime::{RuntimeSnapshot, SnapshotHandle};
 
 /// Captures the exact response the catalog produced so the handler can check
 /// CNAME targets before anything reaches the client.
@@ -63,29 +63,24 @@ impl ResponseHandler for CaptureHandler {
     }
 }
 
-/// Policy-filtering request handler. All state is immutable and cloned behind
-/// `Arc`; no lock is held across an upstream lookup.
+/// Policy-filtering request handler. Each request clones one immutable
+/// snapshot under a brief read lock, then uses only that snapshot for policy,
+/// catalog and denial. No lock is held across an upstream lookup or `.await`.
 #[derive(Clone)]
 pub struct FilteringHandler {
-    catalog: Arc<Catalog>,
-    evaluator: Arc<PolicyEvaluator>,
-    deny: DenyConfig,
+    current: SnapshotHandle,
 }
 
 impl FilteringHandler {
-    pub fn new(catalog: Arc<Catalog>, evaluator: Arc<PolicyEvaluator>, deny: DenyConfig) -> Self {
-        Self {
-            catalog,
-            evaluator,
-            deny,
-        }
+    pub(crate) fn new(current: SnapshotHandle) -> Self {
+        Self { current }
     }
 
     /// Inspect the answer records for an allowed alias that leads to a denied
     /// name. Both explicit CNAME targets and A/AAAA owners other than the
     /// question name are checked, so an alias cannot bypass policy.
     fn denied_alias_target(
-        &self,
+        snapshot: &RuntimeSnapshot,
         message: &Message,
         qname: &Name,
         source: IpAddr,
@@ -98,7 +93,11 @@ impl FilteringHandler {
                 _ => None,
             };
             if let Some(target) = target {
-                if !self.evaluator.evaluate_alias(source, &target, qtype).allow {
+                if !snapshot
+                    .evaluator
+                    .evaluate_alias(source, &target, qtype)
+                    .allow
+                {
                     return Some(target.to_string().to_ascii_lowercase());
                 }
             }
@@ -107,13 +106,13 @@ impl FilteringHandler {
     }
 
     async fn send_denied<R: ResponseHandler>(
-        &self,
+        snapshot: &RuntimeSnapshot,
         request: &Request,
         handle: &mut R,
         qname: &Name,
         qtype: RecordType,
     ) -> ResponseInfo {
-        if let Some((v4, v6, ttl)) = self.deny.sinkhole() {
+        if let Some((v4, v6, ttl)) = snapshot.deny.sinkhole() {
             let mut answers: Vec<Record> = Vec::new();
             match qtype {
                 RecordType::A => {
@@ -176,7 +175,7 @@ impl FilteringHandler {
             }
         }
 
-        let code = match self.deny {
+        let code = match snapshot.deny {
             DenyConfig::Refused => ResponseCode::Refused,
             _ => ResponseCode::NXDomain,
         };
@@ -207,10 +206,17 @@ impl RequestHandler for FilteringHandler {
         request: &Request,
         mut response_handle: R,
     ) -> ResponseInfo {
+        // Clone one whole version, then release the lock before any I/O.
+        let snapshot = {
+            self.current
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone()
+        };
         // Malformed / non-query messages go through the catalog's own error
         // paths, so its wire behaviour stays authoritative.
         let Ok(info) = request.request_info() else {
-            return self
+            return snapshot
                 .catalog
                 .handle_request::<R, T>(request, response_handle)
                 .await;
@@ -218,7 +224,7 @@ impl RequestHandler for FilteringHandler {
         if info.metadata.message_type != MessageType::Query
             || info.metadata.op_code != OpCode::Query
         {
-            return self
+            return snapshot
                 .catalog
                 .handle_request::<R, T>(request, response_handle)
                 .await;
@@ -227,7 +233,7 @@ impl RequestHandler for FilteringHandler {
         let source = request.src().ip();
         let qname = info.query.original().name().clone();
         let qtype = info.query.query_type();
-        let decision = self.evaluator.evaluate(source, &qname, qtype);
+        let decision = snapshot.evaluator.evaluate(source, &qname, qtype);
         debug!(
             %qname,
             revision = decision.policy_revision,
@@ -236,13 +242,12 @@ impl RequestHandler for FilteringHandler {
             "policy decision"
         );
         if !decision.allow {
-            return self
-                .send_denied(request, &mut response_handle, &qname, qtype)
+            return Self::send_denied(&snapshot, request, &mut response_handle, &qname, qtype)
                 .await;
         }
 
         let capture = CaptureHandler::default();
-        let catalog_info = self
+        let catalog_info = snapshot
             .catalog
             .handle_request::<CaptureHandler, T>(request, capture.clone())
             .await;
@@ -262,10 +267,10 @@ impl RequestHandler for FilteringHandler {
                 return send_error(request, &mut response_handle, ResponseCode::ServFail).await;
             }
         };
-        if let Some(target) = self.denied_alias_target(&message, &qname, source, qtype) {
+        if let Some(target) = Self::denied_alias_target(&snapshot, &message, &qname, source, qtype)
+        {
             debug!(%qname, %target, "denied via CNAME chain");
-            return self
-                .send_denied(request, &mut response_handle, &qname, qtype)
+            return Self::send_denied(&snapshot, request, &mut response_handle, &qname, qtype)
                 .await;
         }
 

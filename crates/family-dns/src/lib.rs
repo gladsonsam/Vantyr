@@ -10,20 +10,32 @@
 //! redirection mechanisms are explicitly out of scope, as are TSIG-signed
 //! queries (keys are not validated and signatures are not preserved).
 //!
+//! Durable mode is opt-in: an explicit state path and worker id turn on one
+//! atomic config+policy bundle with a preserved original publication time and
+//! an `Arc` snapshot swap on reload. See `README.md` for the exact behaviour
+//! and limits, including what is deliberately not claimed.
+//!
 //! API paths used here (Hickory 0.26.4), recorded to avoid rediscovery:
 //!   `hickory_server::server::{Server, Request, RequestHandler, ResponseHandler, ResponseInfo}`
 //!   `hickory_server::zone_handler::{Catalog, MessageResponse, MessageResponseBuilder}`
 //!   `hickory_server::store::{in_memory::InMemoryZoneHandler, forwarder::ForwardZoneHandler}`
 //!   `hickory_server::proto::rr::{Name, Record, RecordSet, RrKey, RData, RecordType}`
 
+pub mod bundle;
 pub mod config;
 pub mod handler;
 pub mod observe;
 pub mod policy;
+pub mod runtime;
 pub mod server;
 
+pub use bundle::{Bundle, BundleStore, BundleValidator};
 pub use config::{
-    BindConfig, Config, DenyConfig, DeviceConfig, MatchSpec, RecordSpec, RuleSpec, MAX_CONFIG_BYTES,
+    read_bounded, BindConfig, Config, DenyConfig, DeviceConfig, MatchSpec, RecordSpec, RuleSpec,
+    MAX_CONFIG_BYTES,
 };
 pub use observe::{DecisionObservation, ObservationLog, MAX_OBSERVATIONS};
-pub use server::DnsServer;
+pub use server::{DnsServer, DurableOptions, ReloadError, ReloadOutcome};
+// Re-exported so callers can use the same injectable pre/post-rename seam that
+// the worker itself uses for durability tests.
+pub use vantyr_network_runtime::WriteHooks;
