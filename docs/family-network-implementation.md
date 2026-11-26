@@ -513,8 +513,8 @@ No substantive UI or Supabase changes were made in this step.
   worker integration `c21da216` is independently accepted with 99 DNS/filter/runtime
   tests. Validated bytes and derivation metadata persist in the one bundle;
   real UDP/TCP list/service/alias checks and restart with changed or missing
-  source files pass. Scheduled downloads remain separate: bundle/material
-  generations must first be separated from controller policy revisions.
+  source files pass. Accepted scheduled integration now separates bundle/material
+  generations from controller policy revisions.
   Service blocking is DNS-domain coverage, not proof of application identity or
   every feature hosted on a shared CDN.
 - Public list subscriptions: library commits `f52d069e`, `f2b5805c` and
@@ -527,16 +527,17 @@ No substantive UI or Supabase changes were made in this step.
   failures must not discard working filtering data. Freshness, update errors and
   disabled lists remain visible separately from enforcement. Parser, fetcher and
   worker integration each require independent acceptance.
-  Scheduled worker integration `39c467e9` is not accepted: review found a
-  dangling background-task server reference, stale-basis material publication,
-  per-source manual-refresh scope loss, shutdown ordering and cache-recovery
-  gaps. Direct refresh tests do not prove the production scheduler runs. Fixes
-  must exercise the actual loop and binary lifecycle, preserve the latest local
-  settings, and keep bundle recovery independent of a broken download cache.
-  Fix `7027b7da` is committed and under fresh independent review. The implementer
-  reports 142 passing tests, including the canonical background-loop path,
-  generation-guarded material apply, per-source manual refresh, production cache
-  quarantine/bootstrap and a binary SIGINT test. This is pending acceptance.
+  Scheduled worker integration `39c467e9` + `7027b7da` is independently
+  accepted. Fresh review ran all 83 DNS tests, 48 affected runtime/subscription
+  tests and focused production-loop, first-boot, cache-quarantine, migration and
+  real-binary SIGINT checks. The one canonical server Arc keeps the integrator
+  alive; generation checks reject stale preparation; manual requests retain
+  per-source scope; shutdown aborts and awaits the task. Valid bundles recover
+  independently of faulty caches, while clean installs fetch before first bind
+  and fail closed if required material is missing. Policy publication age and
+  revision remain separate from bundle/filter generations. Downloaded versus
+  applied status is distinct, but currently library/CLI only: dashboard HTTP
+  management and an isolated scheduled-fetch lab remain subsequent work.
 - Management mutations: commit `8a665f08` is implemented and awaiting independent
   acceptance. It adds household name/timezone and gateway label/enabled PATCH,
   conservative unreferenced inventory DELETE, and atomic person default-profile
