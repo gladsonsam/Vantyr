@@ -71,8 +71,6 @@ Inspection authority retirement does not itself remove certificates from client
 trust stores. Public server-leaf renewal under an unchanged trusted authority is
 separate from changing a root trust anchor. Record both operations accurately.
 
-## Integration constraints
-
 ## Network-controller integration roadmap
 
 UniFi is the first optional network adapter. The native DNS and Proxy workers
