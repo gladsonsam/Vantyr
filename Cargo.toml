@@ -11,6 +11,8 @@ members  = [
   "crates/gateway-compat-spike",
   # Vantyr Network worker runtime: worker-local LKG + bounded events.
   "crates/network-runtime",
+  # Backend PKI foundation: dedicated inspection CA and encrypted key custody.
+  "crates/network-pki",
 ]
 exclude  = ["agent"]   # built separately (cargo xwin for the Windows release); depends on ./protocol by path
 resolver = "2"
