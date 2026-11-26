@@ -2,7 +2,7 @@
 
 This document is the neutral, current-state delivery gate for the Vantyr DNS
 worker and its control plane. It records behavior contracts, honest status and
-the acceptance evidence required to close each row. It is not a roadmap history,
+the acceptance evidence required to close each row. It is not a roadmap history or
 a deployment claim. The initial source audit used commit `cd4d4029`; later
 implementation commits are identified below where relevant. In-flight or
 unreviewed code does not close a row. No deploy, release or host-network change follows from this catalog.
@@ -120,7 +120,7 @@ written for a `Missing` row.
 | CLI-04 | Current IP-mapped DNS path never infers person privileges; person rules require verified state | `AcceptedRuntime` | [compile.rs](../crates/family-dns/src/compile.rs), [policy.rs](../crates/family-dns/src/policy.rs) | Unverified person rule rejected by controller compilation; unknown source stays restricted; future encrypted client IDs/headers require separate end-to-end spoof tests under LST-04/UP-08 |
 | CLI-05 | Global and per-device protection pause with expiring scoped exception | `Missing` | always enforcing; stale policy fails closed | Pause expires and enforcement resumes; baseline deny cannot be silently disabled |
 | CLI-06 | Explicit allow/deny client lists and blocked-host handling | `PartialRuntime` | [config.rs](../crates/family-dns/src/config.rs) only has restrictive unknown default | Explicit allow/deny lists applied; blocked hosts answered or dropped as configured |
-| CLI-07 | BYOD enrollment using existing OIDC identity and scoped grants | `InProgress` | `server/src/network/enroll_*`, migration `0078` (uncommitted) | Single-use grant binds device, asserted person, expiry and purpose; revoke works; no remote privilege |
+| CLI-07 | BYOD enrollment using existing OIDC identity and scoped grants | `InProgress` | `server/src/network/enroll_*`, migration `0078` (committed `3afcb9fc`, independent review pending) | Single-use grant binds device, asserted person, expiry and purpose; revoke works; no remote privilege |
 | CLI-08 | Scoped worker API authorization with household isolation | `AcceptedRuntime` | `server/src/network/{authz,gateway_auth}.rs` | Unknown scope, command or household gets uniform denial |
 | CLI-09 | Query-log richness: protocol, cache, upstream, time, flags, reason, rule and service attributes | `PartialRuntime` | [observe.rs](../crates/family-dns/src/observe.rs) bounded in-process records | Durable entry carries protocol, upstream, reason and rule text; no URLs stored |
 | CLI-10 | Time-bounded retention, anonymisation flag and ignored hosts | `PartialRuntime` | count-bounded ring only; retention field carried but unwired | 24h retention prunes; anonymisation and ignore lists honoured |
@@ -165,4 +165,4 @@ has delivered its narrower feature group.
 | 4 | UP-02, UP-03, UP-04, UP-05, UP-06, UP-07, UP-08 | Accepted snapshot and bundle (OPS-01/02); UP-08 exercised with LST-04 | Each upstream scheme/selection mode tested; verification failures fail closed; no dependency on list-modifier breadth |
 | 5 | LST-01, LST-03, LST-04, LST-05, LST-06, LST-07, LST-08, OPS-07 | Accepted policy handler and snapshot; OPS-07 custody implemented alongside LST-08 | Every listener plus separate DNS key custody, certificate reload and verification health passes; upstream transport work may proceed independently |
 | 6 | FLT-05, FLT-06, FLT-07, FLT-08, FLT-10, SUB-05, SUB-06, SUB-07 | Relevant client/tag context for FLT-05; Stage 1 compiler/source contracts for service/feed consumers; accepted snapshot for rewrites | All enumerated rewrites/aliases, schedules, service coverage and real providers pass with provenance; unrelated listeners are not prerequisites |
-| 7 | OPS-05, OPS-06, OPS-08, OPS-10, CAC-05, FLT-11 | Accepted feature artifacts for recovery/packaging; explicit recorded decisions for the three NeedsPlatformDecision rows | Recovery/update/lifecycle checks pass; each platform decision records adoption or reasoned deferral; required runtime rows cannot be waived through this stage; no host deployment implied |
+| 7 | OPS-05, OPS-06, OPS-08, OPS-10, CAC-05, FLT-11 | Accepted feature artifacts for recovery/packaging; decisions recorded within this stage for the three NeedsPlatformDecision rows | Recovery/update/lifecycle checks pass; each platform decision records adoption or reasoned deferral; required runtime rows cannot be waived through this stage; no host deployment implied |
