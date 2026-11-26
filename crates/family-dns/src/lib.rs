@@ -22,7 +22,9 @@
 //!   `hickory_server::proto::rr::{Name, Record, RecordSet, RrKey, RData, RecordType}`
 
 pub mod bundle;
+pub mod compile;
 pub mod config;
+pub mod controller;
 pub mod handler;
 pub mod observe;
 pub mod policy;
@@ -30,9 +32,15 @@ pub mod runtime;
 pub mod server;
 
 pub use bundle::{Bundle, BundleStore, BundleValidator};
+pub use compile::{compile, CompileError};
 pub use config::{
     read_bounded, BindConfig, Config, DenyConfig, DeviceConfig, MatchSpec, RecordSpec, RuleSpec,
-    MAX_CONFIG_BYTES,
+    ScheduleSpec, MAX_CONFIG_BYTES,
+};
+pub use controller::{
+    policy_digest, sync_once, ControllerClient, ControllerError, ControllerOptions,
+    ControllerPoller, PolicyReadResponse, SyncCapability, CONTROLLER_AUDIENCE, CONTROLLER_COMMAND,
+    CONTROLLER_KIND, CONTROLLER_POLICY_SCHEMA_VERSION, READ_PATH,
 };
 pub use observe::{DecisionObservation, ObservationLog, MAX_OBSERVATIONS};
 pub use server::{DnsServer, DurableOptions, ReloadError, ReloadOutcome};

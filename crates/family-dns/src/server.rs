@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
+use family_policy::Policy;
 use hickory_server::server::Server;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::task::JoinHandle;
@@ -21,7 +22,9 @@ use tokio_util::sync::CancellationToken;
 use vantyr_network_runtime::{LkgError, WriteHooks};
 
 use crate::bundle::{Bundle, BundleStore, BundleValidator};
+use crate::compile::compile;
 use crate::config::{read_bounded, Config};
+use crate::controller::{ControllerError, SyncCapability};
 use crate::handler::FilteringHandler;
 use crate::observe::{DecisionObservation, ObservationLog};
 use crate::runtime::{
@@ -225,13 +228,20 @@ impl DnsServer {
     ) -> Result<ReloadOutcome, ReloadError> {
         use ReloadError::*;
         let config = Config::parse(candidate).map_err(|e| InvalidConfig(e.to_string()))?;
-        let active = {
-            self.current
-                .read()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .clone()
-        };
-        if !same_transport(&config, &active.config) {
+        self.check_candidate(&config)?;
+        let published_at = config.policy_published_at.unwrap_or(now);
+        let bundle =
+            Bundle::build(&config, published_at).map_err(|e| InvalidConfig(e.to_string()))?;
+        self.publish_bundle(config, bundle, now)
+    }
+
+    /// Validate the replayable local-control preconditions shared by SIGHUP
+    /// reloads and controller candidates. A controller candidate uses the same
+    /// transport and household checks; only its content source differs.
+    fn check_candidate(&self, config: &Config) -> Result<(), ReloadError> {
+        use ReloadError::*;
+        let active = self.active_snapshot();
+        if !same_transport(config, &active.config) {
             return Err(TransportChange(
                 "bind address, port or loopback opt-in differs from the listener".into(),
             ));
@@ -241,28 +251,44 @@ impl DnsServer {
                 "candidate belongs to another household".into(),
             ));
         }
-        let revision = config.policy_revision;
-        let highwater = self
-            .store
-            .as_ref()
-            .map_or(active.revision, |store| store.highwater())
-            .max(active.revision);
-        if revision <= highwater {
+        let highwater = self.highwater(active.revision);
+        if config.policy_revision <= highwater {
             return Err(NotNewer {
-                found: revision,
+                found: config.policy_revision,
                 highwater,
             });
         }
+        Ok(())
+    }
 
-        let published_at = config.policy_published_at.unwrap_or(now);
-        let bundle =
-            Bundle::build(&config, published_at).map_err(|e| InvalidConfig(e.to_string()))?;
-        let snapshot = build_snapshot(
-            bundle.config.clone(),
-            bundle.policy.clone(),
-            self.observations.clone(),
-        )
-        .map_err(|e| BuildFailed(e.to_string()))?;
+    fn active_snapshot(&self) -> Arc<RuntimeSnapshot> {
+        self.current
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    fn highwater(&self, active_revision: u64) -> u64 {
+        self.store
+            .as_ref()
+            .map_or(active_revision, |store| store.highwater())
+            .max(active_revision)
+    }
+
+    /// Persist first, then swap one immutable snapshot. A concurrent local
+    /// reload or controller pull can only win with a strictly newer revision;
+    /// the store enforces the same monotonicity on disk.
+    fn publish_bundle(
+        &self,
+        config: Config,
+        bundle: Bundle,
+        now: DateTime<Utc>,
+    ) -> Result<ReloadOutcome, ReloadError> {
+        use ReloadError::*;
+        let revision = bundle.revision();
+        let published_at = bundle.published_at();
+        let snapshot = build_snapshot(config, bundle.policy.clone(), self.observations.clone())
+            .map_err(|e| BuildFailed(e.to_string()))?;
 
         if let Some(store) = &self.store {
             store
@@ -274,7 +300,6 @@ impl DnsServer {
             .current
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        // A concurrent reload may have won the race between build and swap.
         if revision <= current.revision {
             return Err(NotNewer {
                 found: revision,
@@ -286,6 +311,66 @@ impl DnsServer {
             revision,
             published_at,
         })
+    }
+
+    /// Compile a verified controller policy onto the worker's local transport
+    /// config and apply it through the same monotonic persist/swap path as a
+    /// local reload. Same revision + same whole policy is an idempotent no-op;
+    /// same revision + different content is rejected before any write.
+    pub fn apply_controller_policy(
+        &self,
+        base: &Config,
+        policy: &Policy,
+        now: DateTime<Utc>,
+    ) -> Result<SyncCapability, ControllerError> {
+        let candidate = compile(base, policy)?;
+        let active = self.active_snapshot();
+        if !same_transport(&candidate, &active.config) {
+            return Err(ControllerError::Unsupported(
+                "controller candidate would change the listener transport".into(),
+            ));
+        }
+        if candidate.household_id != active.config.household_id {
+            return Err(ControllerError::Integrity(
+                "controller policy belongs to another household".into(),
+            ));
+        }
+        let published_at = candidate.policy_published_at.unwrap_or(now);
+        let bundle = Bundle::build(&candidate, published_at)
+            .map_err(|error| ControllerError::Unsupported(error.to_string()))?;
+        let revision = candidate.policy_revision;
+        let highwater = self.highwater(active.revision);
+        if revision == active.revision {
+            if bundle.policy == active.policy {
+                // No reset, no fresh save time, no age freshening.
+                return Ok(SyncCapability::Unchanged { revision });
+            }
+            return Err(ControllerError::SameRevisionConflict(revision));
+        }
+        if revision < highwater {
+            return Err(ControllerError::StaleRevision {
+                found: revision,
+                highwater,
+            });
+        }
+        let outcome = self
+            .publish_bundle(candidate, bundle, now)
+            .map_err(|error| match error {
+                ReloadError::NotNewer { found, highwater } => {
+                    ControllerError::StaleRevision { found, highwater }
+                }
+                ReloadError::PersistFailed(detail) => ControllerError::Persistence(detail),
+                other => ControllerError::Unsupported(other.to_string()),
+            })?;
+        Ok(SyncCapability::AppliedLocally {
+            revision: outcome.revision,
+        })
+    }
+
+    /// Local worker config currently serving. Kept read-only: callers must go
+    /// through the compile/reload path to change policy.
+    pub fn local_config(&self) -> Config {
+        self.active_snapshot().config.clone()
     }
 
     pub fn bind_addr(&self) -> SocketAddr {

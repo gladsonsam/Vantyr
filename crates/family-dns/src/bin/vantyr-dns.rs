@@ -2,11 +2,13 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use family_dns::{
-    read_bounded, BundleStore, BundleValidator, Config, DnsServer, DurableOptions, ReloadOutcome,
+    read_bounded, sync_once, BundleStore, BundleValidator, Config, ControllerClient,
+    ControllerOptions, ControllerPoller, DnsServer, DurableOptions, ReloadOutcome, SyncCapability,
 };
 
 const USAGE: &str = "\
@@ -22,19 +24,28 @@ Usage:
   vantyr-dns --check-config <FILE>           validate FILE without binding a listener
   vantyr-dns --state-status --state <FILE> --worker <ID>
                                              print local bundle metadata, no listener
+  vantyr-dns --config <FILE> --state <FILE> --worker <ID> --controller <FILE>
+                                             opt in to one HTTPS controller policy pull
+                                             at startup (durable mode required)
+  vantyr-dns ... --controller <FILE> --poll  also poll with bounded backoff
   vantyr-dns --help                          show this help
   vantyr-dns --version                       show the version
 
-The default listener is a high loopback port shared by UDP and TCP. On Unix,
-SIGHUP re-reads --config (bounded to 64 KiB) and performs one atomic reload;
-changes to the bind address or port require a full restart. No host resolver,
-DHCP, firewall or router setting is changed.";
+--controller points to an owner-private (0600) options file containing the
+HTTPS origin, credential FILE path and read-policy identities. The bearer secret
+is never accepted as a command-line argument. Without --controller there is no
+network control-plane contact; enrollment alone never configures this worker.
+On Unix, SIGHUP re-reads --config (bounded to 64 KiB) and performs one atomic
+reload; changes to the bind address or port require a full restart. No host
+resolver, DHCP, firewall or router setting is changed.";
 
 #[derive(Default)]
 struct Args {
     config: Option<PathBuf>,
     state: Option<PathBuf>,
     worker: Option<String>,
+    controller: Option<PathBuf>,
+    poll: bool,
     check_only: bool,
     state_status: bool,
 }
@@ -54,13 +65,15 @@ fn parse_args() -> Result<Args> {
             }
             "--check-config" => args.check_only = true,
             "--state-status" => args.state_status = true,
-            "--config" | "--state" | "--worker" => {
+            "--poll" => args.poll = true,
+            "--config" | "--state" | "--worker" | "--controller" => {
                 let value = iter
                     .next()
                     .ok_or_else(|| anyhow!("{arg} needs a value\n{USAGE}"))?;
                 match arg.as_str() {
                     "--config" => args.config = Some(PathBuf::from(value)),
                     "--state" => args.state = Some(PathBuf::from(value)),
+                    "--controller" => args.controller = Some(PathBuf::from(value)),
                     _ => args.worker = Some(value),
                 }
             }
@@ -130,6 +143,29 @@ async fn run() -> Result<()> {
         return Ok(());
     }
 
+    if args.poll && args.controller.is_none() {
+        bail!("--poll requires --controller\n{USAGE}");
+    }
+    if args.controller.is_some() {
+        if args.state.is_none() || args.worker.is_none() {
+            bail!("--controller requires --state and --worker (durable mode)\n{USAGE}");
+        }
+        if args.config.is_none() {
+            bail!("--controller requires --config for transport and device mapping\n{USAGE}");
+        }
+    }
+
+    // Controller options and the credential file are validated before a
+    // listener exists. A misconfigured opt-in must fail closed at startup.
+    let controller = match &args.controller {
+        Some(path) => {
+            let options = ControllerOptions::load(path)?;
+            let client = Arc::new(ControllerClient::new(&options)?);
+            Some((options, client))
+        }
+        None => None,
+    };
+
     let server = match (&args.state, &args.worker) {
         (Some(state), Some(worker)) => {
             DnsServer::start_durable(DurableOptions {
@@ -155,6 +191,39 @@ async fn run() -> Result<()> {
         server.bind_addr(),
         server.is_durable()
     );
+
+    let server = Arc::new(server);
+    let mut poller = None;
+    if let Some((options, client)) = &controller {
+        // Keep one immutable local transport/device template for every pull;
+        // a controller policy never becomes the source of transport settings.
+        let base = server.local_config();
+        // A first pull is part of the explicit opt-in. A controller outage or
+        // rejection never discards the durable last-known-good bundle.
+        match sync_once(&server, client, &base, Utc::now()).await {
+            Ok(SyncCapability::AppliedLocally { revision }) => {
+                eprintln!("Vantyr DNS: controller policy applied locally at revision {revision}");
+            }
+            Ok(SyncCapability::Unchanged { revision }) => {
+                eprintln!("Vantyr DNS: controller policy unchanged at revision {revision}");
+            }
+            Ok(SyncCapability::Unsupported(detail)) => {
+                eprintln!("Vantyr DNS: controller policy unsupported: {detail}");
+            }
+            Err(error) => {
+                // Error Display never contains a credential or response body.
+                eprintln!("Vantyr DNS: initial controller pull failed: {error:#}");
+            }
+        }
+        if args.poll {
+            poller = Some(ControllerPoller::start(
+                Arc::clone(&server),
+                Arc::clone(client),
+                base,
+                options.clone(),
+            ));
+        }
+    }
 
     #[cfg(unix)]
     {
@@ -185,7 +254,13 @@ async fn run() -> Result<()> {
     #[cfg(not(unix))]
     tokio::signal::ctrl_c().await?;
 
+    if let Some(poller) = poller.take() {
+        poller.stop().await;
+    }
     eprintln!("Vantyr DNS: shutting down");
+    let server = Arc::try_unwrap(server)
+        .ok()
+        .expect("no poll task keeps the server after shutdown");
     server.stop().await;
     eprintln!("Vantyr DNS: stopped");
     Ok(())

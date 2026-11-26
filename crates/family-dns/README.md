@@ -59,13 +59,79 @@ revision is rejected. Startup with a malformed, foreign, wrong-worker or
 otherwise corrupt state file fails closed **before a listener is bound** — it
 never silently falls back to the config or invents a fresh policy.
 
+## Controller policy pull (opt-in, read-only)
+
+An **explicit** `--controller <FILE>` turns on one HTTPS policy read from the
+operator-configured controller origin. Enrollment alone never configures a
+worker. The pull is `POST /worker/network/policy/read` with a JSON body
+`{"audience":"vantyr-gateway-worker","command":"read_policy","household_id":…,
+"gateway_id":…,"kind":"dns"}` and a scoped `Authorization: Bearer <id>.<secret>`
+header. The source is the accepted server DTO in
+`server/src/network/policy_dto.rs` (`PolicyReadResponse`), reused as a typed
+struct here — there is no second policy model.
+
+- `--config <FILE> --state <FILE> --worker <ID> --controller <FILE>` performs
+  one pull at startup, then serves. Add `--poll` for a bounded polling loop.
+  `--controller` requires durable mode **and** `--config` (the local config
+  supplies bind, upstreams, local zones, deny mode and the source-IP device
+  map). `--poll` requires `--controller`. No flag accepts a raw secret.
+- The options file and credential file must be owner-private (Unix mode 0600;
+  no group/other bits). The credential file holds one line,
+  `Bearer <uuid>.<43-char secret>`. Secrets live in `secrecy::SecretString`,
+  are never `Debug`/`Display`-printable, and never appear in errors or logs.
+- Options file (all seconds/bounds optional; defaults shown):
+
+  ```json
+  {
+    "controller_origin": "https://127.0.0.1:8443",
+    "ca_pem_path": "/etc/vantyr/controller-ca.pem",
+    "credential_file": "/etc/vantyr/dns-read.credential",
+    "household_id": "11111111-2222-3333-4444-555555555555",
+    "gateway_id": "22222222-3333-4444-5555-666666666666",
+    "poll_interval_secs": 60,
+    "backoff_secs": 5,
+    "max_backoff_secs": 300,
+    "request_timeout_secs": 10,
+    "max_response_bytes": 262144
+  }
+  ```
+
+- `controller_origin` must be `https` with no path/userinfo/query/fragment.
+  An explicit `ca_pem_path` adds a local CA to the trust store; chain and
+  hostname verification stay on, redirects are disabled so the bearer cannot
+  be replayed to another origin. Plain HTTP is never accepted by the binary.
+  Intervals, timeout and response size are bounded; one pull is in flight at a
+  time, failures back off exponentially, and `Ctrl-C`/SIGINT cancels and joins
+  the poll task before shutdown.
+- `library::sync_once` is the library entry point. It verifies schema,
+  gateway, household, outer/inner revision, original publication time and the
+  SHA-256 digest of canonical serde policy bytes **before** compiling or
+  writing anything. That digest is content integrity, not a signature;
+  authentication is TLS plus the scoped bearer. 401/403 (expiry, revocation,
+  missing scope) and 404 are decided by the controller.
+- The core `Policy` is compiled into the same durable bundle: baseline,
+  exact/suffix/`any` matchers, rule ids, reasons, schedules, timezone,
+  staleness and event retention are preserved **exactly** (`config.policy_at`
+  must reproduce the whole policy), while transport, local zones, upstreams,
+  deny mode and weak-IP device maps come from the local config. Person rules,
+  exceptions, category rules, a non-deny default, or a profile referenced by
+  a device but absent from the controller candidate are `Unsupported` — the
+  old bundle keeps serving. Same revision + same whole policy is an idempotent
+  no-op (no save-time or policy-age reset); same revision + different content
+  is rejected; a newer policy goes through the same persist-then-swap path as
+  SIGHUP with a monotonic high-water mark.
+- Capability results are only `Unsupported`, `Unchanged` and `AppliedLocally`.
+  `available()` means the local pull path works. There is **no** controller
+  acknowledgement, applied receipt, canary or verified/enforced claim.
+
 ## Scope and limits (honest)
 
 - Local-disk state is unauthenticated local durability. No gateway credential,
   controller ack, canary or "verified/protected" UI claim is implemented here.
-- There is no HTTP control API; local control is the library `reload` method
-  and SIGHUP only. Host resolver, router, DHCP and firewall settings are never
-  changed.
+- There is no HTTP control API in the worker; local control is the library
+  `reload` method and SIGHUP only. The only outbound route is the read-only
+  controller pull above. Host resolver, router, DHCP and firewall settings are
+  never changed.
 - Bounded runtime events exist in `vantyr-network-runtime` but are **not**
   wired into this worker in this slice; decision observations are a small
   in-process ring, not a durable event store.
@@ -85,4 +151,16 @@ answers and revisions, whole-version reads under concurrent queries/reloads,
 rejection of invalid/stale/foreign/bind-changing candidates, injected
 persistence failure, bundle restart with unchanged publication age, stale-age
 fail-closed, no-listener-on-corrupt-state, and real-process restart/SIGHUP.
-No test uses privileged ports or touches the host network configuration.
+`cargo test -p family-dns --test controller` adds real-TLS mock-controller
+tests: the exact read-policy request/contract, scoped bearer custody, digest
+and outer-field mismatch rejection, bad-CA/plain-HTTP rejection, 401/404
+outage preservation, unsupported person/category policies, idempotent and
+conflicting same-revision pulls, lost-ack restart with an unchanged stale age,
+concurrent local reload versus controller pull, and a cancelled/joined poll
+task. No test uses privileged ports, raw secrets in logs or host network
+configuration.
+
+Remaining gap (deliberate): the controller has no acknowledgement endpoint or
+verification path yet. A locally applied policy is not reported as applied or
+enforced to the controller, and no canary boolean exists. Report/verification
+integration is separate follow-up work.

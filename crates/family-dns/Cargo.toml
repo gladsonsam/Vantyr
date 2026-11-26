@@ -22,3 +22,21 @@ hickory-server   = { version = "=0.26.4", features = ["resolver"] }
 hickory-resolver = { version = "=0.26.4", default-features = false, features = ["tokio", "serde"] }
 tracing          = "=0.1.44"
 tokio-util       = { version = "0.7", features = ["rt"] }
+
+# Controller policy pull. Every version below is already pinned in the shared
+# workspace Cargo.lock; no new protocol/parser/crypto version is introduced.
+reqwest          = { version = "=0.13.5", default-features = false, features = ["json", "rustls"] }
+url              = "=2.5.9"
+uuid             = { version = "=1.29.3", features = ["v4", "serde"] }
+secrecy          = "=0.10.3"
+sha2             = "=0.10.9"
+thiserror        = "=1.0.69"
+
+[target.'cfg(unix)'.dependencies]
+libc             = "=0.2.191"
+
+[dev-dependencies]
+axum             = "=0.8.9"
+rustls           = { version = "=0.23.46", default-features = false, features = ["std", "aws_lc_rs", "tls12"] }
+rcgen            = { version = "=0.14.10", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
+tokio-rustls     = { version = "=0.26.6", default-features = false, features = ["aws_lc_rs"] }

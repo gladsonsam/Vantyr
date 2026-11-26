@@ -148,6 +148,9 @@ pub(crate) struct RuntimeSnapshot {
     pub(crate) revision: u64,
     pub(crate) published_at: DateTime<Utc>,
     pub(crate) config: Config,
+    /// The exact whole policy this snapshot enforces, kept beside the
+    /// evaluator so a same-revision candidate can be compared byte-for-byte.
+    pub(crate) policy: Policy,
     pub(crate) deny: DenyConfig,
     pub(crate) catalog: Arc<Catalog>,
     pub(crate) evaluator: Arc<PolicyEvaluator>,
@@ -168,7 +171,7 @@ pub(crate) fn build_snapshot(
     let catalog = Arc::new(build_catalog(&config)?);
     let evaluator = Arc::new(PolicyEvaluator::with_policy(
         config.clone(),
-        policy,
+        policy.clone(),
         observations,
     ));
     Ok(Arc::new(RuntimeSnapshot {
@@ -176,6 +179,7 @@ pub(crate) fn build_snapshot(
         published_at,
         deny: config.deny.clone(),
         config,
+        policy,
         catalog,
         evaluator,
     }))

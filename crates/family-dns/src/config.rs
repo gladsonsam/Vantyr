@@ -17,6 +17,7 @@ use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
 use family_policy::{
     Capability, Device, DeviceId, DeviceKind, Effect, HouseholdId, Policy, Rule, RuleMatcher,
+    Schedule,
 };
 use serde::{Deserialize, Serialize};
 
@@ -32,6 +33,8 @@ pub const MAX_RULES_PER_PROFILE: usize = 512;
 pub const MAX_LABEL_LEN: usize = 128;
 pub const MAX_NAME_LEN: usize = 255;
 pub const MAX_REASON_LEN: usize = 256;
+/// Rule ids are server-assigned in the shared policy; this mirrors its cap.
+pub const MAX_ID_LEN: usize = 64;
 pub const MAX_TIMEZONE_LEN: usize = 64;
 pub const MAX_TTL_SECS: u32 = 86_400;
 pub const MAX_STALE_SECS: u64 = 30 * 24 * 60 * 60;
@@ -68,6 +71,80 @@ fn parsed_ip(raw: &str, field: &str) -> Result<IpAddr> {
     Ok(normalize_ip(ip))
 }
 
+/// One bounded rule check shared by the safety baseline and device profiles.
+fn validate_rule_spec(
+    rule: &RuleSpec,
+    baseline: bool,
+    seen_ids: &mut BTreeSet<String>,
+    place: &str,
+) -> Result<()> {
+    if let Some(id) = &rule.id {
+        if id.is_empty()
+            || id.len() > MAX_ID_LEN
+            || id.chars().any(|c| c.is_control() || c.is_whitespace())
+        {
+            bail!("rule id in {place} must be 1..={MAX_ID_LEN} non-blank chars");
+        }
+        if !seen_ids.insert(id.clone()) {
+            bail!("rule ids must be unique within a policy");
+        }
+    }
+    if let Some(reason) = &rule.reason {
+        if reason.len() > MAX_REASON_LEN || reason.chars().any(char::is_control) {
+            bail!("rule reason in {place} is unbounded or contains control chars");
+        }
+    }
+    if let Some(value) = rule.matcher.value() {
+        if value.is_empty()
+            || value.len() > MAX_NAME_LEN
+            || value.chars().any(|c| c.is_control() || c.is_whitespace())
+        {
+            bail!("rule value in {place} must be 1..={MAX_NAME_LEN} characters");
+        }
+    }
+    if let Some(schedule) = &rule.schedule {
+        schedule.validate(place)?;
+    }
+    if baseline && rule.effect == Effect::Allow {
+        bail!("the safety baseline may only contain deny rules");
+    }
+    Ok(())
+}
+
+/// Convert a validated spec to the shared core `Rule`. Explicit ids, reasons
+/// and schedules are carried across untouched; locally authored rules get
+/// stable generated values. Whole-policy equality with a compiled controller
+/// policy depends on preserving these fields exactly.
+fn build_rule(spec: &RuleSpec, place: &str, index: usize) -> Rule {
+    // Values are carried verbatim: the evaluator already compares names and
+    // matchers case-insensitively, and a compiled controller policy must have
+    // exactly the same bytes as the policy the controller published.
+    let matcher = match &spec.matcher {
+        MatchSpec::Exact { value } => RuleMatcher::HostExact(value.clone()),
+        MatchSpec::Suffix { value } => RuleMatcher::DomainSuffix(value.clone()),
+        MatchSpec::Any => RuleMatcher::Any,
+    };
+    let schedule = spec.schedule.as_ref().map(|schedule| Schedule {
+        weekdays: schedule.weekdays.clone(),
+        start_minute: schedule.start_minute,
+        end_minute: schedule.end_minute,
+        timezone: schedule.timezone.clone(),
+    });
+    Rule {
+        id: spec
+            .id
+            .clone()
+            .unwrap_or_else(|| format!("{place}-{index}")),
+        effect: spec.effect,
+        matcher,
+        schedule,
+        reason: spec
+            .reason
+            .clone()
+            .unwrap_or_else(|| format!("{place} rule {index}")),
+    }
+}
+
 fn default_loopback() -> String {
     "127.0.0.1".to_owned()
 }
@@ -101,11 +178,13 @@ fn default_profiles() -> BTreeMap<String, Vec<RuleSpec>> {
     profiles.insert(
         "restricted".to_owned(),
         vec![RuleSpec {
+            id: None,
             effect: Effect::Deny,
             matcher: MatchSpec::Suffix {
                 value: "example".to_owned(),
             },
             reason: None,
+            schedule: None,
         }],
     );
     profiles
@@ -146,7 +225,7 @@ impl BindConfig {
 
 /// How a denied query is answered. NXDOMAIN is the default: it is a stable,
 /// cacheable denial that does not depend on a synthetic address.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DenyConfig {
     #[default]
@@ -178,7 +257,7 @@ impl DenyConfig {
 
 /// One authoritative local record. Multiple A/AAAA records for one owner are
 /// accumulated into one record set by the catalog builder.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RecordSpec {
     A {
@@ -211,36 +290,92 @@ impl RecordSpec {
     }
 }
 
-/// A domain rule. Exact and suffix matchers are the only syntax in this slice:
-/// there is no external list parser and no category feed.
+/// A domain rule. Exact, suffix and `any` matchers are the syntax DNS can
+/// enforce today. `id`, `schedule` and an explicit (possibly empty) `reason`
+/// let a controller-authored core `Rule` round-trip through this config without
+/// being rewritten, so a compiled bundle still equals the whole source policy.
+/// There is no external list parser and no category feed.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuleSpec {
+    /// When absent, a stable per-profile id is generated for local configs.
+    #[serde(default)]
+    pub id: Option<String>,
     pub effect: Effect,
     #[serde(rename = "match")]
     pub matcher: MatchSpec,
+    /// `None` generates a descriptive reason; `Some("")` is preserved verbatim.
     #[serde(default)]
     pub reason: Option<String>,
+    #[serde(default)]
+    pub schedule: Option<ScheduleSpec>,
+}
+
+/// The exact shape of the shared policy's `Schedule`. An invalid timezone is
+/// not substituted with a host timezone by the evaluator; it simply makes the
+/// window inactive.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduleSpec {
+    pub weekdays: Vec<u8>,
+    pub start_minute: u32,
+    pub end_minute: u32,
+    pub timezone: String,
+}
+
+impl ScheduleSpec {
+    fn validate(&self, where_: &str) -> Result<()> {
+        if self.weekdays.is_empty() || self.weekdays.len() > 7 {
+            bail!("{where_} schedule needs 1..=7 weekdays");
+        }
+        let mut seen = BTreeSet::new();
+        for day in &self.weekdays {
+            if *day > 6 || !seen.insert(*day) {
+                bail!("{where_} schedule weekdays must be unique 0..=6");
+            }
+        }
+        if self.start_minute > 1440 || self.end_minute > 1440 {
+            bail!("{where_} schedule minutes must be 0..=1440");
+        }
+        if self.timezone.is_empty()
+            || self.timezone.len() > MAX_TIMEZONE_LEN
+            || self
+                .timezone
+                .chars()
+                .any(|c| c.is_control() || c.is_whitespace())
+        {
+            bail!("{where_} schedule timezone is unbounded or malformed");
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MatchSpec {
-    Exact { value: String },
-    Suffix { value: String },
+    Exact {
+        value: String,
+    },
+    Suffix {
+        value: String,
+    },
+    /// Matches every name. Only useful with `Deny` under a deny-by-default
+    /// policy; accepted so a core `Any` rule is never silently dropped.
+    Any,
 }
 
 impl MatchSpec {
-    fn value(&self) -> &str {
+    fn value(&self) -> Option<&str> {
         match self {
-            Self::Exact { value } | Self::Suffix { value } => value,
+            Self::Exact { value } | Self::Suffix { value } => Some(value),
+            Self::Any => None,
         }
     }
 }
 
 /// A device is selected by an explicitly configured source IP. IPs are weak
 /// association only: they never identify a person or a current session.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeviceConfig {
     pub id: String,
@@ -272,6 +407,10 @@ pub struct Config {
     pub timezone: String,
     #[serde(default = "default_stale_secs")]
     pub stale_after_secs: u64,
+    /// Bounded event retention, carried verbatim from a controller policy when
+    /// one is compiled in. Local configs may omit it for backward compatibility.
+    #[serde(default)]
+    pub event_retention_secs: Option<u64>,
     #[serde(default)]
     pub bind: BindConfig,
     #[serde(default)]
@@ -280,6 +419,9 @@ pub struct Config {
     pub upstreams: Vec<String>,
     #[serde(default)]
     pub local_zones: BTreeMap<String, Vec<RecordSpec>>,
+    /// Non-overridable deny-only safety rules. Empty for local-only configs.
+    #[serde(default)]
+    pub baseline: Vec<RuleSpec>,
     #[serde(default = "default_profiles")]
     pub profiles: BTreeMap<String, Vec<RuleSpec>>,
     #[serde(default = "default_device_profile")]
@@ -420,6 +562,21 @@ impl Config {
             }
         }
 
+        if let Some(retention) = self.event_retention_secs {
+            let max = family_policy::store::MAX_NETWORK_EVENT_RETENTION_SECS;
+            if !(1..=max).contains(&retention) {
+                bail!("event_retention_secs must be 1..={max}");
+            }
+        }
+
+        if self.baseline.len() > MAX_RULES_PER_PROFILE {
+            bail!("safety baseline exceeds {MAX_RULES_PER_PROFILE} rules");
+        }
+        let mut seen_ids = BTreeSet::new();
+        for rule in &self.baseline {
+            validate_rule_spec(rule, true, &mut seen_ids, "baseline")?;
+        }
+
         if self.profiles.is_empty() || self.profiles.len() > MAX_PROFILES {
             bail!("profiles must contain 1..={MAX_PROFILES} entries");
         }
@@ -431,15 +588,7 @@ impl Config {
                 bail!("profile {profile} exceeds {MAX_RULES_PER_PROFILE} rules");
             }
             for rule in rules {
-                let value = rule.matcher.value();
-                if value.is_empty() || value.len() > MAX_NAME_LEN {
-                    bail!("rule value must be 1..={MAX_NAME_LEN} characters");
-                }
-                if let Some(reason) = &rule.reason {
-                    if reason.len() > MAX_REASON_LEN {
-                        bail!("rule reason exceeds {MAX_REASON_LEN} characters");
-                    }
-                }
+                validate_rule_spec(rule, false, &mut seen_ids, profile)?;
             }
         }
         if !self.profiles.contains_key(&self.default_device_profile) {
@@ -517,31 +666,18 @@ impl Config {
     /// this with the persisted original timestamp so a restart cannot make an
     /// old policy look freshly published.
     pub fn policy_at(&self, published_at: DateTime<Utc>) -> Policy {
+        let baseline = self
+            .baseline
+            .iter()
+            .enumerate()
+            .map(|(index, rule)| build_rule(rule, "baseline", index))
+            .collect();
         let mut device_profiles = BTreeMap::new();
         for (profile, rules) in &self.profiles {
             let built = rules
                 .iter()
                 .enumerate()
-                .map(|(index, rule)| {
-                    let matcher = match &rule.matcher {
-                        MatchSpec::Exact { value } => {
-                            RuleMatcher::HostExact(value.to_ascii_lowercase())
-                        }
-                        MatchSpec::Suffix { value } => {
-                            RuleMatcher::DomainSuffix(value.to_ascii_lowercase())
-                        }
-                    };
-                    Rule {
-                        id: format!("{profile}-{index}"),
-                        effect: rule.effect,
-                        matcher,
-                        schedule: None,
-                        reason: rule
-                            .reason
-                            .clone()
-                            .unwrap_or_else(|| format!("{profile} rule {index}")),
-                    }
-                })
+                .map(|(index, rule)| build_rule(rule, profile, index))
                 .collect();
             device_profiles.insert(profile.clone(), built);
         }
@@ -549,7 +685,7 @@ impl Config {
             household_id: HouseholdId::from_str(&self.household_id)
                 .expect("household_id validated"),
             revision: self.policy_revision,
-            baseline: Vec::new(),
+            baseline,
             device_profiles,
             person_rules: BTreeMap::new(),
             exceptions: Vec::new(),
@@ -558,7 +694,7 @@ impl Config {
             default_effect: Effect::Deny,
             timezone: self.timezone.clone(),
             stale_after_secs: self.stale_after_secs,
-            event_retention_secs: EVENT_RETENTION_SECS,
+            event_retention_secs: self.event_retention_secs.unwrap_or(EVENT_RETENTION_SECS),
             published_at,
         }
     }
