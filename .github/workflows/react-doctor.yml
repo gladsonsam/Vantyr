@@ -21,6 +21,7 @@ jobs:
   react-doctor:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         directory: [frontend, agent/ui-src]
     steps:

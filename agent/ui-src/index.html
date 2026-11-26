@@ -17,8 +17,8 @@
   <body>
     <script>
       // Vantyr UI is dark-only (matches the dashboard).
-      document.documentElement.classList.add("dark");
-      document.documentElement.style.colorScheme = "dark";
+      globalThis.document.documentElement.classList.add("dark");
+      globalThis.document.documentElement.style.colorScheme = "dark";
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
