@@ -25,11 +25,16 @@ import { FleetTableView } from "./FleetTableView";
 import { FleetToolbar, type StatusCounts } from "./FleetToolbar";
 import { BulkScriptModal } from "./BulkScriptModal";
 import { BulkAddToGroupModal } from "./BulkAddToGroupModal";
+import { DeviceCard } from "@/features/devices/components/DeviceCard";
+import type { DeviceRow } from "@/features/devices/lib/deviceModel";
+import { filterDevices } from "@/features/devices/lib/filterDevices";
 
 interface Props extends FleetTableProps {
   loadingAgents: boolean;
   onSelectAgent: (agentId: string, tab?: TabKey, scroll?: boolean) => void;
   onAddAgent?: () => void;
+  /** Devices that reach Vantyr without an agent. They share the grid with the agent devices. */
+  otherDevices?: DeviceRow[];
 }
 
 const POWER_COPY: Record<
@@ -72,14 +77,12 @@ export function FleetOverview({ loadingAgents, onAddAgent, ...props }: Props) {
       </div>
     );
   }
-  if (Object.keys(props.agents).length === 0) {
+  if (Object.keys(props.agents).length === 0 && !props.otherDevices?.length) {
     return (
       <EmptyState
-        title="No agents yet"
+        title="No devices yet"
         description={
-          onAddAgent
-            ? "Install the Vantyr agent on a device, then enroll it here."
-            : "Ask an admin to enroll a device."
+          onAddAgent ? "Enroll a device to see it here." : "Ask an admin to enroll a device."
         }
         icon={
           <>
@@ -176,6 +179,11 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
   const filtered = Boolean(
     query.trim() || currentFilters.status !== "all" || currentFilters.favoritesOnly,
   );
+  const otherDevices = filterDevices(props.otherDevices ?? [], {
+    query,
+    status: currentFilters.status,
+    favoritesOnly: currentFilters.favoritesOnly,
+  });
 
   return (
     <div className="flex flex-col gap-6">
@@ -224,6 +232,7 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
 
       <FleetRows
         viewProps={viewProps}
+        otherDevices={otherDevices}
         query={query}
         filtered={filtered}
         viewMode={viewMode}
@@ -480,13 +489,15 @@ function createFleetActionHandlers({
 
 function FleetRows({
   viewProps,
+  otherDevices,
   query,
   filtered,
   viewMode,
   isMobile,
   clearFilters,
 }: {
-  viewProps: ComponentProps<typeof FleetGridView>;
+  viewProps: Omit<ComponentProps<typeof FleetGridView>, "extra">;
+  otherDevices: DeviceRow[];
   query: string;
   filtered: boolean;
   viewMode: ReturnType<typeof useFleetTable>["viewMode"];
@@ -496,7 +507,7 @@ function FleetRows({
   return (
     <>
       {" "}
-      {viewProps.rows.length === 0 ? (
+      {viewProps.rows.length === 0 && otherDevices.length === 0 ? (
         <EmptyState
           title="No devices match"
           description={
@@ -518,10 +529,24 @@ function FleetRows({
             )
           }
         />
-      ) : viewMode === "table" && !isMobile ? (
-        <FleetTableView {...viewProps} />
+      ) : viewMode === "table" && !isMobile && viewProps.rows.length > 0 ? (
+        <>
+          <FleetTableView {...viewProps} />
+          {otherDevices.length > 0 && (
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 min-[87.5rem]:grid-cols-3 min-[120rem]:grid-cols-4">
+              {otherDevices.map((row) => (
+                <DeviceCard key={row.key} row={row} />
+              ))}
+            </div>
+          )}
+        </>
       ) : (
-        <FleetGridView {...viewProps} />
+        <FleetGridView
+          {...viewProps}
+          extra={otherDevices.map((row) => (
+            <DeviceCard key={row.key} row={row} />
+          ))}
+        />
       )}
     </>
   );

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { networkKeys } from "@/api/queries/network";
 import { useNetworkRuntime } from "./NetworkRuntimeSource";
-import type { DecisionQuery, EventsQuery, PolicyEdit } from "./types";
+import type { DecisionQuery, DnsStatsQuery, EventsQuery, PolicyEdit } from "./types";
 
 const runtimeKey = (...parts: unknown[]) => [...networkKeys.all, "runtime", ...parts] as const;
 
@@ -40,6 +40,14 @@ export function useExplainDecisionMutation() {
 export function useDnsQuery() {
   const runtime = useNetworkRuntime();
   return useQuery({ queryKey: runtimeKey("dns"), queryFn: () => runtime.dns() });
+}
+
+export function useDnsStatsQuery(query: DnsStatsQuery) {
+  const runtime = useNetworkRuntime();
+  return useQuery({
+    queryKey: runtimeKey("dns-stats", query),
+    queryFn: () => runtime.dnsStats(query),
+  });
 }
 
 export function useProxyQuery() {

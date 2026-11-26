@@ -20,6 +20,7 @@ import { useAgents } from "@/app/providers/useAgents";
 import { useSession } from "@/app/providers/useSession";
 import { usePageHeader } from "@/app/shell/usePageHeader";
 import { useFleetActions } from "@/features/fleet/hooks/useFleetActions";
+import { useDeviceRows } from "@/features/devices/hooks/useDeviceRows";
 
 const NO_CLAIMS: PendingAgentClaim[] = [];
 
@@ -29,6 +30,9 @@ export function OverviewPage() {
   const { agents, liveStatus, agentInfo, agentInfoReceivedAtMs, initialized, refresh } =
     useAgents();
   const fleetActions = useFleetActions();
+  const { rows: deviceRows } = useDeviceRows();
+  // Devices that connect without an agent share the grid with the agent devices.
+  const agentless = deviceRows.filter((row) => row.origin === "household" && row.agentId === null);
   const loadingAgents = !initialized;
   const [addAgentOpen, setAddAgentOpen] = useState(false);
 
@@ -71,7 +75,10 @@ export function OverviewPage() {
   };
 
   // The status tabs and the sidebar badge already carry the counts.
-  usePageHeader({ title: "Agents", description: "Every device reporting to this server." });
+  usePageHeader({
+    title: "Devices",
+    description: "Every device and the ways it connects to Vantyr.",
+  });
 
   const openAgent = (agentId: string, tab: TabKey = "activity", scroll?: boolean) => {
     const q = scroll ? "&scroll=activity" : "";
@@ -113,6 +120,7 @@ export function OverviewPage() {
         agentInfo={agentInfo}
         agentInfoReceivedAtMs={agentInfoReceivedAtMs}
         loadingAgents={loadingAgents}
+        otherDevices={agentless}
         onSelectAgent={openAgent}
         onOpenScreen={(agentId) => navigate(`/agents/${agentId}?tab=live`)}
         onRefresh={refresh}

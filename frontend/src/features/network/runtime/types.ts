@@ -246,6 +246,7 @@ export interface NetworkEvent {
   id: string;
   at: string;
   source: EventSource;
+  deviceId: string;
   deviceLabel: string;
   personLabel: string | null;
   evidence: IdentityEvidence;
@@ -259,6 +260,10 @@ export interface NetworkEvent {
 }
 
 export interface EventsQuery {
+  /** Only this device's events. */
+  deviceId?: string;
+  /** Case-insensitive match on the domain or host. */
+  search?: string;
   source?: EventSource;
   effect?: Effect;
   cursor?: string;
@@ -270,4 +275,29 @@ export interface EventsPage {
   nextCursor: string | null;
   retention: { days: number; maxEvents: number; maxBytes: number };
   usage: { events: number; bytes: number };
+}
+
+// ── DNS statistics ──────────────────────────────────────────────────────────
+
+export type StatsRange = "24h" | "7d" | "30d";
+
+export interface DnsStatsQuery {
+  /** Only this device's queries; omit for the whole household. */
+  deviceId?: string;
+  range: StatsRange;
+}
+
+export interface DomainCount {
+  domain: string;
+  count: number;
+}
+
+/** Counts of DNS queries answered, bucketed over time. These are domain decisions, not page visits. */
+export interface DnsStats {
+  total: number;
+  blocked: number;
+  /** Oldest first; evenly spaced buckets across the range. */
+  series: { at: string; total: number; blocked: number }[];
+  topDomains: DomainCount[];
+  topBlocked: DomainCount[];
 }

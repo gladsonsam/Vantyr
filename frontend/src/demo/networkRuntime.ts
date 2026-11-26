@@ -2,6 +2,8 @@ import type {
   Availability,
   Decision,
   DecisionQuery,
+  DnsStats,
+  DnsStatsQuery,
   DnsView,
   DomainMatch,
   EventsPage,
@@ -182,6 +184,63 @@ function decide(snapshot: PolicySnapshot, q: DecisionQuery): Decision {
   };
 }
 
+const DEVICE_IDS: Record<string, string> = {
+  "Alex’s laptop": "dev-laptop",
+  "Shared desktop": "dev-desktop",
+  "Living room TV": "dev-tv",
+  "Kitchen tablet": "dev-tablet",
+};
+
+/** Deterministic per-device DNS statistics: a daily rhythm, a blocked share, and a few repeat domains. */
+function buildStats(q: DnsStatsQuery): DnsStats {
+  const buckets = q.range === "24h" ? 24 : q.range === "7d" ? 28 : 30;
+  const stepMinutes = q.range === "24h" ? 60 : q.range === "7d" ? 360 : 1440;
+  // A stable number per device, so each one looks different but never flickers between renders.
+  const seed = [...(q.deviceId ?? "all")].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  const scale = q.deviceId ? 0.6 + (seed % 7) / 10 : 3;
+  const series = Array.from({ length: buckets }, (_, i) => {
+    const hour = (i * (stepMinutes / 60)) % 24;
+    const evening = Math.max(0, 1 - Math.abs(hour - 20) / 7);
+    const total = Math.round((18 + 140 * evening + ((seed * (i + 3)) % 23)) * scale);
+    const blocked = Math.round(total * (0.04 + ((seed + i * 5) % 9) / 100));
+    return { at: ago((buckets - 1 - i) * stepMinutes), total, blocked };
+  });
+  const total = series.reduce((sum, b) => sum + b.total, 0);
+  const blocked = series.reduce((sum, b) => sum + b.blocked, 0);
+  const domains = [
+    "video.example",
+    "cdn.example",
+    "news.example",
+    "api.streaming.example",
+    "time.example",
+    "update.example",
+    "images.example",
+    "search.example",
+  ];
+  const blockedDomains = [
+    "tracker.ads.example",
+    "malware.example",
+    "mature.example",
+    "telemetry.example",
+    "phishing.example",
+  ];
+  const spread = (names: string[], sum: number) =>
+    names.map((domain, i) => ({
+      domain,
+      count: Math.max(
+        1,
+        Math.round((sum * (names.length - i)) / ((names.length * (names.length + 1)) / 2)),
+      ),
+    }));
+  return {
+    total,
+    blocked,
+    series,
+    topDomains: spread(domains, total - blocked),
+    topBlocked: spread(blockedDomains, blocked),
+  };
+}
+
 function buildEvents(): NetworkEvent[] {
   const rows: Omit<NetworkEvent, "id" | "at" | "correlationId">[][] = [];
   const visit = (
@@ -196,6 +255,7 @@ function buildEvents(): NetworkEvent[] {
     rows.push(
       sources.map((source) => ({
         source,
+        deviceId: DEVICE_IDS[device] ?? device,
         deviceLabel: device,
         personLabel: person,
         evidence,
@@ -425,6 +485,10 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
       });
     },
 
+    async dnsStats(q: DnsStatsQuery) {
+      return ready<DnsStats>(buildStats(q));
+    },
+
     async proxy() {
       return ready<ProxyView>({
         listener: ready({
@@ -476,7 +540,11 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
 
     async events(q: EventsQuery) {
       const filtered = events.filter(
-        (e) => (!q.source || e.source === q.source) && (!q.effect || e.effect === q.effect),
+        (e) =>
+          (!q.deviceId || e.deviceId === q.deviceId) &&
+          (!q.search || e.subject.toLowerCase().includes(q.search.toLowerCase())) &&
+          (!q.source || e.source === q.source) &&
+          (!q.effect || e.effect === q.effect),
       );
       const start = q.cursor ? Number(q.cursor) : 0;
       const slice = filtered.slice(start, start + q.limit);

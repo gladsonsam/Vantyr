@@ -30,6 +30,23 @@ const RulesPage = lazy(() =>
 const GroupsPage = lazy(() =>
   import("@/features/groups/GroupsPage").then((m) => ({ default: m.GroupsPage })),
 );
+const DeviceLayout = lazy(() =>
+  import("@/features/devices/DeviceLayout").then((m) => ({ default: m.DeviceLayout })),
+);
+const DeviceOverviewPage = lazy(() =>
+  import("@/features/devices/pages/DeviceOverviewPage").then((m) => ({
+    default: m.DeviceOverviewPage,
+  })),
+);
+const DeviceAgentPage = lazy(() =>
+  import("@/features/devices/pages/DeviceAgentPage").then((m) => ({ default: m.DeviceAgentPage })),
+);
+const DeviceDnsPage = lazy(() =>
+  import("@/features/devices/pages/DeviceDnsPage").then((m) => ({ default: m.DeviceDnsPage })),
+);
+const DeviceProxyPage = lazy(() =>
+  import("@/features/devices/pages/DeviceProxyPage").then((m) => ({ default: m.DeviceProxyPage })),
+);
 const NetworkLayout = lazy(() =>
   import("@/features/network/NetworkLayout").then((m) => ({ default: m.NetworkLayout })),
 );
@@ -150,6 +167,12 @@ export function AppRoutes() {
             </Page>
           }
         />
+        <Route path="/devices/:deviceKey" element={<DeviceLayout />}>
+          <Route index element={<DeviceOverviewPage />} />
+          <Route path="agent" element={<DeviceAgentPage />} />
+          <Route path="dns" element={<DeviceDnsPage />} />
+          <Route path="proxy" element={<DeviceProxyPage />} />
+        </Route>
         <Route path="/network" element={<NetworkLayout />}>
           <Route index element={<NetworkOverviewPage />} />
           <Route path="*" element={<Navigate to="/network" replace />} />

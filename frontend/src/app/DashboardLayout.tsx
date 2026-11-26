@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Outlet, matchPath, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { AppShell } from "@/app/shell/AppShell";
 import { agentTabFromParam } from "@/features/agent-detail/lib/agentTabNav";
-import { useNetworkAccess } from "@/features/network/access/useNetworkAccess";
 import { useAgents } from "@/app/providers/useAgents";
 import { useNotifications } from "@/app/providers/useNotifications";
 import { useSession } from "@/app/providers/useSession";
@@ -18,7 +17,6 @@ export function DashboardLayout() {
   const { navUser, logout } = useSession();
   const { agents } = useAgents();
   const { notifications, removeNotification } = useNotifications();
-  const network = useNetworkAccess();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -51,8 +49,6 @@ export function DashboardLayout() {
         // separate destination reached from the sidebar (/settings).
         onShowPreferences={() => navigate("/account", { state: returnTo })}
         onOpenUsers={() => navigate("/users")}
-        // Network access is its own scope, so the item appears only once the server confirms it.
-        showNetwork={network.state === "ready" || network.state === "setup"}
         onOpenActivityLog={() => navigate("/logs", { state: returnTo })}
         onOpenNotifications={navUser?.role === "admin" ? () => navigate("/rules") : undefined}
         notifications={notifications}

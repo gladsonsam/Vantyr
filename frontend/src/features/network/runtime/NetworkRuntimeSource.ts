@@ -3,6 +3,8 @@ import type {
   Availability,
   Decision,
   DecisionQuery,
+  DnsStats,
+  DnsStatsQuery,
   DnsView,
   EventsPage,
   EventsQuery,
@@ -24,6 +26,7 @@ export interface NetworkRuntimeSource {
   editPolicy(edit: PolicyEdit): Promise<Availability<PolicyView>>;
   explainDecision(query: DecisionQuery): Promise<Availability<Decision>>;
   dns(): Promise<Availability<DnsView>>;
+  dnsStats(query: DnsStatsQuery): Promise<Availability<DnsStats>>;
   proxy(): Promise<Availability<ProxyView>>;
   events(query: EventsQuery): Promise<Availability<EventsPage>>;
 }
@@ -42,6 +45,7 @@ export const unavailableRuntime: NetworkRuntimeSource = {
   editPolicy: unavailable,
   explainDecision: unavailable,
   dns: unavailable,
+  dnsStats: unavailable,
   proxy: unavailable,
   events: unavailable,
 };

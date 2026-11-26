@@ -271,7 +271,7 @@ function navigationSections(
       label: "Fleet",
       items: [
         {
-          label: "Agents",
+          label: "Devices",
           path: "/",
           icon: MonitorSmartphone,
           badge: agents.length ? `${onlineCount} online` : undefined,

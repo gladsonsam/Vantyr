@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Activity, ArrowUpCircle, MonitorPlay } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Card } from "@vantyr/ui/components/card";
@@ -24,7 +25,11 @@ export function FleetGridView({
   selection,
   latestAgentVersion,
   handlers,
-}: FleetViewProps) {
+  extra,
+}: FleetViewProps & {
+  /** Further device cards that share this grid, such as devices that connect without an agent. */
+  extra?: ReactNode;
+}) {
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 min-[87.5rem]:grid-cols-3 min-[120rem]:grid-cols-4">
       {rows.map((row) => {
@@ -144,6 +149,7 @@ export function FleetGridView({
           </Card>
         );
       })}
+      {extra}
     </div>
   );
 }
