@@ -1,4 +1,4 @@
-import { Globe, Lock, Server, Tags } from "lucide-react";
+import { Lock, Server, Tags } from "lucide-react";
 import { SettingsSection } from "@/features/network/components/SettingsSection";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import type { DnsView } from "@/features/network/runtime/types";
@@ -101,30 +101,6 @@ export function EncryptedCard({ encrypted }: { encrypted: Ready<"encrypted"> }) 
           </SettingRow>
         ))
       )}
-    </SettingsSection>
-  );
-}
-
-export function ServicesCard({ services }: { services: Ready<"services"> }) {
-  const list = (items: string[] | undefined) =>
-    Array.isArray(items) && items.length > 0 ? items.join(", ") : "None";
-  return (
-    <SettingsSection title="Blocked services and categories" icon={<Globe />}>
-      <SettingRow label="Services">
-        <span className="text-sm text-muted-foreground">{list(services.blockedServices)}</span>
-      </SettingRow>
-      <SettingRow label="Categories">
-        <span className="text-sm text-muted-foreground">{list(services.categories)}</span>
-      </SettingRow>
-      <SettingRow label="Safe search">
-        <span className="text-sm text-muted-foreground">
-          {typeof services.safeSearch === "boolean"
-            ? services.safeSearch
-              ? "On"
-              : "Off"
-            : "Not reported"}
-        </span>
-      </SettingRow>
     </SettingsSection>
   );
 }

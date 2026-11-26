@@ -10,7 +10,7 @@ import { DnsStatusPanel } from "@/features/network/dns-status/DnsStatusPanel";
 import { useDnsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import { SettingsPageHeader } from "@/features/settings/components/SettingsLayout";
 import { AccessCard, CacheCard, FilteringCard, LoggingCard } from "./DnsSettingsCards";
-import { EncryptedCard, RewritesCard, ServicesCard, UpstreamsCard } from "./DnsReadOnlyCards";
+import { EncryptedCard, RewritesCard, UpstreamsCard } from "./DnsReadOnlyCards";
 import { DnsManagementSections } from "./DnsManagementSections";
 import { PendingDnsSection } from "./PendingDnsSection";
 
@@ -41,9 +41,6 @@ function RuntimeDnsSections() {
       <AvailabilityGate title="Upstream servers" value={dns.upstreams}>
         {(upstreams) => <UpstreamsCard upstreams={upstreams} />}
       </AvailabilityGate>
-      <AvailabilityGate title="Blocked services and categories" value={dns.services}>
-        {(services) => <ServicesCard services={services} />}
-      </AvailabilityGate>
       <AvailabilityGate title="Local records" value={dns.rewrites}>
         {(rewrites) => <RewritesCard rewrites={rewrites} />}
       </AvailabilityGate>
@@ -63,7 +60,7 @@ function RuntimeDnsSections() {
   );
 }
 
-/** Vantyr DNS settings. A control saves a proposal for gateways; it does not prove they are enforcing it. */
+/** Vantyr DNS settings. Lists and services are saved as desired config; worker reports show what was applied, not verified enforcement. */
 export function NetworkDnsPage() {
   const household = useNetworkHousehold();
   const isAdmin = useNetworkAdmin(household.id);
@@ -71,7 +68,7 @@ export function NetworkDnsPage() {
     <div className="space-y-8">
       <SettingsPageHeader
         title="DNS"
-        description="A change is saved as a proposal. Saved is not applied, and applied is not verified: only a gateway report says what is enforced."
+        description="Save desired list and service settings. Worker reports show what was applied; they do not independently verify enforcement."
       />
       <div className="space-y-8">
         {isAdmin ? <DnsManagementSections householdId={household.id} /> : null}

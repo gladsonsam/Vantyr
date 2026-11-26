@@ -8,6 +8,7 @@ import type {
   DnsRefreshResult,
   DnsSourceStatus,
   DnsStatusView,
+  DnsSubscriptionSource,
 } from "@/api/types";
 import { asRecord } from "./helpers";
 
@@ -26,6 +27,19 @@ function fakeDigest(value: unknown): string {
     out += (h >>> 0).toString(16).padStart(8, "0");
   }
   return out.slice(0, 64);
+}
+
+/** A source with defaults made explicit, so an omitted interval equals a null one. */
+function canonicalSource(s: DnsSubscriptionSource): string {
+  return JSON.stringify({
+    id: s.id,
+    url: s.url,
+    format: s.format,
+    enabled: s.enabled,
+    interval_secs: s.interval_secs ?? null,
+    max_stale_secs: s.max_stale_secs ?? null,
+    metadata: { title: s.metadata.title, publisher: s.metadata.publisher, license: s.metadata.license },
+  });
 }
 
 /** In-memory DNS management for the demo gateway: seeded desired config v3, reported v2. */
@@ -117,7 +131,10 @@ export function demoDnsManagementApi(): Partial<ApiClient> {
     },
   };
 
-  const refreshes = new Map<string, { seq: number; createdAtMs: number; expiresAt: string }>();
+  const refreshes = new Map<
+    string,
+    { seq: number; createdAtMs: number; configVersion: number; expiresAt: string }
+  >();
   let refreshSeq = 40;
 
   function view(): DnsManagementView {
@@ -212,11 +229,34 @@ export function demoDnsManagementApi(): Partial<ApiClient> {
       if (expected !== desired.config_version) {
         throw new ApiError("config changed; reload and try again", 409);
       }
-      const errors = validateDnsOperations(operations, desired.config, expected);
+      // Id checks in order, like the server: unknown id 404, add_list of an existing id is a no-op
+      // when the source is identical and 409 when it differs. Everything else is validated (400).
+      const effective: DnsOperation[] = [];
+      let working = desired.config;
+      for (const op of operations) {
+        if (op.op === "add_list") {
+          const found = working.sources.find((s) => s.id === op.source.id);
+          if (found) {
+            if (canonicalSource(found) === canonicalSource(op.source)) continue;
+            throw new ApiError(
+              `list "${op.source.id}" already exists with a different source`,
+              409,
+            );
+          }
+        } else if (op.op === "set_list" || op.op === "remove_list") {
+          if (!working.sources.some((s) => s.id === op.id)) {
+            throw new ApiError(`list "${op.id}" not found`, 404);
+          }
+        }
+        effective.push(op);
+        working = applyDnsOperations(working, [op]).config;
+      }
+      if (effective.length === 0) return { changed: false, ...view() };
+      const errors = validateDnsOperations(effective, desired.config, expected);
       if (errors.length > 0) {
         throw new ApiError(errors[0].message, 400, { error: errors[0].message, fields: errors });
       }
-      const { config } = applyDnsOperations(desired.config, operations);
+      const { config } = applyDnsOperations(desired.config, effective);
       const before = JSON.stringify(desired.config);
       if (JSON.stringify(config) === before) return { changed: false, ...view() };
       desired = {
@@ -239,18 +279,23 @@ export function demoDnsManagementApi(): Partial<ApiClient> {
         return {
           source_id: sourceId,
           refresh_seq: existing.seq,
-          config_version: desired.config_version,
+          config_version: existing.configVersion,
           expires_at: existing.expiresAt,
           created: false,
           cooldown_secs: REFRESH_COOLDOWN_SECS,
         };
       }
-      const entry = { seq: ++refreshSeq, createdAtMs: nowMs, expiresAt: ahead(10) };
+      const entry = {
+        seq: ++refreshSeq,
+        createdAtMs: nowMs,
+        configVersion: desired.config_version,
+        expiresAt: ahead(10),
+      };
       refreshes.set(sourceId, entry);
       return {
         source_id: sourceId,
         refresh_seq: entry.seq,
-        config_version: desired.config_version,
+        config_version: entry.configVersion,
         expires_at: entry.expiresAt,
         created: true,
         cooldown_secs: REFRESH_COOLDOWN_SECS,

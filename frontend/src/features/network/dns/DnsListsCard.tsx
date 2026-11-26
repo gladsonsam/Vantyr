@@ -30,7 +30,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@vantyr/ui/components/select";
-import { DotText, Field } from "./dnsManagementShared";
+import { DnsBasisGuard, DotText, Field } from "./dnsManagementShared";
+import { usePinnedBasis } from "./dnsEditor";
 import { errorAt, formatSecs, type DnsEditor } from "./dnsEditor";
 
 const FORMAT_LABEL: Record<DnsListFormat, string> = { hosts: "Hosts", abp: "Adblock (ABP)" };
@@ -370,10 +371,12 @@ function AddListDialog({
   desired: DnsDesiredView | null;
 }) {
   const [draft, setDraft] = useState<ListDraft>(EMPTY_DRAFT);
-  const existing = desired?.config.sources ?? [];
+  const { pinned, basis, stale, pin } = usePinnedBasis(desired, editor);
+  const existing = pinned?.config.sources ?? [];
   const source = sourceOf(draft);
   const errors = validateDnsSource(source);
   if (existing.some((s) => s.id === source.id)) {
+    // Client-side convenience only; the server decides (identical source is a no-op, a different one 409s).
     errors.push({ path: "source.id", message: "A list with this id already exists" });
   }
   const full = existing.length >= DNS_LIMITS.maxSources;
@@ -383,23 +386,41 @@ function AddListDialog({
       title="Add a filter list"
       description="Gateways download the list themselves from this URL."
       submitLabel="Add list"
-      canSubmit={errors.length === 0}
+      canSubmit={errors.length === 0 && !stale}
       disabledReason={full ? `At most ${DNS_LIMITS.maxSources} lists are allowed.` : undefined}
       onSubmit={async () => {
-        const result = await editor.submit([{ op: "add_list", source }]);
+        const result = await editor.submit([{ op: "add_list", source }], basis);
         return result.changed ? undefined : { notice: "No changes" };
       }}
       onReset={() => setDraft(EMPTY_DRAFT)}
     >
+      <DnsBasisGuard
+        stale={stale}
+        onOpen={() => {
+          pin();
+          setDraft(EMPTY_DRAFT);
+        }}
+        onReload={editor.reload}
+      />
       <ListFormFields draft={draft} setDraft={setDraft} errors={errors} mode="add" />
     </FormDialog>
   );
 }
 
-function EditListDialog({ editor, source }: { editor: DnsEditor; source: DnsSubscriptionSource }) {
+function EditListDialog({
+  editor,
+  desired,
+  source,
+}: {
+  editor: DnsEditor;
+  desired: DnsDesiredView | null;
+  source: DnsSubscriptionSource;
+}) {
   const [draft, setDraft] = useState<ListDraft>(() => draftOf(source));
+  const { pinned, basis, stale, pin } = usePinnedBasis(desired, editor);
   const errors = validateDnsSource(sourceOf(draft));
-  const stored = draftOf(source);
+  // Diff against the snapshot the dialog opened with, not whatever the query shows now.
+  const stored = draftOf(pinned?.config.sources.find((s) => s.id === source.id) ?? source);
   const patch: Extract<DnsOperation, { op: "set_list" }>["patch"] = {};
   if (draft.enabled !== stored.enabled) patch.enabled = draft.enabled;
   if (draft.interval.trim() !== stored.interval) patch.interval_secs = parseSecs(draft.interval);
@@ -418,13 +439,21 @@ function EditListDialog({ editor, source }: { editor: DnsEditor; source: DnsSubs
       trigger="Edit"
       title={`Edit ${source.metadata.title}`}
       submitLabel="Save"
-      canSubmit={errors.length === 0 && changed}
+      canSubmit={errors.length === 0 && changed && !stale}
       onSubmit={async () => {
-        const result = await editor.submit([{ op: "set_list", id: source.id, patch }]);
+        const result = await editor.submit([{ op: "set_list", id: source.id, patch }], basis);
         return result.changed ? undefined : { notice: "No changes" };
       }}
       onReset={() => setDraft(draftOf(source))}
     >
+      <DnsBasisGuard
+        stale={stale}
+        onOpen={() => {
+          pin();
+          setDraft(draftOf(source));
+        }}
+        onReload={editor.reload}
+      />
       <ListFormFields draft={draft} setDraft={setDraft} errors={errors} mode="edit" />
     </FormDialog>
   );
@@ -439,6 +468,7 @@ function ListRow({
   editor,
   statuses,
   desiredVersion,
+  desired,
   refreshing,
   note,
   onRefresh,
@@ -447,6 +477,7 @@ function ListRow({
   editor: DnsEditor;
   statuses: DnsGatewayStatus[] | undefined;
   desiredVersion: number;
+  desired: DnsDesiredView | null;
   refreshing: boolean;
   note: RefreshNote | undefined;
   onRefresh: () => void;
@@ -487,7 +518,7 @@ function ListRow({
           checked={source.enabled}
           disabled={editor.busy || editor.conflict}
           onCheckedChange={(checked) =>
-            void editor.run([{ op: "set_list", id: source.id, patch: { enabled: checked } }])
+            void editor.run([{ op: "set_list", id: source.id, patch: { enabled: checked } }], desiredVersion)
           }
         />
         <Button
@@ -499,13 +530,13 @@ function ListRow({
         >
           <RefreshCw className={refreshing ? "animate-spin" : undefined} /> Refresh
         </Button>
-        <EditListDialog key={JSON.stringify(source)} editor={editor} source={source} />
+        <EditListDialog key={source.id} editor={editor} desired={desired} source={source} />
         <HoldAction
           ariaLabel={`Hold to remove ${title}`}
           doneLabel="Removing"
           icon={<Trash2 />}
           disabled={editor.busy || editor.conflict}
-          onHold={() => void editor.run([{ op: "remove_list", id: source.id }])}
+          onHold={() => void editor.run([{ op: "remove_list", id: source.id }], desiredVersion)}
         >
           Hold to remove
         </HoldAction>
@@ -537,9 +568,10 @@ export function DnsListsCard({
           ...n,
           [id]: {
             kind: "error",
+            // Server text verbatim (404 unknown list, 409 disabled), including any global rate-limit message.
             message:
-              isApiError(e) && e.status === 429
-                ? `Too many requests. Try again in ${e.retryAfterSecs ?? 60} seconds.`
+              isApiError(e) && e.status === 429 && e.retryAfterSecs != null
+                ? `${e.message} Try again in ${e.retryAfterSecs} seconds.`
                 : e instanceof Error
                   ? e.message
                   : "Request failed",
@@ -575,6 +607,7 @@ export function DnsListsCard({
             editor={editor}
             statuses={status.data?.gateways}
             desiredVersion={desired?.config_version ?? 0}
+            desired={desired}
             refreshing={refresh.isPending && refresh.variables === source.id}
             note={notes[source.id]}
             onRefresh={() => requestRefresh(source.id)}

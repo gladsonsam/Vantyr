@@ -1,6 +1,8 @@
-import type { ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { Button } from "@vantyr/ui/components/button";
 import { HelpTip } from "@/components/common/HelpTip";
 import { Label } from "@vantyr/ui/components/label";
+import { STALE_MESSAGE } from "./dnsEditor";
 
 export function Field({
   label,
@@ -57,3 +59,37 @@ export function DotText({
   );
 }
 
+
+/**
+ * Render inside a dialog's body (it mounts only while open): pins a fresh basis on open, and shows
+ * a non-dismissable notice with Reload when the pinned basis is no longer the latest.
+ */
+export function DnsBasisGuard({
+  stale,
+  onOpen,
+  onReload,
+}: {
+  stale: boolean;
+  onOpen: () => void;
+  onReload: () => void;
+}) {
+  const open = useRef(onOpen);
+  useEffect(() => {
+    open.current = onOpen;
+  }, [onOpen]);
+  useLayoutEffect(() => {
+    open.current();
+  }, []);
+  if (!stale) return null;
+  return (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 px-4 py-3 text-sm"
+    >
+      <span className="text-warning">{STALE_MESSAGE}</span>
+      <Button type="button" variant="outline" size="sm" onClick={onReload}>
+        Reload
+      </Button>
+    </div>
+  );
+}

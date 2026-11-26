@@ -134,71 +134,71 @@ function GatewayStatusCard({
         ) : null}
       </header>
       <div className="space-y-4 px-5 py-4">
-        {status === null ? (
-          <p className="text-sm text-muted-foreground">
-            No report yet. This gateway has not sent a DNS management report.
-          </p>
-        ) : (
-          <>
-            <div className="space-y-3">
-              <LifecycleRow
-                tone={desired === null ? "text-muted-foreground" : "text-primary"}
-                title={desired === null ? "Desired: nothing saved" : `Desired v${desired}`}
-              />
-              <LifecycleRow
-                tone={deliveredVersion === null ? "text-muted-foreground" : "text-primary"}
-                title={deliveredVersion === null ? "Not delivered yet" : `Delivered v${deliveredVersion}`}
-              >
-                {deliveredAt ? <TimeAgo iso={deliveredAt} /> : null}
-              </LifecycleRow>
-              <LifecycleRow
-                tone={applied === null ? "text-muted-foreground" : behind ? "text-warning" : "text-primary"}
-                title={
-                  applied === null ? (
-                    "Never applied"
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5">
-                      Worker reports applied management v{applied.config_version}
-                      <HelpTip label="Technical details">
-                        <dl className="space-y-1 text-xs">
-                          <div>Generation {applied.generation}</div>
-                          <div>Filter generation {applied.filter_generation}</div>
-                          <div className="break-all">Filter identity {applied.filter_identity}</div>
-                          <div className="break-all font-mono">Config hash {applied.body_sha256}</div>
-                        </dl>
-                      </HelpTip>
-                    </span>
-                  )
-                }
-              >
-                {applied === null ? (
-                  "Delivered, but the worker has not reported applying it."
+        <div className="space-y-3">
+          <LifecycleRow
+            tone={desired === null ? "text-muted-foreground" : "text-primary"}
+            title={desired === null ? "Desired: nothing saved" : `Desired v${desired}`}
+          />
+          <LifecycleRow
+            tone={deliveredVersion === null ? "text-muted-foreground" : "text-primary"}
+            title={deliveredVersion === null ? "Not delivered yet" : `Delivered v${deliveredVersion}`}
+          >
+            {deliveredAt ? <TimeAgo iso={deliveredAt} /> : null}
+          </LifecycleRow>
+          {status === null ? (
+            <LifecycleRow tone="text-muted-foreground" title="No report yet">
+              {deliveredVersion === null
+                ? "This gateway has not sent a DNS management report."
+                : "The worker fetched its configuration but has not sent a status report yet."}
+            </LifecycleRow>
+          ) : (
+            <LifecycleRow
+              tone={applied === null ? "text-muted-foreground" : behind ? "text-warning" : "text-primary"}
+              title={
+                applied === null ? (
+                  "Never applied"
                 ) : (
-                  <>
-                    {applied.applied_at ? (
-                      <>
-                        Applied <TimeAgo iso={applied.applied_at} />
-                      </>
-                    ) : (
-                      "Apply time not reported"
-                    )}
-                    {behind ? (
-                      <span className="block">Gateway is on an older configuration than desired.</span>
-                    ) : null}
-                  </>
-                )}
-              </LifecycleRow>
-            </div>
-            <p className="text-[0.8125rem] text-muted-foreground">
-              Reported v{status.config_version} received <TimeAgo iso={status.received_at} />
-            </p>
-            {applied?.last_error ? (
-              <p className="break-words text-[0.8125rem] text-warning">
-                Apply error: {applied.last_error}
-              </p>
-            ) : null}
-          </>
-        )}
+                  <span className="inline-flex items-center gap-1.5">
+                    Worker reports applied management v{applied.config_version}
+                    <HelpTip label="Technical details">
+                      <dl className="space-y-1 text-xs">
+                        <div>Generation {applied.generation}</div>
+                        <div>Filter generation {applied.filter_generation}</div>
+                        <div className="break-all">Filter identity {applied.filter_identity}</div>
+                        <div className="break-all font-mono">Config hash {applied.body_sha256}</div>
+                      </dl>
+                    </HelpTip>
+                  </span>
+                )
+              }
+            >
+              {applied === null ? (
+                "The worker has not reported applying a configuration."
+              ) : (
+                <>
+                  {applied.applied_at ? (
+                    <>
+                      Applied <TimeAgo iso={applied.applied_at} />
+                    </>
+                  ) : (
+                    "Apply time not reported"
+                  )}
+                  {behind ? (
+                    <span className="block">Gateway is on an older configuration than desired.</span>
+                  ) : null}
+                </>
+              )}
+            </LifecycleRow>
+          )}
+        </div>
+        {status !== null ? (
+          <p className="text-[0.8125rem] text-muted-foreground">
+            Reported v{status.config_version} received <TimeAgo iso={status.received_at} />
+          </p>
+        ) : null}
+        {applied?.last_error ? (
+          <p className="break-words text-[0.8125rem] text-warning">Apply error: {applied.last_error}</p>
+        ) : null}
       </div>
       {status && status.sources.length > 0 ? (
         <ul className="divide-y divide-border/50 border-t border-border/50">
@@ -251,6 +251,19 @@ export function DnsStatusPanel({
     (management.data?.desired?.config.sources ?? []).map((s) => [s.id, s.metadata.title]),
   );
   const view = status.data;
+  // A worker can fetch its config (delivery known) before its first status report.
+  const known = new Set(view.gateways.map((g) => g.gateway_id));
+  const gatewaysShown: DnsGatewayStatus[] = [
+    ...view.gateways,
+    ...[...delivery.values()]
+      .filter((d) => !known.has(d.gateway_id))
+      .map((d): DnsGatewayStatus => ({
+        gateway_id: d.gateway_id,
+        delivered_version: d.delivered_version ?? null,
+        reported_version: d.reported_version ?? null,
+        status: null,
+      })),
+  ];
 
   return (
     <div className="space-y-4">
@@ -259,13 +272,13 @@ export function DnsStatusPanel({
           <CopyTextButton text={link} label="Copy status link" />
         </div>
       ) : null}
-      {view.gateways.every((g) => g.status === null) ? (
+      {gatewaysShown.length === 0 ? (
         <p className="rounded-xl border border-border/70 bg-card/10 px-5 py-4 text-sm text-muted-foreground">
-          No gateway has reported DNS management yet. Reports need a worker credential with the DNS
-          report scope and the worker running with --dns-management.
+          No gateway has fetched or reported DNS management yet. Reports need a worker credential with
+          the DNS report scope and the worker running with --dns-management.
         </p>
       ) : (
-        view.gateways.map((gateway) => (
+        gatewaysShown.map((gateway) => (
           <GatewayStatusCard
             key={gateway.gateway_id}
             gateway={gateway}

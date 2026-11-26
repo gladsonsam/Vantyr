@@ -41,7 +41,7 @@ export function usePatchDnsManagement(household: string) {
   });
 }
 
-/** Manual refresh of one list. Variable is the source id. 429 carries `ApiError.retryAfterSecs`. */
+/** Manual refresh of one list. Variable is the source id. A repeat inside the cooldown resolves with `created: false`. */
 export function useRefreshDnsList(household: string) {
   const queryClient = useQueryClient();
   return useMutation({

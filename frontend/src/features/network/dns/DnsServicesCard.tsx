@@ -22,7 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@vantyr/ui/components/select";
-import { Field } from "./dnsManagementShared";
+import { DnsBasisGuard, Field } from "./dnsManagementShared";
+import { usePinnedBasis } from "./dnsEditor";
 import { errorAt, type DnsEditor } from "./dnsEditor";
 
 const CATALOG_HELP =
@@ -217,8 +218,10 @@ function ServiceDialog({
 }) {
   const mode = service ? "edit" : "add";
   const [draft, setDraft] = useState<ServiceDraft>(() => (service ? draftOf(service) : EMPTY_SERVICE));
-  const catalog = desired?.config.catalog ?? null;
-  const selected = desired?.config.selected_services ?? [];
+  const { pinned, basis, stale, pin } = usePinnedBasis(desired, editor);
+  // Everything below derives from the snapshot the dialog opened with (full set_catalog is built from it).
+  const catalog = pinned?.config.catalog ?? null;
+  const selected = pinned?.config.selected_services ?? [];
   const next = serviceOf(draft);
   const errors = validateDnsCatalog({ version: catalog?.version ?? DEFAULT_CATALOG_VERSION, services: [next] });
   if (!service && catalog?.services.some((s) => s.id === next.id)) {
@@ -249,7 +252,7 @@ function ServiceDialog({
       title={service ? `Edit ${service.label}` : "Define a service"}
       description="Domains you choose to block. This is your own definition; Vantyr does not verify it."
       submitLabel={service ? "Save" : "Add service"}
-      canSubmit={errors.length === 0}
+      canSubmit={errors.length === 0 && !stale}
       disabledReason={full ? `At most ${DNS_LIMITS.maxServices} services are allowed.` : undefined}
       onSubmit={async () => {
         const result = await editor.submit([
@@ -259,7 +262,7 @@ function ServiceDialog({
               service ? all.map((s) => (s.id === service.id ? next : s)) : [...all, next],
             ),
           },
-        ]);
+        ], basis);
         return result.changed ? undefined : { notice: "No changes" };
       }}
       onReset={() => setDraft(service ? draftOf(service) : EMPTY_SERVICE)}
@@ -270,9 +273,10 @@ function ServiceDialog({
               ariaLabel={`Hold to remove ${service.label}`}
               doneLabel="Removing"
               icon={<Trash2 />}
+              disabled={stale}
               onHold={() => {
                 setRemoveError(null);
-                editor.submit(removeOps()).catch((e: unknown) => {
+                editor.submit(removeOps(), basis).catch((e: unknown) => {
                   setRemoveError(e instanceof Error ? e.message : "Request failed");
                 });
               }}
@@ -293,6 +297,14 @@ function ServiceDialog({
         ) : null
       }
     >
+      <DnsBasisGuard
+        stale={stale}
+        onOpen={() => {
+          pin();
+          setDraft(service ? draftOf(service) : EMPTY_SERVICE);
+        }}
+        onReload={editor.reload}
+      />
       <ServiceFormFields draft={draft} setDraft={setDraft} errors={errors} mode={mode} />
     </FormDialog>
   );
@@ -342,7 +354,7 @@ function ServiceRow({
           >
             <ChevronRight className={`transition-transform ${open ? "rotate-90" : ""}`} /> Domains
           </Button>
-          <ServiceDialog key={JSON.stringify(service) + desired.config_version} editor={editor} desired={desired} service={service} />
+          <ServiceDialog key={service.id} editor={editor} desired={desired} service={service} />
         </div>
       </div>
       {open ? (
@@ -369,8 +381,19 @@ function ServiceRow({
   );
 }
 
-function CatalogVersionDialog({ editor, catalog }: { editor: DnsEditor; catalog: DnsServiceCatalog }) {
-  const [version, setVersion] = useState(catalog.version);
+function CatalogVersionDialog({
+  editor,
+  desired,
+  catalog: latestCatalog,
+}: {
+  editor: DnsEditor;
+  desired: DnsDesiredView | null;
+  catalog: DnsServiceCatalog;
+}) {
+  const [version, setVersion] = useState(latestCatalog.version);
+  const { pinned, basis, stale, pin } = usePinnedBasis(desired, editor);
+  // The whole catalog is resubmitted, so it must be the one the dialog opened with.
+  const catalog = pinned?.config.catalog ?? latestCatalog;
   const trimmed = version.trim();
   const message = validateDnsCatalog({ version: trimmed, services: [] }).find((e) => e.path === "catalog.version")?.message ?? null;
   return (
@@ -380,15 +403,23 @@ function CatalogVersionDialog({ editor, catalog }: { editor: DnsEditor; catalog:
       title="Catalog version"
       description="Your own revision marker for this set of definitions."
       submitLabel="Save"
-      canSubmit={message === null && trimmed !== catalog.version}
+      canSubmit={message === null && trimmed !== catalog.version && !stale}
       onSubmit={async () => {
         const result = await editor.submit([
           { op: "set_catalog", catalog: { version: trimmed, services: catalog.services } },
-        ]);
+        ], basis);
         return result.changed ? undefined : { notice: "No changes" };
       }}
-      onReset={() => setVersion(catalog.version)}
+      onReset={() => setVersion(latestCatalog.version)}
     >
+      <DnsBasisGuard
+        stale={stale}
+        onOpen={() => {
+          pin();
+          setVersion(latestCatalog.version);
+        }}
+        onReload={editor.reload}
+      />
       <Field label="Version" id="catalog-version" error={message}>
         <Input id="catalog-version" value={version} onChange={(e) => setVersion(e.target.value)} />
       </Field>
@@ -408,7 +439,7 @@ export function DnsServicesCard({
   const selected = desired?.config.selected_services ?? [];
   const toggle = (id: string, on: boolean) => {
     const ids = on ? [...new Set([...selected, id])] : selected.filter((x) => x !== id);
-    void editor.run([{ op: "select_services", ids }]);
+    void editor.run([{ op: "select_services", ids }], desired?.config_version ?? 0);
   };
   return (
     <SettingsSection
@@ -437,8 +468,8 @@ export function DnsServicesCard({
         <div className="flex items-center justify-between gap-3 px-5 py-3 text-[0.8125rem] text-muted-foreground">
           <span>Catalog version {desired.config.catalog.version}</span>
           <CatalogVersionDialog
-            key={desired.config.catalog.version}
             editor={editor}
+            desired={desired}
             catalog={desired.config.catalog}
           />
         </div>

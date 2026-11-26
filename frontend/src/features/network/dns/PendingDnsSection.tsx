@@ -1,5 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { HelpTip } from "@/components/common/HelpTip";
+import { useDnsQuery } from "@/features/network/runtime/useRuntimeQueries";
 
 interface PendingItem {
   name: string;
@@ -49,6 +50,42 @@ function Group({ title, items }: { title: string; items: PendingItem[] }) {
   );
 }
 
+/** The old runtime snapshot of services, categories and SafeSearch. Read-only and not the managed Blocked services card. */
+function DemoOnlyServices() {
+  const query = useDnsQuery();
+  if (!query.data || query.data.state === "unavailable") return null;
+  const value = query.data.data.services;
+  if (value.state === "unavailable") return null;
+  const services = value.data;
+  const list = (items: string[] | undefined) =>
+    Array.isArray(items) && items.length > 0 ? items.join(", ") : "None";
+  const safe =
+    typeof services.safeSearch === "boolean" ? (services.safeSearch ? "On" : "Off") : "Not reported";
+  return (
+    <div className="px-5 py-4">
+      <h4 className="mb-2 flex items-center gap-2 text-sm font-medium">
+        Service categories and SafeSearch
+        <span className="text-[0.8125rem] font-normal text-muted-foreground">Demo only</span>
+      </h4>
+      <ul className="divide-y divide-border/50 text-sm">
+        {[
+          ["Services", list(services.blockedServices)],
+          ["Categories", list(services.categories)],
+          ["SafeSearch", safe],
+        ].map(([label, text]) => (
+          <li key={label} className="flex items-center justify-between gap-4 py-2">
+            <span>{label}</span>
+            <span className="text-[0.8125rem] text-muted-foreground">{text}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Not enforced by this server. Use Blocked services above to block domains.
+      </p>
+    </div>
+  );
+}
+
 /** Everything this server cannot do yet, in one collapsed place so the live settings stay uncluttered. */
 export function PendingDnsSection() {
   return (
@@ -63,6 +100,7 @@ export function PendingDnsSection() {
       <div className="divide-y divide-border/50 border-t border-border/50">
         <Group title="Management" items={MANAGEMENT} />
         <Group title="Advanced" items={ADVANCED} />
+        <DemoOnlyServices />
       </div>
     </details>
   );
