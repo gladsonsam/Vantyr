@@ -200,9 +200,9 @@ function NumberField({
 }
 
 /**
- * Compose a NEW revision, empty or from the current (highest saved) one. What you publish replaces
- * the content wholesale as a new revision; content the composer cannot carry over is listed before
- * you publish, and saving applies it nowhere.
+ * Compose a NEW revision, empty or from the current (highest saved) one. Publishing creates a new
+ * immutable revision from exactly this content and leaves earlier revisions in history; content
+ * the composer cannot carry over is listed before you publish, and saving assigns it to no gateway.
  */
 export function PolicyComposer({
   household,
@@ -256,7 +256,7 @@ export function PolicyComposer({
       title="New revision"
       description={
         latest
-          ? `Start from the current revision (r${latest.revision}) or from scratch. Publishing saves a full replacement as a new revision.`
+          ? `Start from the current revision (r${latest.revision}) or from scratch. Publishing creates a new revision from exactly the content you compose; earlier revisions stay in history.`
           : "Compose the first revision."
       }
       icon={<FilePlus2 />}
@@ -297,8 +297,8 @@ export function PolicyComposer({
             <div>Started from r{base.revision}.</div>
             <div className={base.dropped.length > 0 ? "font-medium text-warning" : "text-muted-foreground"}>
               {base.dropped.length > 0
-                ? `Publishing replaces r${base.revision} and will not include: ${base.dropped.join(", ")}.`
-                : `Nothing was left out. Publishing still replaces r${base.revision} with exactly what is below.`}
+                ? `Publishing creates a new revision using exactly the content below; r${base.revision} remains in history. The new revision will omit: ${base.dropped.join(", ")}.`
+                : `Nothing was left out. Publishing creates a new revision using exactly the content below; r${base.revision} remains in history.`}
             </div>
           </div>
         ) : null}
@@ -446,7 +446,7 @@ export function PolicyComposer({
             </div>
             <div className="text-muted-foreground">
               {latest
-                ? `Latest saved is r${latest.revision} (${formatBytes(latest.body_bytes)}). This replaces ${base ? `r${base.revision}` : "its content"} and saves as a new revision. If someone publishes first, it is refused.`
+                ? `Latest saved is r${latest.revision} (${formatBytes(latest.body_bytes)}). This saves a new revision with exactly the content above; ${base ? `r${base.revision}` : "earlier revisions"} remain in history and no gateway is assigned automatically. If someone publishes first, it is refused.`
                 : "No revision exists yet, so this becomes the first."}
             </div>
           </div>
