@@ -302,6 +302,19 @@ export interface DnsStats {
   topBlocked: DomainCount[];
 }
 
+/** Counts of proxy requests decided, bucketed over time. Hosts only: never full URLs or page contents. */
+export interface ProxyStats {
+  total: number;
+  blocked: number;
+  /** Requests whose HTTPS traffic was inspected (needs a trusted CA on the device). */
+  inspected: number;
+  /** Oldest first; evenly spaced buckets across the range. */
+  series: { at: string; total: number; blocked: number }[];
+  /** `domain` holds the destination host. */
+  topHosts: DomainCount[];
+  topBlocked: DomainCount[];
+}
+
 // ── Actions ─────────────────────────────────────────────────────────────────
 
 /** The result of asking a gateway to confirm it can still reach, and decide for, a device. */

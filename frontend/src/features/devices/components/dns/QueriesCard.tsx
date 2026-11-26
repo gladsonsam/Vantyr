@@ -1,18 +1,12 @@
 import { useState } from "react";
 import Counter from "@/components/react-bits/Counter";
-import RubberSegment from "@/components/react-bits/RubberSegment";
 import { StatCard } from "@/components/common/StatCard";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
 import { useDnsStatsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import type { StatsRange } from "@/features/network/runtime/types";
+import { RangePicker } from "../RangePicker";
 import { QueryChart } from "./QueryChart";
 import { TopDomains } from "./TopDomains";
-
-const RANGES: { key: StatsRange; label: string }[] = [
-  { key: "24h", label: "24 hours" },
-  { key: "7d", label: "7 days" },
-  { key: "30d", label: "30 days" },
-];
 
 function Figure({ value }: { value: number }) {
   return <Counter value={value} fontSize={24} fontWeight={600} textColor="currentColor" />;
@@ -23,21 +17,7 @@ export function QueriesCard({ deviceId }: { deviceId: string }) {
   const [range, setRange] = useState<StatsRange>("24h");
   const query = useDnsStatsQuery({ deviceId, range });
 
-  const picker = (
-    <div className="flex justify-end">
-      <RubberSegment
-        aria-label="Time range"
-        items={RANGES.map((r) => ({ value: r.key, label: r.key }))}
-        value={range}
-        onChange={(next) => setRange(next as StatsRange)}
-        size="sm"
-        trackColor="var(--muted)"
-        thumbColor="var(--primary)"
-        textColor="var(--muted-foreground)"
-        activeTextColor="var(--primary-foreground)"
-      />
-    </div>
-  );
+  const picker = <RangePicker value={range} onChange={setRange} />;
 
   if (query.isPending) {
     return (

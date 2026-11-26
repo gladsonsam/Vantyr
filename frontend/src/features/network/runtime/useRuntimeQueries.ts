@@ -56,6 +56,14 @@ export function useDnsStatsQuery(query: DnsStatsQuery) {
   });
 }
 
+export function useProxyStatsQuery(query: DnsStatsQuery) {
+  const runtime = useNetworkRuntime();
+  return useQuery({
+    queryKey: runtimeKey("proxy-stats", query),
+    queryFn: () => runtime.proxyStats(query),
+  });
+}
+
 export function useProxyQuery() {
   const runtime = useNetworkRuntime();
   return useQuery({ queryKey: runtimeKey("proxy"), queryFn: () => runtime.proxy() });

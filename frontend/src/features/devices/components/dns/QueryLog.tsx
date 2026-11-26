@@ -6,21 +6,53 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@vantyr/ui/compone
 import RubberSegment from "@/components/react-bits/RubberSegment";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
 import { useEventsQuery } from "@/features/network/runtime/useRuntimeQueries";
-import type { Effect } from "@/features/network/runtime/types";
+import type { Effect, EventSource } from "@/features/network/runtime/types";
 import { fmtDateTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 const PAGE = 8;
 type ResultFilter = "all" | Effect;
 
-/** Every DNS decision for this device, newest first, searchable and filterable. */
-export function QueryLog({ deviceId }: { deviceId: string }) {
+const COPY = {
+  dns: {
+    title: "Recent queries",
+    helpLabel: "About the query log",
+    help: "A DNS decision is about a domain name. It is not a record of the pages someone visited.",
+    placeholder: "Search domains…",
+    searchLabel: "Search the query log",
+    unavailable: "Query log",
+    failed: "Couldn’t load the query log.",
+    empty: "No queries match.",
+    noun: "queries",
+  },
+  proxy: {
+    title: "Recent requests",
+    helpLabel: "About the request log",
+    help: "A proxy decision is about a destination host. Vantyr does not keep the pages or content someone viewed.",
+    placeholder: "Search hosts…",
+    searchLabel: "Search the request log",
+    unavailable: "Request log",
+    failed: "Couldn’t load the request log.",
+    empty: "No requests match.",
+    noun: "requests",
+  },
+} as const;
+
+/** Every DNS (or proxy) decision for this device, newest first, searchable and filterable. */
+export function QueryLog({
+  deviceId,
+  source = "dns",
+}: {
+  deviceId: string;
+  source?: Extract<EventSource, "dns" | "proxy">;
+}) {
+  const copy = COPY[source];
   const [search, setSearch] = useState("");
   const [result, setResult] = useState<ResultFilter>("all");
   const [limit, setLimit] = useState(PAGE);
   const query = useEventsQuery({
     deviceId,
-    source: "dns",
+    source,
     search: search.trim() || undefined,
     effect: result === "all" ? undefined : result,
     limit,
@@ -35,11 +67,8 @@ export function QueryLog({ deviceId }: { deviceId: string }) {
       <div className="space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h3 className="flex items-center gap-1 font-medium">
-            Recent queries
-            <HelpTip label="About the query log">
-              A DNS decision is about a domain name. It is not a record of the pages someone
-              visited.
-            </HelpTip>
+            {copy.title}
+            <HelpTip label={copy.helpLabel}>{copy.help}</HelpTip>
           </h3>
           <div className="flex flex-wrap items-center gap-3">
             <RubberSegment
@@ -70,19 +99,19 @@ export function QueryLog({ deviceId }: { deviceId: string }) {
                   setSearch(event.target.value);
                   setLimit(PAGE);
                 }}
-                placeholder="Search domains…"
-                aria-label="Search the query log"
+                placeholder={copy.placeholder}
+                aria-label={copy.searchLabel}
               />
             </InputGroup>
           </div>
         </div>
 
         {query.data?.state === "unavailable" ? (
-          <UnavailableSection title="Query log" reason={query.data.reason} />
+          <UnavailableSection title={copy.unavailable} reason={query.data.reason} />
         ) : query.isError ? (
-          <UnavailableSection title="Query log" reason="Couldn’t load the query log." />
+          <UnavailableSection title={copy.unavailable} reason={copy.failed} />
         ) : events.length === 0 && !query.isPending ? (
-          <p className="py-6 text-sm text-muted-foreground">No queries match.</p>
+          <p className="py-6 text-sm text-muted-foreground">{copy.empty}</p>
         ) : (
           <ul className="divide-y divide-border/60">
             {events.map((event) => {
@@ -119,10 +148,10 @@ export function QueryLog({ deviceId }: { deviceId: string }) {
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {retention ? (
+          {retention && source === "dns" ? (
             <p className="text-xs text-muted-foreground">
               Keeping {retention.retention.days} days. {retention.usage.events.toLocaleString()} of{" "}
-              {retention.retention.maxEvents.toLocaleString()} queries stored.
+              {retention.retention.maxEvents.toLocaleString()} {copy.noun} stored.
             </p>
           ) : (
             <span />

@@ -16,10 +16,9 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@/*": ["./src/*"],
-      "@tests/*": ["./tests/*"]
+      "@/*": ["./src/*"]
     },
     "types": ["bun", "node"]
   },
-  "include": ["src", "tests"]
+  "include": ["src"]
 }

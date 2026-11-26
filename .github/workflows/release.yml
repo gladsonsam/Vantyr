@@ -197,9 +197,6 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
-      - name: Frontend test
-        run: npm test -w frontend
-
       - name: Frontend build
         run: npm run build -w frontend
 

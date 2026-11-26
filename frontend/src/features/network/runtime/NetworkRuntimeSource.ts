@@ -14,6 +14,7 @@ import type {
   PolicyEdit,
   PolicyView,
   ProxyInspection,
+  ProxyStats,
   ProxyView,
 } from "./types";
 
@@ -33,6 +34,7 @@ export interface NetworkRuntimeSource {
   /** Changes DNS settings. Like policy, a saved change is not proof a gateway is enforcing it. */
   updateDns(patch: DnsSettingsPatch): Promise<Availability<DnsView>>;
   proxy(): Promise<Availability<ProxyView>>;
+  proxyStats(query: DnsStatsQuery): Promise<Availability<ProxyStats>>;
   revokeProxyCredential(id: string): Promise<Availability<ProxyView>>;
   /** Turns HTTPS inspection on or off. Turning it on only starts trust setup; it is not "trusted" until devices say so. */
   setInspection(enabled: boolean): Promise<Availability<ProxyInspection>>;
@@ -58,6 +60,7 @@ export const unavailableRuntime: NetworkRuntimeSource = {
   dnsStats: unavailable,
   updateDns: unavailable,
   proxy: unavailable,
+  proxyStats: unavailable,
   revokeProxyCredential: unavailable,
   setInspection: unavailable,
   runCheck: unavailable,

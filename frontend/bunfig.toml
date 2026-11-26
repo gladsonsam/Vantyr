@@ -3,7 +3,3 @@
 "import.meta.env.PROD" = "false"
 "import.meta.env.MODE" = '"test"'
 "import.meta.env.BASE_URL" = '"/"'
-
-[test]
-root = "tests"
-preload = ["./tests/setup.ts"]

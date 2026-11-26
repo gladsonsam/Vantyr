@@ -18,6 +18,7 @@ import type {
   PolicySnapshot,
   PolicyView,
   ProxyInspection,
+  ProxyStats,
   ProxyView,
   ScopedRules,
   TrustState,
@@ -246,6 +247,50 @@ function buildStats(q: DnsStatsQuery): DnsStats {
   };
 }
 
+/**
+ * Deterministic per-device proxy statistics. Only some devices use the proxy, and what it blocks matches
+ * the demo proxy events (malware.example for the laptop, games.example for the desktop).
+ */
+function buildProxyStats(q: DnsStatsQuery, inspectedShare: number): ProxyStats {
+  const buckets = q.range === "24h" ? 24 : q.range === "7d" ? 28 : 30;
+  const stepMinutes = q.range === "24h" ? 60 : q.range === "7d" ? 360 : 1440;
+  const seed = [...(q.deviceId ?? "all")].reduce((acc, ch) => acc + ch.charCodeAt(0) * 3, 0);
+  const scale = q.deviceId ? 0.3 + (seed % 5) / 10 : 1.5;
+  const series = Array.from({ length: buckets }, (_, i) => {
+    const hour = (i * (stepMinutes / 60)) % 24;
+    const daytime = Math.max(0, 1 - Math.abs(hour - 14) / 8);
+    const total = Math.round((6 + 60 * daytime + ((seed * (i + 2)) % 11)) * scale);
+    const blocked = Math.round(total * (0.03 + ((seed + i * 3) % 7) / 100));
+    return { at: ago((buckets - 1 - i) * stepMinutes), total, blocked };
+  });
+  const total = series.reduce((sum, b) => sum + b.total, 0);
+  const blocked = series.reduce((sum, b) => sum + b.blocked, 0);
+  const spread = (names: string[], sum: number) =>
+    names.map((domain, i) => ({
+      domain,
+      count: Math.max(
+        1,
+        Math.round((sum * (names.length - i)) / ((names.length * (names.length + 1)) / 2)),
+      ),
+    }));
+  const hosts =
+    q.deviceId === "dev-desktop"
+      ? ["homework.example", "docs.example", "video.example", "cdn.example", "search.example", "update.example"]
+      : ["news.example", "cdn.example", "api.streaming.example", "search.example", "images.example", "update.example"];
+  const blockedHosts =
+    q.deviceId === "dev-desktop"
+      ? ["games.example", "tracker.ads.example", "telemetry.example"]
+      : ["malware.example", "tracker.ads.example", "phishing.example", "telemetry.example", "mature.example", "ads2.example"];
+  return {
+    total,
+    blocked,
+    inspected: Math.round(total * inspectedShare),
+    series,
+    topHosts: spread(hosts, total - blocked),
+    topBlocked: spread(blockedHosts, blocked),
+  };
+}
+
 function buildEvents(): NetworkEvent[] {
   const rows: Omit<NetworkEvent, "id" | "at" | "correlationId">[][] = [];
   const visit = (
@@ -277,6 +322,7 @@ function buildEvents(): NetworkEvent[] {
   ]);
   visit("Shared desktop", "Sam", "verified", "games.example", "deny", "Sam: school nights", [
     "dns",
+    "proxy",
   ]);
   visit("Shared desktop", null, "unknown", "video.example", "allow", "Household default", ["dns"]);
   visit(
@@ -313,7 +359,7 @@ function buildEvents(): NetworkEvent[] {
     "malware.example",
     "deny",
     "Household baseline: known malware host",
-    ["dns"],
+    ["dns", "proxy"],
   );
   const events: NetworkEvent[] = [];
   for (let i = 0; i < 48; i++) {
@@ -530,6 +576,12 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
 
     async dnsStats(q: DnsStatsQuery) {
       return ready<DnsStats>(buildStats(q));
+    },
+
+    async proxyStats(q: DnsStatsQuery) {
+      // Nothing is inspected until devices report trusting the CA.
+      const inspected = inspectionState.trust === "trusted" ? 0.6 : 0;
+      return ready<ProxyStats>(buildProxyStats(q, inspected));
     },
 
     async proxy() {

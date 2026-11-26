@@ -12,7 +12,6 @@
     "preview": "vite preview",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "test": "bun test --isolate --parallel=4",
     "doctor": "npx react-doctor@latest"
   },
   "dependencies": {

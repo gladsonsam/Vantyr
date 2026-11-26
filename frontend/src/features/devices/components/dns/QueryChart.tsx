@@ -2,6 +2,8 @@ import { useState } from "react";
 import { fmtDateTime } from "@/lib/utils";
 import type { DnsStats } from "@/features/network/runtime/types";
 
+export type ChartSeries = DnsStats["series"];
+
 const W = 720;
 const H = 160;
 
@@ -9,7 +11,16 @@ const H = 160;
  * Queries over time as stacked bars: allowed on the bottom, blocked on top. Dependency-free; hovering
  * a bar shows that bucket's counts.
  */
-export function QueryChart({ series }: { series: DnsStats["series"] }) {
+export function QueryChart({
+  series,
+  title = "Queries over time",
+  noun = "queries",
+}: {
+  series: ChartSeries;
+  title?: string;
+  /** What the buckets count, for the chart's accessible name. */
+  noun?: string;
+}) {
   const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(1, ...series.map((bucket) => bucket.total));
   const gap = 3;
@@ -21,7 +32,7 @@ export function QueryChart({ series }: { series: DnsStats["series"] }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="font-medium">Queries over time</h3>
+        <h3 className="font-medium">{title}</h3>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded-sm bg-primary" />
@@ -39,7 +50,7 @@ export function QueryChart({ series }: { series: DnsStats["series"] }) {
           preserveAspectRatio="none"
           className="block h-40 w-full"
           role="img"
-          aria-label="Queries over time, with blocked queries marked"
+          aria-label={`${title}, with blocked ${noun} marked`}
         >
           {[0.25, 0.5, 0.75].map((line) => (
             <line

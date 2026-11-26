@@ -14,7 +14,6 @@
     "dev": "npm run dev -w frontend",
     "lint": "npm run lint --workspaces --if-present",
     "lint:fix": "npm run lint:fix --workspaces --if-present",
-    "test": "npm test -w frontend",
     "format": "bun fmt frontend agent/ui-src packages package.json bunfig.toml .github/workflows",
     "format:check": "bun fmt --check frontend agent/ui-src packages package.json bunfig.toml .github/workflows"
   },

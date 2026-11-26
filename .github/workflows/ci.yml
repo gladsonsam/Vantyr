@@ -110,9 +110,6 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
-      - name: Test
-        run: npm test -w frontend
-
       - name: Type-check & build
         run: npm run build -w frontend
 

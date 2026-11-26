@@ -43,7 +43,7 @@ docker compose up -d
 
 `server/` and `protocol/` form the root Cargo workspace; `agent/` is built separately and depends on `protocol/` by path.
 
-The JavaScript side is an npm workspace: `frontend/`, `agent/ui-src/` and `packages/ui/` share one root `package-lock.json`. Run `npm ci` at the repository root. Oxlint handles linting; pinned Bun runs tests and formatting through `npm test`, `npm run format` and `npm run format:check`.
+The JavaScript side is an npm workspace: `frontend/`, `agent/ui-src/` and `packages/ui/` share one root `package-lock.json`. Run `npm ci` at the repository root. Oxlint handles linting; pinned Bun runs formatting through `npm run format` and `npm run format:check`.
 
 ## Development
 
