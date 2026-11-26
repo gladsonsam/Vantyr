@@ -316,7 +316,13 @@ async fn foreign_household_ids_never_read_or_write(pool: PgPool) {
     assert_eq!(status, 200);
 
     // B's admin grant cannot use it against A; a stranger has no grant at all.
-    assert_eq!(stranger_http.get(&format!("/api/network/households/{hid_a}/policies")).await.0, 403);
+    assert_eq!(
+        stranger_http
+            .get(&format!("/api/network/households/{hid_a}/policies"))
+            .await
+            .0,
+        403
+    );
     // A's gateway id is not a B scope: 403/404, never a foreign-row disclosure.
     assert_eq!(
         admin
@@ -362,18 +368,27 @@ async fn concurrent_publish_allocates_distinct_monotonic_revisions(pool: PgPool)
                 .map(|r| r.revision)
         }));
     }
-    let results = tokio::time::timeout(Duration::from_secs(20), futures_util::future::join_all(tasks))
-        .await
-        .expect("publish deadlock");
+    let results = tokio::time::timeout(
+        Duration::from_secs(20),
+        futures_util::future::join_all(tasks),
+    )
+    .await
+    .expect("publish deadlock");
     let mut revisions: Vec<u64> = results
         .into_iter()
         .map(|r| r.expect("publish task"))
         .map(|r| r.expect("publish ok"))
         .collect();
     revisions.sort_unstable();
-    assert_eq!(revisions, vec![1, 2, 3, 4, 5, 6], "revisions are unique and monotonic");
+    assert_eq!(
+        revisions,
+        vec![1, 2, 3, 4, 5, 6],
+        "revisions are unique and monotonic"
+    );
 
-    let rows = super::policy_db::list_versions(&pool, hid, 50, 0).await.unwrap();
+    let rows = super::policy_db::list_versions(&pool, hid, 50, 0)
+        .await
+        .unwrap();
     assert_eq!(rows.len(), 6, "history retains every version at this bound");
     assert_eq!(rows[0].revision, 6);
 }
@@ -413,12 +428,17 @@ async fn stale_expected_revision_is_409_and_rollback_creates_new_revision(pool: 
     assert_eq!(status, 200, "rollback failed: {body}");
     assert_eq!(body["revision"], 3);
     assert_eq!(body["status"], "saved");
-    let rows = super::policy_db::list_versions(&pool, hid, 50, 0).await.unwrap();
+    let rows = super::policy_db::list_versions(&pool, hid, 50, 0)
+        .await
+        .unwrap();
     assert_eq!(rows.len(), 3);
     let rolled_back = rows.iter().find(|r| r.revision == 3).unwrap();
     assert_eq!(rolled_back.source_kind, "rollback");
     assert_eq!(rolled_back.rolled_back_from_revision, Some(1));
-    assert_eq!(rows.iter().find(|r| r.revision == 1).unwrap().published_by, Some(owner));
+    assert_eq!(
+        rows.iter().find(|r| r.revision == 1).unwrap().published_by,
+        Some(owner)
+    );
     handle.abort();
 }
 
@@ -460,7 +480,10 @@ async fn desired_assignment_is_saved_only_and_foreign_refs_deny(pool: PgPool) {
 
     // The gateway's own stored kind wins; a proxy gateway has kind proxy.
     let proxy_path = format!("/api/network/households/{hid}/gateways/{proxy_gid}/desired-policy");
-    assert_eq!(admin.put(&proxy_path, json!({ "revision": 1 })).await.0, 200);
+    assert_eq!(
+        admin.put(&proxy_path, json!({ "revision": 1 })).await.0,
+        200
+    );
     let (_, body) = admin.get(&proxy_path).await;
     assert_eq!(body["desired"]["kind"], "proxy");
     handle.abort();
@@ -538,21 +561,22 @@ async fn worker_read_requires_explicit_scope_and_no_implicit_upgrade(pool: PgPoo
     let checksum = body["body_sha256"].as_str().unwrap();
     assert_eq!(checksum.len(), 64);
     // Digest is of the exact stored canonical bytes, not a fresh signature.
-    let stored: Vec<u8> =
-        sqlx::query_scalar("SELECT body FROM network_policies WHERE household_id = $1 AND revision = 1")
-            .bind(hid)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let stored: Vec<u8> = sqlx::query_scalar(
+        "SELECT body FROM network_policies WHERE household_id = $1 AND revision = 1",
+    )
+    .bind(hid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     let policy: vantyr_network_policy::Policy = serde_json::from_slice(&stored).unwrap();
     let canonical = super::policy_dto::canonical_bytes(&policy).unwrap();
-    assert_eq!(
-        checksum,
-        crate::auth::secrets::sha256_hex_bytes(&canonical)
-    );
+    assert_eq!(checksum, crate::auth::secrets::sha256_hex_bytes(&canonical));
     let text = serde_json::to_string(&body).unwrap();
     for forbidden in ["applied", "enforced", "token", "secret_hash", "signature"] {
-        assert!(!text.contains(forbidden), "response leaks {forbidden}: {text}");
+        assert!(
+            !text.contains(forbidden),
+            "response leaks {forbidden}: {text}"
+        );
     }
 
     // Legacy heartbeat still works with the default credential (back compat).
@@ -588,13 +612,7 @@ async fn revoked_expired_wrong_kind_and_unassigned_reads_fail(pool: PgPool) {
     let hid = bootstrap_as(&admin, "Home").await;
     let dns = create_gateway(&admin, hid, "dns", "DNS").await;
     let proxy = create_gateway(&admin, hid, "proxy", "Proxy").await;
-    let (cid, token) = issue(
-        &admin,
-        hid,
-        dns,
-        json!({ "commands": ["read_policy"] }),
-    )
-    .await;
+    let (cid, token) = issue(&admin, hid, dns, json!({ "commands": ["read_policy"] })).await;
     publish(&admin, hid, policy_body()).await;
 
     // No assignment yet -> scoped 404, not a proof of foreign existence.
@@ -666,13 +684,7 @@ async fn bounded_history_keeps_pinned_versions_and_never_claims_enforcement(pool
     let admin = Http::new(&base, at, ac);
     let hid = bootstrap_as(&admin, "Home").await;
     let gid = create_gateway(&admin, hid, "dns", "DNS").await;
-    let (_cid, token) = issue(
-        &admin,
-        hid,
-        gid,
-        json!({ "commands": ["read_policy"] }),
-    )
-    .await;
+    let (_cid, token) = issue(&admin, hid, gid, json!({ "commands": ["read_policy"] })).await;
 
     // Pin revision 1 while it still exists, then publish far beyond the cap.
     assert_eq!(publish(&admin, hid, policy_body()).await.0, 200);
@@ -690,17 +702,35 @@ async fn bounded_history_keeps_pinned_versions_and_never_claims_enforcement(pool
     for _ in 0..extra {
         assert_eq!(publish(&admin, hid, policy_body()).await.0, 200);
     }
-    let current = extra + 1;
+    let mut current = extra + 1;
+    // Rolling back the current head repeatedly must not pin an unlimited
+    // chain of predecessor payloads. Provenance survives as revision metadata.
+    for _ in 0..40 {
+        let (status, body) = admin
+            .post(
+                &format!("/api/network/households/{hid}/policies/rollback"),
+                json!({ "source_revision": current, "expected_revision": current }),
+            )
+            .await;
+        assert_eq!(status, 200, "rollback failed: {body}");
+        current += 1;
+        assert_eq!(body["revision"], current);
+    }
 
-    let rows = super::policy_db::list_versions(&pool, hid, 1000, 0).await.unwrap();
+    let rows = super::policy_db::list_versions(&pool, hid, 1000, 0)
+        .await
+        .unwrap();
     let revisions: Vec<i64> = rows.iter().map(|r| r.revision).collect();
-    assert!(revisions.contains(&1), "pinned desired revision survives pruning");
+    assert!(
+        revisions.contains(&1),
+        "pinned desired revision survives pruning"
+    );
     assert!(
         revisions.contains(&(current as i64)),
         "current revision is never pruned"
     );
     assert!(
-        revisions.len() <= super::policy_dto::MAX_POLICY_HISTORY as usize + 2,
+        revisions.len() <= super::policy_dto::MAX_POLICY_HISTORY as usize + 1,
         "history is bounded: got {} rows",
         revisions.len()
     );

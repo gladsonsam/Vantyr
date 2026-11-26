@@ -176,9 +176,16 @@ pub async fn credential_rotate(
         .map_err(|()| ApiError::bad_request("expires_in_hours must be between 1 and 720"))?;
     let commands = gateway_auth::normalize_commands(body.commands.as_deref())
         .map_err(|()| ApiError::bad_request("commands must be heartbeat and/or read_policy"))?;
-    let (id, secret) =
-        gateway_service::rotate_credential(&s.db, hid, gid, cid, user.user_id, expires_at, &commands)
-            .await?;
+    let (id, secret) = gateway_service::rotate_credential(
+        &s.db,
+        hid,
+        gid,
+        cid,
+        user.user_id,
+        expires_at,
+        &commands,
+    )
+    .await?;
     api::audit_network(
         &s,
         &user,

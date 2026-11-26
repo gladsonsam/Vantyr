@@ -98,7 +98,9 @@ pub async fn insert_policy(
 }
 
 /// Bound history: keep the newest `max_history` revisions plus every pinned
-/// row (desired assignment, current head, or rollback source). Runs inside the
+/// row (desired assignment or current head). Rollback provenance keeps its
+/// source revision number, not an indefinitely pinned copy of that payload.
+/// Runs inside the
 /// same locked transaction as the insert, so a concurrent publish cannot prune
 /// a row that another assignment just pinned.
 pub async fn prune_history_on_conn(
@@ -116,10 +118,6 @@ pub async fn prune_history_on_conn(
           )
           AND p.revision NOT IN (
               SELECT revision FROM network_gateway_desired_policy WHERE household_id = $1
-          )
-          AND p.revision NOT IN (
-              SELECT DISTINCT rolled_back_from_revision FROM network_policies
-              WHERE household_id = $1 AND rolled_back_from_revision IS NOT NULL
           )
           AND p.revision <> (
               SELECT MAX(revision) FROM network_policies WHERE household_id = $1

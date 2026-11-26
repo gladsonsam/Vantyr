@@ -25,7 +25,8 @@ pub const POLICY_SCHEMA_VERSION: i32 = 1;
 /// Whole canonical policy body cap (64 KiB), mirrored in migration 0077.
 pub const MAX_POLICY_BYTES: usize = 64 * 1024;
 /// Bounded history: keep the newest N revisions per household; pinned
-/// (desired / current / rollback-source) revisions are never pruned.
+/// (desired / current) revisions are never pruned. Rollback provenance does
+/// not keep its source payload alive outside the history window.
 pub const MAX_POLICY_HISTORY: i64 = 25;
 
 pub const MAX_PROFILES: usize = 32;
@@ -206,10 +207,7 @@ fn validate_schedule(schedule: &vantyr_network_policy::Schedule) -> ApiResult<()
     if schedule.timezone.is_empty()
         || schedule.timezone.len() > MAX_TIMEZONE_LEN
         || schedule.timezone.chars().any(char::is_control)
-        || schedule
-            .timezone
-            .parse::<chrono_tz::Tz>()
-            .is_err()
+        || schedule.timezone.parse::<chrono_tz::Tz>().is_err()
     {
         return Err(reject("schedule timezone must be an IANA timezone"));
     }

@@ -26,9 +26,7 @@ use crate::state::AppState;
 
 use super::gateway_api::audit_worker;
 use super::gateway_db;
-use super::policy_dto::{
-    DesiredPolicyBody, PolicyDraft, ReadPolicyBody, RollbackBody,
-};
+use super::policy_dto::{DesiredPolicyBody, PolicyDraft, ReadPolicyBody, RollbackBody};
 use super::{api, authz, policy_db, policy_service};
 
 // ─── Admin: versioned policy ─────────────────────────────────────────────────
@@ -164,5 +162,8 @@ pub async fn worker_read(
 /// dashboard cookie/CSRF middleware. Rate limiting and the body cap are applied
 /// to the whole worker router before any handler or database work.
 pub fn worker_route() -> axum::Router<Arc<AppState>> {
-    axum::Router::new().route("/worker/network/policy/read", axum::routing::post(worker_read))
+    axum::Router::new().route(
+        "/worker/network/policy/read",
+        axum::routing::post(worker_read),
+    )
 }

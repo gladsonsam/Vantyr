@@ -89,7 +89,8 @@ pub async fn publish(
 }
 
 /// Restore prior content as a NEW monotonic revision. Nothing is reset; the
-/// source version stays in history with its original actor and audit trail.
+/// source revision remains recorded as provenance, while its payload follows
+/// the normal bounded-history retention policy.
 pub async fn rollback(
     pool: &PgPool,
     actor: Uuid,
@@ -98,11 +99,15 @@ pub async fn rollback(
     now: DateTime<Utc>,
 ) -> ApiResult<PublishResponse> {
     if !valid_revision(body.source_revision) {
-        return Err(ApiError::bad_request("source_revision is outside its bound"));
+        return Err(ApiError::bad_request(
+            "source_revision is outside its bound",
+        ));
     }
     if let Some(expected) = body.expected_revision {
         if !valid_revision(expected) {
-            return Err(ApiError::bad_request("expected_revision is outside its bound"));
+            return Err(ApiError::bad_request(
+                "expected_revision is outside its bound",
+            ));
         }
     }
     let source = body.source_revision as i64;
@@ -147,6 +152,9 @@ pub async fn rollback(
     policy.person_rules.clear();
     policy.exceptions.clear();
     let bytes = canonical_bytes(&policy)?;
+    if bytes.len() > policy_dto::MAX_POLICY_BYTES {
+        return Err(ApiError::bad_request("canonical policy exceeds 64 KiB"));
+    }
     let checksum = digest(&bytes);
     policy_db::insert_policy(
         &mut tx,
@@ -218,7 +226,8 @@ pub async fn read_policy(
 ) -> ApiResult<PolicyReadResponse> {
     let (credential_id, secret) =
         gateway_auth::parse_bearer(bearer).ok_or_else(worker_auth_error)?;
-    if body.audience != gateway_auth::AUDIENCE || body.command != gateway_auth::COMMAND_READ_POLICY {
+    if body.audience != gateway_auth::AUDIENCE || body.command != gateway_auth::COMMAND_READ_POLICY
+    {
         return Err(worker_auth_error());
     }
     let kind = super::gateway_dto::normalize_kind(&body.kind).map_err(|_| worker_auth_error())?;
