@@ -27,6 +27,9 @@ pub mod config;
 pub mod controller;
 pub mod filter;
 pub mod handler;
+pub mod management;
+pub mod management_dto;
+pub mod management_worker;
 pub mod observe;
 pub mod policy;
 pub mod runtime;
@@ -53,6 +56,13 @@ pub use filter::{
     FilterMaterial, StoredList, StoredListDerivation, StoredServiceDerivation,
     MAX_FILTER_BUNDLE_BYTES,
 };
+pub use management::{ManagementClient, ManagementError, ManagementOptions, ManagementState};
+pub use management_dto::{
+    AppliedStatusDto, DownloadState, ListFormatDto, ManagementConfig, RefreshAckDto,
+    ServiceCatalogDto, ServiceDomainDto, ServiceDto, SourceMetadataDto, SourceStatusDto,
+    SubscriptionSourceDto, WorkerReadResponse, WorkerStatusBody, CONFIG_SCHEMA_VERSION,
+};
+pub use management_worker::{config_digest, ManagementWorker};
 pub use observe::{DecisionObservation, ObservationLog, MAX_OBSERVATIONS};
 pub use server::{
     DnsServer, DnsStatus, DurableOptions, MaterialOutcome, ReloadError, ReloadOutcome,

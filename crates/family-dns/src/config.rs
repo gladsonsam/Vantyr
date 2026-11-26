@@ -654,7 +654,7 @@ impl FilterConfig {
         ids
     }
 
-    fn validate(&self, place: &str) -> Result<()> {
+    pub fn validate(&self, place: &str) -> Result<()> {
         if self.sources.len() > MAX_FILTER_SOURCES {
             bail!("{place} has more than {MAX_FILTER_SOURCES} sources");
         }

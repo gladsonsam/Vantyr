@@ -105,8 +105,14 @@ pub struct SourceStatus {
     /// source is reported as such and is never applied.
     pub download: String,
     pub checked_at: Option<DateTime<Utc>>,
+    pub fetched_at: Option<DateTime<Utc>>,
+    pub content_changed_at: Option<DateTime<Utc>>,
+    pub next_due_at: Option<DateTime<Utc>>,
+    pub stale: bool,
+    pub failure_count: u64,
+    pub cooldown_until: Option<DateTime<Utc>>,
     pub last_error: Option<String>,
-    pub bytes: usize,
+    pub bytes: u64,
     pub rule_count: Option<u64>,
     pub content_version: Option<String>,
 }
@@ -130,7 +136,7 @@ pub struct RuntimeDiagnostics {
 /// Cheap handle for manual refresh requests and truthful diagnostics.
 #[derive(Clone)]
 pub struct SubscriptionHandle {
-    ids: Arc<BTreeSet<String>>,
+    ids: Arc<Mutex<BTreeSet<String>>>,
     pending: Arc<Mutex<BTreeSet<String>>>,
     wake: Arc<tokio::sync::Notify>,
     cancel: CancellationToken,
@@ -141,11 +147,14 @@ impl SubscriptionHandle {
     /// Request a bounded manual refresh of one configured source. Unknown ids
     /// are ignored; the queue can never grow past the configured source count.
     pub fn request_refresh(&self, id: &str) {
-        if !self.ids.contains(id) {
+        let ids = self.ids.lock().unwrap();
+        if ids.is_empty() || !ids.contains(id) {
             return;
         }
+        let cap = ids.len();
+        drop(ids);
         let mut pending = self.pending.lock().unwrap();
-        if pending.len() < self.ids.len() {
+        if pending.len() < cap {
             pending.insert(id.to_owned());
             self.manual_requests.fetch_add(1, Ordering::SeqCst);
         }
@@ -191,10 +200,21 @@ fn bounded(detail: impl AsRef<str>) -> String {
 }
 
 /// All configured fetchers, quarantined sources and the one integrator task.
+type FetcherFactory = Arc<
+    dyn Fn(
+            &SubscriptionSourceSpec,
+            &Path,
+            Option<&str>,
+        ) -> Result<Fetcher<FormatValidator>, SubscriptionErrorKind>
+        + Send
+        + Sync,
+>;
+
 pub struct SubscriptionRuntime {
     entries: Mutex<Vec<FetcherEntry>>,
     faults: Mutex<Vec<FaultedSource>>,
-    specs: BTreeMap<String, SubscriptionSourceSpec>,
+    specs: Mutex<BTreeMap<String, SubscriptionSourceSpec>>,
+    managed_ids: Mutex<BTreeSet<String>>,
     root: PathBuf,
     trusted_ca_pem: Option<String>,
     applied: Mutex<AppliedStatus>,
@@ -202,6 +222,7 @@ pub struct SubscriptionRuntime {
     task: Mutex<Option<JoinHandle<()>>>,
     tick: Duration,
     ticks: AtomicU64,
+    factory: FetcherFactory,
 }
 
 impl SubscriptionRuntime {
@@ -223,8 +244,9 @@ impl SubscriptionRuntime {
             .collect();
         let mut entries = Vec::new();
         let mut faults = Vec::new();
+        let factory: FetcherFactory = Arc::new(default_fetcher_factory);
         for source in &settings.sources {
-            match Self::build_fetcher(source, &root, trusted_ca_pem) {
+            match factory(source, &root, trusted_ca_pem) {
                 Ok(fetcher) => entries.push(FetcherEntry {
                     id: source.id.clone(),
                     fetcher: Arc::new(fetcher),
@@ -241,12 +263,13 @@ impl SubscriptionRuntime {
         Ok(Self {
             entries: Mutex::new(entries),
             faults: Mutex::new(faults),
-            specs,
+            specs: Mutex::new(specs),
+            managed_ids: Mutex::new(BTreeSet::new()),
             root,
             trusted_ca_pem: trusted_ca_pem.map(str::to_owned),
             applied: Mutex::new(AppliedStatus::default()),
             handle: SubscriptionHandle {
-                ids: Arc::new(ids),
+                ids: Arc::new(Mutex::new(ids)),
                 pending: Arc::new(Mutex::new(BTreeSet::new())),
                 wake: Arc::new(tokio::sync::Notify::new()),
                 cancel,
@@ -255,6 +278,7 @@ impl SubscriptionRuntime {
             task: Mutex::new(None),
             tick: DEFAULT_TICK,
             ticks: AtomicU64::new(0),
+            factory,
         })
     }
 
@@ -272,6 +296,56 @@ impl SubscriptionRuntime {
             FormatValidator::new(source.format),
             Arc::new(transport),
         )
+    }
+
+    /// Atomically install (or remove) the operator-authorized managed
+    /// sources. Local fetchers are untouched; a managed id colliding with a
+    /// configured local source is rejected rather than silently replacing it.
+    pub fn install_managed(&self, sources: &[SubscriptionSourceSpec]) -> Result<(), FilterError> {
+        let mut specs = self.specs.lock().unwrap();
+        let mut managed = self.managed_ids.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap();
+        let mut faults = self.faults.lock().unwrap();
+        entries.retain(|entry| !managed.contains(&entry.id));
+        faults.retain(|fault| !managed.contains(&fault.id));
+        managed.clear();
+        for spec in sources {
+            if entries.iter().any(|entry| entry.id == spec.id) {
+                return Err(FilterError::Invalid(format!(
+                    "managed source {} collides with a local source",
+                    spec.id
+                )));
+            }
+            let fetcher = (self.factory)(spec, &self.root, self.trusted_ca_pem.as_deref())
+                .map_err(|error| FilterError::Io(error.to_string()))?;
+            specs.insert(spec.id.clone(), spec.clone());
+            entries.push(FetcherEntry {
+                id: spec.id.clone(),
+                fetcher: Arc::new(fetcher),
+            });
+            managed.insert(spec.id.clone());
+        }
+        let all: BTreeSet<String> = entries.iter().map(|entry| entry.id.clone()).collect();
+        *self.handle.ids.lock().unwrap() = all;
+        Ok(())
+    }
+
+    /// Replace the fetcher factory (embedding/test seam). Production uses the
+    /// vetted transport; a test may supply a loopback TLS transport. This does
+    /// not change any validation, promotion or material rules.
+    pub fn with_fetcher_factory(
+        mut self,
+        factory: impl Fn(
+                &SubscriptionSourceSpec,
+                &Path,
+                Option<&str>,
+            ) -> Result<Fetcher<FormatValidator>, SubscriptionErrorKind>
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
+        self.factory = Arc::new(factory);
+        self
     }
 
     /// Bounded reaction tick for an embedding that needs faster polling. This
@@ -382,7 +456,7 @@ impl SubscriptionRuntime {
     }
 
     fn configured_ids(&self) -> Vec<String> {
-        self.handle.ids.iter().cloned().collect()
+        self.handle.ids.lock().unwrap().iter().cloned().collect()
     }
 
     /// Refresh ONLY the requested configured ids (cooldowns and due times are
@@ -391,7 +465,7 @@ impl SubscriptionRuntime {
     pub async fn refresh_selected(&self, server: &DnsServer, ids: &[String], force: bool) {
         let mut errors = Vec::new();
         for id in ids {
-            if !self.handle.ids.contains(id) {
+            if !self.handle.ids.lock().unwrap().contains(id) {
                 continue;
             }
             let fetcher = {
@@ -436,10 +510,11 @@ impl SubscriptionRuntime {
             return false;
         }
         fault.attempts += 1;
-        let Some(spec) = self.specs.get(id) else {
+        let spec = self.specs.lock().unwrap().get(id).cloned();
+        let Some(spec) = spec else {
             return false;
         };
-        match Self::build_fetcher(spec, &self.root, self.trusted_ca_pem.as_deref()) {
+        match (self.factory)(&spec, &self.root, self.trusted_ca_pem.as_deref()) {
             Ok(fetcher) => {
                 faults.retain(|fault| fault.id != id);
                 self.entries.lock().unwrap().push(FetcherEntry {
@@ -484,6 +559,33 @@ impl SubscriptionRuntime {
     pub async fn refresh_once(&self, server: &DnsServer, force: bool) {
         let ids = self.configured_ids();
         self.refresh_selected(server, &ids, force).await;
+    }
+
+    /// Refresh ONLY the named configured sources and return errors, without
+    /// applying any material. Used by management for scoped manual tokens.
+    pub async fn refresh_only(&self, ids: &[String], force: bool) -> Vec<String> {
+        let mut errors = Vec::new();
+        for id in ids {
+            if !self.handle.ids.lock().unwrap().contains(id) {
+                continue;
+            }
+            let fetcher = {
+                self.entries
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .find(|entry| entry.id == *id)
+                    .map(|entry| entry.fetcher.clone())
+            };
+            let Some(fetcher) = fetcher else {
+                self.retry_faulted(id, &mut errors);
+                continue;
+            };
+            if let Err(error) = fetcher.refresh(id, force).await {
+                errors.push(format!("{id}: {error}"));
+            }
+        }
+        errors
     }
 
     /// Download-only seeding helper; no DNS state is touched.
@@ -581,8 +683,16 @@ impl SubscriptionRuntime {
                         .map(|report| report.status.as_str().to_owned())
                         .unwrap_or_else(|| "unavailable".to_owned()),
                     checked_at: report.as_ref().and_then(|report| report.checked_at),
+                    fetched_at: report.as_ref().and_then(|report| report.fetched_at),
+                    content_changed_at: report
+                        .as_ref()
+                        .and_then(|report| report.content_updated_at),
+                    next_due_at: report.as_ref().and_then(|report| report.next_due_at),
+                    stale: report.as_ref().is_some_and(|report| report.stale),
+                    failure_count: report.as_ref().map_or(0, |report| report.failure_count),
+                    cooldown_until: report.as_ref().and_then(|report| report.cooldown_until),
                     last_error: report.as_ref().and_then(|report| report.last_error.clone()),
-                    bytes: report.as_ref().map_or(0, |report| report.bytes),
+                    bytes: report.as_ref().map_or(0, |report| report.bytes as u64),
                     rule_count: report.as_ref().and_then(|report| report.rule_count),
                     content_version: report
                         .as_ref()
@@ -599,6 +709,12 @@ impl SubscriptionRuntime {
                     id: fault.id.clone(),
                     download: "quarantined".to_owned(),
                     checked_at: None,
+                    fetched_at: None,
+                    content_changed_at: None,
+                    next_due_at: None,
+                    stale: true,
+                    failure_count: fault.attempts as u64,
+                    cooldown_until: None,
                     last_error: Some(fault.error.clone()),
                     bytes: 0,
                     rule_count: None,
@@ -630,12 +746,13 @@ impl SubscriptionRuntime {
                     .collect(),
             ),
             faults: Mutex::new(Vec::new()),
-            specs: BTreeMap::new(),
+            specs: Mutex::new(BTreeMap::new()),
+            managed_ids: Mutex::new(BTreeSet::new()),
             root: PathBuf::new(),
             trusted_ca_pem: None,
             applied: Mutex::new(AppliedStatus::default()),
             handle: SubscriptionHandle {
-                ids: Arc::new(ids),
+                ids: Arc::new(Mutex::new(ids)),
                 pending: Arc::new(Mutex::new(BTreeSet::new())),
                 wake: Arc::new(tokio::sync::Notify::new()),
                 cancel,
@@ -644,12 +761,21 @@ impl SubscriptionRuntime {
             task: Mutex::new(None),
             tick: DEFAULT_TICK,
             ticks: AtomicU64::new(0),
+            factory: Arc::new(default_fetcher_factory),
         }
     }
 }
 
 fn material_identity_from_server(server: &DnsServer) -> String {
     server.status().filter_identity
+}
+
+fn default_fetcher_factory(
+    source: &SubscriptionSourceSpec,
+    root: &Path,
+    ca: Option<&str>,
+) -> Result<Fetcher<FormatValidator>, SubscriptionErrorKind> {
+    SubscriptionRuntime::build_fetcher(source, root, ca)
 }
 
 fn single_source_config(source: &SubscriptionSourceSpec) -> SubscriptionConfig {

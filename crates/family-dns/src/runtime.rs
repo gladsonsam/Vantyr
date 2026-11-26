@@ -26,6 +26,7 @@ use vantyr_network_filter::FilterSnapshot;
 
 use crate::config::{forwards_to_self, Config, DenyConfig, RecordSpec};
 use crate::filter::FilterMaterial;
+use crate::management::ManagementState;
 use crate::observe::ObservationLog;
 use crate::policy::PolicyEvaluator;
 use crate::upstream::EncryptedZoneHandler;
@@ -186,6 +187,7 @@ pub(crate) struct RuntimeSnapshot {
     /// pull so it cannot restore a startup filter after a local filter change.
     pub(crate) filter_material: Option<FilterMaterial>,
     pub(crate) state: BundleState,
+    pub(crate) management: Option<ManagementState>,
 }
 
 /// Shared handle to the current snapshot. The lock is held only for an `Arc`
@@ -200,6 +202,7 @@ pub(crate) fn build_snapshot(
     filter: Arc<FilterSnapshot>,
     filter_material: Option<FilterMaterial>,
     state: BundleState,
+    management: Option<ManagementState>,
 ) -> Result<Arc<RuntimeSnapshot>> {
     let revision = policy.revision;
     let published_at = policy.published_at;
@@ -220,6 +223,7 @@ pub(crate) fn build_snapshot(
         filter,
         filter_material,
         state,
+        management,
     }))
 }
 
@@ -284,6 +288,7 @@ mod tests {
                 filter_generation: 0,
                 filter_identity: String::new(),
             },
+            None,
         )
         .unwrap();
         let second = build_snapshot(
@@ -298,6 +303,7 @@ mod tests {
                 filter_generation: 0,
                 filter_identity: String::new(),
             },
+            None,
         )
         .unwrap();
         assert_eq!(first.revision, second.revision);

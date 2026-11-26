@@ -215,6 +215,29 @@ settings live in the one durable bundle, are preserved by controller pulls and
 local reloads, and are recompiled unchanged after restart. Per-domain routing,
 fallback, DoQ/H3 and DNSCrypt are not part of this slice.
 
+## Optional DNS management consumer
+
+`--dns-management <FILE>` is OFF by default and requires durable mode. The
+private options file uses the same owner-private origin/credential/CA pattern
+as the controller pull; no secret is accepted on the command line. One bounded
+cancellable task reads desired list/service settings over verified HTTPS,
+compiles them with the current local settings, and reports a worker
+observation back. It never opens a listener, claims enforcement or canary
+status, or fetches a URL the operator did not configure.
+
+Applied management version/digest, validated config and bounded refresh
+receipts live in the one durable bundle. Management version and digest are
+independent of policy revision/publication, the bundle generation and the
+filter generation: a management commit advances only the bundle generation
+(and the filter generation when material identity changes). Identical desired
+configs make no write; receipt commits are bounded. Remote settings cannot
+change local bind paths, cache paths, CA/trust, upstreams, device mapping,
+local file lists or the household baseline; local/remote id collisions and
+aggregate bound violations are rejected. Missing or invalid downloads,
+authentication, digest/schema/version errors leave the applied answer, disk
+and original policy age untouched. Status reports download state and applied
+digest/generation separately, with redacted bounded errors.
+
 ## Independent counters and scheduled subscriptions
 
 The one durable bundle carries three independent counter spaces:

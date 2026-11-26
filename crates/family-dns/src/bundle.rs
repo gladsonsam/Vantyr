@@ -16,6 +16,7 @@ use vantyr_network_runtime::{check_policy_shape, LkgError, Persistable, TypedLkg
 
 use crate::config::Config;
 use crate::filter::{validate_material_shape, FilterMaterial};
+use crate::management::{validate_state, ManagementState};
 
 /// One validated config+policy pair plus its self-contained filter material.
 /// There is no second state file and no independent policy or filter payload:
@@ -40,9 +41,33 @@ pub struct Bundle {
     /// compiled material content actually changes.
     #[serde(default)]
     pub filter_generation: Option<u64>,
+    /// Operator-authorized remote management state. Independent of policy and
+    /// both generation spaces; persisted in this same bundle.
+    #[serde(default)]
+    pub management: Option<ManagementState>,
 }
 
 impl Bundle {
+    /// Assemble a candidate without the local-only consistency check. The
+    /// worker calls `with_generation`/`with_management` and the store's own
+    /// `check` validates the complete candidate before it is persisted.
+    pub(crate) fn unchecked(
+        config: Config,
+        policy: Policy,
+        filter: Option<FilterMaterial>,
+        management: Option<ManagementState>,
+    ) -> Self {
+        Self {
+            config,
+            policy,
+            filter,
+            generation: None,
+            policy_highwater: None,
+            filter_generation: None,
+            management,
+        }
+    }
+
     /// Validate the config and derive its policy with an explicit publication
     /// time. Kept for callers that do not use list filtering.
     pub fn build(config: &Config, published_at: DateTime<Utc>) -> Result<Self> {
@@ -71,7 +96,7 @@ impl Bundle {
         policy: Policy,
         filter: Option<FilterMaterial>,
     ) -> Result<Self> {
-        consistency(&config, &policy, filter.as_ref()).map_err(anyhow::Error::msg)?;
+        consistency(&config, &policy, filter.as_ref(), None).map_err(anyhow::Error::msg)?;
         let generation = policy.revision;
         let policy_highwater = policy.revision;
         let filter_generation = if filter.is_some() { 1 } else { 0 };
@@ -82,6 +107,7 @@ impl Bundle {
             generation: Some(generation),
             policy_highwater: Some(policy_highwater),
             filter_generation: Some(filter_generation),
+            management: None,
         })
     }
 
@@ -127,6 +153,24 @@ impl Bundle {
         check_counters(&candidate)?;
         Ok(candidate)
     }
+
+    /// Commit management state and/or receipts with the next whole-bundle
+    /// generation. Policy revision, publication time and local fields are
+    /// never touched by management commits.
+    pub fn with_management(
+        &self,
+        generation: u64,
+        filter_generation: u64,
+        management: ManagementState,
+    ) -> std::result::Result<Self, LkgError> {
+        validate_state(&management).map_err(|error| LkgError::Malformed(error.to_string()))?;
+        let mut candidate = self.clone();
+        candidate.generation = Some(generation);
+        candidate.filter_generation = Some(filter_generation);
+        candidate.management = Some(management);
+        check_counters(&candidate)?;
+        Ok(candidate)
+    }
 }
 
 /// Shared consistency checks, used both on disk loads and on new candidates.
@@ -134,6 +178,7 @@ fn consistency(
     config: &Config,
     policy: &Policy,
     filter: Option<&FilterMaterial>,
+    management: Option<&ManagementState>,
 ) -> std::result::Result<(), LkgError> {
     config
         .validate()
@@ -174,7 +219,16 @@ fn consistency(
             "policy content disagrees with its DNS configuration".into(),
         ));
     }
-    check_filter_consistency(config, filter)?;
+    check_filter_consistency(config, filter, management)?;
+    Ok(())
+}
+
+/// Management state is validated for shape; its identity/material linkage is
+/// checked by the coordinator before it is committed.
+fn check_management_state(state: Option<&ManagementState>) -> std::result::Result<(), LkgError> {
+    if let Some(state) = state {
+        validate_state(state).map_err(|error| LkgError::Malformed(error.to_string()))?;
+    }
     Ok(())
 }
 
@@ -184,9 +238,25 @@ fn consistency(
 fn check_filter_consistency(
     config: &Config,
     filter: Option<&FilterMaterial>,
+    management: Option<&ManagementState>,
 ) -> std::result::Result<(), LkgError> {
-    let enabled = config.filter.enabled_source_ids();
-    let selected = config.filter.selected_service_ids();
+    let mut enabled = config.filter.enabled_source_ids();
+    let mut selected = config.filter.selected_service_ids();
+    if let Some(state) = management {
+        enabled.extend(
+            state
+                .config
+                .sources
+                .iter()
+                .filter(|source| source.enabled)
+                .map(|source| source.id.clone()),
+        );
+        selected.extend(state.config.selected_services.iter().cloned());
+        enabled.sort();
+        enabled.dedup();
+        selected.sort();
+        selected.dedup();
+    }
     match filter {
         None => {
             if !enabled.is_empty() || !selected.is_empty() {
@@ -200,15 +270,22 @@ fn check_filter_consistency(
                 .map_err(|error| LkgError::Malformed(error.to_string()))?;
             let stored_ids: Vec<String> =
                 material.lists.iter().map(|list| list.id.clone()).collect();
+            let local_version = config
+                .filter
+                .catalog
+                .as_ref()
+                .map(|catalog| catalog.version.clone())
+                .unwrap_or_default();
+            let managed_version = management
+                .and_then(|state| state.config.catalog.as_ref())
+                .map(|catalog| catalog.version.clone());
+            let catalog_ok = material.derivation.catalog_version == local_version
+                || managed_version
+                    .as_deref()
+                    .is_some_and(|version| version == material.derivation.catalog_version);
             if stored_ids != enabled
                 || material.derivation.selected_services != selected
-                || material.derivation.catalog_version
-                    != config
-                        .filter
-                        .catalog
-                        .as_ref()
-                        .map(|catalog| catalog.version.clone())
-                        .unwrap_or_default()
+                || !catalog_ok
             {
                 return Err(LkgError::Malformed(
                     "persisted filter material disagrees with local settings".into(),
@@ -273,7 +350,13 @@ impl Persistable for Bundle {
 
     fn check(&self) -> std::result::Result<(), LkgError> {
         check_counters(self)?;
-        consistency(&self.config, &self.policy, self.filter.as_ref())
+        check_management_state(self.management.as_ref())?;
+        consistency(
+            &self.config,
+            &self.policy,
+            self.filter.as_ref(),
+            self.management.as_ref(),
+        )
     }
 
     fn normalize(&mut self, envelope_highwater: u64) -> std::result::Result<(), LkgError> {

@@ -8,8 +8,9 @@ use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use family_dns::{
     read_bounded, sync_once, BundleStore, BundleValidator, Config, ControllerClient,
-    ControllerOptions, ControllerPoller, DnsServer, DurableOptions, ReloadOutcome,
-    SubscriptionRuntime, SubscriptionSettings, SyncCapability, MAX_FILTER_BUNDLE_BYTES,
+    ControllerOptions, ControllerPoller, DnsServer, DurableOptions, ManagementClient,
+    ManagementOptions, ManagementWorker, ReloadOutcome, SubscriptionRuntime, SubscriptionSettings,
+    SyncCapability, MAX_FILTER_BUNDLE_BYTES,
 };
 
 const USAGE: &str = "\
@@ -32,6 +33,8 @@ Usage:
   vantyr-dns --config <FILE> --state <FILE> --worker <ID> --subscriptions <FILE>
                                              opt in to scheduled public-list refresh
                                              (durable mode required; no fetch without it)
+  vantyr-dns ... --dns-management <FILE>    opt in to private DNS management
+                                             (durable mode required; default OFF)
   vantyr-dns --help                          show this help
   vantyr-dns --version                       show the version
 
@@ -50,6 +53,7 @@ struct Args {
     worker: Option<String>,
     controller: Option<PathBuf>,
     subscriptions: Option<PathBuf>,
+    dns_management: Option<PathBuf>,
     poll: bool,
     check_only: bool,
     state_status: bool,
@@ -71,7 +75,8 @@ fn parse_args() -> Result<Args> {
             "--check-config" => args.check_only = true,
             "--state-status" => args.state_status = true,
             "--poll" => args.poll = true,
-            "--config" | "--state" | "--worker" | "--controller" | "--subscriptions" => {
+            "--config" | "--state" | "--worker" | "--controller" | "--subscriptions"
+            | "--dns-management" => {
                 let value = iter
                     .next()
                     .ok_or_else(|| anyhow!("{arg} needs a value\n{USAGE}"))?;
@@ -80,6 +85,7 @@ fn parse_args() -> Result<Args> {
                     "--state" => args.state = Some(PathBuf::from(value)),
                     "--controller" => args.controller = Some(PathBuf::from(value)),
                     "--subscriptions" => args.subscriptions = Some(PathBuf::from(value)),
+                    "--dns-management" => args.dns_management = Some(PathBuf::from(value)),
                     _ => args.worker = Some(value),
                 }
             }
@@ -164,6 +170,9 @@ async fn run() -> Result<()> {
     {
         bail!("--subscriptions requires --state, --worker and --config (durable mode)\n{USAGE}");
     }
+    if args.dns_management.is_some() && (args.state.is_none() || args.worker.is_none()) {
+        bail!("--dns-management requires --state and --worker (durable mode)\n{USAGE}");
+    }
     if args.controller.is_some() {
         if args.state.is_none() || args.worker.is_none() {
             bail!("--controller requires --state and --worker (durable mode)\n{USAGE}");
@@ -200,6 +209,17 @@ async fn run() -> Result<()> {
                     .map(|bytes| std::str::from_utf8(bytes))
                     .transpose()?,
             )?))
+        }
+        None => None,
+    };
+
+    // Management is opt-in and private. Credentials never appear on the
+    // command line; the options file and bearer file are owner-private.
+    let management = match &args.dns_management {
+        Some(path) => {
+            let options = ManagementOptions::load(path)?;
+            let client = Arc::new(ManagementClient::new(&options)?);
+            Some((options, client))
         }
         None => None,
     };
@@ -275,6 +295,19 @@ async fn run() -> Result<()> {
         }
     }
 
+    let management_worker = match management {
+        Some((options, client)) => {
+            let worker = Arc::new(ManagementWorker::new(
+                options,
+                client,
+                server.subscription_runtime(),
+            ));
+            worker.start(Arc::downgrade(&server));
+            Some(worker)
+        }
+        None => None,
+    };
+
     #[cfg(unix)]
     {
         let mut hup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
@@ -304,6 +337,9 @@ async fn run() -> Result<()> {
     #[cfg(not(unix))]
     tokio::signal::ctrl_c().await?;
 
+    if let Some(worker) = management_worker {
+        worker.shutdown().await;
+    }
     if let Some(poller) = poller.take() {
         poller.stop().await;
     }

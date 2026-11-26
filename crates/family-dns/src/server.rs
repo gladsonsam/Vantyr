@@ -180,6 +180,7 @@ impl DnsServer {
             filter,
             material,
             state,
+            None,
         )?;
         Self::serve(config, snapshot, observations, None, None).await
     }
@@ -286,7 +287,14 @@ impl DnsServer {
         // Recompile from the persisted bytes, never from the source paths. A
         // source file/cache that changed or vanished while the worker was down
         // does not change the filter that was actually applied.
-        let filter = compile_from_material(bundle.filter.as_ref(), &bundle.config.filter)
+        let effective_filter = match &bundle.management {
+            Some(management) => {
+                crate::management_worker::merge_config(&bundle.config, &management.config)
+                    .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            }
+            None => bundle.config.filter.clone(),
+        };
+        let filter = compile_from_material(bundle.filter.as_ref(), &effective_filter)
             .map_err(|error| anyhow::anyhow!(error.to_string()))?
             .unwrap_or_else(empty_filter);
         let state = BundleState {
@@ -302,6 +310,7 @@ impl DnsServer {
             filter,
             bundle.filter.clone(),
             state,
+            bundle.management.clone(),
         )?;
         let mut server =
             Self::serve(bundle.config, snapshot, observations, Some(store), None).await?;
@@ -372,7 +381,14 @@ impl DnsServer {
             Some(runtime) => runtime.last_good(id),
             None => no_remote(id),
         };
-        let (material, filter) = prepare_filter(&config.filter, config.policy_revision, &remote)
+        // Material must include enabled managed sources; local settings remain
+        // authoritative for paths/trust and any id collision is rejected.
+        let effective_filter = match &active.management {
+            Some(management) => crate::management_worker::merge_config(&config, &management.config)
+                .map_err(|error| InvalidConfig(error.to_string()))?,
+            None => config.filter.clone(),
+        };
+        let (material, filter) = prepare_filter(&effective_filter, config.policy_revision, &remote)
             .map_err(|error| FilterFailed(error.to_string()))?
             .map_or_else(
                 || (None, empty_filter()),
@@ -381,9 +397,14 @@ impl DnsServer {
         let (filter_generation, identity) =
             self.next_filter_generation(&active, material.as_ref())?;
         let published_at = config.policy_published_at.unwrap_or(now);
-        let bundle = Bundle::build_with_filter(&config, published_at, material.clone())
-            .map_err(|e| InvalidConfig(e.to_string()))?;
+        let bundle = Bundle::unchecked(
+            config.clone(),
+            config.policy_at(published_at),
+            material.clone(),
+            active.management.clone(),
+        );
         let bundle = self.next_bundle(&bundle, &active, filter_generation)?;
+        let bundle = self.preserve_management(bundle, &active, filter_generation)?;
         self.publish_bundle(bundle, now, filter, material, identity)
     }
 
@@ -411,6 +432,22 @@ impl DnsServer {
                     Ok((next, identity))
                 }
             }
+        }
+    }
+
+    /// Preserve the current applied management state through a local reload or
+    /// controller pull; material/identity may change but management does not.
+    fn preserve_management(
+        &self,
+        bundle: Bundle,
+        active: &RuntimeSnapshot,
+        filter_generation: u64,
+    ) -> Result<Bundle, ReloadError> {
+        match &active.management {
+            Some(management) => bundle
+                .with_management(bundle.generation(), filter_generation, management.clone())
+                .map_err(|error| ReloadError::BuildFailed(error.to_string())),
+            None => Ok(bundle),
         }
     }
 
@@ -492,6 +529,7 @@ impl DnsServer {
             filter,
             material,
             state,
+            bundle.management.clone(),
         )
         .map_err(|e| BuildFailed(e.to_string()))?;
 
@@ -545,8 +583,12 @@ impl DnsServer {
         // the current material and snapshot are reused verbatim.
         let filter = active.filter.clone();
         let material = active.filter_material.clone();
-        let bundle = Bundle::build_with_filter(&candidate, published_at, material.clone())
-            .map_err(|error| ControllerError::Unsupported(error.to_string()))?;
+        let bundle = Bundle::unchecked(
+            candidate.clone(),
+            candidate.policy_at(published_at),
+            material.clone(),
+            active.management.clone(),
+        );
         let revision = candidate.policy_revision;
         let highwater = active.state.policy_highwater.max(active.policy.revision);
         if revision == active.revision {
@@ -570,6 +612,9 @@ impl DnsServer {
                     active.state.filter_generation,
                 )
                 .map_err(|error| ControllerError::Unsupported(error.to_string()))?;
+        let bundle = self
+            .preserve_management(bundle, &active, active.state.filter_generation)
+            .map_err(|error| ControllerError::Unsupported(error.to_string()))?;
         let outcome = self
             .publish_bundle(
                 bundle,
@@ -652,6 +697,60 @@ impl DnsServer {
         })
     }
 
+    /// Commit one management observation (applied config, or new receipts)
+    /// with a fresh whole-bundle generation. Never touches the policy spaces.
+    pub fn commit_management(
+        &self,
+        material: Option<FilterMaterial>,
+        filter: Option<Arc<vantyr_network_filter::FilterSnapshot>>,
+        management: crate::management::ManagementState,
+        expected_generation: u64,
+        now: DateTime<Utc>,
+    ) -> Result<ReloadOutcome, ReloadError> {
+        let _update = self.update.lock().unwrap_or_else(|p| p.into_inner());
+        use ReloadError::*;
+        let active = self.active_snapshot();
+        if active.state.generation != expected_generation {
+            return Err(StaleBasis {
+                found: active.state.generation,
+                expected: expected_generation,
+            });
+        }
+        let generation = active.state.generation.checked_add(1).ok_or_else(|| {
+            InvalidConfig("bundle generation overflow; refusing to wrap".to_owned())
+        })?;
+        let identity = if material.is_some() {
+            management.filter_identity.clone()
+        } else {
+            active.state.filter_identity.clone()
+        };
+        let filter_generation = if material.is_some() && identity != active.state.filter_identity {
+            active
+                .state
+                .filter_generation
+                .checked_add(1)
+                .ok_or_else(|| {
+                    InvalidConfig("filter generation overflow; refusing to wrap".to_owned())
+                })?
+        } else {
+            active.state.filter_generation
+        };
+        let bundle = Bundle {
+            config: active.config.clone(),
+            policy: active.policy.clone(),
+            filter: material.clone().or_else(|| active.filter_material.clone()),
+            generation: None,
+            policy_highwater: Some(active.state.policy_highwater),
+            filter_generation: None,
+            management: None,
+        };
+        let bundle = bundle
+            .with_management(generation, filter_generation, management)
+            .map_err(|error| BuildFailed(error.to_string()))?;
+        let filter = filter.unwrap_or_else(|| active.filter.clone());
+        self.publish_bundle(bundle, now, filter, material, identity)
+    }
+
     /// Local worker config currently serving. Kept read-only: callers must go
     /// through the compile/reload path to change policy.
     pub fn local_config(&self) -> Config {
@@ -688,6 +787,16 @@ impl DnsServer {
                 "no subscription runtime is enabled".to_owned(),
             )),
         }
+    }
+
+    /// Subscriptions runtime, if the worker opted in to scheduled lists.
+    pub fn subscription_runtime(&self) -> Option<Arc<SubscriptionRuntime>> {
+        self.subscriptions.clone()
+    }
+
+    /// Currently applied management state, if any. Independent of policy.
+    pub fn management_state(&self) -> Option<crate::management::ManagementState> {
+        self.active_snapshot().management.clone()
     }
 
     pub fn bind_addr(&self) -> SocketAddr {

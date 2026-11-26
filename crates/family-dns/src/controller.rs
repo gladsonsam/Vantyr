@@ -304,7 +304,7 @@ impl ControllerOptions {
 
 /// Read a small, owner-private file without following a symlink. Only static
 /// operator inputs use this path; policy payloads arrive over verified TLS.
-fn read_private_file(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
+pub(crate) fn read_private_file(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
     let meta =
         fs::symlink_metadata(path).map_err(|_| "file is missing or unreadable".to_owned())?;
     if meta.file_type().is_symlink() || !meta.file_type().is_file() {
