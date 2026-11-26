@@ -68,6 +68,11 @@ impl std::fmt::Debug for ConsumeGrantBody {
 
 // ─── Sanitized rows ──────────────────────────────────────────────────────────
 
+/// Admin-only binding row. The three display fields are additive, read-only
+/// projections from scoped joins to the SAME household's person and the
+/// dashboard user explicitly named by the admin when the binding was created.
+/// They are labels for the UI, never an identity claim and never a directory
+/// lookup across households.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct BindingRow {
     pub id: Uuid,
@@ -77,6 +82,9 @@ pub struct BindingRow {
     pub active: bool,
     pub created_at: DateTime<Utc>,
     pub revoked_at: Option<DateTime<Utc>>,
+    pub dashboard_username: String,
+    pub dashboard_display_name: String,
+    pub person_display_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, FromRow)]
@@ -115,7 +123,9 @@ pub struct OwnGrantRow {
 }
 
 /// Metadata only. `status` is derived from end/expiry times; no claim about
-/// DNS/proxy coverage is made anywhere in this response.
+/// DNS/proxy coverage is made anywhere in this response. `person_display_name`
+/// is the label of the person bound to the CALLER's own binding in this
+/// household; it is not an inference from a device, IP or network observation.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct OwnSessionRow {
     pub id: Uuid,
@@ -125,4 +135,5 @@ pub struct OwnSessionRow {
     pub verified_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
+    pub person_display_name: String,
 }

@@ -365,10 +365,16 @@ pub async fn list_bindings(
 ) -> sqlx::Result<Vec<BindingRow>> {
     sqlx::query_as::<_, BindingRow>(
         r"
-        SELECT id, dashboard_user, person_id, generation, active, created_at, revoked_at
-        FROM network_principal_bindings
-        WHERE household_id = $1
-        ORDER BY created_at DESC, id
+        SELECT b.id AS id, b.dashboard_user, b.person_id, b.generation, b.active,
+               b.created_at, b.revoked_at,
+               u.username AS dashboard_username,
+               u.display_name AS dashboard_display_name,
+               p.display_name AS person_display_name
+        FROM network_principal_bindings b
+        JOIN dashboard_users u ON u.id = b.dashboard_user
+        JOIN network_persons p ON p.id = b.person_id AND p.household_id = b.household_id
+        WHERE b.household_id = $1
+        ORDER BY b.created_at DESC, b.id
         LIMIT $2 OFFSET $3
         ",
     )
@@ -626,10 +632,15 @@ pub async fn list_own_sessions(
 ) -> sqlx::Result<Vec<OwnSessionRow>> {
     sqlx::query_as::<_, OwnSessionRow>(
         r"
-        SELECT id, device_id, purpose, verification_method, verified_at, expires_at, ended_at
-        FROM network_verified_sessions
-        WHERE household_id = $1 AND binding_id = $2
-        ORDER BY verified_at DESC, id
+        SELECT s.id, s.device_id, s.purpose, s.verification_method, s.verified_at,
+               s.expires_at, s.ended_at, p.display_name AS person_display_name
+        FROM network_verified_sessions s
+        JOIN network_principal_bindings b
+          ON b.id = s.binding_id AND b.household_id = s.household_id
+        JOIN network_persons p
+          ON p.id = b.person_id AND p.household_id = b.household_id
+        WHERE s.household_id = $1 AND s.binding_id = $2
+        ORDER BY s.verified_at DESC, s.id
         LIMIT 100
         ",
     )

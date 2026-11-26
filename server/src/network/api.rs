@@ -739,12 +739,11 @@ pub async fn audit_list(
     Path(hid): Path<Uuid>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
-    Query(page): Query<PageParams>,
+    Query(query): Query<crate::network::read_dto::AuditQuery>,
 ) -> ApiResult<Json<Value>> {
-    authz::require_network_admin(&s.db, user.user_id, hid).await?;
-    let (limit, offset) = bounds(&page)?;
-    let rows = db::list_network_audit(&s.db, hid, limit, offset).await?;
-    Ok(Json(json!({ "rows": rows })))
+    // Kept as the mounted symbol for backwards compatibility; the bounded
+    // read-contract module owns the filters, count and consistent snapshot.
+    crate::network::read_api::audit_list(Path(hid), State(s), Extension(user), Query(query)).await
 }
 
 // ─── Grants ──────────────────────────────────────────────────────────────────

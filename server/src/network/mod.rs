@@ -53,6 +53,9 @@ mod policy_api;
 mod policy_db;
 mod policy_dto;
 mod policy_service;
+mod read_api;
+mod read_db;
+mod read_dto;
 mod service;
 
 #[cfg(test)]
@@ -63,6 +66,8 @@ mod gateway_retention_tests;
 mod gateway_tests;
 #[cfg(test)]
 mod policy_tests;
+#[cfg(test)]
+mod read_tests;
 #[cfg(test)]
 mod tests;
 
@@ -165,6 +170,12 @@ pub fn routes() -> Router<Arc<AppState>> {
 /// Bodies are tiny; a small cap keeps hostile payloads out of deserialization.
 fn enroll_routes() -> Router<Arc<AppState>> {
     Router::new()
+        // Self-service discovery of the CALLER's own enrollment contexts only.
+        // Must not become an administrative household-discovery route.
+        .route(
+            "/network/enrollment-contexts",
+            get(read_api::enrollment_contexts),
+        )
         // Admin-only: explicit binding of a real dashboard user to a person.
         .route(
             "/network/households/{hid}/bindings",
@@ -217,6 +228,20 @@ fn policy_routes() -> Router<Arc<AppState>> {
         .route(
             "/network/households/{hid}/policies",
             get(policy_api::policies_list).post(policy_api::policies_publish),
+        )
+        // Read contracts. The literal segments are registered before the
+        // `{revision}` catch-all so they can never be parsed as a revision.
+        .route(
+            "/network/households/{hid}/policies/current",
+            get(read_api::policy_current),
+        )
+        .route(
+            "/network/households/{hid}/policies/diff",
+            get(read_api::policy_diff),
+        )
+        .route(
+            "/network/households/{hid}/policies/{revision}",
+            get(read_api::policy_revision),
         )
         .route(
             "/network/households/{hid}/policies/rollback",

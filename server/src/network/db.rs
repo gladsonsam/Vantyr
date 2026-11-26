@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::network::authz::NetworkGrant;
 use crate::network::dto::{
-    AgentEnrollment, Assignment, Connection, Device, Grant, Household, NetworkAudit, Person,
+    AgentEnrollment, Assignment, Connection, Device, Grant, Household, Person,
 };
 
 // ─── Households / bootstrap ──────────────────────────────────────────────────
@@ -763,26 +763,4 @@ pub async fn insert_network_audit(
     .execute(pool)
     .await?;
     Ok(())
-}
-
-pub async fn list_network_audit(
-    pool: &PgPool,
-    household_id: Uuid,
-    limit: i64,
-    offset: i64,
-) -> sqlx::Result<Vec<NetworkAudit>> {
-    sqlx::query_as::<_, NetworkAudit>(
-        r"
-        SELECT id, ts, household_id, actor, client_ip, action, status, detail
-        FROM network_audit
-        WHERE household_id = $1
-        ORDER BY ts DESC, id DESC
-        LIMIT $2 OFFSET $3
-        ",
-    )
-    .bind(household_id)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
 }
