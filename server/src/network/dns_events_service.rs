@@ -352,19 +352,22 @@ const UNSUPPORTED_SOURCES: &[&str] = &["proxy", "agent"];
 
 /// Opaque keyset cursor over `(observed_at, id)`. No secret or URL is carried.
 fn encode_cursor(at: DateTime<Utc>, id: i64) -> String {
-    let raw = format!("{}|{}", at.timestamp_millis(), id);
+    let raw = format!("{}|{}", at.timestamp_micros(), id);
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw.as_bytes())
 }
 
 fn decode_cursor(raw: &str) -> ApiResult<(DateTime<Utc>, i64)> {
+    if raw.len() > 128 {
+        return Err(ApiError::bad_request("invalid cursor"));
+    }
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(raw.trim())
         .map_err(|_| ApiError::bad_request("invalid cursor"))?;
     let text = std::str::from_utf8(&bytes).map_err(|_| ApiError::bad_request("invalid cursor"))?;
-    let (millis, id) = text
+    let (micros, id) = text
         .split_once('|')
         .ok_or_else(|| ApiError::bad_request("invalid cursor"))?;
-    let millis: i64 = millis
+    let micros: i64 = micros
         .parse()
         .map_err(|_| ApiError::bad_request("invalid cursor"))?;
     let id: i64 = id
@@ -373,7 +376,7 @@ fn decode_cursor(raw: &str) -> ApiResult<(DateTime<Utc>, i64)> {
     if id <= 0 {
         return Err(ApiError::bad_request("invalid cursor"));
     }
-    let at = chrono::DateTime::from_timestamp_millis(millis)
+    let at = chrono::DateTime::from_timestamp_micros(micros)
         .ok_or_else(|| ApiError::bad_request("invalid cursor"))?;
     Ok((at, id))
 }
@@ -688,4 +691,16 @@ pub async fn stats(
         sources: SUPPORTED_SOURCES.to_vec(),
         unsupported_sources: UNSUPPORTED_SOURCES.to_vec(),
     })
+}
+
+#[cfg(test)]
+mod cursor_tests {
+    use super::*;
+
+    #[test]
+    fn cursor_preserves_postgres_microseconds_and_bounds_decoding() {
+        let at = DateTime::from_timestamp_micros(1_700_000_000_123_456).unwrap();
+        assert_eq!(decode_cursor(&encode_cursor(at, 42)).unwrap(), (at, 42));
+        assert!(decode_cursor(&"A".repeat(129)).is_err());
+    }
 }

@@ -393,6 +393,16 @@ async fn invalid_batches_are_rejected_without_writes(pool: PgPool) {
     let cases: Vec<Value> = vec![
         {
             let mut e = good.clone();
+            e["name"] = json!(".");
+            batch(Uuid::new_v4(), hid, gid, vec![e])
+        },
+        {
+            let mut e = good.clone();
+            e["denied_alias_target"] = json!(".");
+            batch(Uuid::new_v4(), hid, gid, vec![e])
+        },
+        {
+            let mut e = good.clone();
             e["url"] = json!("https://evil.test");
             batch(Uuid::new_v4(), hid, gid, vec![e])
         },
@@ -608,7 +618,9 @@ async fn search_filters_and_pagination(pool: PgPool) {
     let cred = issue_cred(&http, hid, gid, vec!["report_dns_events"]).await;
     let bearer = cred.clone();
     let device = device_in_household(&pool, hid).await;
-    let now = Utc::now();
+    let now =
+        chrono::DateTime::from_timestamp_micros(Utc::now().timestamp_micros() / 1000 * 1000 + 123)
+            .unwrap();
 
     let events = vec![
         event(
@@ -735,6 +747,21 @@ async fn search_filters_and_pagination(pool: PgPool) {
         .await;
     assert_eq!(status, 400);
 
+    // Two rows share a non-millisecond timestamp. A cursor must retain the
+    // microseconds or the second observation would be silently skipped.
+    let (_, one) = http
+        .get(&format!("/api/network/households/{hid}/dns/events?limit=1"))
+        .await;
+    let after = one["next_cursor"].as_str().unwrap();
+    let (status, two) = http
+        .get(&format!(
+            "/api/network/households/{hid}/dns/events?limit=1&cursor={after}"
+        ))
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(one["rows"][0]["observed_at"], two["rows"][0]["observed_at"]);
+    assert_ne!(one["rows"][0]["event_id"], two["rows"][0]["event_id"]);
+
     // Keyset cursor walks the same bounded result set without offset.
     let (status, first_page) = http
         .get(&format!("/api/network/households/{hid}/dns/events?limit=2"))
@@ -763,7 +790,7 @@ async fn stats_counts_are_from_observations_only(pool: PgPool) {
     let cred = issue_cred(&http, hid, gid, vec!["report_dns_events"]).await;
     let bearer = cred.clone();
     let device = device_in_household(&pool, hid).await;
-    let now = Utc::now();
+    let now = chrono::DateTime::from_timestamp_micros(Utc::now().timestamp_micros()).unwrap();
 
     let events = vec![
         event(
@@ -807,6 +834,24 @@ async fn stats_counts_are_from_observations_only(pool: PgPool) {
         )
         .await;
     assert_eq!(status, 200);
+
+    // Inclusive upper-bound observations must also occur in the last bucket.
+    let exact = super::dns_events_service::stats(
+        &pool,
+        hid,
+        &super::dns_events_dto::StatsQueryParams {
+            window: Some("24h".into()),
+            device_id: None,
+        },
+        false,
+        now,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        exact.time_series.iter().map(|b| b.count).sum::<i64>(),
+        exact.total_queries
+    );
 
     let (status, stats) = http
         .get(&format!(

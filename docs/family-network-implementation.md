@@ -2,6 +2,14 @@
 
 ## Current delivery status
 
+- Durable DNS events/statistics server foundation: `53424752` (source
+  `7bcb5c79`) independently reviewed, with parent corrections for root-dot input,
+  microsecond cursor precision and inclusive statistics boundaries. Eleven
+  focused tests pass against fresh throwaway PostgreSQL databases. Explicit
+  `report_dns_events` worker scope, scoped reads and idle-household retention
+  are implemented; no worker emits these batches yet. Worker integration and
+  real frontend wiring remain separate gates. Statistics describe retained
+  observations, not visits or independently verified coverage.
 - Proxy credential/session-evidence foundation: `4adffadf` + `75f1ab02`
   (source `60294671` + `29f21ed3`) independently accepted: 82 tests and
   10 additional review probes. Explicit opt-in, scoped hash-only credentials,

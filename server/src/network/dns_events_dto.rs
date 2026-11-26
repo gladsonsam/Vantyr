@@ -96,7 +96,11 @@ pub fn normalize_domain(value: &str) -> ApiResult<String> {
     if !clean_token(trimmed, MAX_NAME_LEN, true) {
         return Err(bad("invalid DNS query name"));
     }
-    Ok(trimmed.trim_end_matches('.').to_ascii_lowercase())
+    let normalized = trimmed.trim_end_matches('.').to_ascii_lowercase();
+    if normalized.is_empty() {
+        return Err(bad("invalid DNS query name"));
+    }
+    Ok(normalized)
 }
 
 /// Bounded opaque token (reason code, applied rule, upstream label, source id).
@@ -392,7 +396,7 @@ pub struct EventQueryParams {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StatsQueryParams {
-    /// One of `1h`, `24h`, `7d`. Defaults to `24h`.
+    /// One of `1h`, `24h`, `7d`, `30d`. Defaults to `24h`.
     pub window: Option<String>,
     /// Optional device scope; must be assigned inside this household.
     pub device_id: Option<String>,
@@ -406,6 +410,8 @@ mod tests {
     fn domain_validation_rejects_urls_paths_and_secrets() {
         assert_eq!(normalize_domain("Example.COM.").unwrap(), "example.com");
         for bad in [
+            ".",
+            " . ",
             "https://example.com",
             "example.com/path",
             "a@b.com",

@@ -545,10 +545,14 @@ pub async fn time_series(
         ) AS b
         LEFT JOIN network_dns_events e
           ON e.observed_at >= b.bucket
-         AND e.observed_at < b.bucket + make_interval(secs => ",
+         AND (e.observed_at < b.bucket + make_interval(secs => ",
     );
     qb.push_bind(bucket_seconds);
-    qb.push("::double precision)");
+    qb.push("::double precision) OR (g.i = ");
+    qb.push_bind(bucket_count - 1);
+    qb.push(" AND e.observed_at = ");
+    qb.push_bind(filter.to);
+    qb.push("))");
     // Same predicate as the other queries, with the joined alias. Empty
     // buckets still produce a row with count zero.
     push_conditions(&mut qb, filter, "e.");
