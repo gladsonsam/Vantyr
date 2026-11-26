@@ -49,50 +49,24 @@ export const demoUsers: DashboardUser[] = [
 ];
 
 export const demoAgents: Agent[] = [
-  agent("win11dev", "WIN11DEV", true, 0.25, "0.1.6"),
-  agent("build-srv-02", "BUILD-SRV-02", true, 0.75, "0.2.9"),
-  agent("mbp-design", "MBP-DESIGN", true, 1.4, "0.2.9"),
-  agent("reception-pc", "RECEPTION-PC", true, 2.1, "0.2.7"),
-  agent("kiosk-lobby", "KIOSK-LOBBY", false, 6.5, "0.2.9"),
-  agent("sitting-room", "SITTING-ROOM", false, 96, "0.2.9"),
-  agent("lab-laptop-07", "LAB-LAPTOP-07", true, 0.1, "0.2.9"),
-  agent("warehouse-03", "WAREHOUSE-03", false, 28, "0.2.8"),
+  agent("desktop", "Desktop", true, 0.25, "0.2.9"),
+  agent("laptop", "Laptop", true, 0.1, "0.2.9"),
 ];
 
 export const demoLiveStatus: Record<string, AgentLiveStatus> = {
-  win11dev: {
-    activity: "active",
-    app: "explorer.exe",
-    window: "This PC - File Explorer",
-    url: "https://github.com/example/vantyr/pull/482",
-  },
-  "build-srv-02": {
-    activity: "active",
-    app: "WindowsTerminal.exe",
-    window: "ssh - build pipeline #2291",
-    url: "https://ci.example.local/builds/2291",
-  },
-  "mbp-design": {
-    activity: "afk",
-    idleSecs: 940,
-    idleSinceMs: now - 940_000,
-    app: "Figma.exe",
-    window: "Figma - Vantyr UI",
-    url: "https://figma.com/file/demo",
-  },
-  "reception-pc": {
-    activity: "afk",
-    idleSecs: 320,
-    idleSinceMs: now - 320_000,
-    app: "outlook.exe",
-    window: "Inbox - Outlook",
-    url: "https://outlook.office.com/mail/",
-  },
-  "lab-laptop-07": {
+  desktop: {
     activity: "active",
     app: "Code.exe",
     window: "Vantyr - Visual Studio Code",
     url: "http://localhost:5173/",
+  },
+  laptop: {
+    activity: "afk",
+    idleSecs: 940,
+    idleSinceMs: now - 940_000,
+    app: "outlook.exe",
+    window: "Inbox - Outlook",
+    url: "https://outlook.office.com/mail/",
   },
 };
 
@@ -108,12 +82,8 @@ export const demoAgentInfo: Record<string, AgentInfo> = Object.fromEntries(
       uptime_secs: a.online ? (index + 2) * 36_200 : undefined,
       system_model: index % 2 === 0 ? "ThinkPad T14" : "OptiPlex 7090",
       system_manufacturer: index % 2 === 0 ? "Lenovo" : "Dell Inc.",
-      os_name: a.name.includes("MBP")
-        ? "macOS"
-        : a.name.includes("BUILD")
-          ? "Ubuntu"
-          : "Windows 11 Pro",
-      os_version: a.name.includes("BUILD") ? "24.04" : "23H2",
+      os_name: "Windows 11 Pro",
+      os_version: "23H2",
       cpu_brand: index % 2 === 0 ? "Intel Core i7-12700" : "AMD Ryzen 7 5700G",
       cpu_cores: index % 2 === 0 ? 12 : 8,
       memory_total_mb: 32768,
@@ -157,7 +127,7 @@ export const demoAgentInfo: Record<string, AgentInfo> = Object.fromEntries(
 
 // The first demo agent reports a fuller machine (several drives and adapters, long values) so the
 // Specs view can be checked against realistic data, not just the one-drive default.
-Object.assign(demoAgentInfo["win11dev"], {
+Object.assign(demoAgentInfo["desktop"], {
   system_serial: "PF3DEMO0042",
   motherboard_manufacturer: "Micro-Star International Co., Ltd.",
   motherboard_model: "PRO B550M-VC WIFI (MS-7C95)",
@@ -237,25 +207,11 @@ Object.assign(demoAgentInfo["win11dev"], {
 
 export const demoGroups: AgentGroup[] = [
   {
-    id: "grp-workstations",
-    name: "Workstations",
-    description: "Employee laptops and desktops",
+    id: "grp-family",
+    name: "Family devices",
+    description: "Computers the household uses every day",
     created_at: isoHoursAgo(900),
-    member_count: 5,
-  },
-  {
-    id: "grp-kiosks",
-    name: "Kiosks",
-    description: "Shared unattended machines",
-    created_at: isoHoursAgo(720),
     member_count: 2,
-  },
-  {
-    id: "grp-build",
-    name: "Build fleet",
-    description: "CI and automation hosts",
-    created_at: isoHoursAgo(480),
-    member_count: 1,
   },
 ];
 
@@ -282,7 +238,7 @@ export const demoAlertRules: AlertRule[] = [
     cooldown_secs: 900,
     enabled: true,
     take_screenshot: true,
-    scopes: [{ kind: "group", group_id: "grp-workstations" }],
+    scopes: [{ kind: "group", group_id: "grp-family" }],
   },
   {
     id: 3,
@@ -330,7 +286,7 @@ export const demoAlertRules: AlertRule[] = [
     cooldown_secs: 120,
     enabled: false,
     take_screenshot: false,
-    scopes: [{ kind: "group", group_id: "grp-kiosks" }],
+    scopes: [{ kind: "group", group_id: "grp-family" }],
   },
 ];
 
@@ -352,7 +308,7 @@ export const demoAppBlockRules: AppBlockRule[] = [
     match_mode: "contains",
     enabled: true,
     created_at: isoHoursAgo(24),
-    scopes: [{ kind: "group", group_id: "grp-workstations" }],
+    scopes: [{ kind: "group", group_id: "grp-family" }],
     schedules: [],
   },
   {
@@ -373,9 +329,8 @@ export const demoAppBlockRules: AppBlockRule[] = [
     enabled: true,
     created_at: isoHoursAgo(12),
     scopes: [
-      { kind: "group", group_id: "grp-workstations" },
-      { kind: "group", group_id: "grp-kiosks" },
-      { kind: "agent", agent_id: "sitting-room" },
+      { kind: "group", group_id: "grp-family" },
+      { kind: "agent", agent_id: "laptop" },
     ],
     schedules: [1, 2, 3, 4, 5].map((day_of_week) => ({
       day_of_week,
@@ -400,7 +355,7 @@ export const demoAppBlockRules: AppBlockRule[] = [
     match_mode: "exact",
     enabled: true,
     created_at: isoHoursAgo(60),
-    scopes: [{ kind: "group", group_id: "grp-kiosks" }],
+    scopes: [{ kind: "group", group_id: "grp-family" }],
     schedules: [
       { day_of_week: 5, start_minute: 22 * 60, end_minute: 1440 },
       { day_of_week: 6, start_minute: 0, end_minute: 6 * 60 },
@@ -414,7 +369,7 @@ export const demoInternetBlockRules: InternetBlockRule[] = [
     name: "Kiosk after-hours block",
     enabled: true,
     created_at: isoHoursAgo(72),
-    scopes: [{ kind: "group", group_id: "grp-kiosks" }],
+    scopes: [{ kind: "group", group_id: "grp-family" }],
     schedules: [{ day_of_week: 1, start_minute: 18 * 60, end_minute: 23 * 60 + 59 }],
   },
   {
@@ -431,8 +386,8 @@ export const demoInternetBlockRules: InternetBlockRule[] = [
     enabled: true,
     created_at: isoHoursAgo(10),
     scopes: [
-      { kind: "group", group_id: "grp-workstations" },
-      { kind: "agent", agent_id: "sitting-room" },
+      { kind: "group", group_id: "grp-family" },
+      { kind: "agent", agent_id: "laptop" },
     ],
     schedules: [
       { day_of_week: 0, start_minute: 21 * 60, end_minute: 1440 },
@@ -466,7 +421,7 @@ export const demoScheduledScripts: ScheduledScript[] = [
     enabled: true,
     created_at: isoHoursAgo(72),
     updated_at: isoHoursAgo(8),
-    scopes: [{ kind: "group", group_id: "grp-workstations", agent_id: null }],
+    scopes: [{ kind: "group", group_id: "grp-family", agent_id: null }],
     schedules: [{ frequency: "weekly", day_of_week: 1, fire_minute: 2 * 60 }],
   },
   {
@@ -490,7 +445,7 @@ export const demoScheduledScripts: ScheduledScript[] = [
     enabled: false,
     created_at: isoHoursAgo(120),
     updated_at: isoHoursAgo(30),
-    scopes: [{ kind: "group", group_id: "grp-kiosks", agent_id: null }],
+    scopes: [{ kind: "group", group_id: "grp-family", agent_id: null }],
     schedules: [{ frequency: "daily", day_of_week: null, fire_minute: 5 * 60 }],
   },
   {
@@ -633,7 +588,7 @@ export function demoSoftware(agentId: string): AgentSoftwareRow[] {
     captured_at: isoMinutesAgo(i * 8),
   }));
   // The first agent has a long inventory so sorting and paging can be exercised.
-  if (agentId !== "win11dev") return rows.slice(0, 5);
+  if (agentId !== "desktop") return rows.slice(0, 5);
   const extra = Array.from({ length: 48 }, (_, i) => ({
     name: `Demo component ${String(i + 1).padStart(2, "0")} (x64)`,
     version: `${1 + (i % 4)}.${i}.0`,

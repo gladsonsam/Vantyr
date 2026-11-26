@@ -40,6 +40,7 @@ import { BulkScriptModal } from "./BulkScriptModal";
 import { BulkAddToGroupModal } from "./BulkAddToGroupModal";
 import { DeviceCard } from "@/features/devices/components/DeviceCard";
 import type { DeviceRow } from "@/features/devices/lib/deviceModel";
+import { connectedCount } from "@/features/devices/lib/deviceModel";
 import { filterDevices } from "@/features/devices/lib/filterDevices";
 
 interface Props extends FleetTableProps {
@@ -199,7 +200,19 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
       return next;
     });
 
-  const counts = useMemo(() => countFleetStatuses(rows), [rows]);
+  // Devices without an agent count too, so the numbers match the cards on screen.
+  const counts = useMemo(() => {
+    const base = { ...countFleetStatuses(rows) };
+    for (const other of props.otherDevices ?? []) {
+      const live = connectedCount(other) > 0;
+      base.all += 1;
+      if (live) {
+        base.online += 1;
+        base.active += 1;
+      } else base.offline += 1;
+    }
+    return base;
+  }, [rows, props.otherDevices]);
   const updates = useMemo(() => rows.filter((row) => row.updateNeeded).length, [rows]);
 
   const setStatus = (status: FleetStatusFilter) => changeFilters({ status });

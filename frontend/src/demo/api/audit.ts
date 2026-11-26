@@ -14,7 +14,7 @@ type DemoAuditRow = {
 
 /** Synthetic records, newest first, over several days: sign-ins, operator actions, failures and page views. */
 function demoAuditRows(): DemoAuditRow[] {
-  const devices = ["win11dev", "build-srv-02", "mbp-design", "reception-pc", "lab-laptop-07"];
+  const devices = ["desktop", "laptop"];
   const templates: Omit<DemoAuditRow, "id" | "ts" | "agent_id">[] = [
     { actor: "auth", client_ip: "203.0.113.24", action: "login", status: "ok", detail: {} },
     {

@@ -191,8 +191,9 @@ function decide(snapshot: PolicySnapshot, q: DecisionQuery): Decision {
 }
 
 const DEVICE_IDS: Record<string, string> = {
-  "Alex’s laptop": "dev-laptop",
-  "Shared desktop": "dev-desktop",
+  Desktop: "dev-desktop",
+  Laptop: "dev-laptop",
+  MacBook: "dev-macbook",
   "Living room TV": "dev-tv",
   "Kitchen tablet": "dev-tablet",
 };
@@ -249,7 +250,7 @@ function buildStats(q: DnsStatsQuery): DnsStats {
 
 /**
  * Deterministic per-device proxy statistics. Only some devices use the proxy, and what it blocks matches
- * the demo proxy events (malware.example for the laptop, games.example for the desktop).
+ * the demo proxy events (malware.example for the MacBook, games.example for the desktop).
  */
 function buildProxyStats(q: DnsStatsQuery, inspectedShare: number): ProxyStats {
   const buckets = q.range === "24h" ? 24 : q.range === "7d" ? 28 : 30;
@@ -315,16 +316,15 @@ function buildEvents(): NetworkEvent[] {
         revision: 14,
       })),
     );
-  visit("Alex’s laptop", "Alex", "verified", "news.example", "allow", "Household default", [
+  visit("Laptop", "Alex", "verified", "news.example", "allow", "Household default", [
     "agent",
     "dns",
-    "proxy",
   ]);
-  visit("Shared desktop", "Sam", "verified", "games.example", "deny", "Sam: school nights", [
+  visit("Desktop", "Sam", "verified", "games.example", "deny", "Sam: school nights", [
     "dns",
     "proxy",
   ]);
-  visit("Shared desktop", null, "unknown", "video.example", "allow", "Household default", ["dns"]);
+  visit("Desktop", null, "unknown", "video.example", "allow", "Household default", ["dns"]);
   visit(
     "Living room TV",
     null,
@@ -344,7 +344,7 @@ function buildEvents(): NetworkEvent[] {
     ["dns"],
   );
   visit(
-    "Shared desktop",
+    "Desktop",
     "Sam",
     "verified",
     "homework.example",
@@ -353,14 +353,28 @@ function buildEvents(): NetworkEvent[] {
     ["dns", "proxy"],
   );
   visit(
-    "Alex’s laptop",
+    "Laptop",
     "Alex",
     "verified",
     "malware.example",
     "deny",
     "Household baseline: known malware host",
-    ["dns", "proxy"],
+    ["dns"],
   );
+  visit("MacBook", "Jo", "verified", "news.example", "allow", "Household default", ["proxy"]);
+  visit(
+    "MacBook",
+    "Jo",
+    "verified",
+    "malware.example",
+    "deny",
+    "Household baseline: known malware host",
+    ["proxy"],
+  );
+  visit("MacBook", "Jo", "verified", "social.example", "deny", "Jo: too young for social media", [
+    "proxy",
+  ]);
+  visit("MacBook", "Jo", "verified", "search.example", "allow", "Household default", ["proxy"]);
   const events: NetworkEvent[] = [];
   for (let i = 0; i < 48; i++) {
     const group = rows[i % rows.length];
@@ -399,7 +413,7 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
     rateLimit: 30 as number | null,
     retentionDays: 14,
   };
-  const revokedCredentials = new Set<string>(["c3"]);
+  const revokedCredentials = new Set<string>();
   const inspectionState = { enabled: false, trust: "not_enabled" as TrustState };
   const inspection = (): ProxyInspection => ({
     enabled: inspectionState.enabled,
@@ -410,7 +424,7 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
       : null,
     caNotAfter: inspectionState.enabled ? ahead(60 * 24 * 365 * 5) : null,
     trustingDevices: 0,
-    totalDevices: 4,
+    totalDevices: 2,
     exceptions: [],
     pinnedApps: [
       {
@@ -469,33 +483,21 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
             id: "gw-proxy",
             kind: "proxy",
             name: "Vantyr Proxy",
-            online: false,
-            lastSeenAt: ago(60 * 52),
-            appliedRevision: 12,
-            acknowledgedAt: ago(60 * 54),
+            online: true,
+            lastSeenAt: ago(0.5),
+            appliedRevision: applied.revision,
+            acknowledgedAt: ago(60 * 3),
             verification: "unverified",
             verifiedAt: null,
             capabilities: [
-              {
-                id: "http_proxy",
-                coverage: "offline",
-                detail:
-                  "No report for over two days, so nothing can be said about what it enforces.",
-              },
+              { id: "http_proxy", coverage: "enforced" },
               {
                 id: "https_inspection",
                 coverage: "unsupported",
                 detail: "HTTPS inspection is off. It is an explicit opt-in on the Proxy page.",
               },
             ],
-            warnings: [
-              {
-                id: "stale",
-                severity: "warning",
-                message: "The proxy hasn’t reported in two days and is on an older revision.",
-                action: { label: "Open Proxy", to: "/network/proxy" },
-              },
-            ],
+            warnings: [],
           },
         ],
       });
@@ -595,23 +597,16 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
           [
             {
               id: "c1",
-              label: "Alex’s laptop",
+              label: "Desktop",
               createdAt: ago(60 * 24 * 20),
-              lastUsedAt: ago(60 * 52),
+              lastUsedAt: ago(3),
               revoked: false,
             },
             {
               id: "c2",
-              label: "Shared desktop",
-              createdAt: ago(60 * 24 * 18),
-              lastUsedAt: ago(60 * 48),
-              revoked: false,
-            },
-            {
-              id: "c3",
-              label: "Old phone",
-              createdAt: ago(60 * 24 * 60),
-              lastUsedAt: null,
+              label: "MacBook",
+              createdAt: ago(60 * 24 * 10),
+              lastUsedAt: ago(2),
               revoked: false,
             },
           ].map((c) => ({ ...c, revoked: revokedCredentials.has(c.id) })),
@@ -632,24 +627,13 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
       return ready(inspection());
     },
 
-    async runCheck(deviceId: string, kind: "dns" | "proxy") {
+    async runCheck(_deviceId: string, _kind: "dns" | "proxy") {
       await new Promise((resolve) => setTimeout(resolve, 900 + Math.random() * 700));
-      const stale =
-        (kind === "dns" && deviceId === "dev-tablet") ||
-        (kind === "proxy" && deviceId === "dev-desktop");
-      return ready<ConnectionCheck>(
-        stale
-          ? {
-              ok: false,
-              ms: 0,
-              detail: `No ${kind === "dns" ? "query" : "request"} seen from this device recently.`,
-            }
-          : {
-              ok: true,
-              ms: 12 + Math.round(Math.random() * 30),
-              detail: "The gateway sees this device and can decide for it.",
-            },
-      );
+      return ready<ConnectionCheck>({
+        ok: true,
+        ms: 12 + Math.round(Math.random() * 30),
+        detail: "The gateway sees this device and can decide for it.",
+      });
     },
 
     async events(q: EventsQuery) {

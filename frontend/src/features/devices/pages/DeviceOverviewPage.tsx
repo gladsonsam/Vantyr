@@ -5,7 +5,7 @@ import { DeviceDecisions } from "@/features/devices/components/DeviceDecisions";
 import { DeviceRules } from "@/features/devices/components/DeviceRules";
 import { OverviewCard } from "@/features/devices/components/OverviewCard";
 import { OverviewAgent } from "@/features/devices/components/OverviewAgent";
-import { OverviewDnsStats } from "@/features/devices/components/OverviewStats";
+import { OverviewDnsStats, OverviewProxyStats } from "@/features/devices/components/OverviewStats";
 import {
   CONNECTION_KINDS,
   connectedCount,
@@ -37,6 +37,7 @@ export function DeviceOverviewPage() {
   const hasDns = device.connections.dns.state !== "none";
   const hasAgent = device.connections.agent.state !== "none" && device.agentId !== null;
   const showDns = hasDns && device.deviceId !== null;
+  const showProxy = device.connections.proxy.state !== "none" && device.deviceId !== null;
   return (
     <div className="space-y-6">
       {hasAgent && device.agentId ? (
@@ -47,7 +48,10 @@ export function DeviceOverviewPage() {
         />
       ) : null}
       {!hasAgent && showDns && device.deviceId ? <OverviewDnsStats deviceId={device.deviceId} /> : null}
-      {!hasAgent && !showDns ? (
+      {!hasAgent && !showDns && showProxy && device.deviceId ? (
+        <OverviewProxyStats deviceId={device.deviceId} />
+      ) : null}
+      {!hasAgent && !showDns && !showProxy ? (
         <div className="grid grid-cols-2 gap-5 lg:grid-cols-3">
           <Figure
             label="Reporting"

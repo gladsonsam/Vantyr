@@ -28,7 +28,7 @@ export function createDemoState() {
     }
   >();
   // Shared synthetic always-on quick-toggle configuration (not actual enforcement).
-  const internetConfiguration = new Map<string, boolean>([["sitting-room", true]]);
+  const internetConfiguration = new Map<string, boolean>([["laptop", true]]);
   const configuredInternet = (id: string) => ({
     blocked: internetConfiguration.get(id) ?? false,
     source: internetConfiguration.get(id) ? ("agent" as const) : null,
