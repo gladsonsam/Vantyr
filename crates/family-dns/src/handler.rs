@@ -19,6 +19,7 @@ use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use chrono::Utc;
 use hickory_server::net::runtime::Time;
 use hickory_server::net::NetError;
 use hickory_server::proto::op::{Message, MessageType, Metadata, OpCode, ResponseCode};
@@ -28,8 +29,11 @@ use hickory_server::proto::serialize::binary::BinEncoder;
 use hickory_server::server::{Request, RequestHandler, ResponseHandler, ResponseInfo};
 use hickory_server::zone_handler::{MessageResponse, MessageResponseBuilder};
 use tracing::{debug, warn};
+use uuid::Uuid;
 
 use crate::config::DenyConfig;
+use crate::events::{protocol_label, query_type_label, EventQueue, FinalDecision, FlagsDto};
+use crate::policy::DecisionView;
 use crate::runtime::{RuntimeSnapshot, SnapshotHandle};
 
 /// Captures the exact response the catalog produced so the handler can check
@@ -69,23 +73,28 @@ impl ResponseHandler for CaptureHandler {
 #[derive(Clone)]
 pub struct FilteringHandler {
     current: SnapshotHandle,
+    /// Optional opt-in event channel. `None` keeps the resolver exactly as it
+    /// was before event reporting existed; `Some` never blocks a query.
+    events: Option<Arc<EventQueue>>,
 }
 
 impl FilteringHandler {
-    pub(crate) fn new(current: SnapshotHandle) -> Self {
-        Self { current }
+    pub(crate) fn with_events(current: SnapshotHandle, events: Option<Arc<EventQueue>>) -> Self {
+        Self { current, events }
     }
 
     /// Inspect the answer records for an allowed alias that leads to a denied
     /// name. Both explicit CNAME targets and A/AAAA owners other than the
-    /// question name are checked, so an alias cannot bypass policy.
+    /// question name are checked, so an alias cannot bypass policy. The failing
+    /// alias decision is returned so the one emitted observation records the
+    /// FINAL decision, not just the original question.
     fn denied_alias_target(
         snapshot: &RuntimeSnapshot,
         message: &Message,
         qname: &Name,
         source: IpAddr,
         qtype: RecordType,
-    ) -> Option<String> {
+    ) -> Option<AliasDenial> {
         for record in &message.answers {
             let target = match &record.data {
                 RData::CNAME(target) => Some(target.0.clone()),
@@ -93,17 +102,17 @@ impl FilteringHandler {
                 _ => None,
             };
             if let Some(target) = target {
-                if !snapshot
-                    .evaluator
-                    .evaluate_alias_with_filter(
-                        source,
-                        &target,
-                        qtype,
-                        Some(snapshot.filter.as_ref()),
-                    )
-                    .allow
-                {
-                    return Some(target.to_string().to_ascii_lowercase());
+                let decision = snapshot.evaluator.evaluate_alias_with_filter(
+                    source,
+                    &target,
+                    qtype,
+                    Some(snapshot.filter.as_ref()),
+                );
+                if !decision.allow {
+                    return Some(AliasDenial {
+                        target: target.to_string().to_ascii_lowercase(),
+                        decision,
+                    });
                 }
             }
         }
@@ -240,6 +249,34 @@ impl FilteringHandler {
     }
 }
 
+/// The failing alias and the policy/filter decision that denied it.
+struct AliasDenial {
+    target: String,
+    decision: DecisionView,
+}
+
+/// Emits exactly one observation when the request leaves the handler, on every
+/// terminal path (direct deny, catalog failure, alias deny, shaping deny and
+/// allow). Dropping is synchronous and bounded, so it cannot block a response.
+struct EventGuard {
+    queue: Option<Arc<EventQueue>>,
+    decision: Option<FinalDecision>,
+}
+
+impl Drop for EventGuard {
+    fn drop(&mut self) {
+        let (Some(queue), Some(decision)) = (self.queue.as_ref(), self.decision.take()) else {
+            return;
+        };
+        match decision.into_event() {
+            Ok(event) => {
+                queue.push(event);
+            }
+            Err(_) => queue.note_invalid(),
+        }
+    }
+}
+
 #[async_trait]
 impl RequestHandler for FilteringHandler {
     async fn handle_request<R: ResponseHandler, T: Time>(
@@ -290,6 +327,36 @@ impl RequestHandler for FilteringHandler {
             filter_rule = decision.filter_rule.as_deref().unwrap_or("none"),
             "policy decision"
         );
+
+        // ONE observation per query. The guard is armed before any terminal
+        // return and is finalised on drop, including the alias/shaping paths
+        // below. Its data is what the worker actually decided, not an inferred
+        // person or a claimed enforcement receipt.
+        let mut guard = EventGuard {
+            queue: self.events.clone(),
+            decision: Some(FinalDecision {
+                event_id: Uuid::new_v4(),
+                observed_at: Utc::now(),
+                device_id: snapshot.config.device_for(source).0,
+                name: qname.to_string().to_ascii_lowercase(),
+                query_type: query_type_label(qtype).unwrap_or("").to_owned(),
+                protocol: protocol_label(info.protocol).to_owned(),
+                allow: decision.allow,
+                reason_code: decision.reason_code.clone(),
+                policy_revision: Some(decision.policy_revision),
+                applied_rule: decision.applied_rule.clone(),
+                filter_blocked: decision.filter_blocked,
+                filter_source_id: decision.filter_source_id.clone(),
+                filter_source_kind: decision.filter_source_kind.clone(),
+                denied_alias_target: None,
+                flags: FlagsDto {
+                    rd: request.metadata.recursion_desired,
+                    cd: request.metadata.checking_disabled,
+                    ra: request.metadata.recursion_available,
+                    ad: request.metadata.authentic_data,
+                },
+            }),
+        };
         if !decision.allow {
             return Self::send_denied(&snapshot, request, &mut response_handle, &qname, qtype)
                 .await;
@@ -316,9 +383,21 @@ impl RequestHandler for FilteringHandler {
                 return send_error(request, &mut response_handle, ResponseCode::ServFail).await;
             }
         };
-        if let Some(target) = Self::denied_alias_target(&snapshot, &message, &qname, source, qtype)
-        {
-            debug!(%qname, %target, "denied via CNAME chain");
+        if let Some(alias) = Self::denied_alias_target(&snapshot, &message, &qname, source, qtype) {
+            debug!(%qname, target = %alias.target, "denied via alias chain");
+            if let Some(final_decision) = guard.decision.as_mut() {
+                final_decision.allow = false;
+                final_decision.denied_alias_target = Some(alias.target);
+                final_decision.reason_code = alias.decision.reason_code;
+                final_decision.policy_revision = Some(alias.decision.policy_revision);
+                final_decision.filter_blocked |= alias.decision.filter_blocked;
+                if let Some(id) = alias.decision.filter_source_id {
+                    final_decision.filter_source_id = Some(id);
+                }
+                if let Some(kind) = alias.decision.filter_source_kind {
+                    final_decision.filter_source_kind = Some(kind);
+                }
+            }
             return Self::send_denied(&snapshot, request, &mut response_handle, &qname, qtype)
                 .await;
         }
@@ -330,6 +409,10 @@ impl RequestHandler for FilteringHandler {
         let cache_settings = &snapshot.config.cache;
         if let Some(evidence) = Self::bogus_nxdomain_target(&message, &cache_settings.bogus_ips()) {
             debug!(%qname, %evidence, "bogus answer IP -> NXDOMAIN");
+            if let Some(final_decision) = guard.decision.as_mut() {
+                final_decision.allow = false;
+                final_decision.reason_code = "bogus_answer_ip".to_owned();
+            }
             // `error_msg` preserves the request's RD/CD metadata and emits an
             // empty answer/authority/additional set.
             return send_error(request, &mut response_handle, ResponseCode::NXDomain).await;

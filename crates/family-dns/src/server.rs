@@ -34,6 +34,7 @@ use crate::bundle::{Bundle, BundleStore, BundleValidator};
 use crate::compile::compile;
 use crate::config::{read_bounded, Config};
 use crate::controller::{ControllerError, SyncCapability};
+use crate::events::EventQueue;
 use crate::filter::{
     compile_from_material, empty_filter, material_identity, no_remote, prepare as prepare_filter,
     FilterMaterial, MAX_FILTER_BUNDLE_BYTES,
@@ -167,17 +168,27 @@ impl DnsServer {
     /// Validate, build, bind UDP and TCP on the same port, and start serving.
     /// No socket exists until configuration has passed full validation.
     pub async fn start(config: Config) -> Result<Self> {
-        Self::start_inner(config, None).await
+        Self::start_inner(config, None, None).await
+    }
+
+    /// Start with an opt-in event channel. Reporting is a side channel: an
+    /// outage in the controller never delays or changes a DNS answer.
+    pub async fn start_with_events(config: Config, events: Arc<EventQueue>) -> Result<Self> {
+        Self::start_inner(config, None, Some(events)).await
     }
 
     /// Test-only seam: start with a maintained Hickory `Hosts` table injected
     /// instead of reading the machine's hosts file. No host file is changed.
     #[doc(hidden)]
     pub async fn start_with_hosts(config: Config, hosts: Arc<Hosts>) -> Result<Self> {
-        Self::start_inner(config, Some(hosts)).await
+        Self::start_inner(config, Some(hosts), None).await
     }
 
-    async fn start_inner(config: Config, hosts: Option<Arc<Hosts>>) -> Result<Self> {
+    async fn start_inner(
+        config: Config,
+        hosts: Option<Arc<Hosts>>,
+        events: Option<Arc<EventQueue>>,
+    ) -> Result<Self> {
         config.validate()?;
         let (material, filter) = prepare_filter(&config.filter, config.policy_revision, &no_remote)
             .map_err(|error| anyhow::anyhow!(error.to_string()))?
@@ -197,7 +208,7 @@ impl DnsServer {
             None,
             hosts,
         )?;
-        Self::serve(config, snapshot, observations, None, None).await
+        Self::serve(config, snapshot, observations, None, None, events).await
     }
 
     /// Start in opt-in durable mode. On a lost-ack restart the local bundle is
@@ -340,8 +351,15 @@ impl DnsServer {
             state,
             bundle.management.clone(),
         )?;
-        let mut server =
-            Self::serve(bundle.config, snapshot, observations, Some(store), None).await?;
+        let mut server = Self::serve(
+            bundle.config,
+            snapshot,
+            observations,
+            Some(store),
+            None,
+            None,
+        )
+        .await?;
         server.subscriptions = subscriptions;
         Ok((server, bootstrap_errors))
     }
@@ -352,9 +370,10 @@ impl DnsServer {
         observations: ObservationLog,
         store: Option<BundleStore>,
         subscriptions: Option<Arc<SubscriptionRuntime>>,
+        events: Option<Arc<EventQueue>>,
     ) -> Result<Self> {
         let current: SnapshotHandle = Arc::new(RwLock::new(snapshot));
-        let handler = FilteringHandler::new(current.clone());
+        let handler = FilteringHandler::with_events(current.clone(), events);
         let mut server = Server::new(handler);
         let mut attempts = 0;
         let (udp, tcp, bound) = loop {

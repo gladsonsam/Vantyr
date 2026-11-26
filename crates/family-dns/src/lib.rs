@@ -25,6 +25,7 @@ pub mod bundle;
 pub mod compile;
 pub mod config;
 pub mod controller;
+pub mod events;
 pub mod filter;
 pub mod handler;
 pub mod management;
@@ -50,6 +51,11 @@ pub use controller::{
     policy_digest, sync_once, ControllerClient, ControllerError, ControllerOptions,
     ControllerPoller, PolicyReadResponse, SyncCapability, CONTROLLER_AUDIENCE, CONTROLLER_COMMAND,
     CONTROLLER_KIND, CONTROLLER_POLICY_SCHEMA_VERSION, READ_PATH,
+};
+pub use events::{
+    protocol_label, query_type_label, BatchAck, DnsEventDto, EventBatchBody, EventClient,
+    EventError, EventMetrics, EventOptions, EventQueue, EventWorker, FinalDecision, FlagsDto,
+    InvalidEvent, EVENT_COMMAND, EVENT_KIND, EVENT_PATH, MAX_EVENTS_PER_BATCH,
 };
 pub use filter::{
     compile_from_material, empty_filter, material_identity, no_remote,

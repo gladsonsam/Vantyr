@@ -74,6 +74,8 @@ mod service;
 #[cfg(test)]
 mod dns_events_tests;
 #[cfg(test)]
+mod dns_events_worker_e2e_tests;
+#[cfg(test)]
 mod dns_management_e2e_tests;
 #[cfg(test)]
 mod dns_management_tests;
