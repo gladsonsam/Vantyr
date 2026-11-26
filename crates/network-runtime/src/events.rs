@@ -133,13 +133,10 @@ struct QueueState {
 impl QueueState {
     fn prune_expired(&mut self, now: DateTime<Utc>) {
         let cutoff = now - ChronoDuration::seconds(self.config.retention_secs as i64);
-        while let Some(front) = self.entries.front() {
-            if front.occurred_at >= cutoff {
-                break;
-            }
-            let removed = self.entries.pop_front().expect("front was checked");
-            self.bytes -= removed.json.len();
-        }
+        // Arrival order does not imply occurrence order: delayed observations
+        // and bounded clock skew may place expired records behind live ones.
+        self.entries.retain(|entry| entry.occurred_at >= cutoff);
+        self.bytes = self.entries.iter().map(|entry| entry.json.len()).sum();
     }
 
     fn enforce_caps(&mut self) {
@@ -480,6 +477,49 @@ mod tests {
         // record and the byte/count accounting follows the same pruning.
         assert!(queue.events(later).is_empty());
         assert_eq!(queue.stats(later), (0, 0));
+    }
+
+    #[test]
+    fn out_of_order_expiry_prunes_every_position_and_recounts_bytes() {
+        let h = household();
+        let now = ts("2026-11-26T10:00:00Z");
+        let queue = EventQueue::new(
+            h,
+            EventQueueConfig {
+                retention_secs: 10,
+                ..EventQueueConfig::default()
+            },
+        )
+        .unwrap();
+        let live = event(
+            h,
+            EventSource::Dns,
+            now + ChronoDuration::seconds(5),
+            "live",
+            None,
+        );
+        let expected_bytes = serde_json::to_vec(&live).unwrap().len();
+        queue.ingest(h, live, now).unwrap();
+        queue
+            .ingest(
+                h,
+                event(
+                    h,
+                    EventSource::Dns,
+                    now - ChronoDuration::seconds(5),
+                    "delayed",
+                    None,
+                ),
+                now,
+            )
+            .unwrap();
+        let later = now + ChronoDuration::seconds(8);
+        assert_eq!(queue.stats(later), (1, expected_bytes));
+        let kept = queue.events(later);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].correlation_id.as_deref(), Some("live"));
+        assert!(queue.events(now + ChronoDuration::seconds(16)).is_empty());
+        assert_eq!(queue.stats(now + ChronoDuration::seconds(16)), (0, 0));
     }
 
     #[test]
