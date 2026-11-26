@@ -1,7 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
-import { App } from "@/app/App";
+import { Root } from "@/app/Root";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { registerServiceWorker } from "@/lib/pwa";
 // App base styles (body background/type, keyframes, scrollbars).
@@ -12,9 +11,7 @@ import "@/styles/ui.css";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary label="app-root">
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <Root />
     </ErrorBoundary>
   </StrictMode>,
 );
