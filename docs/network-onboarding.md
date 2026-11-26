@@ -47,12 +47,12 @@ Mobile companion applications remain deferred.
 
 ## Implementation sequence and acceptance evidence
 
-- [ ] Gateway credential issuance, expiry, rotation, revocation and authenticated
+- [x] Gateway credential issuance, expiry, rotation, revocation and authenticated
   heartbeat API; missing or wrong credentials cannot impersonate a worker.
-- [ ] Automatic unique CA initialization, encrypted recovery, public export,
+- [x] Automatic unique CA initialization, encrypted recovery, public export,
   short-lived leaf issuance, rotation and retirement. Real certificate chain,
   hostname and expiry validation tests; no verification bypass.
-- [ ] End-to-end Proxy inspection using the accepted signer, with scoped
+- [x] End-to-end Proxy inspection using the accepted signer, with scoped
   no-inspection exceptions and safe failure behavior.
 - [ ] Authenticated enrollment service using the existing identity provider;
   single-use scoped grants bind device, person assertion, expiry and purpose.

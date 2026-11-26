@@ -416,7 +416,7 @@ No substantive UI or Supabase changes were made in this step.
   page maximum and removal of an ineffective hostname builder method. Those
   corrections passed independent acceptance with 24 tests, including zero
   network contact for denied direct transport calls. A further literal-IPv6
-  parser correction has a dedicated regression test. No live write path exists.
+  parser correction passed fresh review with 25 tests. No live write path exists.
 
 - Versioned policy control API: immutable saved revisions, monotonic historical
   rollback, desired gateway assignment and explicitly scoped worker retrieval.
@@ -434,7 +434,8 @@ No substantive UI or Supabase changes were made in this step.
   additional authority/SNI/ALPN probes. Client trust setup is not delivered.
   Local follow-up bounds opaque exceptions to seven days, corrects CLI help
   and allows explicitly approved remote ports 80/443 while keeping the listener
-  unprivileged; fresh review of these follow-ups remains pending.
+  unprivileged. Fresh review accepted these follow-ups with 55 proxy tests,
+  25 UniFi tests and clean scoped clippy checks.
 - Durable container lab: implementation reports base/full-stack/durable smoke
   passing, including higher-revision reload, invalid reload preservation,
   restart with a changed external config and preserved stale-policy behavior.
@@ -445,3 +446,16 @@ No substantive UI or Supabase changes were made in this step.
 - Parent integration check: server and proxy compile together with the committed
   dependency graph using `cargo check --locked --offline`. No deployment follows
   from a successful build or a pushed feature-branch commit.
+
+### Active implementation tracks
+
+- Controller-driven DNS: bounded authenticated HTTPS retrieval, compatibility
+  checks and application through the accepted durable bundle/reload path.
+  Application acknowledgments and independent coverage verification remain
+  separate subsequent integration steps.
+- BYOD backend: scoped SSO principal bindings, single-use enrollment grants and
+  time-bounded verified sessions. This does not install client trust or enable
+  endpoint monitoring; worker/client identity integration remains subsequent work.
+- Filtering lists: immutable maintained-parser adapters, bounded list input and
+  explicit supported-rule semantics. Worker integration and subscription refresh
+  follow independently reviewed adapter acceptance.
