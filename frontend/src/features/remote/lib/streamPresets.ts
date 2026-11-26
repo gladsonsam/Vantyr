@@ -5,11 +5,13 @@ export type StreamPreset = "saver" | "balanced" | "sharp" | "ultra";
 
 export const STREAM_PRESET_STORAGE_KEY = "vantyr.dashboard.screenStreamPreset";
 
+// Keep qualities within the deployed server’s 20–85 range. Low quality also
+// raises H.264 CRF, so desktop text needs more than the old JPEG-40 default.
 export const STREAM_PRESET_TUNING: Record<StreamPreset, MjpegStreamTuning> = {
   saver: { jpegQ: 28, intervalMs: 500 },
-  balanced: { jpegQ: 40, intervalMs: 200 },
-  sharp: { jpegQ: 62, intervalMs: 80 },
-  ultra: { jpegQ: 75, intervalMs: 33 },
+  balanced: { jpegQ: 75, intervalMs: 200 },
+  sharp: { jpegQ: 80, intervalMs: 80 },
+  ultra: { jpegQ: 85, intervalMs: 33 },
 };
 
 export const STREAM_PRESET_OPTIONS: Array<{

@@ -2,6 +2,7 @@ import { testMock as vi } from "@tests/support/mock";
 import { afterEach, describe, expect, it } from "bun:test";
 import {
   STREAM_PRESET_STORAGE_KEY,
+  STREAM_PRESET_TUNING,
   loadStreamPreset,
   monitorLabel,
   saveStreamPreset,
@@ -41,4 +42,15 @@ describe("monitorLabel", () => {
     );
     expect(monitorLabel({ name: "  ", primary: false }, 1)).toBe("Display 2");
   });
+});
+
+it("keeps desktop presets legible within the deployed server quality range", () => {
+  expect(STREAM_PRESET_TUNING.balanced.jpegQ).toBeGreaterThanOrEqual(75);
+  const ordered = ["saver", "balanced", "sharp", "ultra"] as const;
+  for (let i = 0; i < ordered.length; i++) {
+    const tuning = STREAM_PRESET_TUNING[ordered[i]];
+    expect(tuning.jpegQ).toBeLessThanOrEqual(85);
+    expect(tuning.intervalMs).toBeGreaterThanOrEqual(33);
+    if (i) expect(tuning.jpegQ).toBeGreaterThan(STREAM_PRESET_TUNING[ordered[i - 1]].jpegQ);
+  }
 });
