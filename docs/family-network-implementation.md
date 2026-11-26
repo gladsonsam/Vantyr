@@ -584,6 +584,12 @@ No substantive UI or Supabase changes were made in this step.
   fetchers, receipt reporting exceeds the server contract, and management version
   rollback/conflict checks are missing. Substantive fixes and fresh independent
   review are required. It is not accepted or ready for dashboard handoff.
+  Fix `8277aefd` is under fresh review. The implementer reports 170 affected
+  tests and no dependency changes; the fix unifies applied management/material
+  authority, stages fetchers, guards the preparation basis, bounds receipts and
+  checks management versions. A separate real-server/worker test harness is being
+  built to exercise status admission against the migrated PostgreSQL-backed
+  router; shared wire fixtures alone do not establish that end-to-end result.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
   accepted separately from encrypted inbound listeners. Fresh review passed all
   91 DNS tests, including eight real-TLS upstream tests, and strict clippy.
