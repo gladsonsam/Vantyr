@@ -107,6 +107,7 @@ struct Seen {
 struct MockState {
     response: Mutex<PolicyReadResponse>,
     status: Mutex<Option<u16>>,
+    delay: Mutex<Option<Duration>>,
     seen: Mutex<Vec<Seen>>,
 }
 
@@ -115,6 +116,10 @@ async fn mock_handler(
     headers: HeaderMap,
     body: axum::body::Body,
 ) -> Response {
+    let delay = *state.delay.lock().unwrap();
+    if let Some(delay) = delay {
+        tokio::time::sleep(delay).await;
+    }
     let bytes = axum::body::to_bytes(body, 256 * 1024)
         .await
         .unwrap_or_default();
@@ -169,6 +174,7 @@ async fn spawn_controller(
     let state = Arc::new(MockState {
         response: Mutex::new(response),
         status: Mutex::new(None),
+        delay: Mutex::new(None),
         seen: Mutex::new(Vec::new()),
     });
     let router = Router::new()
@@ -371,9 +377,7 @@ async fn sync_over_real_tls_changes_udp_and_tcp_answers_without_restart() {
         assert_code(&blocked, ResponseCode::NXDomain);
     }
 
-    let outcome = sync_once(&server, &client(&st), &server.local_config(), now)
-        .await
-        .unwrap();
+    let outcome = sync_once(&server, &client(&st), now).await.unwrap();
     assert_eq!(outcome, SyncCapability::AppliedLocally { revision: 8 });
     assert!(outcome.available());
     assert_eq!(outcome.label(), "applied_locally");
@@ -416,7 +420,6 @@ async fn mismatches_rejections_and_outage_keep_last_known_good() {
     let st = new_state(&origin, &ca);
     let server = start_server(&st).await;
     let client = client(&st);
-    let base = server.local_config();
     let committed = fs::read(&st.bundle).unwrap();
 
     // Content digest is integrity, not a signature: a body mismatch rejects.
@@ -426,7 +429,7 @@ async fn mismatches_rejections_and_outage_keep_last_known_good() {
         *mock.response.lock().unwrap() = bad;
     }
     assert!(matches!(
-        sync_once(&server, &client, &base, now).await,
+        sync_once(&server, &client, now).await,
         Err(ControllerError::Integrity(_))
     ));
 
@@ -451,7 +454,7 @@ async fn mismatches_rejections_and_outage_keep_last_known_good() {
     for bad in cases {
         *mock.response.lock().unwrap() = bad;
         assert!(matches!(
-            sync_once(&server, &client, &base, now).await,
+            sync_once(&server, &client, now).await,
             Err(ControllerError::Integrity(_))
         ));
     }
@@ -466,7 +469,7 @@ async fn mismatches_rejections_and_outage_keep_last_known_good() {
     person.body_sha256 = policy_digest(&person.policy).unwrap();
     *mock.response.lock().unwrap() = person;
     assert!(matches!(
-        sync_once(&server, &client, &base, now).await,
+        sync_once(&server, &client, now).await,
         Err(ControllerError::Unsupported(_))
     ));
     let mut category = response(policy(9, now, true));
@@ -476,12 +479,12 @@ async fn mismatches_rejections_and_outage_keep_last_known_good() {
     category.body_sha256 = policy_digest(&category.policy).unwrap();
     *mock.response.lock().unwrap() = category;
     assert!(matches!(
-        sync_once(&server, &client, &base, now).await,
+        sync_once(&server, &client, now).await,
         Err(ControllerError::Unsupported(_))
     ));
     *mock.response.lock().unwrap() = response(policy(6, now, true));
     assert!(matches!(
-        sync_once(&server, &client, &base, now).await,
+        sync_once(&server, &client, now).await,
         Err(ControllerError::StaleRevision { .. })
     ));
 
@@ -489,12 +492,12 @@ async fn mismatches_rejections_and_outage_keep_last_known_good() {
     // the controller's status code; the worker never infers them locally.
     *mock.status.lock().unwrap() = Some(401);
     assert!(matches!(
-        sync_once(&server, &client, &base, now).await,
+        sync_once(&server, &client, now).await,
         Err(ControllerError::AuthDenied)
     ));
     *mock.status.lock().unwrap() = Some(404);
     assert!(matches!(
-        sync_once(&server, &client, &base, now).await,
+        sync_once(&server, &client, now).await,
         Err(ControllerError::MissingAssignment)
     ));
 
@@ -534,7 +537,7 @@ async fn plain_http_and_wrong_ca_never_reach_a_successful_pull() {
     write_private(&wrong_opts, serde_json::to_vec(&opts).unwrap().as_slice());
     let client = ControllerClient::new(&ControllerOptions::load(&wrong_opts).unwrap()).unwrap();
     assert!(matches!(
-        sync_once(&server, &client, &server.local_config(), now).await,
+        sync_once(&server, &client, now).await,
         Err(ControllerError::Transport)
     ));
 
@@ -550,12 +553,9 @@ async fn same_revision_is_idempotent_or_conflicting_and_never_freshens_age() {
     let st = new_state(&origin, &ca);
     let server = start_server(&st).await;
     let client = client(&st);
-    let base = server.local_config();
 
     assert_eq!(
-        sync_once(&server, &client, &base, Utc::now())
-            .await
-            .unwrap(),
+        sync_once(&server, &client, Utc::now()).await.unwrap(),
         SyncCapability::AppliedLocally { revision: 8 }
     );
     let committed = fs::read(&st.bundle).unwrap();
@@ -563,14 +563,9 @@ async fn same_revision_is_idempotent_or_conflicting_and_never_freshens_age() {
 
     // Same revision, same content: no write and no reset of the save time.
     assert_eq!(
-        sync_once(
-            &server,
-            &client,
-            &base,
-            Utc::now() + ChronoDuration::hours(1)
-        )
-        .await
-        .unwrap(),
+        sync_once(&server, &client, Utc::now() + ChronoDuration::hours(1))
+            .await
+            .unwrap(),
         SyncCapability::Unchanged { revision: 8 }
     );
     assert_eq!(fs::read(&st.bundle).unwrap(), committed);
@@ -584,7 +579,7 @@ async fn same_revision_is_idempotent_or_conflicting_and_never_freshens_age() {
     changed.body_sha256 = policy_digest(&changed.policy).unwrap();
     *mock.response.lock().unwrap() = changed;
     assert!(matches!(
-        sync_once(&server, &client, &base, Utc::now()).await,
+        sync_once(&server, &client, Utc::now()).await,
         Err(ControllerError::SameRevisionConflict(8))
     ));
     assert_eq!(fs::read(&st.bundle).unwrap(), committed);
@@ -610,9 +605,7 @@ async fn lost_ack_restart_and_stale_outage_keep_the_original_policy_age() {
     })
     .await
     .unwrap();
-    sync_once(&first, &client(&st), &first.local_config(), now)
-        .await
-        .unwrap();
+    sync_once(&first, &client(&st), now).await.unwrap();
     // Fresh policy allows; an aged one fails closed for new allows.
     let denied = answer(&first, "www.lab.example.", false).await;
     assert_code(&denied, ResponseCode::NXDomain);
@@ -649,12 +642,143 @@ async fn lost_ack_restart_and_stale_outage_keep_the_original_policy_age() {
 }
 
 #[tokio::test]
+async fn local_reload_then_controller_pull_keeps_the_latest_local_config() {
+    let now = Utc::now();
+    let mut source = policy(9, now, false);
+    if let Some(rules) = source.device_profiles.get_mut("adult") {
+        rules.push(rule(
+            "deny-blocked",
+            Effect::Deny,
+            RuleMatcher::HostExact("blocked.lab.example".into()),
+        ));
+    }
+    let (origin, ca, _mock, _guard) = spawn_controller(response(source)).await;
+    let st = new_state(&origin, &ca);
+    let server = start_server(&st).await;
+
+    // A local SIGHUP-style reload moves the zone RRset, source-IP device map,
+    // denial mode and upstreams. None of that may come back from the startup
+    // config when a newer controller policy is compiled and applied.
+    let mut local = support::test_config(
+        0,
+        r#","upstreams":["127.0.0.1:5353"],"deny":{"mode":"refused"}"#,
+    );
+    local = local.replace("\"policy_revision\": 7", "\"policy_revision\": 8");
+    local = local.replace("192.0.2.10", "192.0.2.20");
+    local = local.replace("192.0.2.11", "192.0.2.21");
+    local = local.replace("127.0.0.2", "127.0.0.3");
+    assert_eq!(server.reload(local.as_bytes(), now).unwrap().revision, 8);
+
+    assert_eq!(
+        sync_once(&server, &client(&st), now).await.unwrap(),
+        SyncCapability::AppliedLocally { revision: 9 }
+    );
+
+    let allowed = udp_query(
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)),
+        server.bind_addr(),
+        "www.lab.example.",
+        RecordType::A,
+    )
+    .await;
+    assert_code(&allowed, ResponseCode::NoError);
+    let mut ips = v4(&allowed);
+    ips.sort();
+    assert_eq!(
+        ips,
+        vec![
+            "192.0.2.20".parse::<IpAddr>().unwrap(),
+            "192.0.2.21".parse::<IpAddr>().unwrap()
+        ],
+        "controller pull reverted the reloaded zone"
+    );
+    // The old source and an exact controller deny both use the preserved
+    // REFUSED denial mode.
+    let old_source = udp_query(
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
+        server.bind_addr(),
+        "www.lab.example.",
+        RecordType::A,
+    )
+    .await;
+    assert_code(&old_source, ResponseCode::Refused);
+    let denied = udp_query(
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)),
+        server.bind_addr(),
+        "blocked.lab.example.",
+        RecordType::A,
+    )
+    .await;
+    assert_code(&denied, ResponseCode::Refused);
+
+    let on_disk: Value = serde_json::from_slice(&fs::read(&st.bundle).unwrap()).unwrap();
+    assert_eq!(on_disk["highwater"], 9);
+    assert_eq!(on_disk["policy"]["policy"]["revision"], 9);
+    assert_eq!(
+        on_disk["policy"]["config"]["local_zones"]["lab.example."][0]["addr"],
+        "192.0.2.20"
+    );
+    assert_eq!(
+        on_disk["policy"]["config"]["devices"][0]["source_ips"][0],
+        "127.0.0.3"
+    );
+    assert_eq!(on_disk["policy"]["config"]["deny"]["mode"], "refused");
+    assert_eq!(
+        on_disk["policy"]["config"]["upstreams"][0],
+        "127.0.0.1:5353"
+    );
+    assert_eq!(
+        on_disk["policy"]["config"]["default_device_profile"],
+        "restricted"
+    );
+
+    // A lost-ack restart with a changed external config keeps the whole
+    // compiled bundle, not the startup values.
+    fs::write(
+        &st.config,
+        support::test_config(0, "").replace("\"policy_revision\": 7", "\"policy_revision\": 99"),
+    )
+    .unwrap();
+    server.stop().await;
+    let restarted = start_server(&st).await;
+    assert_eq!(restarted.revision(), 9);
+    let after_restart = udp_query(
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 3)),
+        restarted.bind_addr(),
+        "www.lab.example.",
+        RecordType::A,
+    )
+    .await;
+    assert_code(&after_restart, ResponseCode::NoError);
+    let mut ips = v4(&after_restart);
+    ips.sort();
+    assert_eq!(
+        ips,
+        vec![
+            "192.0.2.20".parse::<IpAddr>().unwrap(),
+            "192.0.2.21".parse::<IpAddr>().unwrap()
+        ]
+    );
+    let old_source = udp_query(
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
+        restarted.bind_addr(),
+        "www.lab.example.",
+        RecordType::A,
+    )
+    .await;
+    assert_code(&old_source, ResponseCode::Refused);
+    restarted.stop().await;
+}
+
+#[tokio::test]
 async fn concurrent_local_reload_and_controller_pull_stay_monotonic() {
     let now = Utc::now();
-    let (origin, ca, _mock, _guard) = spawn_controller(response(policy(10, now, true))).await;
+    let (origin, ca, mock, _guard) = spawn_controller(response(policy(10, now, true))).await;
+    // Hold the controller response so the local reload is deterministically
+    // in flight first; the pull must compile on the NEW local snapshot.
+    *mock.delay.lock().unwrap() = Some(Duration::from_millis(400));
     let st = new_state(&origin, &ca);
     let server = Arc::new(start_server(&st).await);
-    let base = server.local_config();
     let client = Arc::new(client(&st));
 
     let local = {
@@ -668,12 +792,17 @@ async fn concurrent_local_reload_and_controller_pull_stay_monotonic() {
     };
     let controller = {
         let server = Arc::clone(&server);
-        async move { sync_once(&server, &client, &base, now).await.unwrap() }
+        async move { sync_once(&server, &client, now).await.unwrap() }
     };
     let (local, controller) = tokio::join!(local, controller);
     let _local = local.unwrap();
     assert_eq!(controller, SyncCapability::AppliedLocally { revision: 10 });
     assert_eq!(server.revision(), 10);
+    let committed: Value = serde_json::from_slice(&fs::read(&st.bundle).unwrap()).unwrap();
+    assert_eq!(
+        committed["policy"]["config"]["local_zones"]["lab.example."][0]["addr"], "192.0.2.20",
+        "the winning controller policy reverted the latest local zone"
+    );
 
     // The controller policy is authoritative and the version is whole.
     for _ in 0..8 {
@@ -694,7 +823,6 @@ async fn poll_has_one_in_flight_pull_and_stops_cleanly() {
     let server = Arc::new(start_server(&st).await);
     let options = ControllerOptions::load(&st.options).unwrap();
     let client = Arc::new(ControllerClient::new(&options).unwrap());
-    let base = server.local_config();
 
     // No secret appears in any diagnostic rendering.
     let debug = format!("{:?} {:?} {:?}", options, client, st.credential);
@@ -702,7 +830,7 @@ async fn poll_has_one_in_flight_pull_and_stops_cleanly() {
     assert!(format!("{}", ControllerError::AuthDenied).contains("401/403"));
     assert!(!format!("{:?}", ControllerError::AuthDenied).contains("aaaaaaaa"));
 
-    let poller = ControllerPoller::start(Arc::clone(&server), client, base, options);
+    let poller = ControllerPoller::start(Arc::clone(&server), client, options);
     // Poll interval is bounded to a minimum of five seconds.
     tokio::time::sleep(Duration::from_millis(5600)).await;
     poller.stop().await;

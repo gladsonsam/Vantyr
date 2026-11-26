@@ -37,7 +37,7 @@ use uuid::Uuid;
 use vantyr_network_runtime::check_policy_shape;
 
 use crate::compile::CompileError;
-use crate::config::{read_bounded, Config};
+use crate::config::read_bounded;
 use crate::server::DnsServer;
 
 /// Mirrors the server's `POLICY_SCHEMA_VERSION`. Only this schema is served.
@@ -584,11 +584,12 @@ impl ControllerClient {
 pub async fn sync_once(
     server: &DnsServer,
     client: &ControllerClient,
-    base: &Config,
     now: DateTime<Utc>,
 ) -> Result<SyncCapability, ControllerError> {
     let policy = client.verify(client.fetch().await?)?;
-    server.apply_controller_policy(base, &policy, now)
+    // No caller-supplied config basis: the server derives it from the CURRENT
+    // active snapshot under its update lock.
+    server.apply_controller_policy(&policy, now)
 }
 
 // ─── Bounded poll ────────────────────────────────────────────────────────────
@@ -605,7 +606,6 @@ impl ControllerPoller {
     pub fn start(
         server: Arc<DnsServer>,
         client: Arc<ControllerClient>,
-        base: Config,
         options: ControllerOptions,
     ) -> Self {
         let cancel = CancellationToken::new();
@@ -618,7 +618,7 @@ impl ControllerPoller {
                     _ = tokio::time::sleep(delay) => {}
                 }
                 let now = Utc::now();
-                match sync_once(&server, &client, &base, now).await {
+                match sync_once(&server, &client, now).await {
                     Ok(SyncCapability::AppliedLocally { revision }) => {
                         tracing::info!(revision, "controller policy applied locally");
                         delay = options.poll_interval();

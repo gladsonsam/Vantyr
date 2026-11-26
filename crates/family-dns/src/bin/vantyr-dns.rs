@@ -195,12 +195,9 @@ async fn run() -> Result<()> {
     let server = Arc::new(server);
     let mut poller = None;
     if let Some((options, client)) = &controller {
-        // Keep one immutable local transport/device template for every pull;
-        // a controller policy never becomes the source of transport settings.
-        let base = server.local_config();
         // A first pull is part of the explicit opt-in. A controller outage or
         // rejection never discards the durable last-known-good bundle.
-        match sync_once(&server, client, &base, Utc::now()).await {
+        match sync_once(&server, client, Utc::now()).await {
             Ok(SyncCapability::AppliedLocally { revision }) => {
                 eprintln!("Vantyr DNS: controller policy applied locally at revision {revision}");
             }
@@ -219,7 +216,6 @@ async fn run() -> Result<()> {
             poller = Some(ControllerPoller::start(
                 Arc::clone(&server),
                 Arc::clone(client),
-                base,
                 options.clone(),
             ));
         }

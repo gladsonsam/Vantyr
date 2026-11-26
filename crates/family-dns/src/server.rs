@@ -9,7 +9,7 @@ use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use anyhow::{bail, Result};
@@ -93,6 +93,11 @@ pub struct DnsServer {
     observations: ObservationLog,
     current: SnapshotHandle,
     store: Option<BundleStore>,
+    /// Serialises ALL mutations (local reload and controller pull). Held only
+    /// off the query path: queries clone an Arc from `current` and never take
+    /// this lock. This makes the compile basis, persist and publish of one
+    /// update atomic with respect to every other update.
+    update: Mutex<()>,
 }
 
 impl DnsServer {
@@ -215,6 +220,7 @@ impl DnsServer {
             observations,
             current,
             store,
+            update: Mutex::new(()),
         })
     }
 
@@ -226,6 +232,10 @@ impl DnsServer {
         candidate: &[u8],
         now: DateTime<Utc>,
     ) -> Result<ReloadOutcome, ReloadError> {
+        let _update = self
+            .update
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         use ReloadError::*;
         let config = Config::parse(candidate).map_err(|e| InvalidConfig(e.to_string()))?;
         self.check_candidate(&config)?;
@@ -319,12 +329,19 @@ impl DnsServer {
     /// same revision + different content is rejected before any write.
     pub fn apply_controller_policy(
         &self,
-        base: &Config,
         policy: &Policy,
         now: DateTime<Utc>,
     ) -> Result<SyncCapability, ControllerError> {
-        let candidate = compile(base, policy)?;
+        // One update at a time, and the compile basis is the CURRENT whole
+        // snapshot (not a startup capture). A local reload that won earlier is
+        // therefore the basis for this pull; a local reload that comes later
+        // cannot be reverted by an older pull's stale basis.
+        let _update = self
+            .update
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let active = self.active_snapshot();
+        let candidate = compile(&active.config, policy)?;
         if !same_transport(&candidate, &active.config) {
             return Err(ControllerError::Unsupported(
                 "controller candidate would change the listener transport".into(),

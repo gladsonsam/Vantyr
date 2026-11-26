@@ -103,12 +103,21 @@ struct here — there is no second policy model.
   Intervals, timeout and response size are bounded; one pull is in flight at a
   time, failures back off exponentially, and `Ctrl-C`/SIGINT cancels and joins
   the poll task before shutdown.
-- `library::sync_once` is the library entry point. It verifies schema,
-  gateway, household, outer/inner revision, original publication time and the
-  SHA-256 digest of canonical serde policy bytes **before** compiling or
-  writing anything. That digest is content integrity, not a signature;
-  authentication is TLS plus the scoped bearer. 401/403 (expiry, revocation,
-  missing scope) and 404 are decided by the controller.
+- `library::sync_once(server, client, now)` is the library entry point; there
+  is no caller-supplied config basis. It verifies schema, gateway, household,
+  outer/inner revision, original publication time and the SHA-256 digest of
+  canonical serde policy bytes **before** compiling or writing anything. That
+  digest is content integrity, not a signature; authentication is TLS plus the
+  scoped bearer. 401/403 (expiry, revocation, missing scope) and 404 are
+  decided by the controller.
+- Every update (local `reload`/SIGHUP and controller pull) takes one
+  updates-only mutex and compiles from the **current** active snapshot. Queries
+  only clone an `Arc` from the snapshot lock and never take the update mutex,
+  so no lock is held across DNS or network I/O. A local reload that happened
+  first is therefore the controller compile basis; a controller pull that
+  happened first raises the high-water mark so a stale local reload cannot
+  overwrite it. Neither path can restore startup zones, source-IP devices,
+  deny mode, upstreams or profiles over a newer local mutation.
 - The core `Policy` is compiled into the same durable bundle: baseline,
   exact/suffix/`any` matchers, rule ids, reasons, schedules, timezone,
   staleness and event retention are preserved **exactly** (`config.policy_at`
