@@ -8,3 +8,4 @@ export * from "./groups";
 export * from "./rules";
 export * from "./modules";
 export * from "./audit";
+export * from "./network";

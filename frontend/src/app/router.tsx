@@ -30,6 +30,14 @@ const RulesPage = lazy(() =>
 const GroupsPage = lazy(() =>
   import("@/features/groups/GroupsPage").then((m) => ({ default: m.GroupsPage })),
 );
+const NetworkLayout = lazy(() =>
+  import("@/features/network/NetworkLayout").then((m) => ({ default: m.NetworkLayout })),
+);
+const NetworkOverviewPage = lazy(() =>
+  import("@/features/network/overview/NetworkOverviewPage").then((m) => ({
+    default: m.NetworkOverviewPage,
+  })),
+);
 const UsersPage = lazy(() =>
   import("@/features/users/UsersPage").then((m) => ({ default: m.UsersPage })),
 );
@@ -142,6 +150,10 @@ export function AppRoutes() {
             </Page>
           }
         />
+        <Route path="/network" element={<NetworkLayout />}>
+          <Route index element={<NetworkOverviewPage />} />
+          <Route path="*" element={<Navigate to="/network" replace />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

@@ -127,6 +127,14 @@ export async function putJson<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
+export async function patchJson<T>(path: string, body: unknown): Promise<T> {
+  return requestJson<T>(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...csrfHeaders() },
+    body: JSON.stringify(body),
+  });
+}
+
 export async function postEmpty<T>(path: string): Promise<T> {
   return requestJson<T>(path, {
     method: "POST",

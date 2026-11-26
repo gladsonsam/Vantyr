@@ -12,6 +12,7 @@ import { notificationsEndpoints } from "@/api/endpoints/notifications";
 import { usersEndpoints } from "@/api/endpoints/users";
 import { rulesEndpoints } from "@/api/endpoints/rules";
 import { auditEndpoints } from "@/api/endpoints/audit";
+import { networkEndpoints } from "@/api/endpoints/network";
 
 export { ApiError, apiUrl, errorText, isApiError, setDashboardCsrfToken } from "./client";
 export {
@@ -45,6 +46,7 @@ export const realApi = {
   ...usersEndpoints,
   ...rulesEndpoints,
   ...auditEndpoints,
+  ...networkEndpoints,
 };
 
 export type ApiClient = typeof realApi;

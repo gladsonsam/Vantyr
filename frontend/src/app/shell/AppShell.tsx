@@ -8,6 +8,7 @@ import {
   History,
   LogOut,
   MonitorSmartphone,
+  Network,
   ScrollText,
   Search,
   Settings2,
@@ -72,6 +73,8 @@ interface AppShellProps {
   onLogout: () => void;
   onShowPreferences: () => void;
   onOpenUsers?: () => void;
+  /** Vantyr Network is its own access scope; the shell lists it only once the server confirms it. */
+  showNetwork?: boolean;
   onOpenActivityLog?: () => void;
   onOpenNotifications?: () => void;
   notifications: NotificationItem[];
@@ -258,6 +261,7 @@ function navigationSections(
   onOpenNotifications: AppShellProps["onOpenNotifications"],
   onOpenActivityLog: AppShellProps["onOpenActivityLog"],
   onOpenUsers: AppShellProps["onOpenUsers"],
+  showNetwork: boolean,
 ): NavSection[] {
   const isAdmin = currentUser?.role === "admin";
   const onlineCount = agents.filter((agent) => agent.online).length;
@@ -282,6 +286,7 @@ function navigationSections(
       label: "Policy",
       items: [
         ...(onOpenNotifications ? [{ label: "Rules", path: "/rules", icon: ShieldCheck }] : []),
+        ...(showNetwork ? [{ label: "Network", path: "/network", icon: Network }] : []),
         ...(onOpenActivityLog ? [{ label: "Audit log", path: "/logs", icon: ScrollText }] : []),
       ],
     },
@@ -305,6 +310,7 @@ export function AppShell({
   onLogout,
   onShowPreferences,
   onOpenUsers,
+  showNetwork = false,
   onOpenActivityLog,
   onOpenNotifications,
   notifications,
@@ -346,6 +352,7 @@ export function AppShell({
     onOpenNotifications,
     onOpenActivityLog,
     onOpenUsers,
+    showNetwork,
   );
   const isActive = (path: string) => (path === "/" ? pathname === "/" : pathname.startsWith(path));
   const commandPages: CommandPage[] = sections.flatMap((section) =>
