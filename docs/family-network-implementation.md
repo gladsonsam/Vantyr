@@ -555,8 +555,10 @@ No substantive UI or Supabase changes were made in this step.
   and end-to-end acceptance are required before dashboard controls are presented
   as functional. Existing cache/rate/retention and coverage placeholders remain
   pending; accepting list configuration does not implement those capabilities.
-  Server control-plane commit `a8b5b994` is under independent review; its
-  implementer reports 17 targeted tests and strict scoped clippy passing.
+  Server control-plane commits `a8b5b994` + `eadf36d4` are independently accepted
+  with 19 targeted tests and strict scoped clippy passing. Independent database
+  probes confirmed 40 concurrent inserts admit exactly 32 requests without
+  deadlock; updates at the cap and destination-household move checks pass.
   Desired configuration, scoped worker read/report commands, bounded delivery
   evidence and per-gateway refresh acknowledgments are implemented. The worker
   consumer is being built against that committed wire contract. No dashboard
@@ -564,7 +566,7 @@ No substantive UI or Supabase changes were made in this step.
   Initial review found repeated refresh receipts stayed stuck on the old token
   and timestamp windows rejected valid seven-day scheduling or old applied
   content. Parent fix `eadf36d4` passes 19 targeted tests and strict scoped
-  clippy; fresh independent acceptance is pending. It also returns stored token
+  clippy and fresh independent acceptance. It also returns stored token
   version/expiry on deduplication, prevents false historical delivery evidence,
   pins the latest status's delivered version, bounds numeric casts and corrects
   the database request cap with additive migration 0080 (0079 unchanged).
