@@ -202,10 +202,13 @@ worker crate has unrelated in-flight work).
 ## Real-server / real-worker validation note (Stage A + Stage B)
 
 `server/src/network/dns_management_e2e_tests.rs` adds one bounded `#[sqlx::test]`
-that runs the accepted server and worker together, on a fresh migrated database
+intended to run the server and worker together, on a fresh migrated database
 in a dedicated throwaway PostgreSQL only (`vantyr-netinv-test-8bdde55a`,
 `127.0.0.1:58743`); no household database, no live provider and no real
-credential is read or printed. Reproduce with:
+credential is read or printed. This harness is implemented but has not yet
+compiled or run: its first compile attempt was blocked by in-flight worker
+changes. The assertions below describe its intended coverage, not passing
+evidence. Reproduce after the worker compile gate is clear with:
 
 ```sh
 SQLX_OFFLINE=true \
@@ -237,17 +240,16 @@ loopback, so only the subscription fetcher's DNS resolver is injected with a
 loopback resolver. TLS still verifies against the private per-run CA; the
 worker's management client keeps its unchanged verified/no-proxy/no-redirect
 transport. There is no insecure verifier, no production SSRF bypass, no mocked
-wire DTO and no copied auth/serializer logic. The test proves observation and
-application of downloaded list bytes; it does **not** claim a canary,
+wire DTO and no copied auth/serializer logic. A passing run establishes observation
+and application of downloaded list bytes; it does **not** claim a canary,
 enforcement or a `verified` dashboard badge.
 
 ## Stage B gaps (not claimed here)
 
-- No production dashboard consumes `read_dns_management` or emits
-  `report_dns_status`; the end-to-end test above demonstrates the accepted
-  worker APIs only, not a shipped deploy/integration.
-- No production re-prepare/recompile wiring outside the accepted DNS worker;
-  the generation/basis rules remain those of that worker.
+- The worker consumer exists, but restart-refresh and bounded source reporting
+  remain integration gates. Dashboard handoff waits for their acceptance and a
+  passing real-server/worker test. Dashboard clients use the session-authenticated
+  admin APIs; the read/report commands are scoped worker Bearer APIs.
 - No dashboard "applied/protected" badge; `verified` stays false/absent until a
   real canary and coverage check exist.
 - No frontend handoff until server + worker are reviewed and an end-to-end flow

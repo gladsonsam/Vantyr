@@ -599,6 +599,11 @@ No substantive UI or Supabase changes were made in this step.
   server/worker restart-refresh test are in progress. Test-harness dependency
   inspection confirms only server dev-dependency edges change, with no new
   registry package, version or checksum drift.
+  Harness commit `e6db26b0` implements the real TLS/router/worker/UDP+TCP flow
+  and a post-restart changed-list/no-false-ack phase. It has not yet compiled or
+  run: the first compile was blocked by the worker owner's active cache edits.
+  Its assertions are intended coverage, not passing evidence. It will be run
+  against the scoped PostgreSQL after a committed compile-clean worker fix.
 - Verified encrypted upstreams (DoT/DoH), commit `d59e99e1`, are independently
   accepted separately from encrypted inbound listeners. Fresh review passed all
   91 DNS tests, including eight real-TLS upstream tests, and strict clippy.
