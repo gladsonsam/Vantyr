@@ -472,9 +472,12 @@ No substantive UI or Supabase changes were made in this step.
   policy shapes are rejected before application.
   Application acknowledgments and independent coverage verification remain
   separate subsequent integration steps.
-- BYOD backend: scoped SSO principal bindings, single-use enrollment grants and
-  time-bounded verified sessions. This does not install client trust or enable
-  endpoint monitoring; worker/client identity integration remains subsequent work.
+- BYOD backend: commits `3afcb9fc` and `db942852` independently accepted
+  with 66 network tests. Scoped SSO principal bindings, single-use setup grants
+  and time-bounded session receipts include locked permission rechecks, atomic
+  logout revocation and production age/count retention sweeps. The live
+  enrollment cap is 100 per household, not a lifetime inventory cap. Client trust,
+  endpoint monitoring and worker/client identity integration remain subsequent work.
 - Filtering lists: library commit `2e59e1e0` independently accepted with 11
   real-backend tests and adversarial syntax, service and precedence probes.
   Immutable maintained-parser adapters provide bounded list input and explicit

@@ -23,8 +23,8 @@ use super::enroll_auth::{self, Secret, VERIFICATION_OIDC};
 use super::enroll_db::{self, AttemptOutcome, BindingRec, EndReason};
 use super::enroll_retention::{AttemptRetention, RecordRetention};
 
-/// Hard cap on live device enrollments per household. Stops self-registration
-/// from growing inventory without bound; checked under the household lock.
+/// Hard cap on concurrent live device enrollments per household, checked under
+/// the household lock. Historical enrollments and inventory are retained separately.
 pub const MAX_LIVE_ENROLLMENTS_PER_HOUSEHOLD: i64 = 100;
 
 /// An authenticated user may enroll only with BOTH the explicit grant and an
