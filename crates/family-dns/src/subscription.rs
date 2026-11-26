@@ -739,7 +739,9 @@ impl SubscriptionRuntime {
     /// Infallible activation after a successful durable publish. The staged
     /// fetchers already hold validated candidates; transferring them (and
     /// taking ownership of their cache) cannot fail. The active locator is
-    /// updated atomically so a fresh runtime can find this exact cache.
+    /// updated atomically so a fresh runtime can find this exact cache. If
+    /// locator persistence/removal fails, the live bundle remains usable and
+    /// the bounded runtime diagnostic is included in management status reports.
     pub fn activate_staged(&self, staged: StagedManaged, specs: &[SubscriptionSourceSpec]) {
         let mut managed = self.managed_ids.lock().unwrap();
         let mut entries = self.entries.lock().unwrap();
@@ -763,7 +765,11 @@ impl SubscriptionRuntime {
         if staged.inner.entries.is_empty() {
             // No active managed cache exists any more; do not leave an empty
             // candidate directory on every deactivation.
-            let _ = std::fs::remove_file(self.root.join(ACTIVE_LOCATOR));
+            if let Err(error) = std::fs::remove_file(self.root.join(ACTIVE_LOCATOR)) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    self.record_error(format!("active cache locator removal failed: {error}"));
+                }
+            }
             self.active_caches.lock().unwrap().clear();
             *self.managed_cache_root.lock().unwrap() = self.root.clone();
             staged.inner.activated.store(false, Ordering::SeqCst);
@@ -776,7 +782,12 @@ impl SubscriptionRuntime {
                 .and_then(|name| name.to_str())
                 .unwrap_or_default();
             let locator = format!("{CACHE_META_VERSION}\n{name}\n{digest}\n");
-            let _ = atomic_write(&self.root.join(ACTIVE_LOCATOR), &locator);
+            if let Err(error) = atomic_write(&self.root.join(ACTIVE_LOCATOR), &locator) {
+                // The bundle is already durable and the in-memory fetchers
+                // remain usable, but restart may lose this cache binding.
+                // Surface that degradation without freshening content age.
+                self.record_error(format!("active cache locator write failed: {error}"));
+            }
             // Exactly one managed cache is active after a valid switch; the
             // previous one becomes reclaimable only from this point on.
             let mut active = self.active_caches.lock().unwrap();

@@ -1884,3 +1884,63 @@ fn single_source_config_matches_stage_a_stale_bound_without_network() {
         .validate()
         .is_err());
 }
+
+#[tokio::test]
+async fn active_cache_locator_write_failure_is_reported_without_freshening() {
+    let st = fixture("locator-write-failure");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    set_desired(&control, 1, &desired(&format!("{list}/list"), true));
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    // A directory at the destination forces atomic rename to fail even when
+    // tests run as root; permission-based fault injection would be unreliable.
+    fs::create_dir(st.cache.join(".vantyr-managed-active")).unwrap();
+    h.sync().await;
+    assert!(blocked(&h.server, "managed.block.test.", false).await);
+    let state = h.server.management_state().unwrap();
+    let generation = h.server.status().bundle_generation;
+    let diagnostic = h.runtime.status().1.last_error.unwrap();
+    assert!(diagnostic.starts_with("active cache locator write failed:"));
+    assert!(diagnostic.len() <= 200);
+    let report = reports(&control).pop().unwrap();
+    assert!(report
+        .applied
+        .unwrap()
+        .last_error
+        .unwrap()
+        .contains("locator write failed"));
+    h.sync().await;
+    assert_eq!(
+        h.server.management_state().unwrap().applied_at,
+        state.applied_at
+    );
+    assert_eq!(h.server.status().bundle_generation, generation);
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn active_cache_locator_removal_failure_is_reported() {
+    let st = fixture("locator-removal-failure");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    let (list, list_ca, lists, _list_guard) = start_list_server().await;
+    *lists.body.lock().unwrap() = b"managed.block.test\n".to_vec();
+    set_desired(&control, 1, &desired(&format!("{list}/list"), true));
+    let h = harness(&st, &list, &list_ca, &mgmt, &ca).await;
+    h.sync().await;
+    let locator = st.cache.join(".vantyr-managed-active");
+    fs::remove_file(&locator).unwrap();
+    fs::create_dir(&locator).unwrap();
+    set_desired(&control, 2, &ManagementConfig::default());
+    h.sync().await;
+    assert_eq!(h.server.management_state().unwrap().config_version, 2);
+    let report = reports(&control).pop().unwrap();
+    assert!(report
+        .applied
+        .unwrap()
+        .last_error
+        .unwrap()
+        .contains("locator removal failed"));
+    assert!(h.runtime.status().1.last_error.unwrap().len() <= 200);
+    h.stop().await;
+}

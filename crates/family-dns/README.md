@@ -256,6 +256,12 @@ use a test HTTPS endpoint and the vetted production fetch path.
 
 ## Independent counters and scheduled subscriptions
 
+If persisting or removing the managed-cache locator fails, the already durable
+bundle and live filter remain usable. A bounded diagnostic appears in runtime
+and management status; restart may lack the fetcher's cache binding until that
+filesystem problem is repaired. The worker does not freshen content timestamps
+or claim healthy cache recovery in that case.
+
 The one durable bundle carries three independent counter spaces:
 
 - `policy.revision` / `policy.published_at` — the household/controller policy

@@ -357,9 +357,12 @@ impl ManagementWorker {
     ) -> Result<(), ManagementError> {
         let state = server.management_state();
         let status = server.status();
-        let (all_sources, _) = match &self.subscriptions {
-            Some(runtime) => runtime.status(),
-            None => (Vec::new(), Default::default()),
+        let (all_sources, runtime_error) = match &self.subscriptions {
+            Some(runtime) => {
+                let (sources, applied) = runtime.status();
+                (sources, applied.last_error)
+            }
+            None => (Vec::new(), None),
         };
         let scoped_ids: BTreeSet<&str> = desired
             .sources
@@ -424,7 +427,8 @@ impl ManagementWorker {
                 .last_error
                 .as_ref()
                 .map(|value| redact(value))
-                .or_else(|| self.error.lock().unwrap().clone()),
+                .or_else(|| self.error.lock().unwrap().clone())
+                .or_else(|| runtime_error.as_deref().map(redact)),
         });
         let body = WorkerStatusBody {
             audience: crate::controller::CONTROLLER_AUDIENCE.to_owned(),
