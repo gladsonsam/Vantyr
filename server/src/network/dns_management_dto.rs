@@ -937,6 +937,45 @@ mod tests {
         );
     }
 
+    /// Shared fixtures bind the actual server envelope to the worker parser.
+    /// Dates are intentionally fixed: content age is not report freshness.
+    #[test]
+    fn shared_wire_fixtures_match_server_serializer_and_validator() {
+        let read: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/network-contracts/dns-management-v1/read.json"
+        ))
+        .unwrap();
+        let config: ManagementConfig = serde_json::from_value(read["config"].clone()).unwrap();
+        validate_config(&config).unwrap();
+        assert_eq!(
+            digest(&canonical_bytes(&config).unwrap()),
+            read["body_sha256"]
+        );
+        let response = WorkerReadResponse {
+            household_id: read["household_id"].as_str().unwrap().parse().unwrap(),
+            gateway_id: read["gateway_id"].as_str().unwrap().parse().unwrap(),
+            kind: "dns",
+            config_version: 1,
+            schema_version: Some(1),
+            body_sha256: Some(read["body_sha256"].as_str().unwrap().to_owned()),
+            config: Some(config),
+            pending_refreshes: vec![PendingRefreshView {
+                source_id: "list1".into(),
+                refresh_seq: 1,
+                config_version: 1,
+                expires_at: "2026-11-26T12:10:00Z".parse().unwrap(),
+            }],
+            server_time: "2026-11-26T12:00:00Z".parse().unwrap(),
+        };
+        assert_eq!(serde_json::to_value(response).unwrap(), read);
+        let report: WorkerStatusBody = serde_json::from_str(include_str!(
+            "../../../tests/network-contracts/dns-management-v1/report.json"
+        ))
+        .unwrap();
+        assert_eq!(report.body_sha256, read["body_sha256"]);
+        validate_worker_status(&report, "2026-11-26T12:00:00Z".parse().unwrap()).unwrap();
+    }
+
     #[test]
     fn config_validation_rejects_unknown_selected_service() {
         let mut config = ManagementConfig {
