@@ -220,9 +220,9 @@ authority is a test and foundation seam, not a durable production database.
 
 ## 8. Test evidence
 
-`cargo test -p family-proxy` — 74 tests: 37 library (credential lifecycle,
+`cargo test --locked --offline -p family-proxy` — 82 tests: 43 library (credential lifecycle,
 evidence scope/replay/revocation/expiry, bounds, Debug redaction), 2 binary,
-10 inspection, 16 original integration, and 9 new real-loopback HTTP/CONNECT
+10 inspection, 17 integration, and 10 real-loopback session-auth HTTP/CONNECT
 tests (valid credential + evidence to origin with both headers stripped,
 revoked credential 407 before egress, revoked/replayed evidence 403 before
 egress, CONNECT with matching command and command-mismatch denial, person rules
@@ -230,3 +230,8 @@ requiring evidence, concurrent replay yielding exactly one success, revocation
 visible to all subsequent verifications, and bootstrap-only worker rejecting a
 centrally issued credential). `cargo check --locked --offline -p family-proxy`
 passes with no new dependencies.
+
+Independent re-review of `60294671` + `29f21ed3` confirmed all 82 tests and
+10 additional probes, including per-client profile overrides, replay protection
+at capacity, expired-credential reclamation and inspected-header stripping.
+Server authority and propagation remain outside this accepted foundation.

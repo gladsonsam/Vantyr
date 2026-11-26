@@ -2,6 +2,13 @@
 
 ## Current delivery status
 
+- Proxy credential/session-evidence foundation: `4adffadf` + `75f1ab02`
+  (source `60294671` + `29f21ed3`) independently accepted: 82 tests and
+  10 additional review probes. Explicit opt-in, scoped hash-only credentials,
+  single-use authority-registered evidence and preserved bootstrap profile
+  overrides are implemented. Server issuance, durable authority, revocation
+  propagation and real frontend wiring remain open. Revocation does not
+  retroactively close an established opaque CONNECT tunnel.
 - DNS cache/runtime foundation: `d5b6397c` (source `589ba449`) independently
   accepted with 137 DNS tests, formatting and strict clippy. Configurable
   positive/negative TTL bounds, cache disable, coherent in-process clear,
