@@ -9,6 +9,8 @@ PROJECT="${VANTYR_NETLAB_PROJECT:-vantyr-network-lab}"
 # confused with household data, and both match the guarded project prefix.
 DURABLE_PROJECT="${VANTYR_NETLAB_DURABLE_PROJECT:-vantyr-network-lab-durable}"
 STALE_PROJECT="${VANTYR_NETLAB_STALE_PROJECT:-vantyr-network-lab-durable-stale}"
+# Third disposable project for the opt-in local-list / selected-service smoke.
+LIST_PROJECT="${VANTYR_NETLAB_LIST_PROJECT:-vantyr-network-lab-list}"
 UPSTREAM_IP="172.26.9.53"
 UPSTREAM_PORT="15353"
 VANTYR_IP="172.26.9.55"
@@ -68,6 +70,7 @@ check_project_name() {
 check_project_name "${PROJECT}"
 check_project_name "${DURABLE_PROJECT}"
 check_project_name "${STALE_PROJECT}"
+check_project_name "${LIST_PROJECT}"
 
 # Preflight before ANY create. Never clean up anything here: if a project or
 # the lab subnet is already in use we refuse and leave it untouched, so a
@@ -273,3 +276,112 @@ sighup_and_wait() {
   done
   die "SIGHUP produced no reload outcome in ${proj} within bounded wait"
 }
+
+# ---------------------------------------------------------------------------
+# Local-list / selected-service lab helpers (opt-in). Synthetic operator
+# fixtures only: no fetch, no controller, no host identity claim.
+# ---------------------------------------------------------------------------
+
+LIST_WORKER="netlab-list-worker"
+# shellcheck disable=SC2034
+LIST_WORK_DIR="${LAB_DIR}/work/list"
+# shellcheck disable=SC2034
+LIST_CONFIG_DIR="${LIST_WORK_DIR}/config"
+# shellcheck disable=SC2034
+LIST_LISTS_DIR="${LIST_WORK_DIR}/lists"
+# shellcheck disable=SC2034
+LIST_HOUSEHOLD="33333333-4444-5555-6666-777777777777"
+
+list_compose() {
+  docker compose -f "${LAB_DIR}/compose.yml" \
+    -f "${LAB_DIR}/compose.vantyr-list.yml" -p "${LIST_PROJECT}" "$@"
+}
+
+# Write one real `Config::parse` document from the validated template.
+# `mode` controls the hosts source entry only; the ABP source and the operator
+# catalog are always present. source_url values are attribution metadata that
+# the worker never dereferences.
+# shellcheck disable=SC2034
+make_list_config() {
+  local dest="$1" revision="$2" published="$3" household="$4" probe_addr="$5" mode="$6"
+  local hosts_entry sources
+  case "${mode}" in
+    on) hosts_entry='{"id":"hosts-local","format":"hosts","path":"/etc/vantyr/lists/hosts.txt","source_url":"https://example.invalid/operator-hosts.txt"}' ;;
+    off) hosts_entry='{"id":"hosts-local","format":"hosts","path":"/etc/vantyr/lists/hosts.txt","enabled":false}' ;;
+    absent) hosts_entry='' ;;
+    vanished) hosts_entry='{"id":"hosts-local","format":"hosts","path":"/etc/vantyr/lists/vanished.txt","source_url":"https://example.invalid/operator-hosts.txt"}' ;;
+    *) die "unknown list config mode: ${mode}" ;;
+  esac
+  sources='['
+  if [[ -n "${hosts_entry}" ]]; then sources+="${hosts_entry},"; fi
+  sources+='{"id":"abp-local","format":"abp","path":"/etc/vantyr/lists/ads.txt","source_url":"https://example.invalid/operator-ads.txt"}]'
+  sed -e "s|__HOUSEHOLD__|${household}|g" \
+      -e "s|__PUBLISHED__|${published}|g" \
+      -e "s|__REVISION__|${revision}|g" \
+      -e "s|__PROBE_ADDR__|${probe_addr}|g" \
+      -e "s|__SOURCES__|${sources}|g" \
+      "${LAB_DIR}/configs/vantyr.list.template.json" >"${dest}"
+}
+
+list_query() {
+  list_compose exec -T client dig "@${VANTYR_IP}" -p "${VANTYR_PORT}" "$@"
+}
+
+list_query_unknown() {
+  list_compose exec -T client-unknown dig "@${VANTYR_IP}" -p "${VANTYR_PORT}" "$@"
+}
+
+wait_list_ready() {
+  local attempts="${1:-20}" i out
+  for (( i = 1; i <= attempts; i++ )); do
+    out="$(list_query +time=1 +tries=1 +short "www.${ZONE}" A 2>&1)" || true
+    if [[ "${out}" == *"203.0.113.10"* ]]; then
+      log "Vantyr list worker ready (attempt ${i})"
+      return 0
+    fi
+    sleep 1
+  done
+  log "last vantyr-list logs: $(list_compose logs vantyr-list 2>&1 | tail -8)"
+  log "last readiness output: ${out}"
+  die "Vantyr list worker did not become ready within ${attempts}s"
+}
+
+# Local bundle metadata. --network none, state volume read-only, no listener.
+list_state_status() {
+  local vol
+  vol="$(state_volume_name "${LIST_PROJECT}")"
+  docker run --rm --network none --read-only --cap-drop ALL \
+    --security-opt no-new-privileges:true --pids-limit 64 --memory 128m \
+    -v "${vol}:/state:ro" "${VANTYR_IMAGE}" \
+    --state-status --state /state/vantyr-dns.json --worker "${LIST_WORKER}"
+}
+
+# Hash the one persisted bundle file on the disposable volume. Used to prove a
+# rejected candidate did not change a single byte of durable state.
+list_state_sha() {
+  local vol
+  vol="$(state_volume_name "${LIST_PROJECT}")"
+  # The one bundle is mode 0600 owned by 65532; read it as that same uid.
+  docker run --rm --network none --read-only --cap-drop ALL \
+    --user 65532:65532 \
+    --security-opt no-new-privileges:true --pids-limit 64 --memory 128m \
+    -v "${vol}:/state:ro" "${PINNED_ALPINE}" sha256sum /state/vantyr-dns.json \
+    | awk '{ print $1 }'
+}
+
+# SIGHUP the real worker via the Docker API (distroless has no shell) and wait
+# for a bounded reload log line. Applied and rejected paths both log 'reload'.
+list_sighup_and_wait() {
+  local i before after cid
+  cid="$(list_compose ps -q vantyr-list)"
+  [[ -n "${cid}" ]] || die "no vantyr-list container in ${LIST_PROJECT}"
+  before="$(list_compose logs vantyr-list 2>&1 | grep -Fc 'reload ' || true)"
+  docker kill -s HUP "${cid}" >/dev/null
+  for (( i = 1; i <= 20; i++ )); do
+    after="$(list_compose logs vantyr-list 2>&1 | grep -Fc 'reload ' || true)"
+    (( after > before )) && { log "SIGHUP processed by ${LIST_PROJECT} (attempt ${i})"; return 0; }
+    sleep 0.5
+  done
+  die "SIGHUP produced no reload outcome in ${LIST_PROJECT} within bounded wait"
+}
+

@@ -1,0 +1,74 @@
+{
+  "household_id": "__HOUSEHOLD__",
+  "policy_published_at": "__PUBLISHED__",
+  "policy_revision": __REVISION__,
+  "stale_after_secs": 86400,
+  "bind": { "address": "172.26.9.55", "port": 15353, "allow_non_loopback": true },
+  "deny": { "mode": "sinkhole", "ipv4": "192.0.2.222", "ttl": 30 },
+  "upstreams": ["172.26.9.53:15353"],
+  "local_zones": {
+    "filter.lab.vantyr.test.": [
+      { "type": "a", "name": "ok.filter.lab.vantyr.test.", "ttl": 60, "addr": "192.0.2.50" },
+      { "type": "a", "name": "blocked.filter.lab.vantyr.test.", "ttl": 60, "addr": "192.0.2.51" },
+      { "type": "a", "name": "newblocked.filter.lab.vantyr.test.", "ttl": 60, "addr": "192.0.2.52" },
+      { "type": "a", "name": "ads.filter.lab.vantyr.test.", "ttl": 60, "addr": "192.0.2.53" },
+      { "type": "a", "name": "important.filter.lab.vantyr.test.", "ttl": 60, "addr": "192.0.2.54" },
+      { "type": "a", "name": "except.filter.lab.vantyr.test.", "ttl": 60, "addr": "192.0.2.55" },
+      { "type": "a", "name": "baseline.filter.lab.vantyr.test.", "ttl": 60, "addr": "192.0.2.56" },
+      { "type": "a", "name": "social.filter.lab.vantyr.test.", "ttl": 60, "addr": "192.0.2.57" },
+      { "type": "a", "name": "service.filter.lab.vantyr.test.", "ttl": 60, "addr": "192.0.2.58" },
+      { "type": "a", "name": "sub.service.filter.lab.vantyr.test.", "ttl": 60, "addr": "192.0.2.59" },
+      { "type": "a", "name": "unselected.filter.lab.vantyr.test.", "ttl": 60, "addr": "192.0.2.60" },
+      { "type": "a", "name": "target.filter.lab.vantyr.test.", "ttl": 60, "addr": "192.0.2.61" },
+      { "type": "a", "name": "ghost.filter.lab.vantyr.test.", "ttl": 60, "addr": "192.0.2.62" },
+      { "type": "a", "name": "probe.filter.lab.vantyr.test.", "ttl": 60, "addr": "__PROBE_ADDR__" },
+      { "type": "cname", "name": "cname.filter.lab.vantyr.test.", "ttl": 60, "target": "blocked.filter.lab.vantyr.test." },
+      { "type": "cname", "name": "alias2.filter.lab.vantyr.test.", "ttl": 60, "target": "target.filter.lab.vantyr.test." }
+    ]
+  },
+  "baseline": [
+    { "effect": "deny", "match": { "type": "exact", "value": "baseline.filter.lab.vantyr.test" }, "reason": "safety baseline (non-overridable)" }
+  ],
+  "profiles": {
+    "adult": [
+      { "effect": "allow", "match": { "type": "suffix", "value": "lab.vantyr.test" }, "reason": "mapped lab client" }
+    ],
+    "restricted": [
+      { "effect": "deny", "match": { "type": "suffix", "value": "lab.vantyr.test" }, "reason": "unmapped default" }
+    ]
+  },
+  "default_device_profile": "restricted",
+  "devices": [
+    { "id": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", "default_profile": "adult", "source_ips": ["172.26.9.54"] }
+  ],
+  "filter": {
+    "sources": __SOURCES__,
+    "catalog": {
+      "version": "netlab-v1",
+      "services": [
+        {
+          "id": "social",
+          "label": "Synthetic social service",
+          "version": "1",
+          "domains": [
+            { "type": "exact", "value": "social.filter.lab.vantyr.test" },
+            { "type": "suffix", "value": "service.filter.lab.vantyr.test" }
+          ],
+          "source": "operator-provided fixture",
+          "evidence": "synthetic — no exhaustive catalog bundled or fetched"
+        },
+        {
+          "id": "unselected",
+          "label": "Synthetic unselected service",
+          "version": "1",
+          "domains": [
+            { "type": "exact", "value": "unselected.filter.lab.vantyr.test" }
+          ],
+          "source": "operator-provided fixture",
+          "evidence": "not selected; present to prove selection is explicit"
+        }
+      ]
+    },
+    "selected_services": ["social"]
+  }
+}

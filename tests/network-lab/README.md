@@ -24,6 +24,23 @@ data is involved.
   volume and asserts SIGHUP reload, rejection of malformed/stale/foreign/
   bind-changing candidates, real recovery after an abrupt kill with a changed
   external config, and stale-age fail-closed across a restart. See below.
+- `bash scripts/lab.sh list-smoke` — the opt-in local-list / selected-service
+  smoke. It runs the real `--config`/`--state`/`--worker` worker against a
+  separate disposable state volume and synthetic operator fixtures, and asserts
+  initial UDP/TCP hosts and ABP blocks, list-layer exception limits, selected
+  service exact/suffix behaviour, listed-alias denial, higher-revision reload
+  of a changed file, rejection of bad/unsupported candidates without touching
+  runtime or disk, restart from persisted validated material when the on-disk
+  files change or vanish, and explicit disabled/removal. See below.
+
+The list smoke is built from a **read-only `git archive` of accepted commit
+`c21da216d7f5cb778014a9ae16da4b9939c43d86`** (the DNS local-list/service commit),
+never from a concurrently edited working tree. Only the four accepted crates,
+the pinned root `Cargo.lock` and the lab-owned build manifest/notices are placed
+in that disposable build input; the root manifest/lock are read-only and no
+registry or version is changed. Set `VANTYR_NETLAB_BUILD_CONTEXT` to that input
+to reproduce the frozen build; the committed default is the repository root so
+the script works normally once dependencies are ready.
 
 The Vantyr DNS worker is a real binary (`crates/family-dns/src/bin/vantyr-dns.rs`)
 with its own accepted real-process and socket tests; its validated configuration
@@ -54,16 +71,22 @@ DHCP server nor changes routes.
 
 Digests were read from the registry tag listings before pinning. The client
 image is built locally from the digest-pinned base with a pinned package
-version. The worker image build context is the repository root but copies only
-`tests/network-lab/build/Cargo.toml`, the root `Cargo.lock` and the three
-required crate trees (`family-policy`, `vantyr-network-runtime`, `family-dns`);
-`vantyr-network-runtime` is needed by the accepted durable worker. It never
-copies `.`, `.git`, `.env*`, `secrets/`, the main server, the HTTP proxy, the
-inspection/PKI crates or any production data, and it introduces no dependency
-fork or low-level DNS parser. Cargo resolves from the copied lock inside the
-image (a lock superset is pruned there, but every pinned name/version/checksum
-used by the worker is unchanged). The root Cargo manifest/lock are only *read*,
-never edited; build output stays in the image's own target scope. The same
+version. The worker image build context defaults to the repository root but copies only
+`tests/network-lab/build/Cargo.toml`, the root `Cargo.lock`, the four required
+crate trees (`family-policy`, `vantyr-network-runtime`, `vantyr-network-filter`,
+`family-dns`) and the lab-owned `THIRD_PARTY_NOTICES.md` attribution file.
+`vantyr-network-runtime` is needed by the durable worker;
+`vantyr-network-filter` is needed since c21 for the bounded hosts/ABP and
+service-list compiler, whose MPL-2.0 `adblock-rust` dependency is attributed in
+the runtime layer. It never copies `.`, `.git`, `.env*`, `secrets/`, the main
+server, the HTTP proxy, the inspection/PKI crates or any production data, and it
+introduces no dependency fork or low-level DNS parser. Cargo resolves from the
+copied lock inside the image (a lock superset is pruned there, but every pinned
+name/version/checksum used by the worker is unchanged). The root Cargo
+manifest/lock are only *read*, never edited; build output stays in the image's
+own target scope. An operator may set `VANTYR_NETLAB_BUILD_CONTEXT` to a
+read-only frozen source input (the exact c21 archive layout) to make a run
+reproducible without changing any image, network or security setting. The same
 digest-pinned Alpine base is reused by a one-off root helper only to `chown`
 the disposable state volume to uid 65532 — the distroless worker has no shell.
 
@@ -76,6 +99,7 @@ cd tests/network-lab
 bash scripts/lab.sh smoke            # base, upstream only
 bash scripts/lab.sh fullstack-smoke  # opt-in Vantyr DNS filtering stack
 bash scripts/lab.sh durable-smoke    # opt-in durable bundle / reload / recovery
+bash scripts/lab.sh list-smoke       # opt-in local lists + selected services
 ```
 
 `smoke` builds the client, starts the base stack, runs every base assertion,
@@ -152,6 +176,10 @@ bash scripts/lab.sh durable-up          # guarded durable create + ready
 bash scripts/lab.sh durable-down        # scoped removal incl. state volume
 bash scripts/lab.sh stale-down          # scoped removal of the stale phase
 bash scripts/lab.sh durable-smoke       # guarded create + everything + cleanup
+bash scripts/lab.sh list-up             # guarded list-lab create + ready
+bash scripts/lab.sh list-check          # list/service assertions only
+bash scripts/lab.sh list-down           # scoped removal incl. state volume
+bash scripts/lab.sh list-smoke          # guarded create + everything + cleanup
 bash scripts/lab.sh ps
 bash scripts/lab.sh pause-upstream      # optional delay fault
 bash scripts/lab.sh unpause-upstream
@@ -228,6 +256,51 @@ the Docker API (`docker kill -s HUP`), never by exec'ing a shell in the
 distroless image. `--state-status` runs as a separate `--network none` one-off
 with the volume mounted read-only. The single state file is mode `0600`, owned
 by 65532, on a named volume labelled for the disposable project only.
+
+## Local-list config contract
+
+[`configs/vantyr.list.template.json`](configs/vantyr.list.template.json) is a
+validated c21-schema document (the driver fills revision, publication time,
+household, probe answer and the `sources` array). It is served by the real CLI
+as `--config /etc/vantyr/config/active.json --state /state/vantyr-dns.json
+--worker netlab-list-worker`. The two local sources are bounded regular files
+bind-mounted read-only from `work/list/lists`: a hosts file
+(`blocked`/`target` bare domains) and an ABP file using only accepted
+`||host^`, `@@||host^` and `$important` rules. `source_url` values are
+attribution metadata pointing at `example.invalid` and are **never
+dereferenced**. The operator catalog defines exactly two synthetic services:
+`social` (selected; one exact and one suffix domain) and `unselected` (not
+selected). This is a bounded fixture, **not** an exhaustive popular-service
+catalog and **not** a fetched subscription — this slice has no fetcher.
+`enabled: false`, or removing an entry from `sources`, explicitly drops a
+list; a higher revision is required for every reload. No host or controller
+identity is claimed by a source IP.
+
+## Assertions made by `list-smoke`
+
+- Initial UDP and TCP hosts-list exact blocks and ABP plain/`$important`
+  blocks return Vantyr's `192.0.2.222` sinkhole with TTL 30.
+- The selected service's exact domain, suffix root and suffix subdomain are
+  blocked; the unselected service's domain stays open.
+- A valid list-layer `@@` exception allows the mapped household's allowed name,
+  but the same name is denied for the unmapped client and a `@@` exception
+  cannot beat the non-overridable safety baseline.
+- A local CNAME to a hosts-listed target is denied; no target address leaks.
+- A higher-revision reload after changing the hosts file removes the old block
+  and blocks the new name; it persists the new revision and publication time.
+- A higher-revision candidate with a missing source file, and one with an
+  unsupported ABP modifier, are rejected: revision, answer and the exact bytes
+  of the persisted bundle are unchanged.
+- An abrupt kill followed by an independently changed external config (new
+  revision, different publication time, vanished source path and a bad ABP
+  file on disk) still serves the persisted validated list bytes and the
+  original policy age.
+- `enabled: false` and removal from `sources` both take effect only on an
+  explicit higher-revision reload; a disabled source's changed file is not
+  re-read, while other enabled sources keep blocking.
+- A successful run ends with `LIST SMOKE PASS` and verifies that the
+  `vantyr-network-lab-list` project left no containers, networks or volumes;
+  only its own state volume and generated `work/list` directory are removed.
 
 ## Assertions made by `durable-smoke`
 
@@ -340,12 +413,15 @@ docker compose -f compose.yml -f compose.vantyr.example.yml \
   -f compose.vantyr-host-access.yml -p vantyr-network-lab config -q
 docker compose -f compose.yml -f compose.vantyr-durable.yml \
   -p vantyr-network-lab-durable config -q
+docker compose -f compose.yml -f compose.vantyr-list.yml \
+  -p vantyr-network-lab-list config -q
 docker run --rm -w /scripts -v "$PWD/scripts:/scripts:ro" \
   koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
   -x lab.sh lib.sh
 bash scripts/lab.sh smoke
 bash scripts/lab.sh fullstack-smoke
 bash scripts/lab.sh durable-smoke
+bash scripts/lab.sh list-smoke
 # Final resource check (replace the project name for the two durable projects):
 docker ps -aq --filter "label=com.docker.compose.project=vantyr-network-lab-durable"
 docker network ls -q --filter "label=com.docker.compose.project=vantyr-network-lab-durable"

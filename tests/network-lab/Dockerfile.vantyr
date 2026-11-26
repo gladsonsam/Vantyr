@@ -1,14 +1,17 @@
 # Vantyr DNS worker image for the isolated tests/network-lab environment.
 #
-# Build context is the REPOSITORY ROOT (see `context: ../..` in
-# compose.vantyr.example.yml). Only the minimal lab workspace manifest, the
-# pinned root Cargo.lock and the three crates that produce `vantyr-dns` are
-# copied: family-policy, vantyr-network-runtime (the durable bundle store the
-# accepted worker now depends on) and family-dns. This context deliberately
-# NEVER includes '.', .git, .env*, secrets/, the main server, the HTTP proxy,
-# the inspection/PKI crates or any production data. No Docker socket, host
-# networking or privileged mode is used at build or run time; no fork of any
-# dependency and no hand-written DNS parser is introduced.
+# Build context is the REPOSITORY ROOT by default (see `context: ../..` in the
+# Compose overrides; an operator may point VANTYR_NETLAB_BUILD_CONTEXT at a
+# read-only frozen source input). Only the minimal lab workspace manifest, the
+# pinned root Cargo.lock and the four crates that produce `vantyr-dns` are
+# copied: family-policy, vantyr-network-runtime (the durable bundle store),
+# vantyr-network-filter (the bounded hosts/ABP + service-list compiler since
+# commit c21da216) and family-dns. A third-party attribution notice is copied
+# into the runtime layer. This context deliberately NEVER includes '.', .git,
+# .env*, secrets/, the main server, the HTTP proxy, the inspection/PKI crates
+# or any production data. No Docker socket, host networking or privileged mode
+# is used at build or run time; no fork of any dependency and no hand-written
+# DNS parser is introduced.
 #
 # Both base images are digest-pinned from the registry tag listings (verified
 # 2026-11-26); tags are shown only for provenance.
@@ -21,6 +24,7 @@ COPY tests/network-lab/build/Cargo.toml ./Cargo.toml
 COPY Cargo.lock ./Cargo.lock
 COPY crates/family-policy ./crates/family-policy
 COPY crates/network-runtime ./crates/network-runtime
+COPY crates/network-filter ./crates/network-filter
 COPY crates/family-dns ./crates/family-dns
 RUN cargo build --release -p family-dns --bin vantyr-dns \
  && cp /src/target/release/vantyr-dns /usr/local/bin/vantyr-dns \
@@ -28,5 +32,6 @@ RUN cargo build --release -p family-dns --bin vantyr-dns \
 
 FROM gcr.io/distroless/cc-debian12@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f AS runtime
 COPY --from=builder /usr/local/bin/vantyr-dns /vantyr-dns
+COPY tests/network-lab/build/THIRD_PARTY_NOTICES.md /usr/share/vantyr/THIRD_PARTY_NOTICES.md
 USER 65532:65532
 ENTRYPOINT ["/vantyr-dns"]

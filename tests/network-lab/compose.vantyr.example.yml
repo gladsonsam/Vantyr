@@ -24,7 +24,10 @@
 services:
   vantyr-dns:
     build:
-      context: ../..
+      # Default is the repository root. An operator may point this at a
+      # read-only frozen source input for reproducibility; no other behaviour
+      # (image, command, network, limits) changes.
+      context: ${VANTYR_NETLAB_BUILD_CONTEXT:-../..}
       dockerfile: tests/network-lab/Dockerfile.vantyr
       target: runtime
     # Explicit name so the driver can also run one-off --check-config /

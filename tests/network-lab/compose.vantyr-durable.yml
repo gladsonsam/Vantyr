@@ -16,7 +16,9 @@
 services:
   vantyr-durable:
     build:
-      context: ../..
+      # Default is the repository root. An operator may point this at a
+      # read-only frozen source input for reproducibility.
+      context: ${VANTYR_NETLAB_BUILD_CONTEXT:-../..}
       dockerfile: tests/network-lab/Dockerfile.vantyr
       target: runtime
     # Same image as the full-stack override: one whitelisted source build.

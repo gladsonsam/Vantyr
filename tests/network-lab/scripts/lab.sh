@@ -480,6 +480,236 @@ durable_smoke() {
   log "DURABLE SMOKE PASS — SIGHUP, rejection, real recovery and stale-age assertions passed"
 }
 
+# ---------------------------------------------------------------------------
+# Opt-in local-list / selected-service smoke. Built from the accepted c21
+# config schema and real vantyr-dns CLI. All list bytes and the service catalog
+# are synthetic operator fixtures: no subscription fetch, no exhaustive
+# catalog, no controller, no household identity claim.
+# ---------------------------------------------------------------------------
+
+LIST_FIXTURE_ZONE="filter.lab.vantyr.test"
+
+write_good_abp() {
+  cat >"${LIST_LISTS_DIR}/ads.txt" <<'EOF'
+||ads.filter.lab.vantyr.test^
+||important.filter.lab.vantyr.test^$important
+||except.filter.lab.vantyr.test^
+@@||except.filter.lab.vantyr.test^
+||baseline.filter.lab.vantyr.test^
+@@||baseline.filter.lab.vantyr.test^
+EOF
+}
+
+list_up() {
+  preflight_project "${LIST_PROJECT}"
+  mkdir -p "${LIST_CONFIG_DIR}" "${LIST_LISTS_DIR}"
+  init_state_volume "${LIST_PROJECT}"
+
+  printf '%s\n' \
+    'blocked.filter.lab.vantyr.test' \
+    'target.filter.lab.vantyr.test' >"${LIST_LISTS_DIR}/hosts.txt"
+  write_good_abp
+  make_list_config "${LIST_CONFIG_DIR}/active.json" 20 "${LIST_PUB_A}" \
+    "${LIST_HOUSEHOLD}" 192.0.2.10 on
+  list_compose up -d --build
+  wait_list_ready
+  log "list lab up: real worker ${LIST_PROJECT} at ${VANTYR_IP}:${VANTYR_PORT}, synthetic local lists only"
+}
+
+list_config_check() {
+  local out
+  out="$(docker run --rm --network none --read-only --cap-drop ALL \
+    --security-opt no-new-privileges:true --pids-limit 64 --memory 128m \
+    -v "${LIST_CONFIG_DIR}/active.json:/etc/vantyr/active.json:ro" \
+    "${VANTYR_IMAGE}" --check-config /etc/vantyr/active.json)"
+  assert_has_line "list fixture accepted by real --check-config" \
+    'configuration valid' "${out}"
+}
+
+list_check() {
+  local out
+
+  # Honest evidence labels: bounded synthetic fixtures, not a fetched feed.
+  log "PASS: hosts/ABP bytes are synthetic operator fixtures; source_url is metadata only, never fetched"
+  log "PASS: service catalog is operator-provided and selected by id; no exhaustive catalog is bundled"
+
+  # Initial UDP and TCP list blocks: hosts exact, ABP plain and $important.
+  out="$(list_query +notcp +short blocked.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "initial UDP hosts-list block" "${SINKHOLE_IP}" "${out}"
+  out="$(list_query +tcp +short blocked.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "initial TCP hosts-list block" "${SINKHOLE_IP}" "${out}"
+  out="$(list_query +notcp +short ads.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "initial UDP ABP block" "${SINKHOLE_IP}" "${out}"
+  out="$(list_query +tcp +short important.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "initial TCP ABP \$important block" "${SINKHOLE_IP}" "${out}"
+
+  # Selected service exact + suffix; an unselected service stays open.
+  out="$(list_query +short social.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "selected service exact domain blocked" "${SINKHOLE_IP}" "${out}"
+  out="$(list_query +short service.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "selected service suffix root blocked" "${SINKHOLE_IP}" "${out}"
+  out="$(list_query +short sub.service.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "selected service suffix subdomain blocked" "${SINKHOLE_IP}" "${out}"
+  out="$(list_query +short unselected.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "unselected service domain allowed" '192.0.2.60' "${out}"
+
+  # A list-layer @@ exception is not an allow against household policy, and
+  # cannot beat the non-overridable safety baseline.
+  out="$(list_query +short except.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "valid list exception allowed for mapped household allow" '192.0.2.55' "${out}"
+  out="$(list_query_unknown +short except.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "list exception cannot override household deny" "${SINKHOLE_IP}" "${out}"
+  out="$(list_query +short baseline.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "list exception cannot override safety baseline" "${SINKHOLE_IP}" "${out}"
+
+  # An allowed name whose CNAME target is listed must not leak the target.
+  out="$(list_query +short cname.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "local CNAME to hosts-listed target blocked" "${SINKHOLE_IP}" "${out}"
+  out="$(list_query +short alias2.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "local CNAME to second listed target blocked" "${SINKHOLE_IP}" "${out}"
+  out="$(list_query +short ok.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "unlisted local name allowed" '192.0.2.50' "${out}"
+}
+
+list_reload_change() {
+  local out status
+  printf '%s\n' 'newblocked.filter.lab.vantyr.test' >"${LIST_LISTS_DIR}/hosts.txt"
+  make_list_config "${LIST_CONFIG_DIR}/active.json" 21 "${LIST_PUB_B}" \
+    "${LIST_HOUSEHOLD}" 192.0.2.30 on
+  list_sighup_and_wait
+  out="$(list_query +short blocked.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "higher-revision reload removed old list block" '192.0.2.51' "${out}"
+  out="$(list_query +short newblocked.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "higher-revision reload changed file blocks new name" "${SINKHOLE_IP}" "${out}"
+  out="$(list_query +short probe.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "higher-revision reload applied authored answer" '192.0.2.30' "${out}"
+  status="$(list_state_status)"
+  assert_has_line "higher-revision reload persisted revision" 'revision 21' "${status}"
+  assert_has_line "higher-revision reload persisted publication time" \
+    "published_at ${LIST_PUB_B_PREFIX}" "${status}"
+}
+
+list_bad_candidates() {
+  local out status sha
+  sha="$(list_state_sha)"
+
+  # Candidate 1: higher revision, but the hosts source file is missing.
+  make_list_config "${LIST_CONFIG_DIR}/active.json" 90 "${LIST_PUB_B}" \
+    "${LIST_HOUSEHOLD}" 192.0.2.30 vanished
+  list_sighup_and_wait
+  status="$(list_state_status)"
+  assert_has_line "missing-source candidate keeps applied revision" 'revision 21' "${status}"
+  assert_eq "missing-source candidate keeps disk bytes" "${sha}" "$(list_state_sha)"
+  out="$(list_query +short newblocked.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "missing-source candidate keeps prior answer" "${SINKHOLE_IP}" "${out}"
+
+  # Candidate 2: unsupported ABP modifier must be diagnosed, never matched.
+  printf '%s\n' '||ads.filter.lab.vantyr.test^$third-party' >"${LIST_LISTS_DIR}/ads.txt"
+  make_list_config "${LIST_CONFIG_DIR}/active.json" 91 "${LIST_PUB_B}" \
+    "${LIST_HOUSEHOLD}" 192.0.2.30 on
+  list_sighup_and_wait
+  status="$(list_state_status)"
+  assert_has_line "unsupported-rule candidate keeps applied revision" 'revision 21' "${status}"
+  assert_eq "unsupported-rule candidate keeps disk bytes" "${sha}" "$(list_state_sha)"
+  out="$(list_query +short ads.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "unsupported-rule candidate keeps prior list answer" "${SINKHOLE_IP}" "${out}"
+  log "PASS: bad/unsupported candidate retained the whole runtime and durable disk"
+}
+
+list_restart_persisted() {
+  local out status sha
+  sha="$(list_state_sha)"
+  # The external config advances independently while the worker is down: new
+  # revision, different publication time, and a hosts path that no longer
+  # exists. The on-disk ABP file still holds the unsupported rule.
+  make_list_config "${LIST_CONFIG_DIR}/active.json" 99 "${LIST_PUB_C}" \
+    "${LIST_HOUSEHOLD}" 192.0.2.40 vanished
+  docker kill "$(list_compose ps -q vantyr-list)" >/dev/null
+  list_compose up -d >/dev/null
+  wait_list_ready
+  out="$(list_query +short newblocked.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "abrupt restart serves persisted list bytes (changed hosts file)" "${SINKHOLE_IP}" "${out}"
+  out="$(list_query +short ads.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "abrupt restart serves persisted ABP bytes (bad on-disk file)" "${SINKHOLE_IP}" "${out}"
+  out="$(list_query +short probe.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "abrupt restart ignores changed external answer" '192.0.2.30' "${out}"
+  status="$(list_state_status)"
+  assert_has_line "abrupt restart keeps persisted revision" 'revision 21' "${status}"
+  assert_has_line "abrupt restart keeps original policy age" \
+    "published_at ${LIST_PUB_B_PREFIX}" "${status}"
+  assert_eq "abrupt restart keeps persisted disk bytes" "${sha}" "$(list_state_sha)"
+  log "PASS: restart with changed/missing files served validated list bytes and original policy age"
+}
+
+list_disabled_removed() {
+  local out
+  # Restore the accepted ABP bytes; the deliberately bad on-disk version was
+  # only needed to prove that restart ignores changed files.
+  write_good_abp
+
+  # enabled=false keeps the source declared but explicitly drops it, even when
+  # the file on disk is changed to a new block rule.
+  printf '%s\n' 'ghost.filter.lab.vantyr.test' >"${LIST_LISTS_DIR}/hosts.txt"
+  make_list_config "${LIST_CONFIG_DIR}/active.json" 22 "${LIST_PUB_B}" \
+    "${LIST_HOUSEHOLD}" 192.0.2.30 off
+  list_sighup_and_wait
+  out="$(list_query +short newblocked.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "disabled source no longer blocks" '192.0.2.52' "${out}"
+  out="$(list_query +short ghost.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "disabled source is not re-read from its changed file" '192.0.2.62' "${out}"
+  out="$(list_query +short ads.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "other enabled source still blocks after disable" "${SINKHOLE_IP}" "${out}"
+
+  # Removing the entry from `sources` is equally explicit and unambiguous.
+  make_list_config "${LIST_CONFIG_DIR}/active.json" 23 "${LIST_PUB_B}" \
+    "${LIST_HOUSEHOLD}" 192.0.2.30 absent
+  list_sighup_and_wait
+  out="$(list_query +short newblocked.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "removed source no longer blocks" '192.0.2.52' "${out}"
+  out="$(list_query +short ads.${LIST_FIXTURE_ZONE} A)"
+  assert_eq "remaining source still blocks after removal" "${SINKHOLE_IP}" "${out}"
+  log "PASS: disabled and removed sources are explicit; no implicit revocation"
+}
+
+list_down() {
+  list_compose down -v --timeout 5 || return 1
+  verify_cleanup_project "${LIST_PROJECT}"
+}
+
+list_smoke() {
+  on_list_exit() {
+    local rc=$?
+    if (( rc != 0 )); then
+      log "list smoke FAILED (rc=${rc}); cleaning up scoped project ${LIST_PROJECT}"
+    else
+      log "cleaning up scoped project ${LIST_PROJECT} after successful list smoke"
+    fi
+    list_compose down -v --timeout 5 >/dev/null 2>&1 || true
+    verify_cleanup_project "${LIST_PROJECT}" || rc=1
+    rm -rf "${LIST_WORK_DIR}"
+    (( rc == 0 )) && log "list state volume removed; no resources left"
+    exit "${rc}"
+  }
+  trap on_list_exit EXIT
+
+  LIST_PUB_A_PREFIX="$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%S)"
+  LIST_PUB_A="${LIST_PUB_A_PREFIX}Z"
+  LIST_PUB_B_PREFIX="$(date -u +%Y-%m-%dT%H:%M:%S)"
+  LIST_PUB_B="${LIST_PUB_B_PREFIX}Z"
+  # Distinct from both bootstrap and reloaded times, but within the real
+  # worker's 60-second clock-skew window so the changed config is parseable.
+  LIST_PUB_C="$(date -u -d '30 seconds ago' +%Y-%m-%dT%H:%M:%SZ)"
+
+  list_up
+  list_config_check
+  list_check
+  list_reload_change
+  list_bad_candidates
+  list_restart_persisted
+  list_disabled_removed
+  log "LIST SMOKE PASS — real vantyr-dns answered every local-list/service assertion"
+}
+
 main() {
   case "${1:-}" in
     up) up ;;
@@ -497,6 +727,15 @@ main() {
     durable-up) durable_bootstrap ;;
     durable-down) durable_down ;;
     stale-down) stale_down ;;
+    list-smoke) list_smoke ;;
+    list-up)
+      preflight_project "${LIST_PROJECT}"
+      LIST_PUB_A_PREFIX="$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%S)"
+      LIST_PUB_A="${LIST_PUB_A_PREFIX}Z"
+      list_up
+      ;;
+    list-check) list_check ;;
+    list-down) list_down ;;
     down) down ;;
     ps) compose ps ;;
     pause-upstream)
@@ -508,7 +747,7 @@ main() {
       wait_ready
       ;;
     *)
-      printf 'usage: %s {up|check|outage|smoke|fullstack-smoke|fullstack-up|fullstack-check|fullstack-down|durable-smoke|durable-up|durable-down|stale-down|down|ps|pause-upstream|unpause-upstream}\n' "$0" >&2
+      printf 'usage: %s {up|check|outage|smoke|fullstack-smoke|fullstack-up|fullstack-check|fullstack-down|durable-smoke|durable-up|durable-down|stale-down|list-smoke|list-up|list-check|list-down|down|ps|pause-upstream|unpause-upstream}\n' "$0" >&2
       exit 2
       ;;
   esac

@@ -1,0 +1,80 @@
+# Opt-in local-list / selected-service Vantyr DNS override for tests/network-lab.
+#
+# Active ONLY as an extra `-f` alongside compose.yml, under its own guarded
+# project `vantyr-network-lab-list`. It adds a real `vantyr-dns` worker running
+# in durable mode over a disposable, nonroot-owned state volume, plus a second
+# client whose source IP is deliberately unmapped. Local hosts/ABP fixtures and
+# the operator service catalog are read-only bind mounts from the generated
+# work directory. No fetcher, controller, host network, privileged mode, Docker
+# socket mount, host DNS/DHCP/router/firewall change or production data is
+# involved. The default build context is the repository root; an operator may
+# set VANTYR_NETLAB_BUILD_CONTEXT to a read-only frozen source input.
+#
+# Manual equivalent (from tests/network-lab):
+#   docker compose -f compose.yml -f compose.vantyr-list.yml \
+#     -p vantyr-network-lab-list up -d --build
+#   docker compose -f compose.yml -f compose.vantyr-list.yml \
+#     -p vantyr-network-lab-list down -v --timeout 5
+
+services:
+  vantyr-list:
+    build:
+      context: ${VANTYR_NETLAB_BUILD_CONTEXT:-../..}
+      dockerfile: tests/network-lab/Dockerfile.vantyr
+      target: runtime
+    # Same image tag as the other opt-in overrides: one whitelisted source
+    # build, reused across layers rather than rebuilt per project.
+    image: "${VANTYR_NETLAB_PROJECT:-vantyr-network-lab}-vantyr-dns:local"
+    command:
+      - --config
+      - /etc/vantyr/config/active.json
+      - --state
+      - /state/vantyr-dns.json
+      - --worker
+      - netlab-list-worker
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      # The driver replaces active.json (atomic copy) before sending SIGHUP.
+      - ${VANTYR_LIST_CONFIG_DIR:-./work/list/config}:/etc/vantyr/config:ro
+      # Synthetic bounded local fixtures. Never written from inside the image.
+      - ${VANTYR_LIST_LISTS_DIR:-./work/list/lists}:/etc/vantyr/lists:ro
+      - state:/state
+    networks:
+      labnet:
+        ipv4_address: 172.26.9.55
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
+
+  # Unmapped source (172.26.9.56): the restrictive default profile applies, so
+  # a list-layer @@ exception can never override the household deny.
+  client-unknown:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    command: ["sleep", "infinity"]
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      labnet:
+        ipv4_address: 172.26.9.56
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
+
+volumes:
+  state:
