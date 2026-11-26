@@ -11,13 +11,16 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fmt;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
 use chrono::Utc;
-use family_policy::{evaluate, Action, EvaluationContext, Policy};
+use family_policy::{
+    evaluate, Action, Assignment, DeviceId, EvaluationContext, HouseholdId, Policy,
+};
 use rama::dns::client::resolver::DnsAddressResolver;
 use rama::extensions::{ExtensionsRef, Ingress};
 use rama::graceful::Shutdown;
@@ -47,11 +50,13 @@ use tokio::task::JoinHandle;
 use crate::auth::{proxy_authentication_required, AuthError, AuthState};
 use crate::bound::{BoundedIngress, IngressTimeoutOff};
 use crate::config::Config;
+use crate::credentials::{CredentialStore, COMMAND_PROXY_CONNECT, COMMAND_PROXY_HTTP};
 use crate::egress::{EgressConnector, EgressPolicy};
 use crate::inspection::{
     HandshakeTimeoutConnector, InspectRelay, InspectionMode, InspectionModeMarker,
     InspectionRuntime, PrepareInspection, RelayLimits,
 };
+use crate::session_evidence::{SessionEvidenceVerifier, SESSION_EVIDENCE_HEADER};
 use crate::timeout_body::deadline_body;
 
 type Upgrade = UpgradeService<rama::service::BoxService<Request, Response, Infallible>, Response>;
@@ -226,7 +231,33 @@ impl ProxyServer {
         R: DnsAddressResolver + Clone + Send + Sync + 'static,
     {
         let inspection = InspectionRuntime::from_config(&config)?;
-        Self::start_with_upstream_tls(config, resolver, inspection, None).await
+        Self::start_with_upstream_tls(config, resolver, inspection, None, None).await
+    }
+
+    /// Opt-in seam for centrally issued proxy credentials and verified session
+    /// evidence. Ordinary `start()`/`start_with()` never reach this: they keep
+    /// bootstrap-only authentication and a default verifier that attributes no
+    /// person. The server-side authority is supplied by the caller; this worker
+    /// never contacts a controller here.
+    pub async fn start_with_session_auth<R>(
+        config: Config,
+        resolver: R,
+        credentials: Arc<CredentialStore>,
+        evidence: Arc<dyn SessionEvidenceVerifier>,
+        assignments: Vec<Assignment>,
+    ) -> Result<Self>
+    where
+        R: DnsAddressResolver + Clone + Send + Sync + 'static,
+    {
+        let inspection = InspectionRuntime::from_config(&config)?;
+        let auth = AuthState::with_session_auth(
+            &config,
+            crate::auth::AuthPolicy::default(),
+            credentials,
+            evidence,
+            assignments,
+        );
+        Self::start_with_upstream_tls(config, resolver, inspection, None, Some(auth)).await
     }
 
     /// Test-only injection seam: an in-memory inspection signer and explicit
@@ -243,7 +274,8 @@ impl ProxyServer {
     where
         R: DnsAddressResolver + Clone + Send + Sync + 'static,
     {
-        Self::start_with_upstream_tls(config, resolver, inspection, Some(upstream_trust)).await
+        Self::start_with_upstream_tls(config, resolver, inspection, Some(upstream_trust), None)
+            .await
     }
 
     async fn start_with_upstream_tls<R>(
@@ -251,6 +283,7 @@ impl ProxyServer {
         resolver: R,
         inspection: InspectionRuntime,
         upstream_tls: Option<TlsClientConfig>,
+        auth_override: Option<AuthState>,
     ) -> Result<Self>
     where
         R: DnsAddressResolver + Clone + Send + Sync + 'static,
@@ -324,24 +357,44 @@ impl ProxyServer {
         // hop-by-hop credentials and forwarding metadata via Rama layers.
         let adapter = HttpConnectRequestAdapter::new(egress);
         let http_connector = HttpConnector::new(adapter, exec.clone());
-        let forward: Forward = RemoveRequestHeaderLayer::forwarding_metadata()
-            .into_layer(
-                RemoveRequestHeaderLayer::hop_by_hop().into_layer(ForwardClient::new(
-                    http_connector,
-                    Duration::from_secs(limits.request_timeout_secs),
-                )),
-            )
-            .boxed();
+        // Verified session evidence is worker-internal: strip it as explicitly
+        // as the proxy credential so it never reaches an origin.
+        let forward: Forward = RemoveRequestHeaderLayer::exact(header::HeaderName::from_static(
+            SESSION_EVIDENCE_HEADER,
+        ))
+        .into_layer(RemoveRequestHeaderLayer::forwarding_metadata().into_layer(
+            RemoveRequestHeaderLayer::hop_by_hop().into_layer(ForwardClient::new(
+                http_connector,
+                Duration::from_secs(limits.request_timeout_secs),
+            )),
+        ))
+        .boxed();
 
         let now = Utc::now();
         let policy = Arc::new(config.policy(now));
+        // Every configured device is available to a centrally issued credential,
+        // not only devices named by a static bootstrap client. The credential
+        // itself must still carry a bound, configured device id and matching kind.
+        let household_id =
+            HouseholdId::from_str(&config.household_id).expect("household validated");
         let devices = config
-            .clients
+            .devices
             .iter()
-            .map(|client| (client.device_id.clone(), config.device_for(client)))
+            .map(|device| {
+                let built = family_policy::Device {
+                    id: DeviceId::from_str(&device.id).expect("device id validated"),
+                    household_id,
+                    label: device.label.clone().unwrap_or_else(|| device.id.clone()),
+                    kind: device.kind.clone(),
+                    shared: device.shared,
+                    default_profile: device.default_profile.clone(),
+                    capabilities: device.capabilities.clone(),
+                };
+                (device.id.clone(), built)
+            })
             .collect();
         let service = ProxyService {
-            auth: Arc::new(AuthState::new(&config)),
+            auth: Arc::new(auth_override.unwrap_or_else(|| AuthState::new(&config))),
             policy,
             devices,
             upgrade,
@@ -432,10 +485,29 @@ impl ProxyService {
             );
         }
 
-        let client = match self.auth.authenticate(&request) {
-            Ok(client) => client.clone(),
-            Err(AuthError::Missing | AuthError::Invalid) => return proxy_authentication_required(),
+        let is_connect = request.method() == rama::http::Method::CONNECT;
+        let command = if is_connect {
+            COMMAND_PROXY_CONNECT
+        } else {
+            COMMAND_PROXY_HTTP
         };
+        let evidence = request
+            .headers()
+            .get(SESSION_EVIDENCE_HEADER)
+            .and_then(|value| value.to_str().ok());
+        let client =
+            match self
+                .auth
+                .authenticate_with_session(&request, evidence, command, Utc::now())
+            {
+                Ok(client) => client,
+                // A presented but unverifiable receipt denies the whole request;
+                // it can never silently fall back to a person-bearing identity.
+                Err(AuthError::Evidence(failure)) => {
+                    return status(StatusCode::FORBIDDEN, failure.code())
+                }
+                Err(_) => return proxy_authentication_required(),
+            };
         let Some((host, path)) = target(&request) else {
             return status(StatusCode::BAD_REQUEST, "missing request authority");
         };
@@ -450,8 +522,12 @@ impl ProxyService {
             &EvaluationContext {
                 now: Utc::now(),
                 device,
-                session: None,
-                assignments: &[],
+                session: client.verified.as_ref().map(|v| &v.session),
+                assignments: client
+                    .verified
+                    .as_ref()
+                    .map(|v| v.assignments.as_slice())
+                    .unwrap_or(&[]),
                 connections: &[],
                 action: Action::HttpRequest {
                     host: host.clone(),

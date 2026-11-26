@@ -7,15 +7,19 @@
 //! selects a person, and no source-address association is performed here.
 //!
 //! These are loopback bootstrap credentials, not a household identity system.
-//! Repeated failures for one username are bounded by a small cooldown; the
-//! full gateway credential service (hashed secrets, rotation, real runtime
-//! authentication) is later work.
+//! Repeated failures for one username are bounded by a small cooldown. The
+//! opt-in centrally issued credential path ([`crate::credentials`]) and verified
+//! session evidence ([`crate::session_evidence`]) are separate, default-off
+//! additions: a credential binds a device; only independently verified evidence
+//! can attribute a person. Neither infers identity from an address or label.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Utc};
+use family_policy::Assignment;
 use rama::http::header::HeaderValue;
 use rama::http::headers::{HeaderMapExt, ProxyAuthorization};
 use rama::http::Request;
@@ -24,6 +28,14 @@ use rama::utils::bytes::ct::ct_eq_bytes;
 use uuid::Uuid;
 
 use crate::config::Config;
+use crate::credentials::{
+    CredentialFailure, CredentialScope, CredentialStore, HouseholdKind, PresentedCredential,
+    VerifiedCredential,
+};
+use crate::session_evidence::{
+    EvidenceExpectation, EvidenceFailure, NoEvidenceVerifier, SessionEvidenceVerifier,
+    VerifiedIdentity,
+};
 
 /// What an authenticated proxy client is bound to.
 #[derive(Clone)]
@@ -34,6 +46,12 @@ pub struct AuthenticatedClient {
     /// device's own default profile applies.
     pub profile: Option<String>,
     token: Vec<u8>,
+    /// Set only when a centrally issued credential authenticated this request.
+    /// Bootstrap credentials never carry one.
+    pub credential: Option<VerifiedCredential>,
+    /// Set only when correctly scoped verifiable evidence was presented. A
+    /// device binding alone never yields a verified person.
+    pub verified: Option<VerifiedIdentity>,
 }
 
 impl fmt::Debug for AuthenticatedClient {
@@ -43,6 +61,8 @@ impl fmt::Debug for AuthenticatedClient {
             .field("device_id", &self.device_id)
             .field("profile", &self.profile)
             .field("token", &"<redacted>")
+            .field("credential", &self.credential)
+            .field("verified", &self.verified)
             .finish()
     }
 }
@@ -51,6 +71,20 @@ impl fmt::Debug for AuthenticatedClient {
 pub enum AuthError {
     Missing,
     Invalid,
+    Credential(CredentialFailure),
+    Evidence(EvidenceFailure),
+}
+
+impl AuthError {
+    /// Fixed bounded reason code. Never includes a secret or identity value.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Missing => "auth_missing",
+            Self::Invalid => "auth_invalid",
+            Self::Credential(failure) => failure.code(),
+            Self::Evidence(failure) => failure.code(),
+        }
+    }
 }
 
 /// Bounded failure budget. Test code may shorten the cooldown; production
@@ -91,6 +125,14 @@ pub struct AuthState {
     dummy_token: [u8; 32],
     policy: AuthPolicy,
     attempts: Arc<Mutex<BTreeMap<String, Attempt>>>,
+    /// Centrally issued credential authority. `None` keeps bootstrap-only mode.
+    credentials: Option<Arc<CredentialStore>>,
+    /// Typed evidence verifier; the default verifier denies all evidence.
+    evidence: Arc<dyn SessionEvidenceVerifier>,
+    session_auth_enabled: bool,
+    household_id: Uuid,
+    device_kinds: BTreeMap<Uuid, HouseholdKind>,
+    assignments: Arc<Vec<Assignment>>,
 }
 
 impl AuthState {
@@ -110,6 +152,23 @@ impl AuthState {
                         device_id: client.device_id.clone(),
                         profile: client.profile.clone(),
                         token: client.token.as_bytes().to_vec(),
+                        credential: None,
+                        verified: None,
+                    },
+                )
+            })
+            .collect();
+        let household_id = Uuid::parse_str(&config.household_id).expect("household id validated");
+        let device_kinds = config
+            .devices
+            .iter()
+            .map(|device| {
+                (
+                    Uuid::parse_str(&device.id).expect("device id validated"),
+                    if device.shared {
+                        HouseholdKind::Shared
+                    } else {
+                        HouseholdKind::Personal
                     },
                 )
             })
@@ -119,7 +178,100 @@ impl AuthState {
             dummy_token: [0x5a; 32],
             policy,
             attempts: Arc::new(Mutex::new(BTreeMap::new())),
+            credentials: None,
+            evidence: Arc::new(NoEvidenceVerifier),
+            session_auth_enabled: false,
+            household_id,
+            device_kinds,
+            assignments: Arc::new(Vec::new()),
         }
+    }
+
+    /// Opt-in constructor for the centrally issued credential + verified session
+    /// path. The ordinary `new`/`with_policy` constructors never reach it, so
+    /// existing deployments keep bootstrap-only behaviour.
+    pub fn with_session_auth(
+        config: &Config,
+        policy: AuthPolicy,
+        credentials: Arc<CredentialStore>,
+        evidence: Arc<dyn SessionEvidenceVerifier>,
+        assignments: Vec<Assignment>,
+    ) -> Self {
+        let mut state = Self::with_policy(config, policy);
+        state.credentials = Some(credentials);
+        state.evidence = evidence;
+        state.session_auth_enabled = true;
+        state.assignments = Arc::new(assignments);
+        state
+    }
+
+    /// Authenticate a request with optional verified session evidence.
+    ///
+    /// Bootstrap credentials keep their existing behaviour. Otherwise a
+    /// centrally issued credential authenticates a device binding; if evidence
+    /// is supplied it must verify against the exact household, device, binding
+    /// generation, household-kind, audience, command and an active assignment.
+    /// Invalid evidence denies the whole request rather than falling back to a
+    /// person-bearing identity.
+    pub fn authenticate_with_session<B>(
+        &self,
+        request: &Request<B>,
+        evidence_raw: Option<&str>,
+        command: &str,
+        now: DateTime<Utc>,
+    ) -> Result<AuthenticatedClient, AuthError> {
+        let presented = PresentedCredential::from_request(request);
+        let bootstrap = presented
+            .as_ref()
+            .is_some_and(|p| self.clients.contains_key(&p.id.to_string()));
+        if bootstrap {
+            return self.authenticate(request).cloned();
+        }
+        if !self.session_auth_enabled {
+            return Err(AuthError::Missing);
+        }
+        let presented = presented.ok_or(AuthError::Missing)?;
+        let store = self.credentials.as_ref().ok_or(AuthError::Missing)?;
+        let allowed_devices: BTreeSet<Uuid> = self.device_kinds.keys().copied().collect();
+        let scope = CredentialScope {
+            household_id: self.household_id,
+            allowed_devices: &allowed_devices,
+            command,
+        };
+        let credential = store
+            .verify(&presented, &scope, now)
+            .map_err(AuthError::Credential)?;
+        // The authority-issued kind must match the configured device: a shared
+        // device can never be treated as a personal one by a stale credential.
+        if self.device_kinds.get(&credential.device_id) != Some(&credential.household_kind) {
+            return Err(AuthError::Credential(CredentialFailure::WrongKind));
+        }
+        let verified = match evidence_raw {
+            Some(raw) => {
+                let expectation = EvidenceExpectation {
+                    household_id: self.household_id,
+                    device_id: credential.device_id,
+                    generation: credential.generation,
+                    household_kind: credential.household_kind,
+                    command,
+                    assignments: &self.assignments,
+                };
+                Some(
+                    self.evidence
+                        .verify(raw.as_bytes(), now, &expectation)
+                        .map_err(AuthError::Evidence)?,
+                )
+            }
+            None => None,
+        };
+        Ok(AuthenticatedClient {
+            id: credential.id,
+            device_id: credential.device_id.to_string(),
+            profile: None,
+            token: Vec::new(),
+            credential: Some(credential),
+            verified,
+        })
     }
 
     /// Authenticate a request from its `Proxy-Authorization` header.

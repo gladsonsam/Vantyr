@@ -87,6 +87,32 @@ leaf failure, SNI/inner-Host escape rejection, credential stripping, raw
 exception plus expiry, and permit release on a stalled handshake in each
 direction.
 
+## Opt-in centrally issued credentials (foundation, default OFF)
+
+Ordinary `start()`/`start_with()` remain bootstrap-only and attribute no person.
+`ProxyServer::start_with_session_auth(...)` is the explicit opt-in seam that
+wires a `CredentialStore` plus a typed `SessionEvidenceVerifier`:
+
+- A proxy credential is a NEW, hash-only family: id + one-time secret, verified
+  with a fixed-width constant-time compare; expiry, revocation, rotation,
+  binding generation, household, device, worker-kind `proxy`, audience
+  `vantyr-proxy-client` and per-command scope (`proxy_connect`/`proxy_http`) are
+  all checked. BYOD setup grants, gateway Bearer credentials and CA trust are
+  separate families and cannot authorize proxy traffic.
+- Person policy requires additional, independently verifiable session evidence
+  (`x-vantyr-session-evidence`, canonical JSON) checked against the credential's
+  household/device/generation/kind, audience, command and an active assignment.
+  IP, labels and header claims are never identity. Shared devices cannot carry a
+  verified person. Invalid evidence denies the request (static `evidence_*`
+  code); it never degrades to a person-bearing identity.
+- Both headers are stripped before an origin is contacted, including on the
+  decrypted inspection path.
+- No server authority is implemented or claimed: `LocalEvidenceVerifier` is an
+  in-memory authority for tests; `NoEvidenceVerifier` is the default-off
+  verifier. See [the proxy credential contract](../../../docs/proxy-session-credentials.md)
+  for the server seam, status/ack semantics and the live-CONNECT revocation
+  limitation. Zero new dependencies; no lock-file change.
+
 ## Out of scope / known limits
 
 - No CA trust installation, enrollment agent, client trust removal, CRL/OCSP,

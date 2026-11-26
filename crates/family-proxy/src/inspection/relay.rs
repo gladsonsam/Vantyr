@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use rama::error::{BoxError, BoxErrorExt as _};
 use rama::extensions::{Extension, ExtensionsRef};
-use rama::http::header::{self, HeaderValue};
+use rama::http::header::{self, HeaderName, HeaderValue};
 use rama::http::layer::remove_header::RemoveRequestHeaderLayer;
 use rama::http::layer::upgrade::Upgraded;
 use rama::http::proxy::mitm::HttpMitmRelay;
@@ -26,6 +26,7 @@ use rama::tls::rustls::server::TlsAcceptorService;
 use rama::tls::server::TlsServerConfig;
 use rama::{Layer, Service};
 
+use crate::session_evidence::SESSION_EVIDENCE_HEADER;
 use crate::timeout_body::deadline_body;
 
 /// Extension carrying the per-CONNECT issued TLS config. Inserted into the
@@ -241,6 +242,11 @@ where
         // proxy credential explicitly as well so there is no reliance on a
         // single layer's header list.
         request.headers_mut().remove(header::PROXY_AUTHORIZATION);
+        // Session evidence is worker-internal too: strip it on the decrypted
+        // path with the same explicitness as the proxy credential.
+        request
+            .headers_mut()
+            .remove(HeaderName::from_static(SESSION_EVIDENCE_HEADER));
         request.headers_mut().insert(
             header::HOST,
             HeaderValue::from_str(&self.expected_host)
