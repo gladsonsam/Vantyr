@@ -32,6 +32,7 @@ pub struct Settings {
     /// Filesystem root for the screen-history ("Recall") JPEG blob store. Frame
     /// index rows are in Postgres; the bytes live under this directory.
     pub screen_history_dir: PathBuf,
+    pub recall_keyring: Option<Arc<crate::recall::encryption::Keyring>>,
 
     /// Base64url VAPID public key for Web Push, exposed to the frontend for
     /// `PushManager.subscribe`. `None` when Web Push is not configured.
@@ -61,6 +62,7 @@ impl Settings {
             scheduler_tz: chrono_tz::UTC,
             trusted_proxies: Arc::new(TrustedProxies::default()),
             screen_history_dir: std::env::temp_dir(),
+            recall_keyring: None,
             vapid_public_key: None,
             cookie_secure: false,
             oidc: None,

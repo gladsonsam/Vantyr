@@ -30,11 +30,37 @@ pub fn blob_path(root: &Path, agent: Uuid, reference: &str) -> Option<PathBuf> {
     Some(root.join(owner).join(day).join(file))
 }
 
-pub fn read_blob(root: &Path, agent: Uuid, reference: &str) -> io::Result<Vec<u8>> {
+use super::encryption::{self, Keyring};
+
+pub fn read_blob(
+    root: &Path,
+    agent: Uuid,
+    reference: &str,
+    keys: Option<&Keyring>,
+) -> io::Result<Vec<u8>> {
     let path = blob_path(root, agent, reference)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid blob reference"))?;
-    check_path(root, &path, false)?;
-    std::fs::read(path)
+    read_path(root, &path, keys)
+}
+
+pub fn read_path(root: &Path, path: &Path, keys: Option<&Keyring>) -> io::Result<Vec<u8>> {
+    encryption::ensure_store_mode(root, keys)?;
+    check_path(root, path, false)?;
+    let reference = encryption::path_reference(root, path)?;
+    encryption::decode(keys, &reference, std::fs::read(path)?)
+}
+
+pub fn write_path(root: &Path, path: &Path, keys: Option<&Keyring>, jpeg: &[u8]) -> io::Result<()> {
+    encryption::ensure_store_mode(root, keys)?;
+    check_path(root, path, true)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::other("missing blob parent"))?;
+    encryption::private_dirs(parent)?;
+    check_path(root, path, true)?;
+    let reference = encryption::path_reference(root, path)?;
+    let stored = encryption::encode(keys, &reference, jpeg)?;
+    encryption::atomic_write(path, &stored)
 }
 
 /// Cache paths are server-generated siblings under the already validated day.

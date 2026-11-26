@@ -33,6 +33,9 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if recall::encryption::command(&std::env::args().skip(1).collect::<Vec<_>>())? {
+        return Ok(());
+    }
     let log_cfg = LogConfig::from_env();
     if log_cfg.json {
         fmt()
@@ -56,6 +59,10 @@ async fn main() -> anyhow::Result<()> {
 
     let cfg = ServerConfig::from_env()?;
     error::set_expose_internal_errors(cfg.expose_internal_errors);
+
+    let screen_history_dir = cfg.screen_history_dir.clone();
+    let (recall_keyring, _recall_lock) = recall::encryption::initialize(&screen_history_dir)?;
+    info!(dir = %screen_history_dir.display(), encrypted = recall_keyring.is_some(), "Screen-history blob store");
 
     let pool = db::connect_and_migrate(&cfg).await?;
 
@@ -118,19 +125,6 @@ async fn main() -> anyhow::Result<()> {
         info!(public_base_url = %base, "Public base URL configured for external deep links");
     }
 
-    // Screen-history blob store: ensure the directory exists up front so ingest
-    // never has to create the root under lock. Sub-dirs (per agent/day) are made lazily.
-    let screen_history_dir = cfg.screen_history_dir.clone();
-    if let Err(e) = std::fs::create_dir_all(&screen_history_dir) {
-        tracing::warn!(
-            error = %e,
-            dir = %screen_history_dir.display(),
-            "Could not create SCREEN_HISTORY_DIR; screen-history ingest may fail until it exists"
-        );
-    } else {
-        info!(dir = %screen_history_dir.display(), "Screen-history blob store");
-    }
-
     let trusted_proxies = Arc::new(cfg.trusted_proxies.clone());
     if trusted_proxies.is_empty() {
         info!(
@@ -148,6 +142,7 @@ async fn main() -> anyhow::Result<()> {
         scheduler_tz: cfg.scheduler_tz,
         trusted_proxies: trusted_proxies.clone(),
         screen_history_dir: screen_history_dir.clone(),
+        recall_keyring,
         vapid_public_key,
         cookie_secure: cfg.cookie_secure,
         oidc: cfg.oidc.clone(),

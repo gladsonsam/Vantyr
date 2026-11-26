@@ -91,6 +91,7 @@ async fn thumb_response(
     width: u32,
     full: Vec<u8>,
     lease: &IngestionLease,
+    keys: Option<Arc<crate::recall::encryption::Keyring>>,
 ) -> Vec<u8> {
     let Some(path) = thumb_path(root, blob_ref, width) else {
         return full;
@@ -104,16 +105,16 @@ async fn thumb_response(
         if crate::recall::blob_store::check_path(&root, &path, true).is_err() {
             return Ok(original.as_ref().clone());
         }
-        if let Ok(cached) = std::fs::read(&path) {
+        if let Ok(cached) = crate::recall::blob_store::read_path(&root, &path, keys.as_deref()) {
             return Ok(cached);
         }
         let rendered = render_thumb(&original, width)?;
         // Cache creation and writing share the blocking worker's owned lease.
         // Cancelling the HTTP request cannot let deletion overtake either write.
-        if let Some(parent) = path.parent() {
-            if std::fs::create_dir_all(parent).is_ok() {
-                let _ = std::fs::write(&path, &rendered);
-            }
+        if let Err(error) =
+            crate::recall::blob_store::write_path(&root, &path, keys.as_deref(), &rendered)
+        {
+            tracing::debug!(%error, "Recall thumbnail cache write failed");
         }
         Ok::<_, anyhow::Error>(rendered)
     })
@@ -177,10 +178,11 @@ pub async fn history_blob(
     }
     let root = s.settings.screen_history_dir.clone();
     let reference = blob_ref.clone();
+    let keys = s.settings.recall_keyring.clone();
     // Keep the lifecycle lease in the blocking worker too: request cancellation
     // must not let device deletion overtake a still-running filesystem operation.
     let read = match spawn_blocking_ingestion(&lease, move || {
-        crate::recall::blob_store::read_blob(&root, id, &reference)
+        crate::recall::blob_store::read_blob(&root, id, &reference, keys.as_deref())
     })
     .await
     {
@@ -198,6 +200,7 @@ pub async fn history_blob(
                         width,
                         bytes,
                         &lease,
+                        s.settings.recall_keyring.clone(),
                     )
                     .await
                 }
@@ -206,7 +209,7 @@ pub async fn history_blob(
             (
                 [
                     (header::CONTENT_TYPE, "image/jpeg"),
-                    (header::CACHE_CONTROL, "private, max-age=86400"),
+                    (header::CACHE_CONTROL, "private, no-store"),
                 ],
                 bytes,
             )
@@ -240,7 +243,14 @@ mod thumb_tests {
             .unwrap();
         let gate = Arc::new(tokio::sync::RwLock::new(()));
         let lease = Arc::new(gate.clone().read_owned().await);
-        let mut thumbnail = Box::pin(thumb_response(&root, &blob_ref, 160, jpeg.clone(), &lease));
+        let mut thumbnail = Box::pin(thumb_response(
+            &root,
+            &blob_ref,
+            160,
+            jpeg.clone(),
+            &lease,
+            None,
+        ));
         assert!(futures_util::poll!(thumbnail.as_mut()).is_pending());
         let deletion_gate = gate.clone();
         let deletion_root = root.clone();

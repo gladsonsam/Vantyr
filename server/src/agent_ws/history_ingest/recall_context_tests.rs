@@ -26,6 +26,7 @@ fn files(s: &AppState, agent: Uuid) -> usize {
 #[sqlx::test(migrations = false)]
 async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs(db: sqlx::PgPool) {
     let (s, agent, conn, mut queue) = fixture(db).await;
+    std::fs::create_dir_all(&s.settings.screen_history_dir).unwrap();
     let lease = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
     let h = header();
     let jpeg = b"\xff\xd8raw-jpeg\xff\xd9".to_vec();
@@ -90,6 +91,7 @@ async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs(d
 #[sqlx::test(migrations = false)]
 async fn recall_context_legacy_binary_json_malformed_and_invalid_identity(db: sqlx::PgPool) {
     let (s, agent, conn, mut queue) = fixture(db).await;
+    std::fs::create_dir_all(&s.settings.screen_history_dir).unwrap();
     let lease = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
     let jpeg = b"\xff\xd8legacy\xff\xd9";
     let mut legacy = header();
@@ -143,6 +145,7 @@ async fn recall_context_legacy_binary_json_malformed_and_invalid_identity(db: sq
 #[sqlx::test(migrations = false)]
 async fn recall_context_current_connection_pending_stop_and_disabled_grants(db: sqlx::PgPool) {
     let (s, agent, conn, _) = fixture(db).await;
+    std::fs::create_dir_all(&s.settings.screen_history_dir).unwrap();
     let lease = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
     let pending = modules_db::ModuleDisableRequest {
         command_id: Uuid::new_v4(),
@@ -210,4 +213,48 @@ async fn recall_context_current_connection_pending_stop_and_disabled_grants(db: 
     assert!(s.agents.lifecycle.for_agent(agent).try_write().is_err());
     drop(lease);
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
+}
+
+#[sqlx::test(migrations = false)]
+async fn recall_encrypted_ingest_persists_ciphertext_and_keeps_retry_identity(db: sqlx::PgPool) {
+    let (mut s, agent, conn, mut queue) = fixture(db).await;
+    let keys = crate::recall::encryption::test_keyring(Uuid::new_v4(), 17);
+    Arc::get_mut(&mut s).unwrap().settings.recall_keyring = Some(keys.clone());
+    crate::recall::encryption::test_initialize(&s.settings.screen_history_dir, &keys);
+    let lease = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
+    let h = header();
+    let jpeg = b"\xff\xd8private screenshot\xff\xd9".to_vec();
+    store_history_frame(agent, conn, &h, jpeg.clone(), &s, &lease).await;
+    let original = row(&s, agent, &h["uid"]).await;
+    let reference = original["blob"].as_str().unwrap();
+    let root = &s.settings.screen_history_dir;
+    let stored = std::fs::read(root.join(reference)).unwrap();
+    assert_ne!(stored, jpeg);
+    assert_eq!(
+        crate::recall::blob_store::read_blob(root, agent, reference, Some(&keys)).unwrap(),
+        jpeg
+    );
+    store_history_frame(agent, conn, &h, jpeg, &s, &lease).await;
+    assert_eq!(row(&s, agent, &h["uid"]).await, original);
+    assert_eq!(files(&s, agent), 1);
+    assert_eq!(std::fs::read(root.join(reference)).unwrap(), stored);
+    for _ in 0..2 {
+        let AgentControl::Text(ack) = queue.try_recv().unwrap() else {
+            panic!()
+        };
+        assert_eq!(
+            serde_json::from_str::<Value>(&ack).unwrap()["uid"],
+            h["uid"]
+        );
+    }
+    std::fs::remove_file(root.join(".recall-encrypted")).unwrap();
+    let lost_storage = header();
+    store_history_frame(agent, conn, &lost_storage, b"jpeg".to_vec(), &s, &lease).await;
+    assert!(
+        queue.try_recv().is_err(),
+        "recoverable encrypted storage failure must leave frame spooled"
+    );
+    assert_eq!(files(&s, agent), 1);
+    drop(lease);
+    std::fs::remove_dir_all(root).unwrap();
 }

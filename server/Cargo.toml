@@ -80,6 +80,7 @@ sha2 = "0.11.1"
 
 # ── Recall thumbnails (JPEG decode + downscale only; no other codecs) ────────
 image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
+ring = "0.17.14" # Recall authenticated AES-256-GCM storage
 
 # ── Alert rules (URL / keystroke pattern matching) ───────────────────────────
 regex = "1.13.2"
