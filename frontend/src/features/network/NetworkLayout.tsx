@@ -1,6 +1,17 @@
 import { useState, type FormEvent } from "react";
 import { Outlet } from "react-router-dom";
-import { Globe, LayoutDashboard, Network, ShieldCheck, ShieldOff, Unplug, Waypoints } from "lucide-react";
+import {
+  Globe,
+  Home,
+  LayoutDashboard,
+  Network,
+  ScrollText,
+  Server,
+  ShieldCheck,
+  ShieldOff,
+  Unplug,
+  Waypoints,
+} from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Input } from "@vantyr/ui/components/input";
 import { Spinner } from "@vantyr/ui/components/spinner";
@@ -16,8 +27,11 @@ import { useNetworkAccess } from "./access/useNetworkAccess";
 const SECTIONS = [
   { id: "overview", to: "/network", label: "Overview", icon: LayoutDashboard },
   { id: "policies", to: "/network/policies", label: "Policies", icon: ShieldCheck },
+  { id: "gateways", to: "/network/gateways", label: "Gateways", icon: Server },
   { id: "dns", to: "/network/dns", label: "DNS", icon: Globe },
   { id: "proxy", to: "/network/proxy", label: "Proxy", icon: Waypoints },
+  { id: "household", to: "/network/household", label: "Household", icon: Home },
+  { id: "audit", to: "/network/audit", label: "Audit", icon: ScrollText },
 ] as const;
 
 /** The longest matching path wins, so "/network" is only active on the overview itself. */

@@ -82,6 +82,10 @@ interface AppShellProps {
   onDismissNotification: (id: string) => void;
   /** Devices offered by the ⌘K palette and counted on the nav item. */
   agents?: Agent[];
+  /** Devices online across every kind (agent, DNS, proxy). Falls back to online agents when unknown. */
+  onlineDevices?: number;
+  /** Total devices listed on the Devices page, paired with `onlineDevices`. */
+  totalDevices?: number;
   onSelectAgent?: (agentId: string) => void;
   /**
    * Hide the breadcrumb bar and the page title block (the agent detail page
@@ -269,14 +273,13 @@ function ShellNotifications({
 
 function navigationSections(
   currentUser: AppShellProps["currentUser"],
-  agents: NonNullable<AppShellProps["agents"]>,
   onOpenNotifications: AppShellProps["onOpenNotifications"],
   onOpenActivityLog: AppShellProps["onOpenActivityLog"],
   onOpenUsers: AppShellProps["onOpenUsers"],
   showNetwork: boolean,
+  fleet: { online: number; total: number },
 ): NavSection[] {
   const isAdmin = currentUser?.role === "admin";
-  const onlineCount = agents.filter((agent) => agent.online).length;
   // Add pages here; empty sections are dropped, so role-gated items just disappear.
   return [
     {
@@ -286,7 +289,7 @@ function navigationSections(
           label: "Devices",
           path: "/",
           icon: MonitorSmartphone,
-          badge: agents.length ? `${onlineCount} online` : undefined,
+          badge: fleet.total ? `${fleet.online} online` : undefined,
         },
         ...(isAdmin ? [{ label: "Groups", path: "/groups", icon: Boxes }] : []),
         ...(currentUser && currentUser.role !== "viewer"
@@ -328,6 +331,8 @@ export function AppShell({
   notifications,
   onDismissNotification,
   agents = EMPTY_AGENTS,
+  onlineDevices,
+  totalDevices,
   onSelectAgent,
   hideTopBar = false,
 }: AppShellProps) {
@@ -360,11 +365,14 @@ export function AppShell({
 
   const sections = navigationSections(
     currentUser,
-    agents,
     onOpenNotifications,
     onOpenActivityLog,
     onOpenUsers,
     showNetwork,
+    {
+      online: onlineDevices ?? agents.filter((agent) => agent.online).length,
+      total: totalDevices ?? agents.length,
+    },
   );
   const isActive = (path: string) => (path === "/" ? pathname === "/" : pathname.startsWith(path));
   const commandPages: CommandPage[] = sections.flatMap((section) =>

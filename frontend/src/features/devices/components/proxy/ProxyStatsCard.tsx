@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { HelpTip } from "@/components/common/HelpTip";
 import Counter from "@/components/react-bits/Counter";
 import { StatCard } from "@/components/common/StatCard";
 import { UnavailableSection } from "@/features/network/components/AvailabilityGate";
@@ -66,12 +67,19 @@ export function ProxyStatsCard({ deviceId }: { deviceId: string }) {
           hue="text-destructive"
         />
         <StatCard
-          label="HTTPS inspected"
+          label="Inspected traffic"
           value={`${inspectedShare.toFixed(inspectedShare === 0 || inspectedShare === 100 ? 0 : 1)}%`}
           trend={stats.series.map((bucket) => (stats.inspected === 0 ? 0 : bucket.total))}
           hue="text-warning"
         />
       </div>
+      <p className="flex items-center gap-1.5 text-[0.8125rem] text-muted-foreground">
+        Inspected traffic is what was observed
+        <HelpTip label="About inspected traffic">
+          The share of requests observed as inspected. It is observed traffic, not verified
+          coverage: it does not show that everything from this device is inspected.
+        </HelpTip>
+      </p>
       <div className="rounded-xl border border-border/70 bg-card/10 p-5">
         <QueryChart series={stats.series} title="Requests over time" noun="requests" />
       </div>

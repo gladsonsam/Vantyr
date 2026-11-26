@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Database, FileText, Filter, List, ShieldCheck, type LucideIcon } from "lucide-react";
 import { SettingsSection } from "@/features/network/components/SettingsSection";
 import RubberSegment from "@/components/react-bits/RubberSegment";
@@ -9,6 +9,7 @@ import { matchText } from "@/features/devices/lib/format";
 import { useDebouncedCommit } from "@/features/network/lib/useDebouncedCommit";
 import { useUpdateDnsMutation } from "@/features/network/runtime/useRuntimeQueries";
 import type { DnsResponseMode, DnsView } from "@/features/network/runtime/types";
+import { Button } from "@vantyr/ui/components/button";
 import { SettingRow } from "./SettingRow";
 
 type Ready<K extends keyof DnsView> = Extract<DnsView[K], { state: "ready" }>["data"];
@@ -69,7 +70,7 @@ export function FilteringCard({ filtering }: { filtering: Ready<"filtering"> }) 
       </SettingRow>
       <SettingRow label="Blocked by rule">
         <span className="font-mono text-[0.8125rem]">
-          {filtering.block.map(matchText).join(", ")}
+          {filtering.block.length === 0 ? "None" : filtering.block.map(matchText).join(", ")}
         </span>
       </SettingRow>
     </Panel>
@@ -141,6 +142,19 @@ export function CacheCard({ cache }: { cache: Ready<"cache"> }) {
           {cache.entries.toLocaleString()}
         </span>
       </SettingRow>
+      <SettingRow
+        label="Clear cache"
+        help="Forgets every cached answer so names are looked up again. The server has no way to do this yet."
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-[0.8125rem] text-muted-foreground">
+            Not available on this server yet
+          </span>
+          <Button variant="outline" size="sm" disabled>
+            Clear cache
+          </Button>
+        </div>
+      </SettingRow>
     </Panel>
   );
 }
@@ -170,8 +184,13 @@ export function AccessCard({ access }: { access: Ready<"access"> }) {
           formatValue={(value) => `${Math.round(value)}/s`}
         />
       </SettingRow>
-      <SettingRow label="Who may ask">
-        <span className="font-mono text-[0.8125rem]">{access.allowedClients.join(", ")}</span>
+      <SettingRow
+        label="Who may ask"
+        help="Read-only. Editing the allowed address ranges is not available on this server yet."
+      >
+        <span className="font-mono text-[0.8125rem]">
+          {access.allowedClients.length === 0 ? "None listed" : access.allowedClients.join(", ")}
+        </span>
       </SettingRow>
     </Panel>
   );
@@ -207,15 +226,26 @@ export function LoggingCard({ logging }: { logging: Ready<"logging"> }) {
 export function ListCard({
   title,
   rows,
+  note,
 }: {
   title: string;
-  rows: { key: string; left: string; right: string }[];
+  rows: { key: string; left: string; right: ReactNode }[];
+  note?: ReactNode;
 }) {
+  if (rows.length === 0) {
+    return (
+      <Panel title={title}>
+        {note ? <p className="px-5 py-3 text-[0.8125rem] text-muted-foreground">{note}</p> : null}
+        <p className="px-5 py-4 text-sm text-muted-foreground">Nothing listed.</p>
+      </Panel>
+    );
+  }
   return (
     <Panel title={title}>
+      {note ? <p className="px-5 py-3 text-[0.8125rem] text-muted-foreground">{note}</p> : null}
       {rows.map((row) => (
         <SettingRow key={row.key} label={row.left}>
-          <span className="font-mono text-[0.8125rem] text-muted-foreground">{row.right}</span>
+          <span className="text-right text-[0.8125rem] text-muted-foreground">{row.right}</span>
         </SettingRow>
       ))}
     </Panel>

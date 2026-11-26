@@ -40,6 +40,7 @@ export function CredentialsCard({ credentials }: { credentials: Credentials }) {
                   size="sm"
                   icon={<UserX className="size-4" />}
                   holdTime={900}
+                  ariaLabel={`Hold to revoke ${credential.label}`}
                   doneLabel="Revoked"
                   backgroundColor="var(--muted)"
                   textColor="var(--foreground)"

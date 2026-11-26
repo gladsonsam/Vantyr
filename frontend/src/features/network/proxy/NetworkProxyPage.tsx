@@ -35,7 +35,7 @@ export function NetworkProxyPage() {
     <div className="space-y-8">
       <SettingsPageHeader
         title="Proxy"
-        description="Where the proxy listens, who may use it, and whether HTTPS inspection is on."
+        description="Where the proxy listens, who may use it, and whether HTTPS inspection is on. The listener and certificate details are read-only here."
       />
       <AvailabilityGate title="Listener" value={proxy.listener}>
         {(listener) => (

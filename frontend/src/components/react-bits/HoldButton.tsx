@@ -33,6 +33,8 @@ export interface HoldButtonProps {
   glow?: boolean;
   resetAfter?: number;
   disabled?: boolean;
+  /** Accessible name; the visible labels are decoration and the done label is not announced. */
+  ariaLabel?: string;
   onHold?: () => void;
   onTap?: () => void;
   className?: string;
@@ -112,6 +114,7 @@ const HoldButton: React.FC<HoldButtonProps> = ({
   glow = true,
   resetAfter = 1200,
   disabled = false,
+  ariaLabel,
   onHold,
   onTap,
   className = "",
@@ -297,7 +300,7 @@ const HoldButton: React.FC<HoldButtonProps> = ({
       </span>
       <span
         className={`${LABEL_SPAN} opacity-0 blur-[2px] group-data-[phase=done]:opacity-100 group-data-[phase=done]:blur-0`}
-        aria-hidden={phase !== "done"}
+        aria-hidden="true"
       >
         {doneIcon ? <span className="inline-flex flex-none [&>svg]:block">{doneIcon}</span> : null}
         {doneLabel}
@@ -324,6 +327,7 @@ const HoldButton: React.FC<HoldButtonProps> = ({
       ref={buttonRef}
       type="button"
       disabled={disabled}
+      aria-label={ariaLabel}
       className={`hb-root group relative isolate m-0 inline-grid cursor-pointer touch-manipulation select-none place-items-center border-0 font-medium leading-none tracking-[0.01em] outline-none [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] [background:var(--hb-bg)] [border-radius:var(--hb-radius)] [color:var(--hb-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] [transition:transform_160ms_var(--hb-ease-out),background-color_160ms_ease,box-shadow_var(--hb-release)_var(--hb-ease-out)] [@media(hover:hover)_and_(pointer:fine)]:enabled:hover:[background:color-mix(in_srgb,var(--hb-bg)_92%,#fff)] data-[phase=holding]:data-[input=pointer]:[transform:scale(var(--hb-press))] data-[glow=true]:data-[phase=holding]:shadow-[${GLOW}] data-[glow=true]:data-[phase=done]:shadow-[${GLOW}] data-[glow=true]:data-[phase=holding]:[transition:transform_160ms_var(--hb-ease-out),background-color_160ms_ease,box-shadow_var(--hb-hold)_linear] focus-visible:[outline:2px_solid_var(--hb-fill)] focus-visible:outline-offset-[3px] disabled:pointer-events-none disabled:cursor-default disabled:opacity-50 contrast-more:[outline:1px_solid_var(--hb-text)] ${SIZES[size] || SIZES.md}${className ? ` ${className}` : ""}`}
       data-phase={phase}
       data-input={input ?? undefined}

@@ -3,6 +3,8 @@ import { Outlet, matchPath, useLocation, useNavigate, useSearchParams } from "re
 import { AppShell } from "@/app/shell/AppShell";
 import { agentTabFromParam } from "@/features/agent-detail/lib/agentTabNav";
 import { useNetworkAccess } from "@/features/network/access/useNetworkAccess";
+import { useDeviceRows } from "@/features/devices/hooks/useDeviceRows";
+import { connectedCount } from "@/features/devices/lib/deviceModel";
 import { useAgents } from "@/app/providers/useAgents";
 import { useNotifications } from "@/app/providers/useNotifications";
 import { useSession } from "@/app/providers/useSession";
@@ -19,6 +21,11 @@ export function DashboardLayout() {
   const { agents } = useAgents();
   const { notifications, removeNotification } = useNotifications();
   const network = useNetworkAccess();
+  // Same rows the Devices page lists, so the badge counts every kind of device, once each.
+  const { rows: deviceRows, loading: devicesLoading } = useDeviceRows();
+  const onlineDevices = devicesLoading
+    ? undefined
+    : deviceRows.filter((row) => connectedCount(row) > 0).length;
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -60,6 +67,8 @@ export function DashboardLayout() {
         notifications={notifications}
         onDismissNotification={removeNotification}
         agents={agentList}
+        onlineDevices={onlineDevices}
+        totalDevices={devicesLoading ? undefined : deviceRows.length}
         // Switching devices from an agent page keeps the open tab.
         onSelectAgent={(agentId) => {
           const tab = onAgentPage ? agentTabFromParam(searchParams.get("tab")) : "activity";

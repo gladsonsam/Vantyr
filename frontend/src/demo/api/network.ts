@@ -2,16 +2,23 @@ import type { ApiClient } from "@/api";
 import type {
   NetworkAgentEnrollment,
   NetworkAssignment,
+  NetworkAuditRow,
   NetworkConnection,
+  NetworkDesiredPolicy,
   NetworkDevice,
+  NetworkGateway,
+  NetworkGatewayCredential,
+  NetworkGatewayReport,
   NetworkGrant,
   NetworkHousehold,
   NetworkPerson,
+  NetworkPolicyVersion,
 } from "@/api/types";
-import { asRecord } from "./helpers";
+import { asRecord, page } from "./helpers";
 
 const HOUSEHOLD = "hh-demo";
-const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+const ago = (minutes: number) =>
+  new Date(Date.now() - minutes * 60_000).toISOString();
 
 /** Fake Vantyr Network inventory. In memory, so creating and editing works for the demo session. */
 export function demoNetworkApi(): Partial<ApiClient> {
@@ -19,13 +26,20 @@ export function demoNetworkApi(): Partial<ApiClient> {
   const id = (prefix: string) => `${prefix}-demo-${++counter}`;
 
   const households: NetworkHousehold[] = [
-    { id: HOUSEHOLD, name: "Home", is_default: true, created_at: ago(60 * 24 * 30) },
+    {
+      id: HOUSEHOLD,
+      name: "Home",
+      timezone: "UTC",
+      is_default: true,
+      created_at: ago(60 * 24 * 30),
+    },
   ];
   const persons: NetworkPerson[] = [
     {
       id: "per-alex",
       household_id: HOUSEHOLD,
       display_name: "Alex",
+      is_default_profile: false,
       note: "Parent",
       created_at: ago(60 * 24 * 30),
     },
@@ -33,6 +47,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       id: "per-sam",
       household_id: HOUSEHOLD,
       display_name: "Sam",
+      is_default_profile: false,
       note: "Teenager",
       created_at: ago(60 * 24 * 30),
     },
@@ -40,6 +55,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       id: "per-jo",
       household_id: HOUSEHOLD,
       display_name: "Jo",
+      is_default_profile: false,
       note: "Child",
       created_at: ago(60 * 24 * 30),
     },
@@ -47,41 +63,51 @@ export function demoNetworkApi(): Partial<ApiClient> {
   const devices: NetworkDevice[] = [
     {
       id: "dev-desktop",
+      household_id: HOUSEHOLD,
       canonical_key: "0a1b2c3d4e5f",
       label: "Desktop",
       device_type: "computer",
+      shared: false,
       created_at: ago(60 * 24 * 29),
       updated_at: ago(60 * 24),
     },
     {
       id: "dev-laptop",
+      household_id: HOUSEHOLD,
       canonical_key: "a1b2c3d4e5f6",
       label: "Laptop",
       device_type: "computer",
+      shared: false,
       created_at: ago(60 * 24 * 29),
       updated_at: ago(60 * 24),
     },
     {
       id: "dev-tv",
+      household_id: HOUSEHOLD,
       canonical_key: "ff00aa11bb22",
       label: "Living room TV",
       device_type: "tv",
+      shared: false,
       created_at: ago(60 * 24 * 20),
       updated_at: ago(60 * 24 * 2),
     },
     {
       id: "dev-tablet",
+      household_id: HOUSEHOLD,
       canonical_key: "c0ffee123456",
       label: "Kitchen tablet",
       device_type: "tablet",
+      shared: false,
       created_at: ago(60 * 24 * 12),
       updated_at: ago(60 * 24 * 3),
     },
     {
       id: "dev-macbook",
+      household_id: HOUSEHOLD,
       canonical_key: "b4c5d6e7f809",
       label: "MacBook",
       device_type: "computer",
+      shared: false,
       created_at: ago(60 * 24 * 10),
       updated_at: ago(60 * 24),
     },
@@ -93,6 +119,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       person_id: "per-alex",
       device_id: "dev-desktop",
       agent_id: "desktop",
+      active: true,
       role: "owner",
       note: null,
       created_at: ago(60 * 24 * 29),
@@ -104,6 +131,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       person_id: "per-sam",
       device_id: "dev-desktop",
       agent_id: null,
+      active: true,
       role: "member",
       note: null,
       created_at: ago(60 * 24 * 28),
@@ -115,6 +143,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       person_id: "per-alex",
       device_id: "dev-laptop",
       agent_id: "laptop",
+      active: true,
       role: "owner",
       note: null,
       created_at: ago(60 * 24 * 29),
@@ -126,6 +155,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       person_id: "per-alex",
       device_id: "dev-tv",
       agent_id: null,
+      active: true,
       role: "owner",
       note: "Manages the TV; not who is watching.",
       created_at: ago(60 * 24 * 20),
@@ -137,6 +167,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       person_id: "per-jo",
       device_id: "dev-tablet",
       agent_id: null,
+      active: true,
       role: "member",
       note: null,
       created_at: ago(60 * 24 * 12),
@@ -148,6 +179,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       person_id: "per-jo",
       device_id: "dev-macbook",
       agent_id: null,
+      active: true,
       role: "owner",
       note: "macOS laptop that uses the proxy only.",
       created_at: ago(60 * 24 * 10),
@@ -158,12 +190,16 @@ export function demoNetworkApi(): Partial<ApiClient> {
     {
       id: "con-1",
       household_id: HOUSEHOLD,
+      device_id: "dev-desktop",
       assignment_id: "asg-1",
+      enrolled_agent_id: "desktop",
       kind: "agent",
       provenance: "agent",
       capabilities: ["verified-user"],
       status: "active",
       observed_at: ago(2),
+      last_seen_at: ago(2),
+      revoked_at: null,
       note: null,
       created_at: ago(60 * 24 * 29),
       updated_at: ago(2),
@@ -171,12 +207,16 @@ export function demoNetworkApi(): Partial<ApiClient> {
     {
       id: "con-2",
       household_id: HOUSEHOLD,
+      device_id: "dev-desktop",
       assignment_id: "asg-1",
+      enrolled_agent_id: null,
       kind: "dns",
       provenance: "dns",
       capabilities: [],
       status: "active",
       observed_at: ago(1),
+      last_seen_at: ago(1),
+      revoked_at: null,
       note: null,
       created_at: ago(60 * 24 * 29),
       updated_at: ago(1),
@@ -184,12 +224,16 @@ export function demoNetworkApi(): Partial<ApiClient> {
     {
       id: "con-3",
       household_id: HOUSEHOLD,
+      device_id: "dev-desktop",
       assignment_id: "asg-1",
+      enrolled_agent_id: null,
       kind: "proxy",
       provenance: "proxy",
       capabilities: [],
       status: "active",
       observed_at: ago(2),
+      last_seen_at: ago(2),
+      revoked_at: null,
       note: null,
       created_at: ago(60 * 24 * 20),
       updated_at: ago(2),
@@ -197,12 +241,16 @@ export function demoNetworkApi(): Partial<ApiClient> {
     {
       id: "con-4",
       household_id: HOUSEHOLD,
+      device_id: "dev-laptop",
       assignment_id: "asg-3",
+      enrolled_agent_id: "laptop",
       kind: "agent",
       provenance: "agent",
       capabilities: ["verified-user"],
       status: "active",
       observed_at: ago(3),
+      last_seen_at: ago(3),
+      revoked_at: null,
       note: null,
       created_at: ago(60 * 24 * 29),
       updated_at: ago(3),
@@ -210,12 +258,16 @@ export function demoNetworkApi(): Partial<ApiClient> {
     {
       id: "con-5",
       household_id: HOUSEHOLD,
+      device_id: "dev-laptop",
       assignment_id: "asg-3",
+      enrolled_agent_id: null,
       kind: "dns",
       provenance: "dns",
       capabilities: [],
       status: "active",
       observed_at: ago(1),
+      last_seen_at: ago(1),
+      revoked_at: null,
       note: null,
       created_at: ago(60 * 24 * 29),
       updated_at: ago(1),
@@ -223,12 +275,16 @@ export function demoNetworkApi(): Partial<ApiClient> {
     {
       id: "con-6",
       household_id: HOUSEHOLD,
+      device_id: "dev-tv",
       assignment_id: "asg-4",
+      enrolled_agent_id: null,
       kind: "dns",
       provenance: "dns",
       capabilities: [],
       status: "active",
       observed_at: ago(4),
+      last_seen_at: ago(4),
+      revoked_at: null,
       note: null,
       created_at: ago(60 * 24 * 20),
       updated_at: ago(4),
@@ -236,12 +292,16 @@ export function demoNetworkApi(): Partial<ApiClient> {
     {
       id: "con-7",
       household_id: HOUSEHOLD,
+      device_id: "dev-tablet",
       assignment_id: "asg-5",
+      enrolled_agent_id: null,
       kind: "dns",
       provenance: "dns",
       capabilities: [],
       status: "active",
       observed_at: ago(6),
+      last_seen_at: ago(6),
+      revoked_at: null,
       note: null,
       created_at: ago(60 * 24 * 12),
       updated_at: ago(6),
@@ -249,20 +309,32 @@ export function demoNetworkApi(): Partial<ApiClient> {
     {
       id: "con-8",
       household_id: HOUSEHOLD,
+      device_id: "dev-macbook",
       assignment_id: "asg-6",
+      enrolled_agent_id: null,
       kind: "proxy",
       provenance: "proxy",
       capabilities: [],
       status: "active",
       observed_at: ago(2),
+      last_seen_at: ago(2),
+      revoked_at: null,
       note: null,
       created_at: ago(60 * 24 * 10),
       updated_at: ago(2),
     },
   ];
   const enrollments: NetworkAgentEnrollment[] = [
-    { household_id: HOUSEHOLD, agent_id: "desktop", enrolled_at: ago(60 * 24 * 29) },
-    { household_id: HOUSEHOLD, agent_id: "laptop", enrolled_at: ago(60 * 24 * 29) },
+    {
+      household_id: HOUSEHOLD,
+      agent_id: "desktop",
+      enrolled_at: ago(60 * 24 * 29),
+    },
+    {
+      household_id: HOUSEHOLD,
+      agent_id: "laptop",
+      enrolled_at: ago(60 * 24 * 29),
+    },
   ];
   const grants: NetworkGrant[] = [
     {
@@ -279,8 +351,131 @@ export function demoNetworkApi(): Partial<ApiClient> {
     },
   ];
 
+  // Gateway: online, reporting capabilities and a REPORTED applied revision r14 while desired is r15.
+  // The reported value is an unverified worker observation, matching the demo policy (r14 applied,
+  // r15 saved proposal) in demoNetworkRuntime.
+  const GATEWAY = "gw-demo-dns";
+  const gateways: NetworkGateway[] = [
+    {
+      id: GATEWAY,
+      household_id: HOUSEHOLD,
+      kind: "dns",
+      label: "Home DNS",
+      enabled: true,
+      capabilities: ["dns", "heartbeat", "config-read"],
+      last_seen_at: ago(1),
+      revoked_at: null,
+      created_at: ago(60 * 24 * 20),
+      updated_at: ago(1),
+    },
+  ];
+  const credentials: NetworkGatewayCredential[] = [
+    {
+      id: "cred-demo-1",
+      household_id: HOUSEHOLD,
+      gateway_id: GATEWAY,
+      kind: "dns",
+      audience: "vantyr-gateway-worker",
+      allowed_commands: ["heartbeat", "read_policy"],
+      expires_at: new Date(Date.now() + 18 * 24 * 3_600_000).toISOString(),
+      revoked_at: null,
+      last_used_at: ago(1),
+      issued_at: ago(60 * 24 * 12),
+      rotated_from: "cred-demo-0",
+    },
+    {
+      id: "cred-demo-0",
+      household_id: HOUSEHOLD,
+      gateway_id: GATEWAY,
+      kind: "dns",
+      audience: "vantyr-gateway-worker",
+      allowed_commands: ["heartbeat"],
+      expires_at: ago(60 * 24 * 2),
+      revoked_at: ago(60 * 24 * 12),
+      last_used_at: ago(60 * 24 * 12),
+      issued_at: ago(60 * 24 * 20),
+      rotated_from: null,
+    },
+  ];
+  const reports: NetworkGatewayReport[] = [1, 6, 11, 16].map((minutes, i) => ({
+    id: 4 - i,
+    household_id: HOUSEHOLD,
+    gateway_id: GATEWAY,
+    credential_id: "cred-demo-1",
+    reported_at: ago(minutes),
+    observed_at: ago(minutes),
+    capabilities: ["dns", "heartbeat", "config-read"],
+    desired_revision: "r15",
+    applied_revision: "r14",
+    failure: null,
+    verified: false,
+    enforced: false,
+  }));
+  let desired: NetworkDesiredPolicy | null = {
+    household_id: HOUSEHOLD,
+    gateway_id: GATEWAY,
+    kind: "dns",
+    revision: 15,
+    assigned_by: "demo-user-admin",
+    assigned_at: ago(45),
+  };
+  const policyMeta = (
+    revision: number,
+    minutes: number,
+    rolledBack: number | null = null,
+  ): NetworkPolicyVersion => ({
+    household_id: HOUSEHOLD,
+    revision,
+    schema_version: 1,
+    source_kind: rolledBack ? "rollback" : "publish",
+    rolled_back_from_revision: rolledBack,
+    published_at: ago(minutes),
+    published_by: "demo-user-admin",
+    body_sha256:
+      `${revision.toString(16).padStart(2, "0")}c4e1a9d07b3f5826ad94e0b17c53f8a2d6e91b40c7a35f8d2e6b1094a7c3d5e8`.slice(
+        0,
+        64,
+      ),
+    body_bytes: 1800 + revision * 37,
+  });
+  const policies: NetworkPolicyVersion[] = [
+    policyMeta(15, 45),
+    policyMeta(14, 60 * 24 * 3),
+    policyMeta(13, 60 * 24 * 9),
+  ];
+  const audit: NetworkAuditRow[] = [
+    [
+      "network_gateway_desired_policy_set",
+      45,
+      { gateway_id: GATEWAY, revision: 15 },
+    ],
+    ["network_policy_publish", 45, { revision: 15 }],
+    [
+      "network_gateway_credential_rotate",
+      60 * 24 * 12,
+      { gateway_id: GATEWAY, rotated_from: "cred-demo-0" },
+    ],
+    [
+      "network_gateway_credential_issue",
+      60 * 24 * 12 + 1,
+      { gateway_id: GATEWAY, commands: ["heartbeat", "read_policy"] },
+    ],
+    ["network_policy_publish", 60 * 24 * 3, { revision: 14 }],
+    ["network_gateway_create", 60 * 24 * 20, { kind: "dns" }],
+  ].map(([action, minutes, detail], i) => ({
+    id: 100 - i,
+    ts: ago(minutes as number),
+    household_id: HOUSEHOLD,
+    actor: "demo-user-admin",
+    client_ip: "192.168.1.20",
+    action: action as string,
+    status: "ok",
+    detail: detail as Record<string, unknown>,
+  }));
+
   const now = () => new Date().toISOString();
-  const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+  const text = (value: unknown) =>
+    typeof value === "string" ? value.trim() : "";
 
   return {
     networkHouseholds: async () => ({ households }),
@@ -295,6 +490,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
         id: created,
         household_id: HOUSEHOLD,
         display_name: text(b.display_name),
+        is_default_profile: false,
         note: text(b.note) || null,
         created_at: now(),
       });
@@ -304,7 +500,8 @@ export function demoNetworkApi(): Partial<ApiClient> {
       const b = asRecord(body);
       const person = persons.find((p) => p.id === personId);
       if (person) {
-        if (typeof b.display_name === "string") person.display_name = b.display_name.trim();
+        if (typeof b.display_name === "string")
+          person.display_name = b.display_name.trim();
         if ("note" in b) person.note = text(b.note) || null;
       }
       return { ok: true };
@@ -319,8 +516,11 @@ export function demoNetworkApi(): Partial<ApiClient> {
         canonical_key: text(b.canonical_key)
           .toLowerCase()
           .replace(/[^a-z0-9]/g, ""),
+        household_id: HOUSEHOLD,
         label: text(b.label),
-        device_type: (text(b.device_type) || "unknown") as NetworkDevice["device_type"],
+        shared: b.shared === true,
+        device_type: (text(b.device_type) ||
+          "unknown") as NetworkDevice["device_type"],
         created_at: now(),
         updated_at: now(),
       });
@@ -348,6 +548,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
         person_id: text(b.person_id),
         device_id: text(b.device_id),
         agent_id: text(b.agent_id) || null,
+        active: true,
         role: (text(b.role) || "member") as NetworkAssignment["role"],
         note: text(b.note) || null,
         created_at: now(),
@@ -359,7 +560,8 @@ export function demoNetworkApi(): Partial<ApiClient> {
       const b = asRecord(body);
       const assignment = assignments.find((a) => a.id === assignmentId);
       if (assignment) {
-        if (typeof b.role === "string") assignment.role = b.role as NetworkAssignment["role"];
+        if (typeof b.role === "string")
+          assignment.role = b.role as NetworkAssignment["role"];
         if ("agent_id" in b) assignment.agent_id = text(b.agent_id) || null;
         if ("note" in b) assignment.note = text(b.note) || null;
         assignment.updated_at = now();
@@ -377,5 +579,138 @@ export function demoNetworkApi(): Partial<ApiClient> {
     networkGrants: async () => ({ grants }),
     networkGrantCreate: async () => ({ ok: true, created: true }),
     networkGrantDelete: async () => ({ ok: true }),
+
+    networkAudit: async (_household, params) => ({ rows: page(audit, params) }),
+
+    networkGateways: async (_household, params) => ({
+      gateways: gateways.filter((g) => !params?.kind || g.kind === params.kind),
+    }),
+    networkGatewayCreate: async (_household, body) => {
+      const b = asRecord(body);
+      const created = id("gw");
+      gateways.push({
+        id: created,
+        household_id: HOUSEHOLD,
+        kind: b.kind === "proxy" ? "proxy" : "dns",
+        label: text(b.label),
+        enabled: true,
+        capabilities: [],
+        last_seen_at: null,
+        revoked_at: null,
+        created_at: now(),
+        updated_at: now(),
+      });
+      return { id: created };
+    },
+    networkGatewayRevoke: async (_household, gatewayId) => {
+      const gateway = gateways.find((g) => g.id === gatewayId);
+      if (gateway) {
+        gateway.revoked_at = now();
+        gateway.enabled = false;
+      }
+      return { ok: true };
+    },
+    networkGatewayCredentials: async (_household, gatewayId) => ({
+      credentials: credentials.filter((c) => c.gateway_id === gatewayId),
+    }),
+    networkGatewayCredentialIssue: async (_household, gatewayId, body) =>
+      issueCredential(gatewayId, body, null),
+    networkGatewayCredentialRotate: async (
+      _household,
+      gatewayId,
+      credentialId,
+      body,
+    ) => {
+      const old = credentials.find((c) => c.id === credentialId);
+      if (old) old.revoked_at = now();
+      return issueCredential(gatewayId, body, credentialId);
+    },
+    networkGatewayCredentialRevoke: async (
+      _household,
+      _gatewayId,
+      credentialId,
+    ) => {
+      const credential = credentials.find((c) => c.id === credentialId);
+      if (credential) credential.revoked_at = now();
+      return { ok: true };
+    },
+    networkGatewayReports: async (_household, gatewayId, params) => ({
+      reports: page(
+        reports.filter((r) => r.gateway_id === gatewayId),
+        params,
+      ),
+    }),
+
+    networkPolicies: async (_household, params) => {
+      const rows = page(policies, params);
+      return { policies: rows, count: rows.length };
+    },
+    networkPolicyPublish: async () => savePolicy(null),
+    networkPolicyRollback: async (_household, body) =>
+      savePolicy(asRecord(body).source_revision),
+    networkGatewayDesiredPolicy: async (_household, gatewayId) => ({
+      desired: desired?.gateway_id === gatewayId ? desired : null,
+    }),
+    networkGatewayDesiredPolicySet: async (_household, gatewayId, body) => {
+      desired = {
+        household_id: HOUSEHOLD,
+        gateway_id: gatewayId,
+        kind: gateways.find((g) => g.id === gatewayId)?.kind ?? "dns",
+        revision: Number(asRecord(body).revision) || 15,
+        assigned_by: "demo-user-admin",
+        assigned_at: now(),
+      };
+      return { desired };
+    },
   };
+
+  function issueCredential(
+    gatewayId: string,
+    body: unknown,
+    rotatedFrom: string | null,
+  ): { credential_id: string; token: string; expires_at: string } {
+    const b = asRecord(body);
+    const hours =
+      typeof b.expires_in_hours === "number" ? b.expires_in_hours : 24;
+    const commands =
+      Array.isArray(b.commands) && b.commands.length > 0
+        ? b.commands
+        : ["heartbeat"];
+    const credentialId = id("cred");
+    const expires = new Date(Date.now() + hours * 3_600_000).toISOString();
+    credentials.unshift({
+      id: credentialId,
+      household_id: HOUSEHOLD,
+      gateway_id: gatewayId,
+      kind: gateways.find((g) => g.id === gatewayId)?.kind ?? "dns",
+      audience: "vantyr-gateway-worker",
+      allowed_commands:
+        commands as NetworkGatewayCredential["allowed_commands"],
+      expires_at: expires,
+      revoked_at: null,
+      last_used_at: null,
+      issued_at: now(),
+      rotated_from: rotatedFrom,
+    });
+    return {
+      credential_id: credentialId,
+      token: `${credentialId}.demo-secret-shown-once`,
+      expires_at: expires,
+    };
+  }
+
+  function savePolicy(rolledBackFrom: unknown): {
+    revision: number;
+    body_sha256: string;
+    status: "saved";
+  } {
+    const revision = Math.max(...policies.map((p) => p.revision)) + 1;
+    const meta = policyMeta(
+      revision,
+      0,
+      typeof rolledBackFrom === "number" ? rolledBackFrom : null,
+    );
+    policies.unshift(meta);
+    return { revision, body_sha256: meta.body_sha256, status: "saved" };
+  }
 }

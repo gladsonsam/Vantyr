@@ -68,6 +68,26 @@ const NetworkProxyPage = lazy(() =>
     default: m.NetworkProxyPage,
   })),
 );
+const NetworkGatewaysPage = lazy(() =>
+  import("@/features/network/gateways/NetworkGatewaysPage").then((m) => ({
+    default: m.NetworkGatewaysPage,
+  })),
+);
+const GatewayDetailPage = lazy(() =>
+  import("@/features/network/gateways/GatewayDetailPage").then((m) => ({
+    default: m.GatewayDetailPage,
+  })),
+);
+const NetworkAuditPage = lazy(() =>
+  import("@/features/network/audit/NetworkAuditPage").then((m) => ({
+    default: m.NetworkAuditPage,
+  })),
+);
+const NetworkHouseholdPage = lazy(() =>
+  import("@/features/network/household/NetworkHouseholdPage").then((m) => ({
+    default: m.NetworkHouseholdPage,
+  })),
+);
 const UsersPage = lazy(() =>
   import("@/features/users/UsersPage").then((m) => ({ default: m.UsersPage })),
 );
@@ -192,6 +212,10 @@ export function AppRoutes() {
           <Route path="policies" element={<NetworkPoliciesPage />} />
           <Route path="dns" element={<NetworkDnsPage />} />
           <Route path="proxy" element={<NetworkProxyPage />} />
+          <Route path="gateways" element={<NetworkGatewaysPage />} />
+          <Route path="gateways/:gatewayId" element={<GatewayDetailPage />} />
+          <Route path="household" element={<NetworkHouseholdPage />} />
+          <Route path="audit" element={<NetworkAuditPage />} />
           <Route path="*" element={<Navigate to="/network" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

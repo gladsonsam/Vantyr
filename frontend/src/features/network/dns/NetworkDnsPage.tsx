@@ -6,7 +6,10 @@ import {
 } from "@/features/network/components/AvailabilityGate";
 import { useDnsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import { SettingsPageHeader } from "@/features/settings/components/SettingsLayout";
+import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { AccessCard, CacheCard, FilteringCard, ListCard, LoggingCard } from "./DnsSettingsCards";
+import { EncryptedCard, RewritesCard, ServicesCard, UpstreamsCard } from "./DnsReadOnlyCards";
+import { PendingDnsSection } from "./PendingDnsSection";
 
 /** Vantyr DNS settings. A control saves a proposal for gateways; it does not prove they are enforcing it. */
 export function NetworkDnsPage() {
@@ -31,64 +34,60 @@ export function NetworkDnsPage() {
     <div className="space-y-8">
       <SettingsPageHeader
         title="DNS"
-        description="Saved here as a proposal for gateways; each control says nothing about what is enforced yet."
+        description="A change is saved as a proposal. Saved is not applied, and applied is not verified: only a gateway report says what is enforced."
       />
       <div className="space-y-8">
         <AvailabilityGate title="Filtering" value={dns.filtering}>
           {(value) => <FilteringCard filtering={value} />}
         </AvailabilityGate>
-        <AvailabilityGate title="Cache" value={dns.cache}>
-          {(value) => <CacheCard cache={value} />}
+        <AvailabilityGate title="Upstream servers" value={dns.upstreams}>
+          {(upstreams) => <UpstreamsCard upstreams={upstreams} />}
         </AvailabilityGate>
         <AvailabilityGate title="Blocklist subscriptions" value={dns.lists}>
           {(lists) => (
             <ListCard
               title="Blocklist subscriptions"
+              note="Read-only. Adding, removing and refreshing lists is not available on this server yet."
               rows={lists.map((l) => ({
                 key: l.id,
                 left: l.name,
-                right: `${l.entries.toLocaleString()} entries`,
+                right: (
+                  <>
+                    {l.entries.toLocaleString()} entries ·{" "}
+                    {l.error ? (
+                      <span className="text-destructive">failed: {l.error}</span>
+                    ) : l.lastRefreshedAt ? (
+                      <>
+                        checked <TimeAgo iso={l.lastRefreshedAt} />
+                      </>
+                    ) : (
+                      "never checked"
+                    )}
+                  </>
+                ),
               }))}
             />
           )}
         </AvailabilityGate>
-
+        <AvailabilityGate title="Blocked services and categories" value={dns.services}>
+          {(services) => <ServicesCard services={services} />}
+        </AvailabilityGate>
+        <AvailabilityGate title="Local records" value={dns.rewrites}>
+          {(rewrites) => <RewritesCard rewrites={rewrites} />}
+        </AvailabilityGate>
+        <AvailabilityGate title="Encrypted DNS" value={dns.encrypted}>
+          {(encrypted) => <EncryptedCard encrypted={encrypted} />}
+        </AvailabilityGate>
+        <AvailabilityGate title="Cache" value={dns.cache}>
+          {(value) => <CacheCard cache={value} />}
+        </AvailabilityGate>
         <AvailabilityGate title="Access" value={dns.access}>
           {(value) => <AccessCard access={value} />}
         </AvailabilityGate>
         <AvailabilityGate title="Query log" value={dns.logging}>
           {(value) => <LoggingCard logging={value} />}
         </AvailabilityGate>
-        <AvailabilityGate title="Upstream servers" value={dns.upstreams}>
-          {(upstreams) => (
-            <ListCard
-              title="Upstream servers"
-              rows={upstreams.servers.map((s) => ({
-                key: s.address,
-                left: s.address,
-                right: `${s.protocol.toUpperCase()} · ${s.healthy ? "healthy" : "not answering"}`,
-              }))}
-            />
-          )}
-        </AvailabilityGate>
-        <AvailabilityGate title="Local records" value={dns.rewrites}>
-          {(rewrites) => (
-            <ListCard
-              title="Local records"
-              rows={rewrites.map((r) => ({
-                key: r.id,
-                left: r.name,
-                right: `${r.kind} → ${r.value}`,
-              }))}
-            />
-          )}
-        </AvailabilityGate>
-        <AvailabilityGate title="Encrypted DNS" value={dns.encrypted}>
-          {() => null}
-        </AvailabilityGate>
-        <AvailabilityGate title="Blocked services and categories" value={dns.services}>
-          {() => null}
-        </AvailabilityGate>
+        <PendingDnsSection />
       </div>
     </div>
   );

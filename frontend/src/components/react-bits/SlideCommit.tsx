@@ -109,7 +109,7 @@ const Spinner = ({ size }: { size: number }) => (
 const SlideCommit: React.FC<SlideCommitProps> = ({
   label = "Slide to pay",
   doneLabel = "Paid",
-  errorLabel = "Payment failed",
+  errorLabel = "Failed",
   onConfirm,
   onDone,
   onError,

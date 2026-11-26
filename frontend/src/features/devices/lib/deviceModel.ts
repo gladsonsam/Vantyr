@@ -65,7 +65,11 @@ export interface DeviceInput {
   connections: NetworkConnection[];
 }
 
-export const CONNECTION_KINDS: readonly NetworkConnectionKind[] = ["agent", "dns", "proxy"];
+export const CONNECTION_KINDS: readonly NetworkConnectionKind[] = [
+  "agent",
+  "dns",
+  "proxy",
+];
 
 export function agentDeviceKey(agentId: string): string {
   return `agent:${agentId}`;
@@ -79,32 +83,34 @@ const none = (kind: NetworkConnectionKind): ConnectionSummary => ({
   capabilities: [],
 });
 
-/**
- * The device a connection belongs to. Today a connection hangs off an assignment; if the server
- * attaches connections to devices directly, resolve that here instead.
- */
-function connectionDeviceId(
-  connection: NetworkConnection,
-  assignmentsById: Map<string, NetworkAssignment>,
-): string | null {
-  return assignmentsById.get(connection.assignment_id)?.device_id ?? null;
+/** The device a connection belongs to. Connections are about devices; people are optional. */
+function connectionDeviceId(connection: NetworkConnection): string {
+  return connection.device_id;
 }
 
-const newest = (a: string | null, b: string | null) => (a && b ? (a > b ? a : b) : (a ?? b));
+/** A revoked connection no longer reports anything. */
+const isLive = (c: NetworkConnection) =>
+  c.status !== "revoked" && !c.revoked_at;
+
+const newest = (a: string | null, b: string | null) =>
+  a && b ? (a > b ? a : b) : (a ?? b);
 
 /** One summary for every inventory connection of a kind on a device. Connected wins over stale. */
 function summarise(
   kind: NetworkConnectionKind,
   connections: NetworkConnection[],
 ): ConnectionSummary {
-  const ofKind = connections.filter((c) => c.kind === kind);
+  const ofKind = connections.filter((c) => c.kind === kind && isLive(c));
   if (ofKind.length === 0) return none(kind);
   const live = ofKind.filter((c) => c.status === "active");
   const chosen = live[0] ?? ofKind[0];
   return {
     kind,
     state: live.length > 0 ? "connected" : "stale",
-    lastSeenAt: ofKind.reduce<string | null>((acc, c) => newest(acc, c.observed_at), null),
+    lastSeenAt: ofKind.reduce<string | null>(
+      (acc, c) => newest(acc, c.last_seen_at ?? c.observed_at),
+      null,
+    ),
     provenance: chosen.provenance,
     capabilities: [...new Set(ofKind.flatMap((c) => c.capabilities))],
   };
@@ -116,7 +122,9 @@ function agentConnection(
   agentsById: Map<string, Agent>,
   inventory: NetworkConnection[],
 ): ConnectionSummary {
-  const live = linkedAgentIds.map((id) => agentsById.get(id)).filter((a): a is Agent => !!a);
+  const live = linkedAgentIds
+    .map((id) => agentsById.get(id))
+    .filter((a): a is Agent => !!a);
   if (live.length > 0) {
     const online = live.find((a) => a.online);
     const reference = online ?? live[0];
@@ -140,22 +148,30 @@ function agentConnection(
 export function buildDeviceRows(input: DeviceInput): DeviceRow[] {
   const agentsById = new Map(input.agents.map((a) => [a.id, a]));
   const personsById = new Map(input.persons.map((p) => [p.id, p]));
-  const assignmentsById = new Map(input.assignments.map((a) => [a.id, a]));
 
   const claimedAgents = new Set<string>();
   const rows: DeviceRow[] = input.devices.map((device) => {
-    const assignments = input.assignments.filter((a) => a.device_id === device.id);
+    const assignments = input.assignments.filter(
+      (a) => a.device_id === device.id && a.active,
+    );
     const inventory = input.connections.filter(
-      (c) => connectionDeviceId(c, assignmentsById) === device.id,
+      (c) => connectionDeviceId(c) === device.id,
     );
     const linkedAgentIds = [
-      ...new Set(assignments.map((a) => a.agent_id).filter((id): id is string => !!id)),
+      ...new Set(
+        [
+          ...assignments.map((a) => a.agent_id),
+          ...inventory.filter(isLive).map((c) => c.enrolled_agent_id),
+        ].filter((id): id is string => !!id),
+      ),
     ];
     linkedAgentIds.forEach((id) => claimedAgents.add(id));
 
     const people = assignments.flatMap((assignment) => {
       const person = personsById.get(assignment.person_id);
-      return person ? [{ assignmentId: assignment.id, person, role: assignment.role }] : [];
+      return person
+        ? [{ assignmentId: assignment.id, person, role: assignment.role }]
+        : [];
     });
 
     return {
@@ -199,5 +215,7 @@ export function buildDeviceRows(input: DeviceInput): DeviceRow[] {
 
 /** How many of the three connections are reporting right now. */
 export function connectedCount(row: DeviceRow): number {
-  return CONNECTION_KINDS.filter((kind) => row.connections[kind].state === "connected").length;
+  return CONNECTION_KINDS.filter(
+    (kind) => row.connections[kind].state === "connected",
+  ).length;
 }

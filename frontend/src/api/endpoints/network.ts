@@ -1,4 +1,11 @@
-import { delJson, get, patchJson, postJsonRes } from "@/api/client";
+import {
+  delJson,
+  get,
+  limitOffsetQuery,
+  patchJson,
+  postJsonRes,
+  putJson,
+} from "@/api/client";
 import type {
   NetworkAgentEnrollment,
   NetworkAssignment,
@@ -8,10 +15,22 @@ import type {
   NetworkConnectionStatus,
   NetworkDevice,
   NetworkDeviceType,
+  NetworkAuditRow,
+  NetworkDesiredPolicy,
+  NetworkGateway,
+  NetworkGatewayCredential,
+  NetworkGatewayCredentialIssued,
+  NetworkGatewayCredentialRequest,
+  NetworkGatewayKind,
+  NetworkGatewayReport,
   NetworkGrant,
   NetworkGrantName,
   NetworkHousehold,
+  NetworkPageParams,
   NetworkPerson,
+  NetworkPolicyDraft,
+  NetworkPolicySaved,
+  NetworkPolicyVersion,
   NetworkProvenance,
   Patch,
 } from "@/api/types";
@@ -24,38 +43,58 @@ const base = (household: string) => `/network/households/${household}`;
  * the dashboard's admin/operator/viewer roles never imply it.
  */
 export const networkEndpoints = {
-  networkHouseholds: (): Promise<{ households: NetworkHousehold[] }> => get("/network/households"),
-  networkHouseholdCreate: (body: { name: string }): Promise<{ household_id: string }> =>
+  networkHouseholds: (): Promise<{ households: NetworkHousehold[] }> =>
+    get("/network/households"),
+  networkHouseholdCreate: (body: {
+    name: string;
+    timezone?: string;
+  }): Promise<{ household_id: string }> =>
     postJsonRes("/network/households", body),
   /** Admin-only, audited, one-time: creates the first household and its first grant. */
-  networkBootstrap: (body: { name: string }): Promise<{ household_id: string }> =>
+  networkBootstrap: (body: {
+    name: string;
+    timezone?: string;
+  }): Promise<{ household_id: string }> =>
     postJsonRes("/network/bootstrap", body),
 
   networkPersons: (household: string): Promise<{ persons: NetworkPerson[] }> =>
     get(`${base(household)}/persons`),
   networkPersonCreate: (
     household: string,
-    body: { display_name: string; note?: string },
+    body: { display_name: string; note?: string; is_default_profile?: boolean },
   ): Promise<{ id: string }> => postJsonRes(`${base(household)}/persons`, body),
   networkPersonUpdate: (
     household: string,
     id: string,
-    body: { display_name?: string; note?: Patch<string> },
-  ): Promise<{ ok: boolean }> => patchJson(`${base(household)}/persons/${id}`, body),
+    body: {
+      display_name?: string;
+      note?: Patch<string>;
+      is_default_profile?: boolean;
+    },
+  ): Promise<{ ok: boolean }> =>
+    patchJson(`${base(household)}/persons/${id}`, body),
 
   networkDevices: (household: string): Promise<{ devices: NetworkDevice[] }> =>
     get(`${base(household)}/devices`),
   networkDeviceCreate: (
     household: string,
-    body: { canonical_key: string; label: string; device_type?: NetworkDeviceType },
+    body: {
+      canonical_key: string;
+      label: string;
+      device_type?: NetworkDeviceType;
+      shared?: boolean;
+    },
   ): Promise<{ id: string }> => postJsonRes(`${base(household)}/devices`, body),
   networkDeviceUpdate: (
     household: string,
     id: string,
-    body: { label?: string; device_type?: NetworkDeviceType },
-  ): Promise<{ ok: boolean }> => patchJson(`${base(household)}/devices/${id}`, body),
+    body: { label?: string; device_type?: NetworkDeviceType; shared?: boolean },
+  ): Promise<{ ok: boolean }> =>
+    patchJson(`${base(household)}/devices/${id}`, body),
 
-  networkAssignments: (household: string): Promise<{ assignments: NetworkAssignment[] }> =>
+  networkAssignments: (
+    household: string,
+  ): Promise<{ assignments: NetworkAssignment[] }> =>
     get(`${base(household)}/assignments`),
   networkAssignmentCreate: (
     household: string,
@@ -64,46 +103,70 @@ export const networkEndpoints = {
       device_id: string;
       agent_id?: string;
       role?: NetworkAssignmentRole;
+      active?: boolean;
       note?: string;
     },
-  ): Promise<{ id: string }> => postJsonRes(`${base(household)}/assignments`, body),
+  ): Promise<{ id: string }> =>
+    postJsonRes(`${base(household)}/assignments`, body),
   networkAssignmentUpdate: (
     household: string,
     id: string,
-    body: { agent_id?: Patch<string>; role?: NetworkAssignmentRole; note?: Patch<string> },
-  ): Promise<{ ok: boolean }> => patchJson(`${base(household)}/assignments/${id}`, body),
+    body: {
+      agent_id?: Patch<string>;
+      role?: NetworkAssignmentRole;
+      active?: boolean;
+      note?: Patch<string>;
+    },
+  ): Promise<{ ok: boolean }> =>
+    patchJson(`${base(household)}/assignments/${id}`, body),
 
-  networkConnections: (household: string): Promise<{ connections: NetworkConnection[] }> =>
+  networkConnections: (
+    household: string,
+  ): Promise<{ connections: NetworkConnection[] }> =>
     get(`${base(household)}/connections`),
   networkConnectionCreate: (
     household: string,
     body: {
-      assignment_id: string;
+      /** The device the connection is about (household-owned). No person is required. */
+      device_id: string;
+      assignment_id?: string;
+      enrolled_agent_id?: string;
       kind: NetworkConnectionKind;
       provenance?: NetworkProvenance;
       capabilities?: string[];
       status?: NetworkConnectionStatus;
       observed_at?: string;
+      last_seen_at?: string;
+      revoked_at?: string;
       note?: string;
     },
-  ): Promise<{ id: string }> => postJsonRes(`${base(household)}/connections`, body),
+  ): Promise<{ id: string }> =>
+    postJsonRes(`${base(household)}/connections`, body),
   networkConnectionUpdate: (
     household: string,
     id: string,
     body: {
+      assignment_id?: Patch<string>;
+      enrolled_agent_id?: Patch<string>;
       provenance?: NetworkProvenance;
       capabilities?: string[];
       status?: NetworkConnectionStatus;
       observed_at?: Patch<string>;
+      last_seen_at?: Patch<string>;
+      revoked_at?: Patch<string>;
       note?: Patch<string>;
     },
-  ): Promise<{ ok: boolean }> => patchJson(`${base(household)}/connections/${id}`, body),
+  ): Promise<{ ok: boolean }> =>
+    patchJson(`${base(household)}/connections/${id}`, body),
 
   networkAgentEnrollments: (
     household: string,
   ): Promise<{ enrollments: NetworkAgentEnrollment[] }> =>
     get(`${base(household)}/agent-enrollments`),
-  networkAgentEnroll: (household: string, body: { agent_id: string }): Promise<{ ok: boolean }> =>
+  networkAgentEnroll: (
+    household: string,
+    body: { agent_id: string },
+  ): Promise<{ ok: boolean }> =>
     postJsonRes(`${base(household)}/agent-enrollments`, body),
 
   networkGrants: (household: string): Promise<{ grants: NetworkGrant[] }> =>
@@ -111,10 +174,109 @@ export const networkEndpoints = {
   networkGrantCreate: (
     household: string,
     body: { user_id: string; grant: NetworkGrantName },
-  ): Promise<{ ok: boolean; created: boolean }> => postJsonRes(`${base(household)}/grants`, body),
+  ): Promise<{ ok: boolean; created: boolean }> =>
+    postJsonRes(`${base(household)}/grants`, body),
   networkGrantDelete: (
     household: string,
     userId: string,
     grant: NetworkGrantName,
-  ): Promise<{ ok: boolean }> => delJson(`${base(household)}/grants/${userId}/${grant}`),
+  ): Promise<{ ok: boolean }> =>
+    delJson(`${base(household)}/grants/${userId}/${grant}`),
+
+  // ─── Household audit (network_admin; newest first; no server-side filters) ───
+  networkAudit: (
+    household: string,
+    page?: NetworkPageParams,
+  ): Promise<{ rows: NetworkAuditRow[] }> =>
+    get(`${base(household)}/audit${limitOffsetQuery(page)}`),
+
+  // ─── Gateways: DNS / Proxy workers and their scoped credentials ──────────────
+  networkGateways: (
+    household: string,
+    params?: NetworkPageParams & { kind?: NetworkGatewayKind },
+  ): Promise<{ gateways: NetworkGateway[] }> => {
+    const q = new URLSearchParams(limitOffsetQuery(params).slice(1));
+    if (params?.kind) q.set("kind", params.kind);
+    const qs = q.toString();
+    return get(`${base(household)}/gateways${qs ? `?${qs}` : ""}`);
+  },
+  networkGatewayCreate: (
+    household: string,
+    body: { kind: NetworkGatewayKind; label: string },
+  ): Promise<{ id: string }> =>
+    postJsonRes(`${base(household)}/gateways`, body),
+  networkGatewayRevoke: (
+    household: string,
+    gateway: string,
+  ): Promise<{ ok: boolean }> =>
+    delJson(`${base(household)}/gateways/${gateway}`),
+  networkGatewayCredentials: (
+    household: string,
+    gateway: string,
+    page?: NetworkPageParams,
+  ): Promise<{ credentials: NetworkGatewayCredential[] }> =>
+    get(
+      `${base(household)}/gateways/${gateway}/credentials${limitOffsetQuery(page)}`,
+    ),
+  /** The returned `token` is shown once; it cannot be fetched again. */
+  networkGatewayCredentialIssue: (
+    household: string,
+    gateway: string,
+    body: NetworkGatewayCredentialRequest,
+  ): Promise<NetworkGatewayCredentialIssued> =>
+    postJsonRes(`${base(household)}/gateways/${gateway}/credentials`, body),
+  networkGatewayCredentialRotate: (
+    household: string,
+    gateway: string,
+    credential: string,
+    body: NetworkGatewayCredentialRequest,
+  ): Promise<NetworkGatewayCredentialIssued> =>
+    postJsonRes(
+      `${base(household)}/gateways/${gateway}/credentials/${credential}/rotate`,
+      body,
+    ),
+  networkGatewayCredentialRevoke: (
+    household: string,
+    gateway: string,
+    credential: string,
+  ): Promise<{ ok: boolean }> =>
+    delJson(`${base(household)}/gateways/${gateway}/credentials/${credential}`),
+  /** Heartbeat reports, newest first. Unverified observations, never proof of enforcement. */
+  networkGatewayReports: (
+    household: string,
+    gateway: string,
+    page?: NetworkPageParams,
+  ): Promise<{ reports: NetworkGatewayReport[] }> =>
+    get(
+      `${base(household)}/gateways/${gateway}/reports${limitOffsetQuery(page)}`,
+    ),
+
+  // ─── Versioned policy (saved proposals only) and desired assignment ──────────
+  networkPolicies: (
+    household: string,
+    page?: NetworkPageParams,
+  ): Promise<{ policies: NetworkPolicyVersion[]; count: number }> =>
+    get(`${base(household)}/policies${limitOffsetQuery(page)}`),
+  networkPolicyPublish: (
+    household: string,
+    body: NetworkPolicyDraft,
+  ): Promise<NetworkPolicySaved> =>
+    postJsonRes(`${base(household)}/policies`, body),
+  /** Copies a historical revision into a new saved revision. */
+  networkPolicyRollback: (
+    household: string,
+    body: { source_revision: number; expected_revision?: number },
+  ): Promise<NetworkPolicySaved> =>
+    postJsonRes(`${base(household)}/policies/rollback`, body),
+  networkGatewayDesiredPolicy: (
+    household: string,
+    gateway: string,
+  ): Promise<{ desired: NetworkDesiredPolicy | null }> =>
+    get(`${base(household)}/gateways/${gateway}/desired-policy`),
+  networkGatewayDesiredPolicySet: (
+    household: string,
+    gateway: string,
+    body: { revision: number },
+  ): Promise<{ desired: NetworkDesiredPolicy }> =>
+    putJson(`${base(household)}/gateways/${gateway}/desired-policy`, body),
 };

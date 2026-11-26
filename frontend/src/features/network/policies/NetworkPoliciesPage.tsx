@@ -1,4 +1,9 @@
+import { useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ShieldCheck } from "lucide-react";
+import { isApiError } from "@/api";
+import { networkQueries, useGatewayStatuses } from "@/api/queries/network";
+import { useNetworkHousehold } from "@/features/network/access/networkScope";
 import { SettingsPageHeader } from "@/features/settings/components/SettingsLayout";
 import { SettingsCardBody, SettingsSection } from "@/features/network/components/SettingsSection";
 import { Spinner } from "@vantyr/ui/components/spinner";
@@ -11,6 +16,85 @@ import { useOverviewQuery, usePolicyQuery } from "@/features/network/runtime/use
 import type { ScopedRules } from "@/features/network/runtime/types";
 import { PolicyLifecycle } from "./PolicyLifecycle";
 import { ProposalCard } from "./ProposalCard";
+import { GatewayAssignmentsStrip } from "./GatewayAssignmentsStrip";
+import { PolicyHistoryCard } from "./PolicyHistoryCard";
+import { PolicyComposer } from "./PolicyComposer";
+
+const PAGE_SIZE = 10;
+
+/**
+ * Real revision lifecycle from the server: history, per-gateway desired/reported, and a composer.
+ * It is independent of the runtime view below, which may be unavailable on a real server.
+ */
+function RevisionLifecycle() {
+  const household = useNetworkHousehold();
+  const runtimePolicy = usePolicyQuery();
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  const policies = useQuery({
+    ...networkQueries.policies(household.id, { limit }),
+    placeholderData: keepPreviousData,
+  });
+  const gateways = useGatewayStatuses(household.id);
+
+  if (policies.isPending) {
+    return (
+      <div className="flex items-center justify-center gap-2 rounded-xl border border-border/70 bg-card/10 py-12 text-sm text-muted-foreground">
+        <Spinner /> Loading…
+      </div>
+    );
+  }
+  if (policies.isError) {
+    const error = policies.error;
+    if (isApiError(error) && error.status === 404) {
+      return (
+        <UnavailableSection
+          title="Policy revisions"
+          reason="This server has no policy revision API yet."
+        />
+      );
+    }
+    if (isApiError(error) && error.status === 403) {
+      return (
+        <UnavailableSection
+          title="Policy revisions"
+          reason="You don’t have permission to manage policy for this household."
+        />
+      );
+    }
+    return (
+      <LoadFailedCard
+        message="Couldn’t load the policy history."
+        onRetry={() => void policies.refetch()}
+      />
+    );
+  }
+
+  const versions = [...policies.data.policies].sort((a, b) => b.revision - a.revision);
+  const runtime = runtimePolicy.data?.state === "ready" ? runtimePolicy.data.data : null;
+  return (
+    <>
+      <GatewayAssignmentsStrip
+        statuses={gateways.statuses}
+        isPending={gateways.isPending}
+        isError={gateways.isError}
+      />
+      <PolicyHistoryCard
+        household={household.id}
+        versions={versions}
+        statuses={gateways.statuses}
+        hasMore={versions.length >= limit}
+        loadingMore={policies.isFetching}
+        onLoadMore={() => setLimit((n) => n + PAGE_SIZE)}
+      />
+      <PolicyComposer
+        household={household.id}
+        timezone={household.timezone}
+        latest={versions[0]}
+        runtimeStart={runtime ? (runtime.proposal ?? runtime.applied) : null}
+      />
+    </>
+  );
+}
 
 function Scoped({ title, scopes }: { title: string; scopes: ScopedRules[] }) {
   return (
@@ -28,6 +112,25 @@ export function NetworkPoliciesPage() {
   const policy = usePolicyQuery();
   const overview = useOverviewQuery();
 
+  return (
+    <div className="space-y-8">
+      <SettingsPageHeader
+        title="Policies"
+        description="Revisions are saved first, assigned to gateways second, and only reported back by them. None of it is verified."
+      />
+      <RevisionLifecycle />
+      <RuntimePolicy policy={policy} overview={overview} />
+    </div>
+  );
+}
+
+function RuntimePolicy({
+  policy,
+  overview,
+}: {
+  policy: ReturnType<typeof usePolicyQuery>;
+  overview: ReturnType<typeof useOverviewQuery>;
+}) {
   if (policy.isPending || overview.isPending) {
     return (
       <div className="flex items-center justify-center gap-2 rounded-xl border border-border/70 bg-card/10 py-12 text-sm text-muted-foreground">
@@ -41,7 +144,7 @@ export function NetworkPoliciesPage() {
     );
   }
   if (policy.data.state === "unavailable") {
-    return <UnavailableSection title="Policies" reason={policy.data.reason} />;
+    return <UnavailableSection title="Policy in force" reason={policy.data.reason} />;
   }
   const { applied, proposal } = policy.data.data;
   const gateways = overview.data?.state === "ready" ? overview.data.data.gateways : [];
@@ -49,10 +152,6 @@ export function NetworkPoliciesPage() {
 
   return (
     <div className="space-y-8">
-      <SettingsPageHeader
-        title="Policies"
-        description="The policy that is in force, what is waiting to be, and where each stands."
-      />
       <PolicyLifecycle policy={policy.data.data} gateways={gateways} />
       {pending ? <ProposalCard applied={applied} proposal={proposal} /> : null}
       {applied ? (

@@ -40,7 +40,9 @@ export function InspectionCard({ inspection }: { inspection: ProxyInspection }) 
         <HelpTip label="About HTTPS inspection">
           Lets the proxy read encrypted web traffic so it can filter it. It needs every device to
           trust a certificate authority that only this server holds. Apps that pin their own
-          certificates stop working, and the private key never leaves the server.
+          certificates stop working, and the private key never leaves the server. HTTP/1.1 traffic
+          can be inspected. HTTP/2 and WebSocket connections are limited: they may pass through
+          uninspected or fail, so inspection does not mean full coverage.
         </HelpTip>
       }
     >
@@ -49,6 +51,7 @@ export function InspectionCard({ inspection }: { inspection: ProxyInspection }) 
         <Stepper
           step={step}
           showFooter={false}
+          indicator="dots"
           disableStepIndicators
           theme="dark"
           accentColor="var(--primary)"
@@ -59,12 +62,14 @@ export function InspectionCard({ inspection }: { inspection: ProxyInspection }) 
           >
             <div className="space-y-4 py-4 text-sm text-muted-foreground">
               <p>
-                Inspection is off. Turning it on creates the authority. Nothing is inspected yet.
+                Inspection is off by default. Turning it on creates the authority. Nothing is
+                inspected yet.
               </p>
               <SlideCommit
                 {...SLIDER}
                 label="Slide to turn on"
                 doneLabel="Turned on"
+                errorLabel="Couldn’t enable"
                 onConfirm={() => toggle.mutateAsync(true)}
               />
             </div>
@@ -76,7 +81,7 @@ export function InspectionCard({ inspection }: { inspection: ProxyInspection }) 
             <div className="space-y-4 py-4 text-sm">
               {inspection.caFingerprint ? (
                 <div className="space-y-1">
-                  <div className="text-muted-foreground">Public fingerprint</div>
+                  <div className="text-muted-foreground">Public fingerprint (read-only)</div>
                   <CopyValue text={inspection.caFingerprint} label="Fingerprint" mono />
                   <div className="text-muted-foreground">
                     Valid until <TimeAgo iso={inspection.caNotAfter} />
@@ -84,23 +89,63 @@ export function InspectionCard({ inspection }: { inspection: ProxyInspection }) 
                 </div>
               ) : null}
               <p className="text-muted-foreground">
-                {inspection.trustingDevices} of {inspection.totalDevices} devices report trusting
-                it. Until they do, inspection is not working for them.
+                <span className="font-medium text-foreground">Reported by devices:</span>{" "}
+                {inspection.trustingDevices} of {inspection.totalDevices} say they trust it. This is
+                what devices report, not something the server checked. Until they trust it,
+                inspection is not working for them.
               </p>
               <SlideCommit
                 {...SLIDER}
                 label="Slide to turn off"
                 doneLabel="Turned off"
+                errorLabel="Couldn’t disable"
                 onConfirm={() => toggle.mutateAsync(false)}
               />
             </div>
           </Step>
           <Step title="Inspecting" description="Devices that trust the authority are inspected.">
-            <p className="py-4 text-sm text-muted-foreground">
-              Inspection is active for devices that trust the authority.
-            </p>
+            <div className="space-y-4 py-4 text-sm text-muted-foreground">
+              <p>Inspection applies to devices that report trusting the authority.</p>
+              <SlideCommit
+                {...SLIDER}
+                label="Slide to turn off"
+                doneLabel="Turned off"
+                errorLabel="Couldn’t disable"
+                onConfirm={() => toggle.mutateAsync(false)}
+              />
+            </div>
           </Step>
         </Stepper>
+
+        <div className="space-y-2">
+          <h4 className="flex items-center gap-1.5 text-sm font-medium">
+            Inspection exceptions
+            <HelpTip label="About inspection exceptions">
+              An exception is one exact host and port that is not inspected, and it expires after at
+              most 7 days. Adding or editing exceptions is not available on this server yet.
+            </HelpTip>
+          </h4>
+          {inspection.exceptions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">None.</p>
+          ) : (
+            <ul className="divide-y divide-border/50">
+              {inspection.exceptions.map((exception) => (
+                <li
+                  key={exception.id}
+                  className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm"
+                >
+                  <span>
+                    <span className="font-mono text-[0.8125rem]">{exception.host}</span>
+                    <span className="text-muted-foreground"> — {exception.scopeLabel}</span>
+                  </span>
+                  <span className="text-[0.8125rem] text-muted-foreground">
+                    expires <TimeAgo iso={exception.expiresAt} />
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         {inspection.pinnedApps.length > 0 ? (
           <div className="space-y-2">
