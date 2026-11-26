@@ -1,5 +1,15 @@
 [workspace]
-members  = ["server", "protocol", "server/patches/web-push-native"]
+members  = [
+  "server",
+  "protocol",
+  "server/patches/web-push-native",
+  # Family network layer (step 1 compatibility spike). Kept as small, independent
+  # crates: a pure policy engine plus separate DNS and proxy protocol workers.
+  "crates/family-policy",
+  "crates/family-dns",
+  "crates/family-proxy",
+  "crates/gateway-compat-spike",
+]
 exclude  = ["agent"]   # built separately (cargo xwin for the Windows release); depends on ./protocol by path
 resolver = "2"
 

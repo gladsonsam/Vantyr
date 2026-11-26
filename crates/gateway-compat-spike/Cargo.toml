@@ -1,0 +1,19 @@
+[package]
+name = "gateway-compat-spike"
+version = "0.1.0"
+edition = "2021"
+description = "Executable compatibility spike: policy + Hickory DNS + Rama proxy contracts"
+publish = false
+
+[[bin]]
+name = "gateway-compat-spike"
+path = "src/main.rs"
+
+[dependencies]
+family-policy = { path = "../family-policy" }
+family-dns    = { path = "../family-dns" }
+family-proxy  = { path = "../family-proxy" }
+anyhow        = "=1.0.105"
+tokio         = { version = "=1.54.1", features = ["macros", "rt-multi-thread", "net", "time"] }
+chrono        = { version = "=0.4.45", features = ["clock"] }
+uuid          = { version = "=1.29.3", features = ["v4"] }

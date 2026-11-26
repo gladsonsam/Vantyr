@@ -1,0 +1,16 @@
+[package]
+name = "family-dns"
+version = "0.1.0"
+edition = "2021"
+description = "Hickory-based DNS worker for the Vantyr family network layer (loopback spike)"
+publish = false
+
+[dependencies]
+family-policy  = { path = "../family-policy" }
+anyhow         = "=1.0.105"
+async-trait    = "=0.1.92"
+tokio          = { version = "=1.54.1", features = ["macros", "rt", "net", "sync", "time"] }
+hickory-server = { version = "=0.26.4", features = ["resolver"] }
+hickory-resolver = { version = "=0.26.4", default-features = false, features = ["tokio", "serde"] }
+tracing        = "=0.1.44"
+tokio-util     = { version = "0.7", features = ["rt"] }

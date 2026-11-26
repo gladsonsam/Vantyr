@@ -1,0 +1,12 @@
+[package]
+name = "family-policy"
+version = "0.1.0"
+edition = "2021"
+description = "Pure, I/O-free policy model and evaluator for the Vantyr family network layer"
+publish = false
+
+[dependencies]
+serde      = { version = "=1.0.229", features = ["derive"] }
+uuid       = { version = "=1.29.3", features = ["v4", "serde"] }
+chrono     = { version = "=0.4.45", default-features = false, features = ["clock", "serde"] }
+chrono-tz  = { version = "=0.10.4", features = ["serde"] }
