@@ -478,14 +478,14 @@ No substantive UI or Supabase changes were made in this step.
 
 ### Active implementation tracks
 
-- Management reads: `4143aa3d` plus correction `b3cf8078` are under fresh
-  independent review. Policy body/current reads and semantic diff, filtered
-  audit totals/pagination, own enrollment contexts and scoped display labels
-  have 12 targeted tests and strict clippy passing. Diff scopes distinguish
+- Management reads: `4143aa3d` plus correction `b3cf8078` are independently
+  accepted. Policy body/current reads and semantic diff, filtered audit
+  totals/pagination, own enrollment contexts and scoped display labels have
+  12 targeted tests and strict clippy passing. Diff scopes distinguish
   safety baseline from device profiles, including a profile named baseline;
   empty-profile changes are reported. Pagination explicitly marks records
   beyond the offset cap instead of advertising an invalid next page. The
-  frontend receives exact contracts only after acceptance.
+  frontend has received the accepted routes, DTOs and permission table.
 - Controller-driven DNS: bounded authenticated HTTPS retrieval, compatibility
   checks and application through the accepted durable bundle/reload path.
   Commits `83c7bce3` and `567f1e0e` are independently accepted with all 48 DNS
