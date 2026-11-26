@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fmt;
 use std::net::SocketAddr;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,11 +19,14 @@ use anyhow::Result;
 use chrono::Utc;
 use family_policy::{evaluate, Action, EvaluationContext, Policy};
 use rama::dns::client::resolver::DnsAddressResolver;
+use rama::extensions::{ExtensionsRef, Ingress};
 use rama::graceful::Shutdown;
 use rama::http::client::{HttpClientService, HttpConnectRequestAdapter, HttpConnector};
 use rama::http::header;
 use rama::http::layer::remove_header::RemoveRequestHeaderLayer;
-use rama::http::layer::upgrade::{EagerHttpProxyConnector, UpgradeLayer, UpgradeService};
+use rama::http::layer::upgrade::{
+    EagerHttpProxyConnector, UpgradeLayer, UpgradeOutput, UpgradeService,
+};
 use rama::http::matcher::MethodMatcher;
 use rama::http::server::HttpServer;
 use rama::http::BodyLimitLayer;
@@ -38,8 +42,10 @@ use tokio::sync::{oneshot, Semaphore};
 use tokio::task::JoinHandle;
 
 use crate::auth::{proxy_authentication_required, AuthError, AuthState};
+use crate::bound::{BoundedIngress, IngressTimeoutOff};
 use crate::config::Config;
 use crate::egress::{EgressConnector, EgressPolicy};
+use crate::timeout_body::deadline_body;
 
 type Upgrade = UpgradeService<rama::service::BoxService<Request, Response, Infallible>, Response>;
 type Forward = BoxService<Request, Response, ForwardError>;
@@ -74,19 +80,22 @@ struct ProxyService {
     forward: Forward,
     heartbeat_ttl_secs: u64,
     max_body_bytes: usize,
+    body_deadline: Duration,
 }
 
 /// A transport-level concurrency gate. A full proxy drops the connection
-/// rather than queueing an unbounded number of pending accepted sockets.
+/// rather than queueing an unbounded number of pending accepted sockets. Each
+/// admitted socket also gets bounded read/write progress timers.
 #[derive(Clone)]
 struct LimitedService<S> {
     inner: S,
     permits: Arc<Semaphore>,
+    ingress_write_timeout: Duration,
 }
 
 impl<S> Service<rama::tcp::TcpStream> for LimitedService<S>
 where
-    S: Service<rama::tcp::TcpStream, Output = (), Error = rama::error::BoxError> + Clone,
+    S: Service<BoundedIngress, Output = (), Error = rama::error::BoxError> + Clone,
 {
     type Output = ();
     type Error = rama::error::BoxError;
@@ -96,7 +105,11 @@ where
             tracing::warn!("connection limit reached; dropping accepted connection");
             return Ok(());
         };
-        self.inner.serve(stream).await
+        let (bounded, bypass) = BoundedIngress::wrap(stream, self.ingress_write_timeout);
+        bounded
+            .extensions()
+            .insert(IngressTimeoutOff(bypass.clone()));
+        self.inner.serve(bounded).await
     }
 }
 
@@ -145,6 +158,40 @@ where
     }
 }
 
+/// Disarm the ingress socket timers once an eager CONNECT has established its
+/// upstream socket. From then on the raw tunnel's own idle budget applies.
+#[derive(Clone)]
+struct UpgradeBypassGuard<C> {
+    inner: C,
+}
+
+impl<C> UpgradeBypassGuard<C> {
+    fn new(inner: C) -> Self {
+        Self { inner }
+    }
+}
+
+impl<C> Service<Request> for UpgradeBypassGuard<C>
+where
+    C: Service<Request, Output = UpgradeOutput<Request, Response>, Error = Response> + Clone,
+{
+    type Output = C::Output;
+    type Error = C::Error;
+
+    async fn serve(&self, request: Request) -> Result<Self::Output, Self::Error> {
+        let bypass = request
+            .extensions()
+            .get_ref::<Ingress<rama::extensions::Extensions>>()
+            .and_then(|ingress| ingress.0.get_ref::<IngressTimeoutOff>())
+            .map(|marker| marker.0.clone());
+        let output = self.inner.serve(request).await?;
+        if let Some(bypass) = bypass {
+            bypass.store(true, Ordering::SeqCst);
+        }
+        Ok(output)
+    }
+}
+
 /// A running proxy listener. `stop()` triggers graceful shutdown so active
 /// connections and tunnels are closed rather than orphaned when the accept
 /// loop ends.
@@ -189,7 +236,7 @@ impl ProxyServer {
             .with_idle_timeout(Duration::from_secs(limits.tunnel_idle_secs))
             .with_first_byte_timeout(Duration::from_secs(limits.request_timeout_secs))
             .with_first_byte_timeout_start(FirstByteTimeoutStart::ClientFirstByte);
-        let connect = EagerHttpProxyConnector::new(egress.clone(), relay);
+        let connect = UpgradeBypassGuard::new(EagerHttpProxyConnector::new(egress.clone(), relay));
         let noop =
             service_fn(|_req: Request| async { Ok::<_, Infallible>(Response::new(Body::empty())) })
                 .boxed();
@@ -224,10 +271,15 @@ impl ProxyServer {
             forward,
             heartbeat_ttl_secs: Config::heartbeat_ttl_secs(),
             max_body_bytes: limits.max_body_bytes,
+            body_deadline: Duration::from_secs(limits.request_timeout_secs),
         };
 
         let mut http_server = HttpServer::new_http1(exec.clone());
         http_server.http1_mut().set_max_headers(64);
+        // A silent or partial request head must not hold the permit forever.
+        http_server
+            .http1_mut()
+            .set_header_read_timeout(Duration::from_secs(limits.request_timeout_secs));
         http_server
             .http1_mut()
             .try_set_max_buf_size(limits.max_header_bytes)
@@ -237,6 +289,9 @@ impl ProxyServer {
         let limited = LimitedService {
             inner: http_service,
             permits: Arc::new(Semaphore::new(limits.max_connections)),
+            // A little longer than the upstream deadline so an honest 504 or
+            // 502 can still be written before the client socket is failed.
+            ingress_write_timeout: Duration::from_secs(limits.request_timeout_secs + 1),
         };
 
         let tcp = RamaTcpListener::bind_address(config.bind_addr(), exec.clone())
@@ -364,9 +419,13 @@ impl ProxyService {
                 | &rama::http::Method::OPTIONS
         ) {
             let (parts, body) = request.into_parts();
-            let request = Request::from_parts(parts, body.limited(self.max_body_bytes));
+            let body = deadline_body(body.limited(self.max_body_bytes), self.body_deadline);
+            let request = Request::from_parts(parts, body);
             return match self.forward.serve(request).await {
-                Ok(response) => response,
+                // The response body is streamed after `conn.serve` returned;
+                // bound that stream too, or a stalled body escapes the
+                // request deadline entirely.
+                Ok(response) => response.map(|body| deadline_body(body, self.body_deadline)),
                 Err(ForwardError::Deadline) => {
                     let mut response = status(
                         StatusCode::GATEWAY_TIMEOUT,

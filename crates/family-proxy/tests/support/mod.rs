@@ -231,6 +231,87 @@ impl Drop for StallOrigin {
     }
 }
 
+/// Origin that returns a large body so a client which stops reading creates
+/// real write backpressure on the proxy's ingress socket.
+pub struct LargeOrigin {
+    pub addr: SocketAddr,
+    task: JoinHandle<()>,
+}
+
+impl LargeOrigin {
+    pub async fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 2048];
+                    let _ = stream.read(&mut buf).await;
+                    let body = "z".repeat(4 * 1024 * 1024);
+                    let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+                    if stream.write_all(head.as_bytes()).await.is_ok() {
+                        let _ = stream.write_all(body.as_bytes()).await;
+                    }
+                });
+            }
+        });
+        Self { addr, task }
+    }
+}
+
+impl Drop for LargeOrigin {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+/// Origin that sends a complete 200 head announcing a body and then stalls
+/// forever before writing any body bytes.
+pub struct StallBodyOrigin {
+    pub addr: SocketAddr,
+    pub hits: Arc<AtomicUsize>,
+    task: JoinHandle<()>,
+}
+
+impl StallBodyOrigin {
+    pub async fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let h = hits.clone();
+        let task = tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                h.fetch_add(1, Ordering::SeqCst);
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 4096];
+                    let _ = stream.read(&mut buf).await;
+                    let _ = stream
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n")
+                        .await;
+                    std::future::pending::<()>().await;
+                });
+            }
+        });
+        Self { addr, hits, task }
+    }
+
+    pub fn connections(&self) -> usize {
+        self.hits.load(Ordering::SeqCst)
+    }
+}
+
+impl Drop for StallBodyOrigin {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 /// Build a valid config with two pinned loopback destinations plus a
 /// policy-denied hostname. Every destination is a narrow explicit exception.
 pub fn test_config(origin: SocketAddr, echo: SocketAddr) -> Config {

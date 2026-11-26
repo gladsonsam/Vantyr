@@ -7,9 +7,26 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use family_policy::Effect;
-use family_proxy::{DestinationConfig, MatchSpec, ProxyServer, RuleSpec};
+use family_proxy::{Config, DestinationConfig, MatchSpec, ProxyServer, RuleSpec};
 use support::*;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+fn add_approved(config: &mut Config, host: &str, addr: std::net::SocketAddr) {
+    config.destinations.push(DestinationConfig {
+        host: host.into(),
+        port: addr.port(),
+        pin: Some(format!("127.0.0.1:{}", addr.port())),
+    });
+    config
+        .profiles
+        .get_mut("restricted")
+        .unwrap()
+        .push(RuleSpec {
+            effect: Effect::Allow,
+            matcher: MatchSpec::Suffix { value: host.into() },
+            reason: None,
+        });
+}
 
 fn http_get(authority: &str, path: &str, auth: Option<&str>) -> String {
     let auth = auth
@@ -478,4 +495,185 @@ async fn stopping_the_proxy_closes_active_tunnels() {
         0,
         "active tunnel left running after stop"
     );
+}
+
+#[tokio::test]
+async fn stalled_response_body_closes_and_releases_permit() {
+    let healthy = HttpOrigin::start().await;
+    let echo = EchoOrigin::start().await;
+    let stall = StallBodyOrigin::start().await;
+    let mut config = test_config_with_limits(healthy.addr, echo.addr, 1, 60);
+    config.limits.request_timeout_secs = 1;
+    add_approved(&mut config, "stallbody.test", stall.addr);
+    config.validate().unwrap();
+    let proxy = start_proxy(config).await;
+
+    let mut first = connect(proxy.bind_addr()).await;
+    send(
+        &mut first,
+        &http_get(
+            &format!("stallbody.test:{}", stall.addr.port()),
+            "/",
+            Some(GOOD_AUTH),
+        ),
+    )
+    .await;
+    let head = read_head(&mut first).await;
+    assert_eq!(
+        status_line(&head),
+        200,
+        "head arrives before the body: {head:?}"
+    );
+    assert_eq!(stall.connections(), 1);
+
+    // A stalled body cannot produce a new status after the head; the socket
+    // must close honestly and give up the single connection permit.
+    let mut buf = [0u8; 16];
+    let body = tokio::time::timeout(Duration::from_secs(3), first.read(&mut buf))
+        .await
+        .expect("stalled body must not hang");
+    assert!(
+        matches!(body, Ok(0) | Err(_)),
+        "stalled body must close the connection"
+    );
+    drop(first);
+
+    let mut second = connect(proxy.bind_addr()).await;
+    send(
+        &mut second,
+        &http_get(
+            &format!("origin.test:{}", healthy.addr.port()),
+            "/",
+            Some(GOOD_AUTH),
+        ),
+    )
+    .await;
+    let head = read_head(&mut second).await;
+    assert_eq!(
+        status_line(&head),
+        200,
+        "second client after body stall: {head:?}"
+    );
+    assert_eq!(healthy.connections(), 1);
+    proxy.stop().await;
+}
+
+#[tokio::test]
+async fn silent_and_partial_header_clients_release_the_permit() {
+    let healthy = HttpOrigin::start().await;
+    let echo = EchoOrigin::start().await;
+    let mut config = test_config_with_limits(healthy.addr, echo.addr, 1, 60);
+    config.limits.request_timeout_secs = 1;
+    config.validate().unwrap();
+    let proxy = start_proxy(config).await;
+
+    for partial in [
+        "",
+        "GET / HTTP/1.1\r\nHost: origin.test\r\nX-Partial: v\r\n",
+    ] {
+        let mut silent = connect(proxy.bind_addr()).await;
+        if !partial.is_empty() {
+            send(&mut silent, partial).await;
+        }
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+
+        let mut second = connect(proxy.bind_addr()).await;
+        send(
+            &mut second,
+            &http_get(
+                &format!("origin.test:{}", healthy.addr.port()),
+                "/",
+                Some(GOOD_AUTH),
+            ),
+        )
+        .await;
+        let head = read_head(&mut second).await;
+        assert_eq!(
+            status_line(&head),
+            200,
+            "second client after idle head: {head:?}"
+        );
+        drop(silent);
+    }
+    assert_eq!(healthy.connections(), 2);
+    proxy.stop().await;
+}
+
+#[tokio::test]
+async fn slow_request_body_is_bounded_and_releases_permit() {
+    let healthy = HttpOrigin::start().await;
+    let echo = EchoOrigin::start().await;
+    let mut config = test_config_with_limits(healthy.addr, echo.addr, 1, 60);
+    config.limits.request_timeout_secs = 1;
+    config.validate().unwrap();
+    let proxy = start_proxy(config).await;
+
+    let mut slow = connect(proxy.bind_addr()).await;
+    let head = format!(
+        "POST http://origin.test:{}/ HTTP/1.1\r\nHost: origin.test\r\nProxy-Authorization: {GOOD_AUTH}\r\nContent-Length: 100000\r\n\r\n",
+        healthy.addr.port()
+    );
+    send(&mut slow, &head).await;
+    send(&mut slow, &"x".repeat(16)).await;
+    let mut buf = [0u8; 64];
+    let result = tokio::time::timeout(Duration::from_secs(3), slow.read(&mut buf))
+        .await
+        .expect("slow body must not hang");
+    let text = String::from_utf8_lossy(&buf[..result.unwrap_or(0)]).to_string();
+    assert!(
+        text.is_empty() || status_line(&text) != 200,
+        "a stalled request body must not succeed: {text:?}"
+    );
+    drop(slow);
+
+    let mut second = connect(proxy.bind_addr()).await;
+    send(
+        &mut second,
+        &http_get(
+            &format!("origin.test:{}", healthy.addr.port()),
+            "/",
+            Some(GOOD_AUTH),
+        ),
+    )
+    .await;
+    let head = read_head(&mut second).await;
+    assert_eq!(
+        status_line(&head),
+        200,
+        "second client after slow body: {head:?}"
+    );
+    proxy.stop().await;
+}
+
+#[tokio::test]
+async fn stalled_reader_is_bounded_and_releases_permit() {
+    let large = LargeOrigin::start().await;
+    let echo = EchoOrigin::start().await;
+    let mut config = test_config_with_limits(large.addr, echo.addr, 1, 60);
+    config.limits.request_timeout_secs = 1;
+    config.validate().unwrap();
+    let proxy = start_proxy(config).await;
+
+    // Send a valid request but never read the large response.
+    let mut stalled = connect(proxy.bind_addr()).await;
+    send(
+        &mut stalled,
+        &http_get(
+            &format!("origin.test:{}", large.addr.port()),
+            "/",
+            Some(GOOD_AUTH),
+        ),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(4200)).await;
+
+    // A CONNECT proves the single permit was released by the stalled reader.
+    let mut tunnel = connect(proxy.bind_addr()).await;
+    send(
+        &mut tunnel,
+        &connect_req("echo.test", echo.addr.port(), Some(GOOD_AUTH)),
+    )
+    .await;
+    assert_eq!(status_line(&read_head(&mut tunnel).await), 200);
+    proxy.stop().await;
 }

@@ -16,9 +16,11 @@
 //! all user-facing names are Vantyr Network / Vantyr Proxy.
 
 pub mod auth;
+pub mod bound;
 pub mod config;
 pub mod egress;
 pub mod server;
+pub mod timeout_body;
 
 pub use auth::{AuthError, AuthState, AuthenticatedClient};
 pub use config::{
