@@ -141,7 +141,10 @@ pub struct PatchPersonBody {
     #[serde(default)]
     pub display_name: Option<String>,
     /// Omitted = keep; JSON null = clear; string = set.
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     pub note: Option<Option<String>>,
     #[serde(default)]
     pub is_default_profile: Option<bool>,
@@ -184,13 +187,19 @@ pub struct CreateAssignmentBody {
 #[derive(Debug, Deserialize)]
 pub struct PatchAssignmentBody {
     /// Omitted = keep; JSON null = unlink; UUID = link/replace.
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     pub agent_id: Option<Option<Uuid>>,
     #[serde(default)]
     pub role: Option<String>,
     #[serde(default)]
     pub active: Option<bool>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     pub note: Option<Option<String>>,
 }
 
@@ -224,9 +233,15 @@ pub struct CreateConnectionBody {
 #[derive(Debug, Deserialize)]
 pub struct PatchConnectionBody {
     /// Omitted = keep; JSON null = clear; UUID = set (validated in scope).
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     pub assignment_id: Option<Option<Uuid>>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     pub enrolled_agent_id: Option<Option<Uuid>>,
     #[serde(default)]
     pub provenance: Option<String>,
@@ -234,13 +249,25 @@ pub struct PatchConnectionBody {
     pub capabilities: Option<Vec<String>>,
     #[serde(default)]
     pub status: Option<String>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     pub observed_at: Option<Option<DateTime<Utc>>>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     pub last_seen_at: Option<Option<DateTime<Utc>>>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     pub revoked_at: Option<Option<DateTime<Utc>>>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     pub note: Option<Option<String>>,
 }
 
@@ -372,6 +399,37 @@ pub fn normalize_capabilities(raw: &Option<Vec<String>>) -> Result<Vec<String>, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nullable_patch_distinguishes_omitted_null_and_value() {
+        use serde_json::{from_value, json};
+        let omitted: PatchConnectionBody = from_value(json!({"status": "active"})).unwrap();
+        assert_eq!(omitted.revoked_at, None);
+        let clear: PatchConnectionBody = from_value(json!({
+            "status": "active", "revoked_at": null, "assignment_id": null,
+            "enrolled_agent_id": null, "observed_at": null, "last_seen_at": null, "note": null
+        }))
+        .unwrap();
+        assert_eq!(clear.revoked_at, Some(None));
+        assert_eq!(clear.assignment_id, Some(None));
+        assert_eq!(clear.enrolled_agent_id, Some(None));
+        assert_eq!(clear.observed_at, Some(None));
+        assert_eq!(clear.last_seen_at, Some(None));
+        assert_eq!(clear.note, Some(None));
+        let id = Uuid::new_v4();
+        let set: PatchConnectionBody =
+            from_value(json!({"assignment_id": id, "revoked_at": "2026-11-26T10:00:00Z"})).unwrap();
+        assert_eq!(set.assignment_id, Some(Some(id)));
+        assert!(set.revoked_at.flatten().is_some());
+        let person: PatchPersonBody = from_value(json!({"note": null})).unwrap();
+        assert_eq!(person.note, Some(None));
+        let assignment: PatchAssignmentBody =
+            from_value(json!({"agent_id": null, "note": null})).unwrap();
+        assert_eq!(assignment.agent_id, Some(None));
+        assert_eq!(assignment.note, Some(None));
+        assert!(from_value::<PatchConnectionBody>(json!({"revoked_at": "not-a-date"})).is_err());
+        assert!(from_value::<PatchAssignmentBody>(json!({"agent_id": "not-a-uuid"})).is_err());
+    }
 
     #[test]
     fn canonical_key_is_normalized_and_capped() {

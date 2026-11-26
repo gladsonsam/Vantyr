@@ -674,6 +674,25 @@ async fn tv_device_owns_dns_connection_without_person_or_assignment(pool: PgPool
     assert_eq!(s, 200);
     assert_eq!(b["connections"][0]["status"], "revoked");
     assert!(!b["connections"][0]["revoked_at"].is_null());
+
+    // Omission preserves the timestamp; an explicit JSON null clears it.
+    let path = format!("/api/network/households/{hid}/connections/{cid}");
+    let (s, b) = owner.patch(&path, json!({ "status": "active" })).await;
+    assert_eq!(s, 200, "{b}");
+    let (_, b) = owner
+        .get(&format!("/api/network/households/{hid}/connections"))
+        .await;
+    assert!(!b["connections"][0]["revoked_at"].is_null());
+    let (s, b) = owner
+        .patch(&path, json!({ "status": "active", "revoked_at": null }))
+        .await;
+    assert_eq!(s, 200, "{b}");
+    let (s, b) = owner
+        .get(&format!("/api/network/households/{hid}/connections"))
+        .await;
+    assert_eq!(s, 200);
+    assert_eq!(b["connections"][0]["status"], "active");
+    assert!(b["connections"][0]["revoked_at"].is_null());
     handle.abort();
 }
 
