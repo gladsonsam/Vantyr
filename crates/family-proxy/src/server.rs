@@ -511,17 +511,29 @@ impl ProxyService {
         let Some((host, path)) = target(&request) else {
             return status(StatusCode::BAD_REQUEST, "missing request authority");
         };
-        let Some(device) = self.devices.get(&client.device_id) else {
+        let Some(base_device) = self.devices.get(&client.device_id) else {
             return status(
                 StatusCode::FORBIDDEN,
                 "no device is linked to this credential",
             );
         };
+        // A bootstrap client may carry an explicit static profile override.
+        // Apply it exactly as `Config::device_for` did before the centrally
+        // issued credential path was added; a centrally issued credential has
+        // no override and keeps the device default.
+        let device = match client.profile.as_deref() {
+            Some(profile) => {
+                let mut overridden = base_device.clone();
+                overridden.default_profile = profile.to_owned();
+                overridden
+            }
+            None => base_device.clone(),
+        };
         let decision = evaluate(
             &self.policy,
             &EvaluationContext {
                 now: Utc::now(),
-                device,
+                device: &device,
                 session: client.verified.as_ref().map(|v| &v.session),
                 assignments: client
                     .verified

@@ -106,7 +106,22 @@ never authenticate another.
 `evidence_household_mismatch`, `evidence_device_mismatch`,
 `evidence_generation_mismatch`, `evidence_kind_mismatch`,
 `evidence_no_verified_person`, `evidence_no_assignment`,
-`evidence_bound_exceeded`.
+`evidence_bound_exceeded`, `evidence_duplicate`, `evidence_nonce_conflict`.
+
+Replay state belongs to the receipt identity, not to a separate nonce map: a
+still-live receipt keeps denying replays through pruning and the bounded-capacity
+path, and a duplicate session id or nonce cannot reset consumption. Expired and
+revoked receipts are reclaimed only after their audit retention; when every slot
+is still live, issuance fails closed with `evidence_bound_exceeded` rather than
+evicting valid replay protection. The same bounded failure/cooldown tracker
+covers bootstrap and centrally issued credentials plus failed evidence checks,
+keyed only by the public credential id — no secret or identity enters it.
+
+Evidence is deliberately **single-use at authentication time**: the receipt is
+consumed after all scope checks succeed and before target/policy/body/TLS
+evaluation. A request that is denied later still consumes it; there is no
+post-denial "give it back" path that would introduce a time-of-check/time-of-use
+window. This fail-closed semantic is covered by tests.
 
 ## 6. Server seam — precise requirements for parent implementation/review
 

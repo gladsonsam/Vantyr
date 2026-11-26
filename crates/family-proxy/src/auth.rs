@@ -232,18 +232,29 @@ impl AuthState {
         }
         let presented = presented.ok_or(AuthError::Missing)?;
         let store = self.credentials.as_ref().ok_or(AuthError::Missing)?;
+        // Centrally issued credentials share the same bounded failure/cooldown
+        // tracker as bootstrap credentials, keyed by the public credential id.
+        let username = presented.id.to_string();
+        if self.blocked(&username) {
+            return Err(AuthError::Invalid);
+        }
         let allowed_devices: BTreeSet<Uuid> = self.device_kinds.keys().copied().collect();
         let scope = CredentialScope {
             household_id: self.household_id,
             allowed_devices: &allowed_devices,
             command,
         };
-        let credential = store
-            .verify(&presented, &scope, now)
-            .map_err(AuthError::Credential)?;
+        let credential = match store.verify(&presented, &scope, now) {
+            Ok(credential) => credential,
+            Err(failure) => {
+                self.record_failure(&username);
+                return Err(AuthError::Credential(failure));
+            }
+        };
         // The authority-issued kind must match the configured device: a shared
         // device can never be treated as a personal one by a stale credential.
         if self.device_kinds.get(&credential.device_id) != Some(&credential.household_kind) {
+            self.record_failure(&username);
             return Err(AuthError::Credential(CredentialFailure::WrongKind));
         }
         let verified = match evidence_raw {
@@ -256,14 +267,20 @@ impl AuthState {
                     command,
                     assignments: &self.assignments,
                 };
-                Some(
-                    self.evidence
-                        .verify(raw.as_bytes(), now, &expectation)
-                        .map_err(AuthError::Evidence)?,
-                )
+                match self.evidence.verify(raw.as_bytes(), now, &expectation) {
+                    Ok(verified) => Some(verified),
+                    Err(failure) => {
+                        self.record_failure(&username);
+                        return Err(AuthError::Evidence(failure));
+                    }
+                }
             }
             None => None,
         };
+        self.attempts
+            .lock()
+            .expect("auth attempt lock")
+            .remove(&username);
         Ok(AuthenticatedClient {
             id: credential.id,
             device_id: credential.device_id.to_string(),
@@ -282,17 +299,8 @@ impl AuthState {
             return Err(AuthError::Missing);
         };
         let username = basic.username().to_owned();
-        {
-            let mut attempts = self.attempts.lock().expect("auth attempt lock");
-            let now = Instant::now();
-            self.prune(&mut attempts, now);
-            if attempts
-                .get(&username)
-                .and_then(|attempt| attempt.blocked_until)
-                .is_some_and(|until| until > now)
-            {
-                return Err(AuthError::Invalid);
-            }
+        if self.blocked(&username) {
+            return Err(AuthError::Invalid);
         }
         match self.verify(basic) {
             Ok(client) => {
@@ -325,6 +333,17 @@ impl AuthState {
             Some(client) if matched => Ok(client),
             _ => Err(AuthError::Invalid),
         }
+    }
+
+    /// Shared cooldown gate for bootstrap and centrally issued credentials.
+    fn blocked(&self, username: &str) -> bool {
+        let mut attempts = self.attempts.lock().expect("auth attempt lock");
+        let now = Instant::now();
+        self.prune(&mut attempts, now);
+        attempts
+            .get(username)
+            .and_then(|attempt| attempt.blocked_until)
+            .is_some_and(|until| until > now)
     }
 
     fn prune(&self, attempts: &mut BTreeMap<String, Attempt>, now: Instant) {
@@ -491,5 +510,76 @@ mod tests {
         assert!(!format!("{auth:?}").contains(TOKEN));
         assert!(!format!("{client:?}").contains(TOKEN));
         assert!(format!("{client:?}").contains("<redacted>"));
+    }
+
+    #[test]
+    fn central_credential_failures_share_the_bounded_cooldown() {
+        let config = Config::parse(VALID.as_bytes()).unwrap();
+        let store = Arc::new(CredentialStore::new());
+        let (id, secret) = store
+            .issue(
+                Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap(),
+                Uuid::parse_str("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").unwrap(),
+                1,
+                HouseholdKind::Shared, // the VALID device has shared=true by default
+                &[crate::credentials::COMMAND_PROXY_HTTP],
+                3600,
+                Utc::now(),
+            )
+            .unwrap();
+        let auth = AuthState::with_session_auth(
+            &config,
+            AuthPolicy {
+                max_failures: 2,
+                window: Duration::from_secs(60),
+                cooldown: Duration::from_millis(80),
+                max_tracked: 8,
+            },
+            store,
+            Arc::new(NoEvidenceVerifier),
+            vec![],
+        );
+        let request = |secret: &str| {
+            let mut request = Request::new(());
+            let basic = Basic::try_from(format!("{id}:{secret}").as_str()).unwrap();
+            request
+                .headers_mut()
+                .typed_insert(ProxyAuthorization(basic));
+            request
+        };
+        let wrong = request("pv1-wrong-wrong-wrong-wrong-wrong");
+        for _ in 0..2 {
+            assert_eq!(
+                auth.authenticate_with_session(
+                    &wrong,
+                    None,
+                    crate::credentials::COMMAND_PROXY_HTTP,
+                    Utc::now(),
+                )
+                .unwrap_err(),
+                AuthError::Credential(CredentialFailure::InvalidSecret)
+            );
+        }
+        let good = request(secret.expose());
+        assert_eq!(
+            auth.authenticate_with_session(
+                &good,
+                None,
+                crate::credentials::COMMAND_PROXY_HTTP,
+                Utc::now(),
+            )
+            .unwrap_err(),
+            AuthError::Invalid,
+            "a valid secret is still blocked while the cooldown is active"
+        );
+        std::thread::sleep(Duration::from_millis(120));
+        assert!(auth
+            .authenticate_with_session(
+                &good,
+                None,
+                crate::credentials::COMMAND_PROXY_HTTP,
+                Utc::now(),
+            )
+            .is_ok());
     }
 }

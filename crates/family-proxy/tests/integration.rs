@@ -8,6 +8,8 @@ use std::time::{Duration, Instant};
 
 use family_policy::Effect;
 use family_proxy::{Config, DestinationConfig, MatchSpec, ProxyServer, RuleSpec};
+use rama::http::headers::{HeaderEncode, ProxyAuthorization};
+use rama::net::user::Basic;
 use support::*;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -675,5 +677,133 @@ async fn stalled_reader_is_bounded_and_releases_permit() {
     )
     .await;
     assert_eq!(status_line(&read_head(&mut tunnel).await), 200);
+    proxy.stop().await;
+}
+
+fn basic_auth(id: &str, token: &str) -> String {
+    let basic = Basic::try_from(format!("{id}:{token}").as_str()).unwrap();
+    let mut values: Vec<rama::http::HeaderValue> = Vec::new();
+    HeaderEncode::encode(&ProxyAuthorization(basic), &mut values);
+    values[0].to_str().unwrap().to_owned()
+}
+
+#[tokio::test]
+async fn per_client_profile_override_survives_on_http_and_connect() {
+    // Two bootstrap clients share ONE device. The device default allows
+    // origin/echo and denies blocked; the narrow client override reverses that.
+    const DEFAULT_ID: &str = "22222222-3333-4444-5555-666666666666";
+    const NARROW_ID: &str = "33333333-4444-5555-6666-777777777777";
+    let origin = HttpOrigin::start().await;
+    let echo = EchoOrigin::start().await;
+    let value = serde_json::json!({
+        "household_id": "11111111-2222-3333-4444-555555555555",
+        "policy_revision": 1,
+        "bind": { "address": "127.0.0.1", "port": 0 },
+        "limits": { "max_connections": 128, "max_header_bytes": 16384,
+            "max_body_bytes": 65536, "connect_timeout_ms": 1000,
+            "request_timeout_secs": 2, "tunnel_idle_secs": 60 },
+        "profiles": {
+            "restricted": [
+                { "effect": "allow", "match": { "type": "suffix", "value": "origin.test" } },
+                { "effect": "allow", "match": { "type": "suffix", "value": "echo.test" } },
+                { "effect": "deny",  "match": { "type": "suffix", "value": "blocked.test" } }
+            ],
+            "narrow": [
+                { "effect": "deny",  "match": { "type": "suffix", "value": "origin.test" } },
+                { "effect": "deny",  "match": { "type": "suffix", "value": "echo.test" } },
+                { "effect": "allow", "match": { "type": "suffix", "value": "blocked.test" } }
+            ]
+        },
+        "default_device_profile": "restricted",
+        "devices": [{
+            "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "default_profile": "restricted"
+        }],
+        "clients": [
+            { "id": DEFAULT_ID, "token": "vantyr-proxy-bootstrap-token-0001",
+              "device_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" },
+            { "id": NARROW_ID, "token": "vantyr-proxy-bootstrap-token-0002",
+              "device_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "profile": "narrow" }
+        ],
+        "destinations": [
+            { "host": "origin.test",  "port": origin.addr.port(), "pin": format!("127.0.0.1:{}", origin.addr.port()) },
+            { "host": "echo.test",    "port": echo.addr.port(),   "pin": format!("127.0.0.1:{}", echo.addr.port()) },
+            { "host": "blocked.test", "port": origin.addr.port(), "pin": format!("127.0.0.1:{}", origin.addr.port()) }
+        ]
+    });
+    let config = Config::parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+    assert_eq!(
+        config.device_for(&config.clients[1]).default_profile,
+        "narrow"
+    );
+    let proxy = start_proxy(config).await;
+    let narrow = basic_auth(NARROW_ID, "vantyr-proxy-bootstrap-token-0002");
+    let default_client = basic_auth(DEFAULT_ID, "vantyr-proxy-bootstrap-token-0001");
+
+    // HTTP: narrow denies an origin the device default allows.
+    let mut client = connect(proxy.bind_addr()).await;
+    send(
+        &mut client,
+        &http_get(
+            &format!("origin.test:{}", origin.addr.port()),
+            "/",
+            Some(&narrow),
+        ),
+    )
+    .await;
+    assert_eq!(status_line(&read_head(&mut client).await), 403);
+    // HTTP: the override also allows what the device default denies.
+    let mut client = connect(proxy.bind_addr()).await;
+    send(
+        &mut client,
+        &http_get(
+            &format!("blocked.test:{}", origin.addr.port()),
+            "/",
+            Some(&narrow),
+        ),
+    )
+    .await;
+    assert_eq!(status_line(&read_head(&mut client).await), 200);
+    // HTTP: the default-profile client keeps its original behaviour.
+    let mut client = connect(proxy.bind_addr()).await;
+    send(
+        &mut client,
+        &http_get(
+            &format!("origin.test:{}", origin.addr.port()),
+            "/",
+            Some(&default_client),
+        ),
+    )
+    .await;
+    assert_eq!(status_line(&read_head(&mut client).await), 200);
+    let mut client = connect(proxy.bind_addr()).await;
+    send(
+        &mut client,
+        &http_get(
+            &format!("blocked.test:{}", origin.addr.port()),
+            "/",
+            Some(&default_client),
+        ),
+    )
+    .await;
+    assert_eq!(status_line(&read_head(&mut client).await), 403);
+
+    // CONNECT: the override applies before the tunnel is acknowledged.
+    let mut client = connect(proxy.bind_addr()).await;
+    send(
+        &mut client,
+        &connect_req("echo.test", echo.addr.port(), Some(&narrow)),
+    )
+    .await;
+    assert_eq!(status_line(&read_head(&mut client).await), 403);
+    assert_eq!(echo.connections(), 0, "no tunnel for the narrow client");
+    let mut client = connect(proxy.bind_addr()).await;
+    send(
+        &mut client,
+        &connect_req("echo.test", echo.addr.port(), Some(&default_client)),
+    )
+    .await;
+    assert_eq!(status_line(&read_head(&mut client).await), 200);
+    assert_eq!(echo.connections(), 1);
     proxy.stop().await;
 }

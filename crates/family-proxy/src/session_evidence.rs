@@ -39,7 +39,8 @@ pub const SESSION_COMMAND_HTTP: &str = "proxy_http";
 pub const SESSION_EVIDENCE_HEADER: &str = "x-vantyr-session-evidence";
 pub const MAX_EVIDENCE_BYTES: usize = 4096;
 pub const MAX_NONCE_CHARS: usize = 64;
-pub const MAX_CONSUMED_NONCES: usize = 4096;
+/// Bound on retained receipts. When every slot is still live, issuance fails
+/// closed instead of evicting replay protection for a valid receipt.
 pub const MAX_EVIDENCE_RETAINED: usize = 1024;
 
 /// Bounded, structured evidence. `verified_person` is optional on purpose: a
@@ -106,6 +107,8 @@ pub enum EvidenceFailure {
     NoVerifiedPerson,
     NoAssignment,
     BoundExceeded,
+    DuplicateEvidence,
+    NonceConflict,
 }
 
 impl EvidenceFailure {
@@ -127,6 +130,8 @@ impl EvidenceFailure {
             Self::NoVerifiedPerson => "evidence_no_verified_person",
             Self::NoAssignment => "evidence_no_assignment",
             Self::BoundExceeded => "evidence_bound_exceeded",
+            Self::DuplicateEvidence => "evidence_duplicate",
+            Self::NonceConflict => "evidence_nonce_conflict",
         }
     }
 }
@@ -191,31 +196,41 @@ impl SessionEvidenceVerifier for NoEvidenceVerifier {
     }
 }
 
+/// Replay state belongs to the receipt itself, never to a separate map that
+/// could be evicted by nonce ordering or wall-clock retention. A receipt keeps
+/// denying replays for its whole live lifetime and through its audit retention.
 #[derive(Clone)]
 struct EvidenceEntry {
     digest: String,
+    nonce: String,
     revoked: bool,
+    revoked_at: Option<DateTime<Utc>>,
     issued_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+    consumed_at: Option<DateTime<Utc>>,
 }
 
 impl fmt::Debug for EvidenceEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("EvidenceEntry")
             .field("digest", &"<redacted>")
+            .field("nonce", &"<redacted>")
             .field("revoked", &self.revoked)
+            .field("revoked_at", &self.revoked_at)
             .field("issued_at", &self.issued_at)
+            .field("expires_at", &self.expires_at)
+            .field("consumed_at", &self.consumed_at)
             .finish()
     }
 }
 
 /// An in-memory authority for issued session evidence. It registers only the
-/// digest, tracks consumed nonces for replay protection, and applies every
-/// scope check at verification time. This is a real, independently testable
-/// authority — not a stub and not a server claim.
+/// digest, binds each nonce to one receipt identity, and applies every scope
+/// check at verification time. This is a real, independently testable authority
+/// — not a stub and not a server claim.
 #[derive(Clone)]
 pub struct LocalEvidenceVerifier {
     entries: Arc<Mutex<BTreeMap<Uuid, EvidenceEntry>>>,
-    consumed: Arc<Mutex<BTreeMap<String, DateTime<Utc>>>>,
 }
 
 impl Default for LocalEvidenceVerifier {
@@ -227,10 +242,8 @@ impl Default for LocalEvidenceVerifier {
 impl fmt::Debug for LocalEvidenceVerifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let entries = self.entries.lock().map(|m| m.len()).unwrap_or(0);
-        let consumed = self.consumed.lock().map(|m| m.len()).unwrap_or(0);
         f.debug_struct("LocalEvidenceVerifier")
             .field("entries", &entries)
-            .field("consumed_nonces", &consumed)
             .finish_non_exhaustive()
     }
 }
@@ -239,12 +252,13 @@ impl LocalEvidenceVerifier {
     pub fn new() -> Self {
         Self {
             entries: Arc::new(Mutex::new(BTreeMap::new())),
-            consumed: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 
     /// Issue evidence from an authority that verified the person. Only the
     /// digest is registered; the canonical JSON is returned once to the caller.
+    /// A duplicate session id or a nonce already owned by any retained receipt
+    /// is rejected rather than silently resetting replay state.
     pub fn issue(&self, evidence: &SessionEvidence) -> Result<Vec<u8>, EvidenceFailure> {
         if !evidence.shape_valid() {
             return Err(EvidenceFailure::Malformed);
@@ -254,22 +268,34 @@ impl LocalEvidenceVerifier {
             return Err(EvidenceFailure::Malformed);
         }
         let mut entries = self.entries.lock().expect("evidence entry lock");
-        if entries.len() >= MAX_EVIDENCE_RETAINED && !entries.contains_key(&evidence.session_id) {
+        if entries.contains_key(&evidence.session_id) {
+            return Err(EvidenceFailure::DuplicateEvidence);
+        }
+        if entries.values().any(|entry| entry.nonce == evidence.nonce) {
+            return Err(EvidenceFailure::NonceConflict);
+        }
+        if entries.len() >= MAX_EVIDENCE_RETAINED {
+            // Every slot may still be live. Never evict replay protection for a
+            // valid receipt to make room; fail closed with a bounded code.
             return Err(EvidenceFailure::BoundExceeded);
         }
         entries.insert(
             evidence.session_id,
             EvidenceEntry {
                 digest: SessionEvidence::digest(&bytes),
+                nonce: evidence.nonce.clone(),
                 revoked: false,
+                revoked_at: None,
                 issued_at: evidence.issued_at,
+                expires_at: evidence.expires_at,
+                consumed_at: None,
             },
         );
         Ok(bytes)
     }
 
     /// Revoke issued evidence by session id. A revoked receipt cannot be replayed.
-    pub fn revoke(&self, session_id: Uuid) -> bool {
+    pub fn revoke(&self, session_id: Uuid, now: DateTime<Utc>) -> bool {
         let mut entries = self.entries.lock().expect("evidence entry lock");
         let Some(entry) = entries.get_mut(&session_id) else {
             return false;
@@ -278,26 +304,23 @@ impl LocalEvidenceVerifier {
             false
         } else {
             entry.revoked = true;
+            entry.revoked_at = Some(now);
             true
         }
     }
 
-    /// Drop stale evidence and consumed nonces. Keeps bounded even under a
-    /// long-running worker with many sign-outs.
+    /// Drop only receipts that are safely expired or deactivated plus their
+    /// retention window. A still-live receipt keeps its replay state even if
+    /// `retention_secs` is zero and even if its nonce sorts after newer ones.
     pub fn prune(&self, now: DateTime<Utc>, retention_secs: u64) {
-        let cutoff = now - chrono::Duration::seconds(retention_secs.min(30 * 24 * 60 * 60) as i64);
-        {
-            let mut entries = self.entries.lock().expect("evidence entry lock");
-            entries.retain(|_, entry| entry.issued_at >= cutoff);
-        }
-        let mut consumed = self.consumed.lock().expect("evidence nonce lock");
-        consumed.retain(|_, at| *at >= cutoff);
-        while consumed.len() > MAX_CONSUMED_NONCES {
-            let Some(oldest) = consumed.keys().next().cloned() else {
-                break;
-            };
-            consumed.remove(&oldest);
-        }
+        let retention = chrono::Duration::seconds(retention_secs.min(30 * 24 * 60 * 60) as i64);
+        let mut entries = self.entries.lock().expect("evidence entry lock");
+        entries.retain(|_, entry| match entry.revoked_at {
+            // Revoked is deactivated: reclaim after its own retention window.
+            Some(revoked_at) => now < revoked_at + retention,
+            // Live receipt: keep replay state through expiry + retention.
+            None => now < entry.expires_at + retention,
+        });
     }
 }
 
@@ -318,16 +341,13 @@ impl SessionEvidenceVerifier for LocalEvidenceVerifier {
         }
         // Constant-time digest comparison for both known and unknown ids.
         let computed = SessionEvidence::digest(raw);
-        let entries = self.entries.lock().expect("evidence entry lock");
-        let dummy = "0".repeat(DIGEST_CHARS);
-        let entry = entries.get(&evidence.session_id);
-        let stored = entry.map(|e| e.digest.as_str()).unwrap_or(&dummy);
-        let matched = stored.len() == DIGEST_CHARS
-            && computed.len() == DIGEST_CHARS
-            && ct_eq_bytes(computed.as_bytes(), stored.as_bytes());
-        let Some(entry) = entry else {
+        let mut entries = self.entries.lock().expect("evidence entry lock");
+        let Some(entry) = entries.get_mut(&evidence.session_id) else {
             return Err(EvidenceFailure::UnknownEvidence);
         };
+        let matched = computed.len() == DIGEST_CHARS
+            && entry.digest.len() == DIGEST_CHARS
+            && ct_eq_bytes(computed.as_bytes(), entry.digest.as_bytes());
         if !matched {
             return Err(EvidenceFailure::InvalidDigest);
         }
@@ -336,6 +356,10 @@ impl SessionEvidenceVerifier for LocalEvidenceVerifier {
         }
         if now >= evidence.expires_at || now < evidence.issued_at {
             return Err(EvidenceFailure::Expired);
+        }
+        // The receipt nonce must be the one registered for this exact session.
+        if entry.nonce != evidence.nonce {
+            return Err(EvidenceFailure::InvalidDigest);
         }
         if evidence.household_id != expected.household_id {
             return Err(EvidenceFailure::HouseholdMismatch);
@@ -373,23 +397,14 @@ impl SessionEvidenceVerifier for LocalEvidenceVerifier {
         if person.is_some() && assignments.is_empty() {
             return Err(EvidenceFailure::NoAssignment);
         }
-        drop(entries);
-
-        // Single-use nonce: a replayed receipt cannot establish a second
-        // session even if its digest is still registered.
-        {
-            let mut consumed = self.consumed.lock().expect("evidence nonce lock");
-            if consumed.contains_key(&evidence.nonce) {
-                return Err(EvidenceFailure::Replay);
-            }
-            consumed.insert(evidence.nonce.clone(), now);
-            while consumed.len() > MAX_CONSUMED_NONCES {
-                let Some(oldest) = consumed.keys().next().cloned() else {
-                    break;
-                };
-                consumed.remove(&oldest);
-            }
+        // Single-use: consume only after every scope check succeeds. The check
+        // and state change share one lock, so concurrent presentations cannot
+        // both succeed. A request that later fails policy still consumes the
+        // receipt — this deliberate fail-closed semantics is documented.
+        if entry.consumed_at.is_some() {
+            return Err(EvidenceFailure::Replay);
         }
+        entry.consumed_at = Some(now);
 
         Ok(VerifiedIdentity {
             session: Session {
@@ -509,7 +524,7 @@ mod tests {
             "nonce-3",
         );
         let raw2 = verifier.issue(&ev2).unwrap();
-        assert!(verifier.revoke(ev2.session_id));
+        assert!(verifier.revoke(ev2.session_id, now()));
         assert_eq!(
             verifier.verify(&raw2, now(), &exp),
             Err(EvidenceFailure::Revoked)
@@ -624,5 +639,170 @@ mod tests {
         assert!(!format!("{verifier:?}").contains(&digest));
         assert!(!format!("{:?}", EvidenceFailure::Replay).contains(PERSON));
         assert!(!format!("{ev:?}").contains(&digest));
+    }
+
+    fn ev_with(
+        nonce: &str,
+        issued_at: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> SessionEvidence {
+        SessionEvidence {
+            schema: EVIDENCE_SCHEMA,
+            session_id: Uuid::new_v4(),
+            household_id: Uuid::parse_str(HOUSEHOLD).unwrap(),
+            device_id: Uuid::parse_str(DEVICE).unwrap(),
+            verified_person: None,
+            binding_generation: 3,
+            household_kind: HouseholdKind::Personal,
+            audience: SESSION_EVIDENCE_AUDIENCE.to_owned(),
+            command: SESSION_COMMAND_HTTP.to_owned(),
+            issued_at,
+            expires_at,
+            nonce: nonce.to_owned(),
+        }
+    }
+
+    #[test]
+    fn replay_state_survives_pruning_other_receipts_and_lexical_order() {
+        let verifier = LocalEvidenceVerifier::new();
+        let t = now();
+        let short = t + chrono::Duration::seconds(60);
+        let long = t + chrono::Duration::seconds(600);
+        // Consume in descending lexical order: the lexically smallest nonce is
+        // the MOST recently consumed, so lexical eviction would forget it.
+        let mut newest_raw = Vec::new();
+        for i in (0..20u32).rev() {
+            let expires = if i == 5 || i == 10 { short } else { long };
+            let ev = ev_with(&format!("n{i:04}"), t, expires);
+            let raw = verifier.issue(&ev).unwrap();
+            verifier
+                .verify(&raw, t, &expectation(SESSION_COMMAND_HTTP, &[]))
+                .unwrap();
+            if i == 0 {
+                newest_raw = raw;
+            }
+        }
+        let exp = expectation(SESSION_COMMAND_HTTP, &[]);
+        // Pruning with zero retention must not touch still-live receipts.
+        verifier.prune(t, 0);
+        assert_eq!(
+            verifier.verify(&newest_raw, t, &exp),
+            Err(EvidenceFailure::Replay),
+            "a live recently consumed receipt must keep denying replay"
+        );
+        // Non-chronological expiry: only the two short-lived receipts go.
+        verifier.prune(t + chrono::Duration::seconds(61), 0);
+        assert_eq!(
+            verifier.verify(&newest_raw, t + chrono::Duration::seconds(61), &exp),
+            Err(EvidenceFailure::Replay)
+        );
+        // Only after full expiry + retention is the replay state reclaimable.
+        let after = t + chrono::Duration::seconds(601);
+        verifier.prune(after, 0);
+        assert!(verifier.verify(&newest_raw, after, &exp).is_err());
+        // A fresh receipt may reuse the nonce once the old one is safely gone.
+        let fresh = ev_with("n0000", after, after + chrono::Duration::seconds(600));
+        let fresh_raw = verifier.issue(&fresh).unwrap();
+        assert!(verifier.verify(&fresh_raw, after, &exp).is_ok());
+    }
+
+    #[test]
+    fn duplicate_evidence_and_nonce_cannot_reset_replay_state() {
+        let verifier = LocalEvidenceVerifier::new();
+        let t = now();
+        let ev = ev_with("dup-nonce", t, t + chrono::Duration::seconds(600));
+        let raw = verifier.issue(&ev).unwrap();
+        assert!(verifier
+            .verify(&raw, t, &expectation(SESSION_COMMAND_HTTP, &[]))
+            .is_ok());
+        // Same session id or same nonce must not silently create a fresh,
+        // unconsumed receipt while the original is still registered.
+        assert_eq!(verifier.issue(&ev), Err(EvidenceFailure::DuplicateEvidence));
+        let mut same_nonce = ev_with("dup-nonce", t, t + chrono::Duration::seconds(600));
+        assert_eq!(
+            verifier.issue(&same_nonce),
+            Err(EvidenceFailure::NonceConflict)
+        );
+        assert_eq!(
+            verifier.verify(&raw, t, &expectation(SESSION_COMMAND_HTTP, &[])),
+            Err(EvidenceFailure::Replay)
+        );
+        // A revoked receipt also owns its nonce until safely pruned.
+        assert!(verifier.revoke(ev.session_id, t));
+        same_nonce.session_id = Uuid::new_v4();
+        assert_eq!(
+            verifier.issue(&same_nonce),
+            Err(EvidenceFailure::NonceConflict)
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_capacity_and_replay_never_double_accept() {
+        use std::sync::Arc;
+        use tokio::sync::Barrier;
+
+        let verifier = Arc::new(LocalEvidenceVerifier::new());
+        let t = now();
+        // Fill every slot with a live receipt and consume one of them.
+        let mut consumed_raw = Vec::new();
+        for i in 0..MAX_EVIDENCE_RETAINED {
+            let ev = ev_with(
+                &format!("fill-{i:04}"),
+                t,
+                t + chrono::Duration::seconds(600),
+            );
+            let raw = verifier.issue(&ev).unwrap();
+            if i == 0 {
+                consumed_raw = raw;
+            }
+        }
+        let exp = expectation(SESSION_COMMAND_HTTP, &[]);
+        assert!(verifier.verify(&consumed_raw, t, &exp).is_ok());
+        assert_eq!(
+            verifier.issue(&ev_with("overflow", t, t + chrono::Duration::seconds(600))),
+            Err(EvidenceFailure::BoundExceeded)
+        );
+
+        // A concurrent issuance burst fails closed: no live receipt is evicted
+        // to make room, so the consumed one stays replay-blocked.
+        let barrier = Arc::new(Barrier::new(9));
+        let mut issuers = Vec::new();
+        for i in 0..8 {
+            let verifier = verifier.clone();
+            let barrier = barrier.clone();
+            issuers.push(tokio::spawn(async move {
+                let ev = ev_with(&format!("race-{i}"), t, t + chrono::Duration::seconds(600));
+                barrier.wait().await;
+                verifier.issue(&ev)
+            }));
+        }
+        barrier.wait().await;
+        for issuer in issuers {
+            assert_eq!(
+                issuer.await.unwrap().err(),
+                Some(EvidenceFailure::BoundExceeded)
+            );
+        }
+
+        let raw = Arc::new(consumed_raw);
+        let barrier = Arc::new(Barrier::new(9));
+        let mut verifiers = Vec::new();
+        for _ in 0..8 {
+            let verifier = verifier.clone();
+            let raw = raw.clone();
+            let barrier = barrier.clone();
+            verifiers.push(tokio::spawn(async move {
+                barrier.wait().await;
+                verifier.verify(&raw, t, &expectation(SESSION_COMMAND_HTTP, &[]))
+            }));
+        }
+        barrier.wait().await;
+        for task in verifiers {
+            assert_eq!(
+                task.await.unwrap().err(),
+                Some(EvidenceFailure::Replay),
+                "a consumed receipt stays replay-blocked under capacity pressure"
+            );
+        }
     }
 }

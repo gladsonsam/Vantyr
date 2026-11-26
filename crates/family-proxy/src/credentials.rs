@@ -415,15 +415,18 @@ impl CredentialStore {
         }
     }
 
-    /// Prune tombstones older than `retention_secs`. Live records are kept even
-    /// if their expiry is in the past so a revocation audit remains available.
+    /// Reclaim expired and revoked records once their audit retention has
+    /// elapsed. An active, unexpired credential is never pruned, so a batch of
+    /// short-lived credentials cannot permanently exhaust the issuance bound.
     pub fn prune(&self, now: DateTime<Utc>, retention_secs: u64) -> usize {
-        let cutoff = now - chrono::Duration::seconds(retention_secs.min(MAX_RETENTION_SECS) as i64);
+        let retention = chrono::Duration::seconds(retention_secs.min(MAX_RETENTION_SECS) as i64);
         let mut records = self.records.lock().expect("credential store lock");
         let before = records.len();
         records.retain(|_, record| match record.revoked_at {
-            Some(revoked) => revoked >= cutoff,
-            None => true,
+            // Revoked is deactivated: reclaim after its own retention window.
+            Some(revoked_at) => now < revoked_at + retention,
+            // Active: reclaim only after expiry plus retention.
+            None => now < record.expires_at + retention,
         });
         before - records.len()
     }
@@ -559,7 +562,11 @@ mod tests {
     }
 
     #[test]
-    fn unknown_and_wrong_secret_are_indistinguishable_to_a_guesser() {
+    fn unknown_and_wrong_secret_both_use_the_constant_time_comparison() {
+        // The bounded failure codes differ (Unknown vs InvalidSecret), so the
+        // two cases are externally distinguishable by code. What is protected
+        // here is the *comparison*: both paths hash and compare a fixed-width
+        // digest, so there is no byte-prefix oracle for a guessed secret.
         let store = CredentialStore::new();
         let device = Uuid::parse_str(DEVICE).unwrap();
         let devices: BTreeSet<Uuid> = [device].into_iter().collect();
@@ -652,5 +659,115 @@ mod tests {
             .unwrap();
         store.revoke(id, now());
         assert_eq!(store.prune(now() + chrono::Duration::days(31), 3600), 1);
+    }
+
+    #[test]
+    fn expired_credentials_reclaim_capacity_and_new_issue_succeeds() {
+        let store = CredentialStore::new();
+        let household_id = Uuid::parse_str(HOUSEHOLD).unwrap();
+        let device_id = Uuid::parse_str(DEVICE).unwrap();
+        let issued = now();
+        for _ in 0..MAX_CREDENTIALS {
+            store
+                .issue(
+                    household_id,
+                    device_id,
+                    1,
+                    HouseholdKind::Personal,
+                    &[COMMAND_PROXY_CONNECT],
+                    1,
+                    issued,
+                )
+                .unwrap();
+        }
+        let later = issued + chrono::Duration::seconds(2);
+        // The old code retained every unrevoked record forever, so this pruned
+        // zero and permanently blocked issuance at the 256-record bound.
+        assert_eq!(
+            store.prune(later, 0),
+            MAX_CREDENTIALS,
+            "expired records must be reclaimable"
+        );
+        store
+            .issue(
+                household_id,
+                device_id,
+                1,
+                HouseholdKind::Personal,
+                &[COMMAND_PROXY_CONNECT],
+                3600,
+                later,
+            )
+            .expect("a fresh credential must be issuable after expiry");
+    }
+
+    #[test]
+    fn revoked_retention_boundaries_and_valid_credentials_survive_pruning() {
+        let store = CredentialStore::new();
+        let household_id = Uuid::parse_str(HOUSEHOLD).unwrap();
+        let device_id = Uuid::parse_str(DEVICE).unwrap();
+        let at = now();
+        let (active, active_secret) = store
+            .issue(
+                household_id,
+                device_id,
+                1,
+                HouseholdKind::Personal,
+                &[COMMAND_PROXY_CONNECT],
+                3600,
+                at,
+            )
+            .unwrap();
+        let (short, _) = store
+            .issue(
+                household_id,
+                device_id,
+                1,
+                HouseholdKind::Personal,
+                &[COMMAND_PROXY_CONNECT],
+                60,
+                at,
+            )
+            .unwrap();
+        let (revoked, revoked_secret) = store
+            .issue(
+                household_id,
+                device_id,
+                1,
+                HouseholdKind::Personal,
+                &[COMMAND_PROXY_CONNECT],
+                3600,
+                at,
+            )
+            .unwrap();
+        assert!(store.revoke(revoked, at));
+
+        let devices: BTreeSet<Uuid> = [device_id].into_iter().collect();
+        let scope = scope(&devices, COMMAND_PROXY_CONNECT);
+        let revoked_presented =
+            PresentedCredential::from_basic(&basic(revoked, revoked_secret.expose())).unwrap();
+        let active_presented =
+            PresentedCredential::from_basic(&basic(active, active_secret.expose())).unwrap();
+        // Inside a 1h retention window nothing is reclaimed and revocation holds.
+        assert_eq!(store.prune(at + chrono::Duration::minutes(59), 3600), 0);
+        assert_eq!(
+            store.verify(
+                &revoked_presented,
+                &scope,
+                at + chrono::Duration::minutes(59)
+            ),
+            Err(CredentialFailure::Revoked)
+        );
+        // With no retention at +61s the expired short-lived and revoked records
+        // are safely reclaimed; the active unexpired credential survives.
+        let later = at + chrono::Duration::seconds(61);
+        assert_eq!(store.prune(later, 0), 2);
+        assert!(store.verify(&active_presented, &scope, later).is_ok());
+        assert_eq!(
+            store.verify(&revoked_presented, &scope, later),
+            Err(CredentialFailure::Unknown)
+        );
+        assert!(store.rotate(active, 3600, later).is_ok());
+        let _ = short;
     }
 }

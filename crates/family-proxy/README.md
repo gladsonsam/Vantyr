@@ -106,7 +106,11 @@ wires a `CredentialStore` plus a typed `SessionEvidenceVerifier`:
   verified person. Invalid evidence denies the request (static `evidence_*`
   code); it never degrades to a person-bearing identity.
 - Both headers are stripped before an origin is contacted, including on the
-  decrypted inspection path.
+  decrypted inspection path. Evidence is single-use at authentication: a later
+  policy/body/TLS denial still consumes it (fail closed; no give-back TOCTOU).
+  Replay state lives with the receipt until it is safely expired/revoked and
+  past retention; a full bound fails closed with `evidence_bound_exceeded`.
+  Bootstrap and central credentials share the bounded failure/cooldown tracker.
 - No server authority is implemented or claimed: `LocalEvidenceVerifier` is an
   in-memory authority for tests; `NoEvidenceVerifier` is the default-off
   verifier. See [the proxy credential contract](../../../docs/proxy-session-credentials.md)

@@ -226,7 +226,7 @@ async fn revoked_and_replayed_evidence_deny_before_any_egress() {
     let verifier = LocalEvidenceVerifier::new();
     let revoked_ev = evidence(COMMAND_PROXY_HTTP, "http-nonce-3");
     let revoked_raw = evidence_text(&verifier, &revoked_ev);
-    assert!(verifier.revoke(revoked_ev.session_id));
+    assert!(verifier.revoke(revoked_ev.session_id, now()));
 
     let proxy = ProxyServer::start_with_session_auth(
         session_config(origin.addr, echo.addr),
@@ -505,6 +505,60 @@ async fn revocation_is_visible_to_every_subsequent_verification() {
             Some(family_proxy::CredentialFailure::Revoked)
         );
     }
+}
+
+#[tokio::test]
+async fn present_evidence_is_single_use_even_for_a_policy_denied_request() {
+    // Deliberate fail-closed semantics: consumption happens at authentication
+    // (after all scope checks) and before target/policy/body evaluation. A
+    // request denied later still consumes the one-time receipt; there is no
+    // post-denial "give it back" path that could introduce a TOCTOU window.
+    let origin = HttpOrigin::start().await;
+    let echo = EchoOrigin::start().await;
+    let store = CredentialStore::new();
+    let (id, secret) = issue(&store);
+    let verifier = LocalEvidenceVerifier::new();
+    let mut ev = evidence(COMMAND_PROXY_HTTP, "denied-nonce-1");
+    ev.verified_person = None;
+    let raw = evidence_text(&verifier, &ev);
+    let proxy = ProxyServer::start_with_session_auth(
+        session_config(origin.addr, echo.addr),
+        NoDnsResolver,
+        Arc::new(store),
+        Arc::new(verifier.clone()),
+        vec![],
+    )
+    .await
+    .unwrap();
+
+    let mut client = connect(proxy.bind_addr()).await;
+    send(
+        &mut client,
+        &http_get(
+            &auth_header(id, secret.expose()),
+            Some(&raw),
+            &format!("blocked.test:{}", origin.addr.port()),
+            "/",
+        ),
+    )
+    .await;
+    assert_eq!(status_line(&read_head(&mut client).await), 403);
+    assert_eq!(origin.connections(), 0, "policy denial precedes egress");
+
+    let expectation = family_proxy::EvidenceExpectation {
+        household_id: household(),
+        device_id: device(),
+        generation: GENERATION,
+        household_kind: HouseholdKind::Personal,
+        command: COMMAND_PROXY_HTTP,
+        assignments: &[],
+    };
+    assert_eq!(
+        verifier.verify(raw.as_bytes(), now(), &expectation),
+        Err(EvidenceFailure::Replay),
+        "a denied request must not return the one-time receipt to the caller"
+    );
+    proxy.stop().await;
 }
 
 #[tokio::test]
