@@ -6,15 +6,17 @@
 //! Rollback is a NEW monotonic revision with prior content and is itself
 //! propose-only until the same credential-based ack path applies it.
 //!
-//! This store is controller-side evidence only. Durable worker-local
-//! last-known-good persistence (kept even when an ack cannot reach the
-//! controller during an outage) is future work — see the implementation doc.
+//! All policy state lives behind ONE lock so publish / ack / rollback are
+//! single atomic transitions: a concurrent newer publish cannot be clobbered
+//! by a stale ack, and `current` and `applied` are always consistent.
+//! This is controller-side evidence only; durable worker-local last-known-good
+//! persistence during an ack outage is future work (see the implementation doc).
 
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::{Arc, Mutex, RwLock};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 
 use crate::model::{Event, GatewayCommand, GatewayCredential, HouseholdId, Policy, Role};
 
@@ -26,6 +28,7 @@ pub const MAX_NETWORK_EVENT_RETENTION_SECS: u64 = 30 * 24 * 60 * 60;
 pub enum AuthError {
     Forbidden,
     StaleRevision,
+    RevisionOverflow,
     WrongWorker,
     WrongHousehold,
     InvalidCredential,
@@ -38,8 +41,12 @@ impl fmt::Display for AuthError {
         match self {
             Self::Forbidden => write!(f, "independent network privilege required"),
             Self::StaleRevision => write!(f, "policy revision is not current"),
+            Self::RevisionOverflow => write!(f, "policy revision counter overflowed"),
             Self::WrongWorker => write!(f, "credential or ack came from an unexpected worker"),
-            Self::WrongHousehold => write!(f, "credential belongs to a different household"),
+            Self::WrongHousehold => write!(
+                f,
+                "actor, credential or event belongs to a different household"
+            ),
             Self::InvalidCredential => write!(
                 f,
                 "gateway credential is expired, revoked or lacks the command"
@@ -61,9 +68,11 @@ impl std::error::Error for AuthError {}
 /// A dashboard actor. The server currently carries only a role string in
 /// `AuthUser` (no scopes); `NetworkAdmin` and `NetworkEvents` are new,
 /// independently granted privileges, not aliases of admin/operator/viewer.
+/// The household is explicit so a grant in household A cannot read household B.
 #[derive(Clone, Debug)]
 pub struct Actor {
     pub id: uuid::Uuid,
+    pub household_id: HouseholdId,
     pub roles: BTreeSet<Role>,
 }
 
@@ -98,47 +107,61 @@ pub struct PublishedPolicy {
     pub canary_ok: bool,
 }
 
+#[derive(Clone, Debug)]
+struct StoreState {
+    household_id: HouseholdId,
+    current: Arc<PublishedPolicy>,
+    applied: Arc<Policy>,
+}
+
 pub struct PolicyStore {
-    current: RwLock<Arc<PublishedPolicy>>,
-    applied: RwLock<Arc<Policy>>,
+    /// One lock for both fields: every transition is atomic and consistent.
+    state: RwLock<StoreState>,
     events: Mutex<Vec<Event>>,
 }
 
 impl PolicyStore {
     pub fn new(initial: Policy) -> Result<Self, AuthError> {
         Self::check_retention(&initial)?;
+        let household_id = initial.household_id;
         let initial = Arc::new(initial);
         Ok(Self {
-            current: RwLock::new(Arc::new(PublishedPolicy {
-                policy: initial.clone(),
-                status: PublicationStatus::Applied,
-                expected_worker: "bootstrap".to_owned(),
-                acked_by: Some("bootstrap".to_owned()),
-                canary_ok: true,
-            })),
-            applied: RwLock::new(initial),
+            state: RwLock::new(StoreState {
+                household_id,
+                current: Arc::new(PublishedPolicy {
+                    policy: initial.clone(),
+                    status: PublicationStatus::Applied,
+                    expected_worker: "bootstrap".to_owned(),
+                    acked_by: Some("bootstrap".to_owned()),
+                    canary_ok: true,
+                }),
+                applied: initial,
+            }),
             events: Mutex::new(Vec::new()),
         })
     }
 
-    /// Save a proposal. Requires the independent `network_admin` grant, a
-    /// strictly increasing revision and a bounded event retention.
+    /// Save a proposal. Requires an admin actor of this household, a strictly
+    /// increasing revision, an unchanged household and bounded retention.
     pub fn publish(
         &self,
         actor: &Actor,
         policy: Policy,
         expected_worker: &str,
     ) -> Result<u64, AuthError> {
+        let mut state = self.state.write().unwrap();
         if !actor.can_admin_network() {
             return Err(AuthError::Forbidden);
         }
+        if actor.household_id != state.household_id || policy.household_id != state.household_id {
+            return Err(AuthError::WrongHousehold);
+        }
         Self::check_retention(&policy)?;
-        let mut current = self.current.write().unwrap();
-        if policy.revision <= current.policy.revision {
+        if policy.revision <= state.current.policy.revision {
             return Err(AuthError::StaleRevision);
         }
         let revision = policy.revision;
-        *current = Arc::new(PublishedPolicy {
+        state.current = Arc::new(PublishedPolicy {
             policy: Arc::new(policy),
             status: PublicationStatus::Proposed,
             expected_worker: expected_worker.to_owned(),
@@ -148,11 +171,10 @@ impl PolicyStore {
         Ok(revision)
     }
 
-    /// Runtime acknowledgment. Requires a gateway credential scoped to this
-    /// household and worker with `AckPolicy`, valid at `now`. A dashboard
-    /// admin cannot impersonate a worker. Wrong worker/stale revision/failed
-    /// canary are rejected; `canary_ok` is a placeholder boolean, not a claim
-    /// that verification happened.
+    /// Runtime acknowledgment. Authentication, worker/revision binding,
+    /// canary placeholder and the current -> applied transition happen under
+    /// ONE write lock, so a concurrent publish cannot be clobbered and the
+    /// credential is validated against the very snapshot being applied.
     pub fn ack(
         &self,
         credential: &GatewayCredential,
@@ -161,47 +183,71 @@ impl PolicyStore {
         worker: &str,
         canary_ok: bool,
     ) -> Result<(), AuthError> {
-        let current = self.current.read().unwrap();
-        let household = current.policy.household_id;
+        let mut state = self.state.write().unwrap();
         validate_credential(
             credential,
             now,
             GatewayCommand::AckPolicy,
             Some(worker),
-            household,
+            state.household_id,
         )?;
-        if current.expected_worker != worker {
+        if state.current.expected_worker != worker {
             return Err(AuthError::WrongWorker);
         }
-        if current.policy.revision != revision {
+        if state.current.policy.revision != revision {
+            return Err(AuthError::StaleRevision);
+        }
+        if !matches!(
+            state.current.status,
+            PublicationStatus::Proposed | PublicationStatus::RolledBack
+        ) {
             return Err(AuthError::StaleRevision);
         }
         if !canary_ok {
             return Err(AuthError::CanaryFailed);
         }
-        drop(current);
-        Self::mark_applied(&self.current, &self.applied, revision, worker)
+        let policy = state.current.policy.clone();
+        let expected_worker = state.current.expected_worker.clone();
+        state.current = Arc::new(PublishedPolicy {
+            policy: policy.clone(),
+            status: PublicationStatus::Applied,
+            expected_worker,
+            acked_by: Some(worker.to_owned()),
+            canary_ok: true,
+        });
+        state.applied = policy;
+        Ok(())
     }
 
     /// Restore prior content as a NEW monotonic revision. This is propose-only:
-    /// it enters the same ack path as any other revision. No worker involvement
-    /// here — the reported C1 issue is fixed.
+    /// it enters the same ack path as any other revision. Takes the write lock
+    /// before reading `applied` so the restored snapshot is consistent, and
+    /// rejects revision overflow explicitly.
     pub fn rollback(
         &self,
         actor: &Actor,
         now: DateTime<Utc>,
         expected_worker: &str,
     ) -> Result<u64, AuthError> {
+        let mut state = self.state.write().unwrap();
         if !actor.can_admin_network() {
             return Err(AuthError::Forbidden);
         }
-        let mut restored = self.applied.read().unwrap().as_ref().clone();
-        let mut current = self.current.write().unwrap();
-        restored.revision = current.policy.revision + 1;
+        if actor.household_id != state.household_id {
+            return Err(AuthError::WrongHousehold);
+        }
+        let restored = state.applied.as_ref().clone();
+        let revision = state
+            .current
+            .policy
+            .revision
+            .checked_add(1)
+            .ok_or(AuthError::RevisionOverflow)?;
+        let mut restored = restored;
+        restored.revision = revision;
         restored.published_at = now;
         Self::check_retention(&restored)?;
-        let revision = restored.revision;
-        *current = Arc::new(PublishedPolicy {
+        state.current = Arc::new(PublishedPolicy {
             policy: Arc::new(restored),
             status: PublicationStatus::RolledBack,
             expected_worker: expected_worker.to_owned(),
@@ -211,18 +257,26 @@ impl PolicyStore {
         Ok(revision)
     }
 
-    /// What workers are told is effective: the last acknowledged snapshot.
-    /// Durable worker-local LKG during an ack outage is not implemented here.
+    /// Controller-side effective snapshot: last acknowledged policy with a
+    /// passing placeholder canary. Worker-local LKG is not implemented here.
     pub fn effective_policy(&self) -> Arc<Policy> {
-        self.applied.read().unwrap().clone()
+        self.state.read().unwrap().applied.clone()
     }
 
     pub fn current(&self) -> Arc<PublishedPolicy> {
-        self.current.read().unwrap().clone()
+        self.state.read().unwrap().current.clone()
     }
 
-    /// Ingest a decision event. Requires a scoped `ReportDecision` gateway
-    /// credential bound to the event's household — NOT an event-read grant.
+    /// Atomic read of both fields under one lock, for consistent runtime status.
+    pub fn snapshot(&self) -> (Arc<PublishedPolicy>, Arc<Policy>) {
+        let state = self.state.read().unwrap();
+        (state.current.clone(), state.applied.clone())
+    }
+
+    /// Ingest a decision event. Requires a scoped `ReportDecision` credential
+    /// bound to this store's immutable household — NOT an event-read grant.
+    /// Events older than the effective retention are pruned on ingest.
+    /// Count enforcement remains a later slice.
     pub fn record_event(
         &self,
         credential: &GatewayCredential,
@@ -230,24 +284,35 @@ impl PolicyStore {
         household_id: HouseholdId,
         event: Event,
     ) -> Result<(), AuthError> {
+        let state = self.state.read().unwrap();
         validate_credential(
             credential,
             now,
             GatewayCommand::ReportDecision,
             None,
-            household_id,
+            state.household_id,
         )?;
-        if event.household_id != household_id {
+        if household_id != state.household_id || event.household_id != state.household_id {
             return Err(AuthError::WrongHousehold);
         }
-        self.events.lock().unwrap().push(event);
+        let retention = state.applied.event_retention_secs;
+        drop(state);
+        let mut events = self.events.lock().unwrap();
+        let cutoff = now - ChronoDuration::seconds(retention.min(i64::MAX as u64) as i64);
+        events.retain(|stored| stored.occurred_at >= cutoff);
+        events.push(event);
         Ok(())
     }
 
     pub fn events(&self, actor: &Actor) -> Result<Vec<Event>, AuthError> {
+        let state = self.state.read().unwrap();
         if !actor.can_read_events() {
             return Err(AuthError::Forbidden);
         }
+        if actor.household_id != state.household_id {
+            return Err(AuthError::WrongHousehold);
+        }
+        drop(state);
         Ok(self.events.lock().unwrap().clone())
     }
 
@@ -256,31 +321,6 @@ impl PolicyStore {
             || policy.event_retention_secs > MAX_NETWORK_EVENT_RETENTION_SECS
         {
             return Err(AuthError::InvalidRetention);
-        }
-        Ok(())
-    }
-
-    fn mark_applied(
-        current: &RwLock<Arc<PublishedPolicy>>,
-        applied: &RwLock<Arc<Policy>>,
-        revision: u64,
-        worker: &str,
-    ) -> Result<(), AuthError> {
-        let snapshot = current.read().unwrap().clone();
-        if snapshot.policy.revision != revision {
-            return Err(AuthError::StaleRevision);
-        }
-        let policy = snapshot.policy.clone();
-        *current.write().unwrap() = Arc::new(PublishedPolicy {
-            policy: policy.clone(),
-            status: PublicationStatus::Applied,
-            expected_worker: snapshot.expected_worker.clone(),
-            acked_by: Some(worker.to_owned()),
-            canary_ok: true,
-        });
-        let mut applied = applied.write().unwrap();
-        if revision >= applied.revision {
-            *applied = policy;
         }
         Ok(())
     }

@@ -207,23 +207,39 @@ and timestamps are `DateTime<Utc>`.
   snapshot acknowledged by a scoped gateway credential with a passing
   placeholder canary. Durable worker-local last-known-good persistence during
   an ack outage is a separate future requirement, not implemented here.
-- Policy snapshots are immutable `Arc`s behind locks; `publish` requires a
-  strictly increasing revision, so concurrent publishers cannot downgrade.
-  Four reader threads observed monotonic revisions while a writer published
-  19 revisions.
-- Schedules evaluate in an explicit IANA timezone. Ambiguous fall-back times
-  use the first occurrence; nonexistent spring-forward times shift to the
-  first existing minute (up to 3h); an invalid timezone makes the schedule
-  inactive. A timezone-change test proves 21:00 Sydney is not 21:00 UTC.
+- Current and applied snapshots share ONE state lock. `publish`, `ack` and
+  `rollback` are single atomic transitions: a concurrent newer publish cannot
+  be clobbered by an older ack, and an ack validates the credential against the
+  exact snapshot it applies. Concurrent readers observed `applied.revision <=
+  current.policy.revision` at all times, and equality whenever status was
+  `Applied`. Revision overflow is rejected, never wrapped.
+- Schedules evaluate in an explicit IANA timezone. At a fall-back fold the
+  window START resolves to its first occurrence and the END to its last
+  occurrence, so both wall-clock passes are covered — the restrictive choice
+  for deny rules and no accidental permissive hour. A spring-forward
+  nonexistent time shifts to the first existing minute (up to 3h), which can
+  collapse a window to zero length. An invalid timezone makes the schedule
+  inactive. Tests cover both fold instants, the gap and an invalid timezone.
 - Authz boundaries: the existing server's `RequireOperator` includes `admin`
   and already grants broad remote/Recall privileges. `NetworkAdmin` and
   `NetworkEvents` are **new independent grants**; `AuthUser` currently holds
-  only a role string, no scopes. A UI save is `Proposed` and is not effective
-  until the **expected worker** acknowledges with a passing canary. Wrong
-  worker, stale revision and failed canary are rejected. Rollback creates a
-  **new monotonic revision** carrying prior content. Event reads require
-  `NetworkEvents` (or `NetworkAdmin`). UI must add an explicit scope guard and
+  only a role string, no scopes. Dashboard actors carry an explicit household
+  so a grant in one household cannot publish, read events or ingest into
+  another. A UI save is `Proposed` and is not effective until the **expected
+  worker** acknowledges with a passing canary flag. Wrong worker, stale
+  revision and failed canary are rejected. Rollback creates a **new monotonic
+  revision** carrying prior content and is itself propose-only. Event reads
+  require `NetworkEvents` (or `NetworkAdmin`); ingestion requires a separate
+  `ReportDecision` gateway credential. UI must add an explicit scope guard and
   API/demo overrides, not only role-based navigation.
+- No gateway secret is authenticated yet: `secret_hash` is a model field only;
+  `GatewayCredential` is checked for scope, household, worker binding, expiry
+  and revocation, not for proof of possession. `canary_ok` is a placeholder
+  boolean, not runtime verification. Both require real server-side auth and a
+  defined canary in later steps. `expected_worker` is the worker identity on
+  the proposal; `GatewayCredential.gateway_id` must match it exactly.
+- Event records are pruned by the effective retention on ingest. A hard event
+  count cap and audit-log linkage are a later slice.
 
 ### Worked examples
 
@@ -295,14 +311,19 @@ external product's auth or config format is a requirement.
 
 ## Review evidence
 
-- Operations/security runbook accepted at `30d3292e` after B1–B5 corrections.
-- Backend capability checklist accepted at `e05f394f` after four blockers were
-  resolved; neutral behaviour scope is retained above.
-- `e593bf03` was returned CHANGES REQUESTED: rollback self-applied (C1), ack
-  accepted a dashboard actor string as a worker (C2), DNS sinkhole test claimed
-  policy wiring it did not do (D1), controller ack state was described as
-  worker-local LKG (D2), and fall-back fold semantics were underspecified (D3).
-  All five are fixed in this increment with adversarial tests.
+- The operations/security runbook and the backend capability checklist were
+  independently accepted after their review blockers were corrected. Their
+  behaviour scope is retained above in neutral terms.
+- An independent review of the step-1 snapshot requested a bounded correction:
+  rollback self-applied (C1), ack accepted a dashboard actor string as a worker
+  (C2), the DNS sinkhole test claimed policy wiring it did not do (D1),
+  controller ack state was described as worker-local LKG (D2), and fall-back
+  fold semantics were underspecified (D3). All five were fixed with
+  adversarial tests.
+- A second review required atomic policy state transitions (one lock), household
+  scoping for actors/events, explicit revision overflow handling, and precise
+  fold/gap semantics. Those are covered by the concurrency, household-isolation
+  and overflow tests in this increment.
 
 ## Unresolved issues
 
@@ -317,5 +338,9 @@ external product's auth or config format is a requirement.
 5. Define concurrent-session handling for fast user switching on shared PCs.
 6. Agree retention defaults and audit-log linkage; the accepted operations
    runbook is not duplicated here.
+7. DNS worker: replace the mutex held across query I/O with a short-held
+   `RwLock<Arc<Catalog>>` snapshot so an upstream stall cannot serialise local
+   queries. Delegated separately; evidence is pending independent review.
+8. Enforce a hard event count cap in addition to time-based pruning.
 
 No substantive UI or Supabase changes were made in this step.

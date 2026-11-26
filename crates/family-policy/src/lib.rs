@@ -522,6 +522,14 @@ mod tests {
         );
     }
 
+    fn actor(f: &Fixture, roles: &[Role]) -> Actor {
+        Actor {
+            id: Uuid::new_v4(),
+            household_id: f.household.id,
+            roles: roles.iter().copied().collect(),
+        }
+    }
+
     fn credential(
         f: &Fixture,
         worker: &str,
@@ -669,18 +677,9 @@ mod tests {
         let f = fixture(now);
         let initial = policy(&f, now, vec![], vec![]);
         let store = PolicyStore::new(initial.clone()).unwrap();
-        let viewer = Actor {
-            id: Uuid::new_v4(),
-            roles: [Role::Viewer].into_iter().collect(),
-        };
-        let admin = Actor {
-            id: Uuid::new_v4(),
-            roles: [Role::NetworkAdmin].into_iter().collect(),
-        };
-        let events_reader = Actor {
-            id: Uuid::new_v4(),
-            roles: [Role::NetworkEvents].into_iter().collect(),
-        };
+        let viewer = actor(&f, &[Role::Viewer]);
+        let admin = actor(&f, &[Role::NetworkAdmin]);
+        let events_reader = actor(&f, &[Role::NetworkEvents]);
         let ack_cred = credential(&f, "dns-worker", &[GatewayCommand::AckPolicy], now);
         let wrong_worker = credential(&f, "other-worker", &[GatewayCommand::AckPolicy], now);
         let no_ack_command = credential(&f, "dns-worker", &[GatewayCommand::FetchPolicy], now);
@@ -821,10 +820,7 @@ mod tests {
         );
         let store = PolicyStore::new(policy(&f, now, vec![], vec![])).unwrap();
         unlimited.revision = 2;
-        let admin = Actor {
-            id: Uuid::new_v4(),
-            roles: [Role::NetworkAdmin].into_iter().collect(),
-        };
+        let admin = actor(&f, &[Role::NetworkAdmin]);
         assert_eq!(
             store.publish(&admin, unlimited, "dns-worker"),
             Err(AuthError::InvalidRetention)
@@ -836,10 +832,7 @@ mod tests {
         let now = ts("2026-11-26T10:00:00Z");
         let f = fixture(now);
         let store = Arc::new(PolicyStore::new(policy(&f, now, vec![], vec![])).unwrap());
-        let admin = Actor {
-            id: Uuid::new_v4(),
-            roles: [Role::NetworkAdmin].into_iter().collect(),
-        };
+        let admin = actor(&f, &[Role::NetworkAdmin]);
         let writer_store = store.clone();
         let ack_cred = credential(&f, "test-worker", &[GatewayCommand::AckPolicy], now);
         let writer = thread::spawn(move || {
@@ -870,5 +863,147 @@ mod tests {
             r.join().unwrap();
         }
         assert_eq!(store.effective_policy().revision, 20);
+    }
+
+    #[test]
+    fn household_scoped_grants_events_and_policies_are_isolated() {
+        let now = ts("2026-11-26T10:00:00Z");
+        let f = fixture(now);
+        let other = fixture(now);
+        let store = PolicyStore::new(policy(&f, now, vec![], vec![])).unwrap();
+        let foreign_admin = actor(&other, &[Role::NetworkAdmin]);
+        let foreign_reader = actor(&other, &[Role::NetworkEvents]);
+
+        let mut foreign_policy = policy(&f, now, vec![], vec![]);
+        foreign_policy.revision = 2;
+        foreign_policy.household_id = other.household.id;
+        assert_eq!(
+            store.publish(
+                &actor(&f, &[Role::NetworkAdmin]),
+                foreign_policy,
+                "dns-worker"
+            ),
+            Err(AuthError::WrongHousehold)
+        );
+        let mut own_policy = policy(&f, now, vec![], vec![]);
+        own_policy.revision = 2;
+        assert_eq!(
+            store.publish(&foreign_admin, own_policy, "dns-worker"),
+            Err(AuthError::WrongHousehold)
+        );
+
+        let own_cred = credential(&f, "dns-worker", &[GatewayCommand::ReportDecision], now);
+        let foreign_cred = credential(&other, "dns-worker", &[GatewayCommand::ReportDecision], now);
+        let mut event = decision_event(&f, now);
+        event.household_id = other.household.id;
+        assert_eq!(
+            store.record_event(&own_cred, now, other.household.id, event.clone()),
+            Err(AuthError::WrongHousehold)
+        );
+        assert_eq!(
+            store.record_event(&foreign_cred, now, other.household.id, event),
+            Err(AuthError::WrongHousehold)
+        );
+
+        store
+            .record_event(&own_cred, now, f.household.id, decision_event(&f, now))
+            .unwrap();
+        assert_eq!(
+            store.events(&foreign_reader).err(),
+            Some(AuthError::WrongHousehold)
+        );
+    }
+
+    #[test]
+    fn rollback_revision_overflow_is_explicit() {
+        let now = ts("2026-11-26T10:00:00Z");
+        let f = fixture(now);
+        let mut max = policy(&f, now, vec![], vec![]);
+        max.revision = u64::MAX;
+        let store = PolicyStore::new(max).unwrap();
+        assert_eq!(
+            store
+                .rollback(&actor(&f, &[Role::NetworkAdmin]), now, "dns-worker")
+                .err(),
+            Some(AuthError::RevisionOverflow)
+        );
+    }
+
+    #[test]
+    fn overlapping_publish_and_ack_keep_current_and_applied_consistent() {
+        let now = ts("2026-11-26T10:00:00Z");
+        let f = fixture(now);
+        let store = Arc::new(PolicyStore::new(policy(&f, now, vec![], vec![])).unwrap());
+        let admin = actor(&f, &[Role::NetworkAdmin]);
+        let ack_cred = credential(&f, "race-worker", &[GatewayCommand::AckPolicy], now);
+        let writer_store = store.clone();
+        let writer = thread::spawn(move || {
+            for revision in 2..=200 {
+                let mut next = policy(&f, now, vec![], vec![]);
+                next.revision = revision;
+                writer_store
+                    .publish(&admin, next, "race-worker")
+                    .unwrap_or_else(|e| panic!("publish {revision}: {e:?}"));
+                writer_store
+                    .ack(&ack_cred, now, revision, "race-worker", true)
+                    .unwrap_or_else(|e| panic!("ack {revision}: {e:?}"));
+            }
+        });
+        let readers: Vec<_> = (0..3)
+            .map(|_| {
+                let s = store.clone();
+                thread::spawn(move || {
+                    for _ in 0..500 {
+                        let (current, applied) = s.snapshot();
+                        assert!(
+                            applied.revision <= current.policy.revision,
+                            "applied newer than current"
+                        );
+                        if current.status == PublicationStatus::Applied {
+                            assert_eq!(applied.revision, current.policy.revision);
+                            if current.policy.revision > 1 {
+                                assert_eq!(current.expected_worker, "race-worker");
+                            }
+                        }
+                    }
+                })
+            })
+            .collect();
+        writer.join().unwrap();
+        for reader in readers {
+            reader.join().unwrap();
+        }
+        assert_eq!(store.effective_policy().revision, 200);
+    }
+
+    fn decision_event(f: &Fixture, now: DateTime<Utc>) -> Event {
+        Event {
+            id: Uuid::new_v4(),
+            occurred_at: now,
+            household_id: f.household.id,
+            device_id: f.pc.id,
+            person_id: None,
+            source: EventSource::Dns,
+            action: Action::DnsResolve {
+                name: "example.org".into(),
+            },
+            decision: evaluate(
+                &policy(f, now, vec![], vec![]),
+                &EvaluationContext {
+                    now,
+                    device: &f.pc,
+                    session: None,
+                    assignments: &[],
+                    connections: &[],
+                    action: Action::DnsResolve {
+                        name: "example.org".into(),
+                    },
+                    heartbeat_ttl_secs: 90,
+                },
+            ),
+            evidence: EvidenceQuality::NetworkOnly,
+            correlation_id: None,
+            enforcing_component: "dns-worker".into(),
+        }
     }
 }
