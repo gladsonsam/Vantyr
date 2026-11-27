@@ -1,6 +1,5 @@
 import {
   infiniteQueryOptions,
-  keepPreviousData,
   queryOptions,
   useInfiniteQuery,
   useQuery,
@@ -68,7 +67,9 @@ export function useDnsEvents(
 ) {
   return useInfiniteQuery({
     ...dnsEventsQueries.list(household, filters),
-    placeholderData: keepPreviousData,
+    placeholderData: (previous, previousQuery) =>
+      // Never carry another household's page over while a new key loads.
+      previousQuery?.queryKey[1] === household ? previous : undefined,
     enabled: opts?.enabled ?? true,
   });
 }

@@ -229,5 +229,5 @@ export function createHttpRuntime(householdId: string): NetworkRuntimeSource {
     }
   }
 
-  return { ...unavailableRuntime, events, dnsStats };
+  return { ...unavailableRuntime, scope: `http:${householdId}`, events, dnsStats };
 }

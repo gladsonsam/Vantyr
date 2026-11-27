@@ -30,6 +30,12 @@ import type {
  * build supplies fixtures (through `DemoEnvironment`), and screens never branch on demo mode.
  */
 export interface NetworkRuntimeSource {
+  /**
+   * Stable identity of where this source's data comes from (source kind + household, e.g.
+   * "http:<household id>", "demo", "unavailable"). Every runtime query key includes it, so cached
+   * data and infinite-list cursors from one household or source are never shown under another.
+   */
+  readonly scope: string;
   overview(): Promise<Availability<NetworkOverview>>;
   policy(): Promise<Availability<PolicyView>>;
   /** Saves a proposal. Saving is never enforcement: gateways must acknowledge a revision first. */
@@ -68,6 +74,7 @@ const unavailable = async (): Promise<{ state: "unavailable"; reason: string }> 
 
 /** The production source: honest about what the server cannot do yet. */
 export const unavailableRuntime: NetworkRuntimeSource = {
+  scope: "unavailable",
   overview: unavailable,
   policy: unavailable,
   editPolicy: unavailable,

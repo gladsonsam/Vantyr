@@ -584,6 +584,7 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
   const policyView = (): PolicyView => ({ applied, proposal });
 
   return {
+    scope: "demo",
     async overview() {
       return ready<NetworkOverview>({
         timezone: applied.timezone,

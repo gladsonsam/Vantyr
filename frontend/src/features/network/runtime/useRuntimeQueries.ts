@@ -11,7 +11,15 @@ import type {
   ProxyStatsQuery,
 } from "./types";
 
-const runtimeKey = (...parts: unknown[]) => [...networkKeys.all, "runtime", ...parts] as const;
+/** Keys always carry the runtime's scope (source kind + household): see NetworkRuntimeSource.scope. */
+const runtimeKey = (scope: string, ...parts: unknown[]) =>
+  [...networkKeys.all, "runtime", scope, ...parts] as const;
+
+/** Placeholder data may only carry over within one scope, never across households or sources. */
+export function keepPreviousWithinScope<T>(scope: string) {
+  return (previous: T | undefined, previousQuery?: { queryKey: readonly unknown[] }) =>
+    previousQuery && previousQuery.queryKey[2] === scope ? previous : undefined;
+}
 
 /** Gateway and policy state changes on its own, so these refresh in the background. */
 const LIVE_REFETCH_MS = 15_000;
@@ -19,7 +27,7 @@ const LIVE_REFETCH_MS = 15_000;
 export function useOverviewQuery() {
   const runtime = useNetworkRuntime();
   return useQuery({
-    queryKey: runtimeKey("overview"),
+    queryKey: runtimeKey(runtime.scope, "overview"),
     queryFn: () => runtime.overview(),
     refetchInterval: LIVE_REFETCH_MS,
   });
@@ -27,7 +35,10 @@ export function useOverviewQuery() {
 
 export function usePolicyQuery() {
   const runtime = useNetworkRuntime();
-  return useQuery({ queryKey: runtimeKey("policy"), queryFn: () => runtime.policy() });
+  return useQuery({
+    queryKey: runtimeKey(runtime.scope, "policy"),
+    queryFn: () => runtime.policy(),
+  });
 }
 
 export function useEditPolicyMutation() {
@@ -36,7 +47,7 @@ export function useEditPolicyMutation() {
   return useMutation({
     mutationFn: (edit: PolicyEdit) => runtime.editPolicy(edit),
     // The saved proposal also moves the overview's "applied vs saved" comparison.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey() }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey(runtime.scope) }),
   });
 }
 
@@ -47,13 +58,13 @@ export function useExplainDecisionMutation() {
 
 export function useDnsQuery() {
   const runtime = useNetworkRuntime();
-  return useQuery({ queryKey: runtimeKey("dns"), queryFn: () => runtime.dns() });
+  return useQuery({ queryKey: runtimeKey(runtime.scope, "dns"), queryFn: () => runtime.dns() });
 }
 
 export function useDnsStatsQuery(query: DnsStatsQuery) {
   const runtime = useNetworkRuntime();
   return useQuery({
-    queryKey: runtimeKey("dns-stats", query),
+    queryKey: runtimeKey(runtime.scope, "dns-stats", query),
     queryFn: () => runtime.dnsStats(query),
   });
 }
@@ -61,20 +72,20 @@ export function useDnsStatsQuery(query: DnsStatsQuery) {
 export function useProxyStatsQuery(query: ProxyStatsQuery) {
   const runtime = useNetworkRuntime();
   return useQuery({
-    queryKey: runtimeKey("proxy-stats", query),
+    queryKey: runtimeKey(runtime.scope, "proxy-stats", query),
     queryFn: () => runtime.proxyStats(query),
   });
 }
 
 export function useProxyQuery() {
   const runtime = useNetworkRuntime();
-  return useQuery({ queryKey: runtimeKey("proxy"), queryFn: () => runtime.proxy() });
+  return useQuery({ queryKey: runtimeKey(runtime.scope, "proxy"), queryFn: () => runtime.proxy() });
 }
 
 export function useEventsQuery(query: EventsQuery) {
   const runtime = useNetworkRuntime();
   return useQuery({
-    queryKey: runtimeKey("events", query),
+    queryKey: runtimeKey(runtime.scope, "events", query),
     queryFn: () => runtime.events(query),
   });
 }
@@ -90,7 +101,7 @@ export function useUpdateDnsMutation() {
     }: DnsSettingsPatch & { expectedSettingsVersion?: number }) =>
       runtime.updateDns(patch, { expectedSettingsVersion }),
     // Also on error: after a conflict the screen needs the newer settings.
-    onSettled: () => queryClient.invalidateQueries({ queryKey: runtimeKey("dns") }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: runtimeKey(runtime.scope, "dns") }),
   });
 }
 
@@ -99,7 +110,7 @@ export function useClearDnsCacheMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => runtime.clearDnsCache(),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey("dns") }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey(runtime.scope, "dns") }),
   });
 }
 
@@ -107,7 +118,7 @@ export function useProxyAccessQuery() {
   const runtime = useNetworkRuntime();
   return useQuery({
     // Nested under "proxy" so proxy mutations refresh it too.
-    queryKey: runtimeKey("proxy", "access"),
+    queryKey: runtimeKey(runtime.scope, "proxy", "access"),
     queryFn: () => runtime.proxyAccess(),
   });
 }
@@ -117,7 +128,8 @@ export function useIssueProxyCredentialMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: IssueProxyCredentialInput) => runtime.issueProxyCredential(input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey("proxy") }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: runtimeKey(runtime.scope, "proxy") }),
   });
 }
 
@@ -126,7 +138,8 @@ export function useEndProxySessionMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => runtime.endProxySession(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey("proxy") }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: runtimeKey(runtime.scope, "proxy") }),
   });
 }
 
@@ -135,7 +148,8 @@ export function useRevokeAllForPersonMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (personId: string) => runtime.revokeAllForPerson(personId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey("proxy") }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: runtimeKey(runtime.scope, "proxy") }),
   });
 }
 
@@ -144,7 +158,8 @@ export function useRevokeCredentialMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => runtime.revokeProxyCredential(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey("proxy") }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: runtimeKey(runtime.scope, "proxy") }),
   });
 }
 
@@ -153,7 +168,8 @@ export function useSetInspectionMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (enabled: boolean) => runtime.setInspection(enabled),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: runtimeKey("proxy") }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: runtimeKey(runtime.scope, "proxy") }),
   });
 }
 

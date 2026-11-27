@@ -294,6 +294,10 @@ function ActivityContent({
   );
   const windowTooOld =
     list.isFetchNextPageError && isApiError(list.error) && list.error.status === 400;
+  // A later page can also come back "unavailable" (e.g. an aged window rejected before the request
+  // was sent): offer Refresh instead of leaving a half-loaded list with no way forward.
+  const laterUnavailable = pages.slice(1).some((page) => page.state === "unavailable");
+  const cannotContinue = windowTooOld || laterUnavailable;
   const unrecognisedMissing = capabilities.unrecognisedFilter === false;
   // Labels for device ids: the household devices, or (scoped) only what the loaded rows carry.
   const deviceLabels = new Map<string, string>();
@@ -585,9 +589,11 @@ function ActivityContent({
         </p>
       ) : null}
 
-      {windowTooOld ? (
+      {cannotContinue ? (
         <div className="flex flex-wrap items-center justify-center gap-3" role="alert">
-          <p className="text-sm text-muted-foreground">{WINDOW_TOO_OLD}</p>
+          <p className="text-sm text-muted-foreground">
+            {windowTooOld ? WINDOW_TOO_OLD : "Couldn’t load more entries. Refresh the list."}
+          </p>
           <Button variant="outline" onClick={resetEvents}>
             Refresh
           </Button>
