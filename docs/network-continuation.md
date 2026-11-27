@@ -24,6 +24,15 @@ The frontend partner now works on Hermes in `feat/network-ui-hermes`, starting
 at `415431a3`. The old frontend environment remains frozen. New DNS settings and
 proxy controls remain demo-only until exact accepted contracts are supplied.
 
+Fresh static review of DNS candidate `32ab0ada` blocks acceptance. Migration
+0085 changes a formerly schema-1 body's digest at the same config version;
+an already-applied worker rejects that equal-version/different-digest pair.
+Previous persisted management shapes also need an explicit offline conversion,
+not a runtime compatibility reader. Appending default runtime can exceed the
+existing 16 KiB body constraint. Seeded migration tests and an upgrade test with
+a pre-existing applied bundle are missing. Repair design is pending; no database
+migration or DNS candidate integration has been performed on Hermes.
+
 ## Stop state
 
 The user requested that the current small agent jobs finish, then work stop for
