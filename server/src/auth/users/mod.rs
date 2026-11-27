@@ -60,7 +60,7 @@ pub async fn bootstrap_dashboard_users(
                     info!("No dashboard users exist yet; dashboard is open (ALLOW_INSECURE_DASHBOARD_OPEN=true).");
                 } else {
                     return Err(anyhow::anyhow!(
-                        "No dashboard users exist. Set ADMIN_PASSWORD (or UI_PASSWORD) to bootstrap the default admin."
+                        "No dashboard users exist. Set ADMIN_PASSWORD to bootstrap the default admin."
                     ));
                 }
             }

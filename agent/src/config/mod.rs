@@ -48,6 +48,7 @@ pub use store::{
 
 /// Agent connection + security configuration, persisted to disk as JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     /// Full WebSocket URL of the Vantyr server.
     /// Example: `ws://192.168.1.100:9000/ws/agent`
@@ -60,7 +61,7 @@ pub struct Config {
     pub agent_name: String,
 
     /// Per-device bearer token issued after admin approval.
-    #[serde(default, alias = "agent_password")]
+    #[serde(default)]
     pub agent_token: String,
 
     /// Stable random local ID used only for enrollment claim de-duplication.
@@ -71,11 +72,6 @@ pub struct Config {
     /// Empty means no lock. Remote password policy commands are denied.
     #[serde(default)]
     pub ui_password_hash: String,
-
-    /// Legacy remote-password provenance, retained only for config compatibility.
-    /// No remote command applies this value to local authentication.
-    #[serde(default)]
-    pub server_ui_password_hash: String,
 
     /// When true, checks for updates ~45s after startup and every 6 hours (default off).
     /// Windows: silent MSI via `update_via_service`; other platforms: Tauri updater. Server
@@ -175,7 +171,6 @@ impl Default for Config {
             agent_token: String::new(),
             install_id: String::new(),
             ui_password_hash: String::new(),
-            server_ui_password_hash: String::new(),
             auto_update_enabled: default_auto_update_enabled(),
             tray_icon_enabled: default_tray_icon_enabled(),
             internet_blocked: false,
@@ -291,13 +286,20 @@ pub enum AgentStatus {
 mod tests {
     use super::Config;
     #[test]
-    fn legacy_server_password_metadata_remains_readable() {
-        // Kept only for config compatibility; no remote setter consumes it.
-        let cfg: Config = serde_json::from_str(
-            r#"{"ui_password_hash":"local", "server_ui_password_hash":"legacy"}"#,
-        )
-        .unwrap();
-        assert_eq!(cfg.ui_password_hash, "local");
-        assert_eq!(cfg.server_ui_password_hash, "legacy");
+    fn current_local_config_round_trips_and_rejects_obsolete_keys() {
+        let current = Config {
+            agent_token: "current-token".into(),
+            ui_password_hash: "local-lock".into(),
+            ..Config::default()
+        };
+        let raw = serde_json::to_value(&current).unwrap();
+        let parsed: Config = serde_json::from_value(raw.clone()).unwrap();
+        assert_eq!(parsed.agent_token, current.agent_token);
+        assert_eq!(parsed.ui_password_hash, current.ui_password_hash);
+        for key in ["agent_password", "server_ui_password_hash"] {
+            let mut obsolete = raw.clone();
+            obsolete[key] = serde_json::json!("obsolete");
+            assert!(serde_json::from_value::<Config>(obsolete).is_err());
+        }
     }
 }

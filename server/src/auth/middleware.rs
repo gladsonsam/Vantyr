@@ -28,14 +28,14 @@ const fn request_requires_csrf_token(method: &Method) -> bool {
 }
 
 /// Axum middleware: rejects requests without a valid session cookie.
-/// Passes through unconditionally when no `UI_PASSWORD` is configured.
+/// Debug-only insecure bootstrap access requires its explicit configuration flag.
 pub async fn require_auth(
     State(state): State<Arc<AppState>>,
     req: Request,
     next: Next,
 ) -> Response {
     // Optional insecure mode: allow requests through when there are no users yet.
-    // (Normal deployments should bootstrap an admin user via ADMIN_PASSWORD/UI_PASSWORD.)
+    // (Normal deployments should bootstrap an admin user via ADMIN_PASSWORD.)
     if cfg!(debug_assertions) && state.settings.allow_insecure_dashboard_open {
         if let Ok(n) = db::users::dashboard_user_count(&state.db).await {
             if n == 0 {

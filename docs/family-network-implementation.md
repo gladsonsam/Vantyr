@@ -10,6 +10,23 @@ notes below. Policy revisions, CAS configuration versions, generations and audit
 history remain current product behavior, not legacy protocol support. Broad
 cleanup is in progress; this rule does not claim it is already complete.
 
+The whole-app audit identified concrete cleanup work: strict agent/server message
+admission and removal of the no-module-report policy bypass; removal of old
+DNS bundle counter normalization and persistence aliases; one DNS management
+body instead of parallel schema DTOs; and obsolete server/agent credential names
+and config locations. Frontend persisted-state readers are being handled in its
+own checkout. Single current schema integrity markers and database migration
+checksums are retained; they do not provide legacy readers.
+
+Credential/config cleanup: the server bootstraps with `ADMIN_PASSWORD` only;
+`UI_PASSWORD` is no longer read. Native agent configuration rejects obsolete
+`agent_password` and `server_ui_password_hash` keys and preserves the current
+`agent_token` and local `ui_password_hash`. Linux reads only the current XDG
+`vantyr/config.json` path, without a `config.dat` fallback. Existing files are
+not rewritten or deleted by this code change. Server all-target compilation and
+the native-agent current-config round-trip/obsolete-key rejection test pass
+(`x86_64-unknown-linux-gnu`, locked dependencies, serialized validation).
+
 ## Current delivery status
 
 - Durable DNS events/statistics server foundation: `53424752` (source

@@ -21,30 +21,15 @@ pub(super) fn state_dir() -> PathBuf {
         .join("vantyr")
 }
 
-fn legacy_non_windows_config_path() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("vantyr")
-        .join("config.dat")
-}
-
 /// There is no machine-wide config on Linux.
 pub fn machine_connection_policy_active() -> bool {
     false
 }
 
-/// The stored config from the XDG path, or the legacy data-dir path.
+/// Read only the current XDG configuration path.
 pub(super) fn load_stored() -> Option<Config> {
-    let path = config_path();
-    let legacy_path = legacy_non_windows_config_path();
-    for candidate in [&path, &legacy_path] {
-        if let Ok(text) = std::fs::read_to_string(candidate) {
-            if let Some(c) = parse_config_json(&text) {
-                return Some(c);
-            }
-        }
-    }
-    None
+    let text = std::fs::read_to_string(config_path()).ok()?;
+    parse_config_json(&text)
 }
 
 fn persist_config(path: &Path, config: &Config) -> anyhow::Result<()> {

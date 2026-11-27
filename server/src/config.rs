@@ -88,7 +88,7 @@ pub struct ServerConfig {
     pub allow_insecure_dashboard_open: bool,
     /// Username for the default admin bootstrapped when no dashboard users exist.
     pub admin_username: String,
-    /// `ADMIN_PASSWORD` (or legacy `UI_PASSWORD`); required to bootstrap the first user.
+    /// `ADMIN_PASSWORD`; required to bootstrap the first user.
     pub admin_password: Option<String>,
     /// Per-agent Wake-on-LAN throttle. Zero disables it.
     pub wol_min_interval: Duration,
@@ -360,9 +360,7 @@ impl ServerConfig {
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| "admin".to_string());
 
-        let admin_password = read_env_or_file("ADMIN_PASSWORD")
-            .or_else(|| read_env_or_file("UI_PASSWORD"))
-            .filter(|s| !s.is_empty());
+        let admin_password = read_env_or_file("ADMIN_PASSWORD").filter(|s| !s.is_empty());
 
         let wol_min_interval = Duration::from_secs(
             env_var("WOL_MIN_INTERVAL_SECS")
