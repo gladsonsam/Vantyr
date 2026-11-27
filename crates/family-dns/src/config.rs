@@ -571,6 +571,14 @@ pub struct DeviceConfig {
     /// current config so a bundle round-trip reproduces them exactly.
     #[serde(default)]
     pub source_ranges: Vec<String>,
+    /// Optional, explicit per-device SafeSearch policy. `None` inherits the
+    /// global `Config::safe_search`; `Some` replaces the whole provider policy
+    /// (including the `enabled` master switch and Google/Bing/YouTube modes)
+    /// for this one configured device. This is operator-local config only: it
+    /// never grants a person identity, an allow rule or any other privilege,
+    /// and the household policy decision still gates every query.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safe_search: Option<SafeSearchConfig>,
 }
 
 /// Parse one operator CIDR into a canonical, family-checked range. IPv4-mapped
@@ -1078,11 +1086,16 @@ pub enum YouTubeSafeSearch {
     Strict,
 }
 
-/// Global operator opt-in for provider-backed SafeSearch DNS rewrites.
+/// Operator policy for provider-backed SafeSearch DNS rewrites. The same shape
+/// is used for the global default (`Config::safe_search`) and for an explicit
+/// per-device override (`DeviceConfig::safe_search`); there is no schema
+/// version and no legacy reader.
 ///
 /// Nothing is rewritten unless `enabled` is true and the matching provider
-/// switch is true. There is no per-client or per-device variant in this
-/// contract; one current field is carried in every published snapshot.
+/// switch is true. A device override replaces this policy wholesale, including
+/// its `enabled` master switch, so it can enable one configured device while
+/// the global default is off or explicitly disable another while the global
+/// default is on. It never grants an identity or an allow privilege.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SafeSearchConfig {
@@ -1153,8 +1166,10 @@ pub struct Config {
     /// household decision has allowed the question.
     #[serde(default)]
     pub rewrites: Vec<RecordSpec>,
-    /// Global SafeSearch opt-in. Source-only operator setting; no HTTP,
-    /// frontend or per-client delivery exists for it in this contract.
+    /// Global default SafeSearch policy. Source-only operator setting; no
+    /// HTTP, frontend or per-client delivery exists for it in this contract.
+    /// Devices without an explicit override and unrecognized sources inherit
+    /// this value; the restrictive unknown-device profile is unchanged.
     #[serde(default)]
     pub safe_search: SafeSearchConfig,
     /// Non-overridable deny-only safety rules. Empty for local-only configs.
@@ -1773,19 +1788,20 @@ impl Config {
         }
     }
 
-    /// Resolve a source IP to a configured device. Exact IPs are checked
-    /// first; otherwise the most specific matching CIDR wins. Unknown sources
-    /// get an explicitly restrictive default device; no owner or current-user
-    /// inference is performed anywhere in this path.
-    pub fn device_for(&self, source: IpAddr) -> (Option<DeviceId>, Device) {
+    /// The single source-selection rule shared by the device value and the
+    /// effective SafeSearch policy. Exact IPs are checked first; otherwise the
+    /// most specific matching CIDR wins. `None` means an unrecognized source.
+    /// Both callers consume the same `&DeviceConfig`, so exact priority,
+    /// equal-prefix conflict handling and IPv4-mapped canonicalization can
+    /// never diverge between the two derived values.
+    fn matched_device(&self, source: IpAddr) -> Option<&DeviceConfig> {
         let source = normalize_ip(source);
         // Exact mapping is authoritative even when a narrower range would
         // select another device.
         for configured in &self.devices {
             for raw in &configured.source_ips {
                 if parsed_ip(raw, "source IP").ok() == Some(source) {
-                    let device = self.device_value(configured);
-                    return (Some(device.id), device);
+                    return Some(configured);
                 }
             }
         }
@@ -1806,25 +1822,47 @@ impl Config {
                 }
             }
         }
-        if let Some((configured, _)) = best {
-            let device = self.device_value(configured);
-            return (Some(device.id), device);
+        best.map(|(configured, _)| configured)
+    }
+
+    /// Resolve a source IP to a configured device. Exact IPs are checked
+    /// first; otherwise the most specific matching CIDR wins. Unknown sources
+    /// get an explicitly restrictive default device; no owner or current-user
+    /// inference is performed anywhere in this path.
+    pub fn device_for(&self, source: IpAddr) -> (Option<DeviceId>, Device) {
+        match self.matched_device(source) {
+            Some(configured) => {
+                let device = self.device_value(configured);
+                (Some(device.id), device)
+            }
+            None => (
+                None,
+                Device {
+                    id: DeviceId::nil(),
+                    household_id: HouseholdId::from_str(&self.household_id)
+                        .expect("household id validated"),
+                    label: "Unrecognized client".to_owned(),
+                    kind: DeviceKind::Iot,
+                    // An unrecognized source is not known to be a shared device;
+                    // claiming `SharedDevice` would overstate what we observed.
+                    shared: false,
+                    default_profile: self.default_device_profile.clone(),
+                    capabilities: [Capability::DomainFiltering].into_iter().collect(),
+                },
+            ),
         }
-        (
-            None,
-            Device {
-                id: DeviceId::nil(),
-                household_id: HouseholdId::from_str(&self.household_id)
-                    .expect("household id validated"),
-                label: "Unrecognized client".to_owned(),
-                kind: DeviceKind::Iot,
-                // An unrecognized source is not known to be a shared device;
-                // claiming `SharedDevice` would overstate what we observed.
-                shared: false,
-                default_profile: self.default_device_profile.clone(),
-                capabilities: [Capability::DomainFiltering].into_iter().collect(),
-            },
-        )
+    }
+
+    /// Effective SafeSearch policy for one source. A configured device with an
+    /// explicit override replaces the global policy wholesale; devices without
+    /// an override and unrecognized sources inherit the global default. This
+    /// value only selects a provider rewrite target: the household policy
+    /// decision (baseline, question and canonical-target denies) is unchanged
+    /// and remains authoritative.
+    pub fn effective_safe_search(&self, source: IpAddr) -> &SafeSearchConfig {
+        self.matched_device(source)
+            .and_then(|configured| configured.safe_search.as_ref())
+            .unwrap_or(&self.safe_search)
     }
 
     pub fn upstreams(&self) -> Vec<SocketAddr> {
@@ -2385,6 +2423,133 @@ mod tests {
             assert!(
                 Config::parse(with_safe_search(bad).as_bytes()).is_err(),
                 "invalid safe_search accepted: {bad}"
+            );
+        }
+    }
+
+    fn safe_search_devices_config(global: &str, devices: &str) -> String {
+        format!(
+            r#"{{
+            "household_id": "11111111-2222-3333-4444-555555555555",
+            "policy_revision": 4,
+            "bind": {{ "address": "127.0.0.1", "port": 15353 }},
+            "upstreams": ["127.0.0.1:5353"],
+            "safe_search": {global},
+            "profiles": {{ "restricted": [] }},
+            "default_device_profile": "restricted",
+            "devices": {devices}
+        }}"#
+        )
+    }
+
+    #[test]
+    fn safe_search_override_replaces_the_whole_policy_or_inherits_the_default() {
+        let devices = r#"[
+            {"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"restricted","source_ips":["127.0.0.2"],"safe_search":{"enabled":false,"google":true}},
+            {"id":"bbbbbbbb-cccc-dddd-eeee-ffffffffffff","default_profile":"restricted","source_ips":["127.0.0.3"],"safe_search":{"enabled":true,"google":false,"bing":true,"youtube":"moderate"}},
+            {"id":"cccccccc-dddd-eeee-ffff-000000000000","default_profile":"restricted","source_ips":["127.0.0.4"]}
+        ]"#;
+        let config = Config::parse(
+            safe_search_devices_config(r#"{"enabled":true,"google":true}"#, devices).as_bytes(),
+        )
+        .unwrap();
+
+        // An explicit override replaces `enabled` and every provider switch.
+        let disabled = config.effective_safe_search("127.0.0.2".parse().unwrap());
+        assert!(
+            !disabled.enabled,
+            "explicit disable must beat enabled global"
+        );
+        assert!(disabled.google);
+
+        let replaced = config.effective_safe_search("127.0.0.3".parse().unwrap());
+        assert!(replaced.enabled);
+        assert!(!replaced.google, "global google switch must not leak in");
+        assert!(replaced.bing);
+        assert_eq!(replaced.youtube, YouTubeSafeSearch::Moderate);
+
+        // A device without an override and an unknown source both inherit the
+        // global default, and selection still reports the restrictive unknown
+        // device independently of the SafeSearch policy.
+        assert!(
+            config
+                .effective_safe_search("127.0.0.4".parse().unwrap())
+                .enabled
+        );
+        assert!(
+            config
+                .effective_safe_search("10.9.8.7".parse().unwrap())
+                .enabled
+        );
+        let (id, device) = config.device_for("10.9.8.7".parse().unwrap());
+        assert!(id.is_none());
+        assert_eq!(device.default_profile, "restricted");
+        assert!(!device.shared);
+    }
+
+    #[test]
+    fn safe_search_override_uses_the_shared_exact_then_longest_cidr_selection() {
+        let devices = r#"[
+            {"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"restricted","source_ips":["127.0.0.2"],"safe_search":{"enabled":true,"google":true}},
+            {"id":"bbbbbbbb-cccc-dddd-eeee-ffffffffffff","default_profile":"restricted","source_ranges":["127.0.0.0/24"],"safe_search":{"enabled":true,"bing":true}},
+            {"id":"cccccccc-dddd-eeee-ffff-000000000000","default_profile":"restricted","source_ranges":["127.0.0.16/28"],"safe_search":{"enabled":true,"youtube":"strict"}}
+        ]"#;
+        let config =
+            Config::parse(safe_search_devices_config(r#"{"enabled":false}"#, devices).as_bytes())
+                .unwrap();
+
+        // The exact IP wins over every CIDR, including the /28.
+        let exact = config.effective_safe_search("127.0.0.2".parse().unwrap());
+        assert!(exact.enabled && exact.google);
+        let (exact_id, _) = config.device_for("127.0.0.2".parse().unwrap());
+        assert_eq!(
+            exact_id.unwrap().to_string(),
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        );
+
+        // Longest prefix wins among ranges; the same device is selected for the
+        // policy value and the device value.
+        let specific = config.effective_safe_search("127.0.0.17".parse().unwrap());
+        assert_eq!(specific.youtube, YouTubeSafeSearch::Strict);
+        let (specific_id, _) = config.device_for("127.0.0.17".parse().unwrap());
+        assert_eq!(
+            specific_id.unwrap().to_string(),
+            "cccccccc-dddd-eeee-ffff-000000000000"
+        );
+
+        let broad = config.effective_safe_search("127.0.0.40".parse().unwrap());
+        assert!(broad.enabled && broad.bing && !broad.google);
+        assert!(
+            !config
+                .effective_safe_search("127.0.1.2".parse().unwrap())
+                .enabled
+        );
+    }
+
+    #[test]
+    fn safe_search_override_round_trips_and_rejects_malformed_values() {
+        let devices = r#"[{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"restricted","source_ips":["127.0.0.2"],"safe_search":{"enabled":true,"google":true,"youtube":"strict"}}]"#;
+        let config =
+            Config::parse(safe_search_devices_config(r#"{"enabled":false}"#, devices).as_bytes())
+                .unwrap();
+        let bytes = serde_json::to_vec(&config).unwrap();
+        let again = Config::parse(&bytes).unwrap();
+        assert_eq!(again.devices, config.devices);
+        assert_eq!(
+            again.effective_safe_search("127.0.0.2".parse().unwrap()),
+            config.effective_safe_search("127.0.0.2".parse().unwrap())
+        );
+        assert_eq!(serde_json::to_vec(&again).unwrap(), bytes);
+
+        for bad in [
+            r#"[{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"restricted","source_ips":["127.0.0.2"],"safe_search":{"enabled":true,"nope":1}}]"#,
+            r#"[{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"restricted","source_ips":["127.0.0.2"],"safe_search":{"google":"yes"}}]"#,
+            r#"[{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"restricted","source_ips":["127.0.0.2"],"safe_search":{"youtube":"bogus"}}]"#,
+        ] {
+            assert!(
+                Config::parse(safe_search_devices_config(r#"{"enabled":false}"#, bad).as_bytes())
+                    .is_err(),
+                "malformed device safe_search accepted: {bad}"
             );
         }
     }

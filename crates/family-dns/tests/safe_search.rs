@@ -22,7 +22,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use family_dns::{Config, DnsServer};
 use hickory_server::proto::op::{Message, ResponseCode};
 use hickory_server::proto::rr::{RData, RecordType};
-use support::{addresses, assert_code, cname_targets, udp_query};
+use support::{addresses, assert_code, cname_targets, tcp_query, udp_query};
 
 const HOUSEHOLD: &str = "11111111-2222-3333-4444-555555555555";
 const DEVICE: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
@@ -50,6 +50,10 @@ const YOUTUBE_ALIASES: &[&str] = &[
 ];
 fn source() -> IpAddr {
     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2))
+}
+
+fn source_at(last: u8) -> IpAddr {
+    IpAddr::V4(Ipv4Addr::new(127, 0, 0, last))
 }
 
 fn v4(value: u8) -> IpAddr {
@@ -159,9 +163,25 @@ fn upstream_config(port: u16) -> String {
     )
 }
 
+/// Default device array used by the pre-override tests. Kept as a named
+/// constant so the helper below reproduces the exact same template.
+const DEFAULT_WORKER_DEVICES: &str = r#"[{
+    "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "default_profile": "adult",
+    "source_ips": ["127.0.0.2"]
+  }]"#;
+
 /// `extra_rules` is inserted before the allow rules so a test can add a
-/// deny-before-rewrite guard without changing the rest of the profile.
-fn worker_config(upstream: SocketAddr, safe_search: &str, extra_rules: &str) -> String {
+/// deny-before-rewrite guard without changing the rest of the profile. Device
+/// overrides and the non-overridable baseline are explicit test inputs so the
+/// same template serves both global and per-device tests.
+fn worker_config_with(
+    upstream: SocketAddr,
+    safe_search: &str,
+    extra_rules: &str,
+    devices: &str,
+    baseline: &str,
+) -> String {
     format!(
         r#"{{
   "household_id": "{HOUSEHOLD}",
@@ -169,6 +189,7 @@ fn worker_config(upstream: SocketAddr, safe_search: &str, extra_rules: &str) -> 
   "bind": {{ "address": "127.0.0.1", "port": 0 }},
   "upstreams": ["{upstream}"],
   "safe_search": {safe_search},
+  "baseline": [{baseline}],
   "profiles": {{
     "adult": [
       {extra_rules}
@@ -193,26 +214,50 @@ fn worker_config(upstream: SocketAddr, safe_search: &str, extra_rules: &str) -> 
     ]
   }},
   "default_device_profile": "restricted",
-  "devices": [{{
-    "id": "{DEVICE}",
-    "default_profile": "adult",
-    "source_ips": ["127.0.0.2"]
-  }}]
+  "devices": {devices}
 }}"#
     )
 }
 
-async fn start_worker(safe_search: &str, extra_rules: &str) -> (DnsServer, DnsServer) {
+fn worker_config(upstream: SocketAddr, safe_search: &str, extra_rules: &str) -> String {
+    worker_config_with(
+        upstream,
+        safe_search,
+        extra_rules,
+        DEFAULT_WORKER_DEVICES,
+        "",
+    )
+}
+
+async fn start_worker_with(
+    safe_search: &str,
+    extra_rules: &str,
+    devices: &str,
+    baseline: &str,
+) -> (DnsServer, DnsServer) {
     let upstream = DnsServer::start(Config::parse(upstream_config(0).as_bytes()).unwrap())
         .await
         .unwrap();
     let worker = DnsServer::start(
-        Config::parse(worker_config(upstream.bind_addr(), safe_search, extra_rules).as_bytes())
-            .unwrap(),
+        Config::parse(
+            worker_config_with(
+                upstream.bind_addr(),
+                safe_search,
+                extra_rules,
+                devices,
+                baseline,
+            )
+            .as_bytes(),
+        )
+        .unwrap(),
     )
     .await
     .unwrap();
     (worker, upstream)
+}
+
+async fn start_worker(safe_search: &str, extra_rules: &str) -> (DnsServer, DnsServer) {
+    start_worker_with(safe_search, extra_rules, DEFAULT_WORKER_DEVICES, "").await
 }
 
 /// Address records must belong to the canonical target, not to the original
@@ -643,4 +688,253 @@ fn malformed_youtube_mode_is_rejected() {
             "valid YouTube mode rejected: {good}"
         );
     }
+}
+
+/// Two configured devices carry different full policies while the global
+/// default is off. Any rewrite therefore proves a per-device override rather
+/// than a leaked global setting, and the same query takes different provider
+/// paths from different sources over real UDP and TCP sockets.
+#[tokio::test]
+async fn per_device_overrides_select_distinct_providers_over_udp_and_tcp() {
+    let devices = r#"[
+      {"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","source_ips":["127.0.0.2"],"safe_search":{"enabled":true,"google":true,"bing":false,"youtube":"off"}},
+      {"id":"bbbbbbbb-cccc-dddd-eeee-ffffffffffff","default_profile":"adult","source_ips":["127.0.0.3"],"safe_search":{"enabled":true,"google":false,"bing":true,"youtube":"strict"}}
+    ]"#;
+    let (worker, upstream) = start_worker_with(DISABLED_BUT_REQUESTED, "", devices, "").await;
+    let addr = worker.bind_addr();
+
+    // UDP, device A: Google override is active and resolves through upstream.
+    let a = udp_query(source(), addr, "www.google.com.", RecordType::A).await;
+    assert_code(&a, ResponseCode::NoError);
+    assert!(
+        cname_targets(&a).contains(&GOOGLE_TARGET.to_owned()),
+        "device A did not use its Google override: {:?}",
+        a.answers
+    );
+    assert!(addresses(&a).contains(&v4(120)));
+    assert!(addresses_owned_by(&a, GOOGLE_TARGET));
+
+    // TCP, device B: the other device's Google switch must not leak in.
+    let b = tcp_query(source_at(3), addr, "www.google.com.", RecordType::A).await;
+    assert_code(&b, ResponseCode::NoError);
+    assert!(
+        cname_targets(&b).is_empty(),
+        "device B inherited device A's Google switch: {:?}",
+        b.answers
+    );
+    assert!(addresses(&b).contains(&v4(10)));
+
+    // TCP, device B: its own Bing override is active.
+    let bing = tcp_query(source_at(3), addr, "www.bing.com.", RecordType::A).await;
+    assert_code(&bing, ResponseCode::NoError);
+    assert!(
+        cname_targets(&bing).contains(&BING_TARGET.to_owned()),
+        "device B did not use its Bing override: {:?}",
+        bing.answers
+    );
+    assert!(addresses(&bing).contains(&v4(220)));
+    assert!(addresses_owned_by(&bing, BING_TARGET));
+
+    // UDP, device B: YouTube strict is independent of Google and Bing.
+    let yt = udp_query(source_at(3), addr, "www.youtube.com.", RecordType::A).await;
+    assert_code(&yt, ResponseCode::NoError);
+    assert!(
+        cname_targets(&yt).contains(&YOUTUBE_STRICT_TARGET.to_owned()),
+        "device B did not use its YouTube override: {:?}",
+        yt.answers
+    );
+    assert!(addresses(&yt).contains(&v4(140)));
+    assert!(addresses_owned_by(&yt, YOUTUBE_STRICT_TARGET));
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+/// A device with no override inherits the global default; an explicit
+/// `enabled: false` override switches one device off while global is on; and
+/// an unknown source keeps the restrictive profile even with global enabled.
+#[tokio::test]
+async fn inherited_device_and_unknown_source_keep_their_baseline_behaviour() {
+    let devices = r#"[
+      {"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","source_ips":["127.0.0.2"]},
+      {"id":"bbbbbbbb-cccc-dddd-eeee-ffffffffffff","default_profile":"adult","source_ips":["127.0.0.3"],"safe_search":{"enabled":false,"google":true}}
+    ]"#;
+    let (worker, upstream) = start_worker_with(GOOGLE_ONLY, "", devices, "").await;
+    let addr = worker.bind_addr();
+
+    let inherited = udp_query(source(), addr, "www.google.com.", RecordType::A).await;
+    assert_code(&inherited, ResponseCode::NoError);
+    assert!(cname_targets(&inherited).contains(&GOOGLE_TARGET.to_owned()));
+    assert!(addresses(&inherited).contains(&v4(120)));
+
+    let disabled = udp_query(source_at(3), addr, "www.google.com.", RecordType::A).await;
+    assert_code(&disabled, ResponseCode::NoError);
+    assert!(
+        cname_targets(&disabled).is_empty(),
+        "explicit disabled override did not beat the enabled global default"
+    );
+    assert!(addresses(&disabled).contains(&v4(10)));
+
+    let unknown = udp_query(source_at(99), addr, "www.google.com.", RecordType::A).await;
+    assert_eq!(
+        unknown.response_code,
+        ResponseCode::NXDomain,
+        "unknown source must stay on the restrictive deny profile"
+    );
+    assert!(cname_targets(&unknown).is_empty());
+    assert!(addresses(&unknown).is_empty());
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+/// The exact override wins over a broader CIDR, and the longest-prefix CIDR
+/// wins among ranges. Both derived values (device identity and SafeSearch)
+/// come from one selection helper, so the same client cannot see a different
+/// provider policy from the device its query is attributed to.
+#[tokio::test]
+async fn device_override_uses_exact_ip_then_longest_cidr_priority() {
+    let devices = r#"[
+      {"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","source_ips":["127.0.0.2"],"safe_search":{"enabled":true,"google":true}},
+      {"id":"bbbbbbbb-cccc-dddd-eeee-ffffffffffff","default_profile":"adult","source_ranges":["127.0.0.0/24"],"safe_search":{"enabled":true,"google":false,"bing":true}},
+      {"id":"cccccccc-dddd-eeee-ffff-000000000000","default_profile":"adult","source_ranges":["127.0.0.16/28"],"safe_search":{"enabled":true,"youtube":"moderate"}}
+    ]"#;
+    let (worker, upstream) = start_worker_with(r#"{"enabled":false}"#, "", devices, "").await;
+    let addr = worker.bind_addr();
+
+    // Exact IP beats both ranges, including the narrower /28.
+    let exact = udp_query(source(), addr, "www.google.com.", RecordType::A).await;
+    assert_code(&exact, ResponseCode::NoError);
+    assert!(cname_targets(&exact).contains(&GOOGLE_TARGET.to_owned()));
+    assert!(addresses(&exact).contains(&v4(120)));
+
+    // The /28 beats the /24 for both the policy and the device attribution.
+    let specific = tcp_query(source_at(17), addr, "www.youtube.com.", RecordType::A).await;
+    assert_code(&specific, ResponseCode::NoError);
+    assert!(
+        cname_targets(&specific).contains(&YOUTUBE_MODERATE_TARGET.to_owned()),
+        "longest-prefix override was not selected: {:?}",
+        specific.answers
+    );
+    assert!(addresses(&specific).contains(&v4(150)));
+
+    // Other clients fall back to the /24 override, not the exact one.
+    let broad = udp_query(source_at(40), addr, "www.google.com.", RecordType::A).await;
+    assert_code(&broad, ResponseCode::NoError);
+    assert!(cname_targets(&broad).is_empty());
+    assert!(addresses(&broad).contains(&v4(10)));
+    let broad_bing = udp_query(source_at(40), addr, "www.bing.com.", RecordType::A).await;
+    assert_code(&broad_bing, ResponseCode::NoError);
+    assert!(cname_targets(&broad_bing).contains(&BING_TARGET.to_owned()));
+    assert!(addresses(&broad_bing).contains(&v4(220)));
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+/// A device override never grants an allow privilege. The non-overridable
+/// safety baseline and an explicit question deny still answer NXDOMAIN.
+#[tokio::test]
+async fn baseline_and_question_denies_precede_device_overrides() {
+    let devices = r#"[
+      {"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","source_ips":["127.0.0.2"],"safe_search":{"enabled":true,"google":true}},
+      {"id":"bbbbbbbb-cccc-dddd-eeee-ffffffffffff","default_profile":"adult","source_ips":["127.0.0.3"],"safe_search":{"enabled":true,"bing":true}}
+    ]"#;
+    let baseline = r#"{"effect":"deny","match":{"type":"exact","value":"www.google.com"},"reason":"baseline deny"}"#;
+    let question = r#"{ "effect": "deny", "match": {"type":"exact","value":"www.bing.com"}, "reason":"question deny" },"#;
+    let (worker, upstream) =
+        start_worker_with(r#"{"enabled":false}"#, question, devices, baseline).await;
+    let addr = worker.bind_addr();
+
+    let baseline_denied = udp_query(source(), addr, "www.google.com.", RecordType::A).await;
+    assert_code(&baseline_denied, ResponseCode::NXDomain);
+    assert!(cname_targets(&baseline_denied).is_empty());
+    assert!(addresses(&baseline_denied).is_empty());
+
+    let question_denied = udp_query(source_at(3), addr, "www.bing.com.", RecordType::A).await;
+    assert_code(&question_denied, ResponseCode::NXDomain);
+    assert!(cname_targets(&question_denied).is_empty());
+    assert!(addresses(&question_denied).is_empty());
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+/// Even with a device override active, a household deny on the canonical
+/// target blocks the rewritten answer rather than leaking an un-followed
+/// CNAME or provider glue.
+#[tokio::test]
+async fn canonical_target_deny_precedes_device_override() {
+    let devices = r#"[{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","source_ips":["127.0.0.2"],"safe_search":{"enabled":true,"google":true}}]"#;
+    let target_deny = r#"{ "effect": "deny", "match": {"type":"exact","value":"forcesafesearch.google.com"}, "reason":"target deny" },"#;
+    let (worker, upstream) =
+        start_worker_with(r#"{"enabled":false}"#, target_deny, devices, "").await;
+    let addr = worker.bind_addr();
+
+    let answer = udp_query(source(), addr, "www.google.com.", RecordType::A).await;
+    assert_code(&answer, ResponseCode::NXDomain);
+    assert!(cname_targets(&answer).is_empty());
+    assert!(addresses(&answer).is_empty());
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+/// One reload case: changing a device override takes effect through the same
+/// validate -> publish -> swap path, without resetting generations or losing
+/// the override. The candidate keeps the same transport and raises only the
+/// policy revision, as a normal local reload does.
+#[tokio::test]
+async fn device_override_change_survives_a_reload() {
+    let before_devices = r#"[{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","source_ips":["127.0.0.2"],"safe_search":{"enabled":false,"google":true}}]"#;
+    let after_devices = r#"[{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","source_ips":["127.0.0.2"],"safe_search":{"enabled":true,"google":true}}]"#;
+    let upstream = DnsServer::start(Config::parse(upstream_config(0).as_bytes()).unwrap())
+        .await
+        .unwrap();
+    let worker = DnsServer::start(
+        Config::parse(
+            worker_config_with(
+                upstream.bind_addr(),
+                r#"{"enabled":false}"#,
+                "",
+                before_devices,
+                "",
+            )
+            .as_bytes(),
+        )
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    let addr = worker.bind_addr();
+
+    let before = udp_query(source(), addr, "www.google.com.", RecordType::A).await;
+    assert_code(&before, ResponseCode::NoError);
+    assert!(cname_targets(&before).is_empty());
+    assert!(addresses(&before).contains(&v4(10)));
+
+    let candidate = worker_config_with(
+        upstream.bind_addr(),
+        r#"{"enabled":false}"#,
+        "",
+        after_devices,
+        "",
+    )
+    .replace("\"policy_revision\": 7", "\"policy_revision\": 8");
+    worker
+        .reload(candidate.as_bytes(), chrono::Utc::now())
+        .unwrap();
+
+    let after = udp_query(source(), addr, "www.google.com.", RecordType::A).await;
+    assert_code(&after, ResponseCode::NoError);
+    assert!(
+        cname_targets(&after).contains(&GOOGLE_TARGET.to_owned()),
+        "reload did not apply the device override: {:?}",
+        after.answers
+    );
+    assert!(addresses(&after).contains(&v4(120)));
+    assert!(addresses_owned_by(&after, GOOGLE_TARGET));
+
+    worker.stop().await;
+    upstream.stop().await;
 }

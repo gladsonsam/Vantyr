@@ -497,12 +497,18 @@ impl RequestHandler for FilteringHandler {
         // decision above still gates every rewrite unconditionally. SafeSearch
         // is the one deliberate exception that resolves an official target
         // through the configured upstream before answering.
-        // SafeSearch is a global opt-in carried in this one frozen snapshot.
+        // SafeSearch is resolved per source from this one frozen snapshot: an
+        // explicit device override replaces the global default, so the same
+        // query can take a different provider path from different clients.
+        // The device and the policy both come from the same selection rule.
         // Canonical targets are never themselves selected, and non-address
         // query types fall through to the catalog, so no rewrite loop exists.
-        let safe_target =
-            crate::safe_search::target_for(&snapshot.config.safe_search, &qname, qtype)
-                .map(|target| Name::from_str(target).expect("validated SafeSearch target"));
+        let safe_target = crate::safe_search::target_for(
+            snapshot.config.effective_safe_search(source),
+            &qname,
+            qtype,
+        )
+        .map(|target| Name::from_str(target).expect("validated SafeSearch target"));
         let (message, catalog_info) = if let Some(target) = safe_target.as_ref() {
             // SafeSearch wins over a plain exact rewrite on the same selected
             // owner: an enabled opt-in must always produce resolved glue, not

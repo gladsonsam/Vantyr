@@ -289,6 +289,20 @@ mod tests {
     }
 
     #[test]
+    fn controller_pull_preserves_operator_local_device_safe_search_overrides() {
+        let mut base = base();
+        base.devices[0].safe_search = Some(crate::config::SafeSearchConfig {
+            enabled: true,
+            google: false,
+            bing: true,
+            youtube: crate::config::YouTubeSafeSearch::Strict,
+        });
+        let compiled = compile(&base, &sample_policy()).unwrap();
+        assert_eq!(compiled.devices, base.devices);
+        assert_eq!(compiled.devices[0].safe_search, base.devices[0].safe_search);
+    }
+
+    #[test]
     fn compiled_config_preserves_operator_dot_listener_transport() {
         let mut base = base();
         base.dot_listener = Some(crate::config::DotListenerConfig {
