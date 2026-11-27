@@ -482,8 +482,14 @@ async fn exact_rewrites_cannot_bypass_denials_or_alias_target_policy() {
     assert!(observations
         .iter()
         .any(|o| { o.name == "blocked.lab.example." && !o.allow && o.device_id.is_some() }));
+    // This seam logs each policy evaluation: the original query is allowed,
+    // then its canonical target is denied. Final query attribution belongs to
+    // the event reporting path, rather than this evaluation log.
     assert!(observations.iter().any(|o| {
-        o.name == "rewrittenalias.lab.example."
+        o.name == "rewrittenalias.lab.example." && o.allow && o.denied_alias_target.is_none()
+    }));
+    assert!(observations.iter().any(|o| {
+        o.name == "blocked.lab.example."
             && !o.allow
             && o.denied_alias_target.as_deref() == Some("blocked.lab.example.")
     }));
