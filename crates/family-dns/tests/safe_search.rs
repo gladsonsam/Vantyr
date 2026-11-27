@@ -225,7 +225,7 @@ async fn denied_question_precedes_safe_search_rewrite() {
     let addr = worker.bind_addr();
 
     let answer = udp_query(source(), addr, "www.google.com.", RecordType::A).await;
-    assert_code(&answer, ResponseCode::NxDomain);
+    assert_code(&answer, ResponseCode::NXDomain);
     assert!(cname_targets(&answer).is_empty());
     assert!(addresses(&answer).is_empty());
 
@@ -240,7 +240,7 @@ async fn denied_canonical_target_blocks_the_rewritten_answer() {
     let addr = worker.bind_addr();
 
     let answer = udp_query(source(), addr, "www.google.com.", RecordType::A).await;
-    assert_code(&answer, ResponseCode::NxDomain);
+    assert_code(&answer, ResponseCode::NXDomain);
     assert!(cname_targets(&answer).is_empty());
     assert!(addresses(&answer).is_empty());
 
