@@ -94,6 +94,18 @@ counts include duplicates and are bounded across all sources. This is compiler
 acceptance only: response integration and real DNS/restart evidence are pending;
 no rewrite capability row is closed by the compiler alone.
 
+The corresponding list-rewrite runtime is accepted through `6becfe75`
+(source `5c86cccc` + `8e1153ae`). Independent validation passed 19 filter-runtime,
+16 functional and 25 SafeSearch tests, then strict family-dns all-target clippy.
+List A/AAAA/CNAME values retain multiple records and fixed TTL 60; suffix matches
+answer under the original query owner. Household/list/unknown-device denies,
+SafeSearch priority, operator-owner priority including NODATA, alias-target
+denial, bogus-IP and IPv6 shaping remain authoritative. Final query events
+prove alias and answer-shaping denials; rewrite provenance stays in local traces
+and never becomes fabricated block evidence. Reload/restart preserve exact
+persisted list bytes. Suppression rcodes, broader RR types and modifiers,
+CNAME glue, management and UI remain open.
+
 The first global SafeSearch operator slice is accepted through `8c45f8cd`
 (source `45965f8e` plus test corrections): eight real loopback integration tests,
 six library tests and strict crate all-target clippy pass. Supported names are
