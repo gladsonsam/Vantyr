@@ -31,8 +31,9 @@
 //!   shorthand IP/hostname forms) -> a thin bounded parser in this crate,
 //!   feature `abp`. The maintained adblock 0.13.6 engine exposes no typed DNS
 //!   rewrite, so these rules are compiled here and never enter the block
-//!   engine. They produce immutable typed values held in an owner index. This
-//!   is a compiler-only slice: it builds no DNS response, enforces nothing at
+//!   engine. They produce immutable typed record sets held in an owner index;
+//!   selection is by most specific owner, then shaped per query type. This is
+//!   a compiler-only slice: it builds no DNS response, enforces nothing at
 //!   runtime and does not close a capability row. A later thin worker
 //!   integration owns response construction and ordering against policy.
 //!
@@ -73,7 +74,9 @@ pub use limits::{
     MAX_TOTAL_SOURCE_BYTES, REGEX_RESERVATION_PER_RULE,
 };
 #[cfg(feature = "abp")]
-pub use dns_rewrite::{DnsRewrite, DnsRewriteValue};
+pub use dns_rewrite::{
+    DnsRewrite, DnsRewriteRecords, DnsRewriteSelection, DnsRewriteValue,
+};
 pub use service::{ServiceCatalog, ServiceDefinition, ServiceDomain, ServiceMeta};
 pub use snapshot::{compile, compile_with_limits, FilterSnapshot};
 pub use types::{

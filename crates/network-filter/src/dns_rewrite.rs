@@ -19,6 +19,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use hickory_server::proto::rr::RecordType;
+
 use crate::canonical;
 use crate::limits::{Limits, MAX_RULE_LEN};
 use crate::types::{bounded_rule, CompileError, Diagnostic, DiagnosticKind, Evidence, SourceKind};
@@ -49,6 +51,65 @@ pub struct DnsRewrite {
     pub evidence: Evidence,
     /// 1-based line in the raw source, retained for deterministic selection.
     pub line: usize,
+}
+
+/// The distinct typed records of one matched canonical owner. This is the
+/// immutable selection object: the owner is the most specific list owner that
+/// matched the query name, and `records` holds every distinct typed value for
+/// that owner (each with its own bounded provenance) in deterministic
+/// `(source id, line)` order. Query-type shaping happens in `records_for`, not
+/// in the owner selection, so no record is silently dropped by an unused
+/// query-type parameter.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DnsRewriteSelection {
+    /// Canonical owner without a trailing dot (ASCII/punycode, lowercase).
+    pub owner: String,
+    /// All distinct typed rewrites for this owner, in deterministic order.
+    pub records: Vec<DnsRewrite>,
+}
+
+impl DnsRewriteSelection {
+    /// Shape this owner's records for one query type.
+    ///
+    /// `A`, `AAAA` and `CNAME` keep only records of that type. `ANY` is an
+    /// explicit operator-rewrite query: it keeps every distinct record of the
+    /// owner. Any other query type returns `MatchedEmpty`: the owner matched,
+    /// so this is a distinct NODATA outcome and never an ordinary fallback.
+    pub fn records_for(&self, qtype: RecordType) -> DnsRewriteRecords {
+        let records = match qtype {
+            RecordType::A => self.by_type(|value| matches!(value, DnsRewriteValue::A(_))),
+            RecordType::AAAA => self.by_type(|value| matches!(value, DnsRewriteValue::Aaaa(_))),
+            RecordType::CNAME => self.by_type(|value| matches!(value, DnsRewriteValue::Cname(_))),
+            RecordType::ANY => self.records.clone(),
+            // Matched owner, unsupported query type: explicit NODATA, not a
+            // fall-through to ordinary resolution.
+            _ => Vec::new(),
+        };
+        if records.is_empty() {
+            DnsRewriteRecords::MatchedEmpty
+        } else {
+            DnsRewriteRecords::Matched(records)
+        }
+    }
+
+    fn by_type(&self, predicate: impl Fn(&DnsRewriteValue) -> bool) -> Vec<DnsRewrite> {
+        self.records
+            .iter()
+            .filter(|rewrite| predicate(&rewrite.value))
+            .cloned()
+            .collect()
+    }
+}
+
+/// The result of shaping one matched owner for a query type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DnsRewriteRecords {
+    /// One or more distinct typed records for this query type.
+    Matched(Vec<DnsRewrite>),
+    /// The owner matched the query name but has no record for this query
+    /// type (NODATA), including when the query type is unsupported by this
+    /// compiler slice. This is distinct from no owner matching at all.
+    MatchedEmpty,
 }
 
 /// Lexically validated rule awaiting source attribution in `abp::build`.
@@ -244,8 +305,9 @@ pub(crate) fn build(
             }
         }
         // Deterministic selection: source id, then source line. Exact
-        // duplicates collapse; distinct address values are resolved by this
-        // order so a single selected value is always well-formed owner data.
+        // duplicates collapse to one record with the first provenance; every
+        // distinct typed value for the owner is retained as a record set, so
+        // multiple A/AAAA values are all preserved for later query shaping.
         rules.sort_by(|left, right| {
             left.evidence
                 .source_id
@@ -270,16 +332,20 @@ impl DnsRewriteEngine {
         owner_suffixes(host).any(|owner| self.exceptions.contains(owner))
     }
 
-    /// Select the typed rewrite for a canonical host. The most specific owner
-    /// wins; within an owner the first rule by (source id, line) wins. Any
-    /// matching list exception suppresses the selection.
-    pub(crate) fn select(&self, host: &str) -> Option<DnsRewrite> {
+    /// Select the typed record set for a canonical host. The most specific
+    /// owner wins; all distinct records for that owner are retained in
+    /// deterministic `(source id, line)` order. Any matching list exception
+    /// suppresses the selection. Owner lookup walks only label boundaries, so
+    /// there is no whole-rule scan per query.
+    pub(crate) fn select(&self, host: &str) -> Option<(&str, &[DnsRewrite])> {
         if self.has_exception(host) {
             return None;
         }
         for owner in owner_suffixes(host) {
-            if let Some(rule) = self.by_owner.get(owner).and_then(|rules| rules.first()) {
-                return Some(rule.clone());
+            if let Some((key, rules)) = self.by_owner.get_key_value(owner) {
+                // Both the owner and the records are borrowed from the index,
+                // so they share the snapshot's lifetime.
+                return Some((key.as_str(), rules.as_slice()));
             }
         }
         None

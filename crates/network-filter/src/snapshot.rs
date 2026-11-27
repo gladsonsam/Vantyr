@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 #[cfg(feature = "abp")]
 use crate::abp::{self, AbpEngine, AbpVerdict};
 #[cfg(feature = "abp")]
-use crate::dns_rewrite::{self, DnsRewrite, DnsRewriteEngine};
+use crate::dns_rewrite::{self, DnsRewriteEngine, DnsRewriteSelection};
 use crate::canonical;
 use crate::hosts::{self, HostsEngine};
 use crate::limits::{Limits, MAX_FIELD_LEN};
@@ -267,19 +267,24 @@ impl FilterSnapshot {
         matches!(qtype, RecordType::A | RecordType::AAAA | RecordType::CNAME)
     }
 
-    /// Select the typed DNS rewrite for a supported query without changing any
-    /// block or exception decision. This returns a compiler-only typed value:
-    /// no DNS response is built here and no runtime enforcement is claimed.
+    /// Select the immutable typed record set for a canonical query name. This
+    /// is owner-level selection with no query-type parameter: `None` means no
+    /// list owner matched (or a list-layer exception suppressed it), so a
+    /// caller falls back to its ordinary resolution. `Some` carries the most
+    /// specific matching owner and every distinct typed record for it, in
+    /// deterministic `(source id, line)` order with per-record provenance.
+    /// Call `DnsRewriteSelection::records_for` to shape those records for a
+    /// query type (`A`, `AAAA`, `CNAME` and `ANY` are operator-rewrite
+    /// semantics); a matched owner with no record of that type yields
+    /// `DnsRewriteRecords::MatchedEmpty`, never an ordinary fallback.
     ///
+    /// No DNS response is built here and no runtime enforcement is claimed.
     /// A list-layer exception (`@@||host^`, including `$important`) suppresses
-    /// the rewrite; it is never a household allow. Owners were checked for
-    /// conflicts at compile time. Selection is the most specific matching
-    /// owner (label boundaries only), then (source id, line).
+    /// the selection; it is never a household allow. Owners were checked for
+    /// conflicts at compile time and the most specific owner wins at label
+    /// boundaries only.
     #[cfg(feature = "abp")]
-    pub fn select_dns_rewrite(&self, qname: &Name, qtype: RecordType) -> Option<DnsRewrite> {
-        if !Self::supported_query_type(qtype) {
-            return None;
-        }
+    pub fn select_dns_rewrite(&self, qname: &Name) -> Option<DnsRewriteSelection> {
         let canonical = match canonical::canonical_query(&qname.to_string()) {
             Ok(name) => name,
             Err(_) => return None,
@@ -301,7 +306,11 @@ impl FilterSnapshot {
                 return None;
             }
         }
-        self.dns_rewrite.select(&host)
+        let (owner, records) = self.dns_rewrite.select(&host)?;
+        Some(DnsRewriteSelection {
+            owner: owner.to_owned(),
+            records: records.to_vec(),
+        })
     }
 
     /// Evaluate one canonical host name.

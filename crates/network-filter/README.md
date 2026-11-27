@@ -113,16 +113,23 @@ exceptions (`@@...$dnsrewrite`), wildcards and one-delimiter values are all
 diagnosed explicitly; none is silently matched or turned into a block.
 
 Accepted rewrites never enter the block engines: a rewrite rule alone yields
-`NoMatch` from `evaluate`. `FilterSnapshot::select_dns_rewrite(qname, qtype)`
-returns one immutable typed `DnsRewrite` (owner, value, bounded evidence and
-line), or `None`. Selection is the most specific matching owner, then the
-lexicographically first source id and line; conflicting CNAME-vs-address or
-multiple distinct CNAME values for one owner reject the candidate at compile
-time. An ordinary `@@||host^` list exception (including `$important`)
-suppresses a rewrite for that owner and its subdomains without granting an
-allow against household policy. This is a **compiler-only typed contract**:
-no DNS response is built, nothing is enforced at runtime, and no capability
-row is accepted by this slice.
+`NoMatch` from `evaluate`. `FilterSnapshot::select_dns_rewrite(qname)` returns
+an immutable `DnsRewriteSelection`, or `None` when no owner matched or a list
+exception suppressed it. The selection carries the most specific matching
+owner and every distinct typed record for it, in deterministic
+`(source id, line)` order with per-record evidence and line. Calling
+`DnsRewriteSelection::records_for(qtype)` shapes that set: `A`, `AAAA` and
+`CNAME` keep only records of that type, `ANY` keeps every distinct record
+(operator-rewrite semantics), and an unsupported query type returns
+`DnsRewriteRecords::MatchedEmpty` (NODATA). A matched owner with no record of
+the requested type is therefore explicit and never an ordinary fallback for
+an unmatched owner. Conflicting CNAME-vs-address or multiple distinct CNAME
+values for one owner reject the candidate at compile time. An ordinary
+`@@||host^` list exception (including `$important`) suppresses a rewrite for
+that owner and its subdomains without granting an allow against household
+policy. This is a **compiler-only typed contract**: no DNS response is built,
+nothing is enforced at runtime, and no capability row is accepted by this
+slice.
 
 ### Services
 
@@ -136,8 +143,11 @@ catalog is bundled**; adding one requires a verified source and licence.
 
 ## Evaluation contract
 
-Query types are explicit: only `A`, `AAAA` and `CNAME` are evaluated; every
-other record type returns `NoMatch`.
+Query types are explicit for `evaluate`: only `A`, `AAAA` and `CNAME` are
+evaluated; every other record type returns `NoMatch`. The separate rewrite
+selection additionally accepts `ANY` as operator-rewrite query semantics and
+returns matched-empty (NODATA) for an unsupported query type on a matched
+owner; neither behaviour changes any `evaluate` outcome.
 
 Deterministic precedence (highest first):
 
@@ -162,8 +172,9 @@ an ordinary exception.
 `AllowException` is strictly a **list-layer** outcome. It must never be used
 to override the household baseline policy owned by the DNS worker. This crate
 never sees that policy and makes no such claim. Typed rewrites are selected
-through the separate `select_dns_rewrite` method only; they do not change any
-`evaluate` outcome or block precedence above.
+through the separate `select_dns_rewrite(qname)` plus `records_for(qtype)`
+calls only; they do not change any `evaluate` outcome or block precedence
+above.
 
 Evidence is honest about upstream limits: Hickory's blocklist API does not
 expose the matched entry, so hosts/service decisions carry only list or service
@@ -176,10 +187,15 @@ and its own source id and line, independent of upstream debug information.
 Defaults: 8 MiB aggregate raw bytes, at most 32 lists, 250 000 accepted rules,
 at most 64 retained diagnostics, 64 services, 512 domains per service, and an
 additional global cap of 512 accepted typed DNS rewrites across all sources.
-Accepted rewrites count toward `total_rules`; the rewrite cap is charged
-globally before publication and an overflow rejects the whole candidate with a
-bounded `Limit` diagnostic. An exact-at-cap candidate is accepted.
-`compile_with_limits` lets callers lower the general bounds.
+Accepted rewrites, duplicates included, count toward `total_rules`; the cap is
+charged globally before publication and an overflow rejects the whole
+candidate with a bounded `Limit` diagnostic. An exact-at-cap candidate is
+accepted. At publication, duplicates collapse to one record per distinct
+value per owner in `(source id, line)` order. Owner selection walks only
+label boundaries and bounded owner index lookups, never a scan of every rule
+per query. Counts, source material hashes and every `evaluate` decision are
+unchanged by rewrite selection. `compile_with_limits` lets callers lower the
+general bounds.
 
 Each hostname regex pattern is bounded to 200 bytes of text, 256 KiB of
 compiled program, 256 KiB of DFA cache and 32 levels of nesting. Because every
