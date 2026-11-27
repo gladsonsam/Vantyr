@@ -7,7 +7,7 @@ use std::str::FromStr;
 use hickory_server::proto::rr::{Name, RecordType};
 use vantyr_network_filter::{
     compile, compile_with_limits, CompileError, DiagnosticKind, FilterOutcome, Limits, ListFormat,
-    ListSource, ServiceCatalog, ServiceDefinition, ServiceDomain,
+    ListSource, ServiceCatalog, ServiceDefinition, ServiceDomain, REGEX_RESERVATION_PER_RULE,
 };
 
 fn name(value: &str) -> Name {
@@ -455,7 +455,10 @@ fn invalid_and_unbounded_regex_rules_are_diagnosed() {
                     .any(|d| d.kind == kind && d.detail.contains(needle)),
                 "expected {kind:?} containing {needle:?}: {diagnostics:?}"
             ),
-            other => panic!("expected bounded rejection: {other:?}"),
+            other => match other {
+                Err(error) => panic!("expected bounded rejection: {error:?}"),
+                Ok(_) => panic!("expected bounded rejection: candidate unexpectedly compiled"),
+            },
         }
     }
 
@@ -555,4 +558,161 @@ fn regex_exceptions_never_override_a_hard_block() {
         FilterOutcome::Block { evidence } => assert_eq!(evidence.source_id, "svc"),
         other => panic!("a service block must outrank a regex exception: {other:?}"),
     }
+}
+
+#[test]
+fn domain_important_exception_beats_regex_important_block_in_both_orders() {
+    // Upstream only reports an exception when a blocking rule also matched,
+    // so the domain source carries an ordinary block alongside its important
+    // exception. The regex source carries an independent important block.
+    const DOMAIN: &[u8] = b"\
+||conflict.example^
+@@||conflict.example^$important
+";
+    const REGEX: &[u8] = b"/^conflict\\.example$/$important\n";
+
+    let ordered = [
+        [abp_source("a-domain", DOMAIN), abp_source("z-regex", REGEX)],
+        [abp_source("a-regex", REGEX), abp_source("z-domain", DOMAIN)],
+    ];
+    for sources in ordered {
+        let snapshot = compile(1, &sources, None, &[]).unwrap();
+        match snapshot.evaluate(&name("conflict.example."), RecordType::A) {
+            FilterOutcome::AllowException { evidence } => {
+                assert_eq!(
+                    evidence.rule.as_deref(),
+                    Some("@@||conflict.example^$important")
+                );
+                assert!(evidence.note.contains("important exception"));
+            }
+            other => {
+                panic!("domain important exception must beat a regex important block: {other:?}")
+            }
+        }
+    }
+}
+
+#[test]
+fn ordinary_exception_does_not_override_an_important_block() {
+    // Domain ordinary exception against a regex important block: the block
+    // wins in either source order.
+    const DOMAIN: &[u8] = b"\
+||plain.example^
+@@||plain.example^
+";
+    const REGEX: &[u8] = b"/^plain\\.example$/$important\n";
+    let ordered = [
+        [abp_source("a", DOMAIN), abp_source("z", REGEX)],
+        [abp_source("z", REGEX), abp_source("a", DOMAIN)],
+    ];
+    for sources in ordered {
+        let snapshot = compile(2, &sources, None, &[]).unwrap();
+        match snapshot.evaluate(&name("plain.example."), RecordType::A) {
+            FilterOutcome::Block { evidence } => {
+                assert_eq!(
+                    evidence.rule.as_deref(),
+                    Some("/^plain\\.example$/$important")
+                );
+                assert!(evidence.note.contains("important"));
+            }
+            other => panic!("important regex block must beat an ordinary exception: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn regex_budget_is_global_across_sources_and_exact_budget_is_accepted() {
+    let texts: Vec<String> = (0..3)
+        .map(|index| format!("/^budget{index}\\.test$/\n"))
+        .collect();
+    let sources: Vec<ListSource<'_>> = texts
+        .iter()
+        .enumerate()
+        .map(|(index, text)| abp_source(&format!("list-{index}"), text.as_bytes()))
+        .collect();
+    let work: usize = texts.iter().map(|text| text.trim().len() - 2).sum();
+
+    // Each source is tiny on its own; only the aggregate exceeds the bound.
+    let mut count_limited = Limits::default();
+    count_limited.max_regex_rules = 2;
+    assert!(
+        matches!(
+            compile_with_limits(1, &sources, None, &[], &count_limited),
+            Err(CompileError::Rejected(diags))
+                if diags.iter().any(|d| d.kind == DiagnosticKind::Limit("regex rule count".to_owned()))
+                && diags.len() <= count_limited.max_diagnostics
+        ),
+        "the count budget must be global and bounded"
+    );
+
+    let mut work_limited = Limits::default();
+    work_limited.max_regex_rules = 3;
+    work_limited.max_regex_work_bytes = work - 1;
+    assert!(
+        matches!(
+            compile_with_limits(1, &sources, None, &[], &work_limited),
+            Err(CompileError::Rejected(diags))
+                if diags.iter().any(|d| d.kind == DiagnosticKind::Limit("regex work".to_owned()))
+        ),
+        "the work budget must be global"
+    );
+
+    let mut reservation_limited = Limits::default();
+    reservation_limited.max_regex_rules = 3;
+    reservation_limited.max_regex_work_bytes = work;
+    reservation_limited.max_regex_reservation_bytes = 2 * REGEX_RESERVATION_PER_RULE;
+    assert!(
+        matches!(
+            compile_with_limits(1, &sources, None, &[], &reservation_limited),
+            Err(CompileError::Rejected(diags))
+                if diags.iter().any(|d| d.kind == DiagnosticKind::Limit("regex reservation".to_owned()))
+        ),
+        "the compilation reservation budget must be global"
+    );
+
+    // Exactly at every budget the whole candidate is accepted.
+    let at_budget = Limits {
+        max_regex_rules: 3,
+        max_regex_work_bytes: work,
+        max_regex_reservation_bytes: 3 * REGEX_RESERVATION_PER_RULE,
+        ..Limits::default()
+    };
+    let snapshot = compile_with_limits(1, &sources, None, &[], &at_budget).unwrap();
+    assert_eq!(snapshot.total_rules(), 3);
+    for index in 0..3 {
+        assert!(matches!(
+            snapshot.evaluate(&name(&format!("budget{index}.test.")), RecordType::A),
+            FilterOutcome::Block { .. }
+        ));
+    }
+}
+
+#[test]
+fn regex_bodies_may_contain_cosmetic_markers() {
+    // `##`, `#@#` and `$$` are cosmetic markers only at the rule boundary.
+    // Inside a delimited regex they are part of the pattern and must compile.
+    const TEXT: &[u8] = b"\
+/^(ads|##)\\.test$/
+/^(promo|#@#)\\.test$/
+/^(video|$$)\\.test$/
+";
+    let snapshot = compile(1, &[abp_source("abp", TEXT)], None, &[]).unwrap();
+    for (host, rule) in [
+        ("ads.test.", "/^(ads|##)\\.test$/"),
+        ("promo.test.", "/^(promo|#@#)\\.test$/"),
+        ("video.test.", "/^(video|$$)\\.test$/"),
+    ] {
+        match snapshot.evaluate(&name(host), RecordType::A) {
+            FilterOutcome::Block { evidence } => {
+                assert_eq!(evidence.rule.as_deref(), Some(rule));
+            }
+            other => panic!("{host} must match its regex rule: {other:?}"),
+        }
+    }
+
+    // Genuine cosmetic rules are still rejected at the boundary.
+    assert!(matches!(
+        compile(1, &[abp_source("bad", b"example.com##.ad\n")], None, &[]),
+        Err(CompileError::Rejected(_))
+    ));
 }

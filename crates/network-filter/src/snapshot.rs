@@ -254,12 +254,13 @@ impl FilterSnapshot {
     /// Evaluate one canonical host name.
     ///
     /// Precedence, from highest to lowest:
-    /// 1. upstream `$important` block from an ABP source;
-    /// 2. a selected service domain set (lexicographically first id on overlap);
-    /// 3. upstream `@@` exception, reported only as `AllowException`;
-    /// 4. a plain ABP block;
-    /// 5. a hosts/bare/wildcard list block (lexicographically first id);
-    /// 6. `NoMatch`.
+    /// 1. upstream `@@||host^$important` exception, reported as `AllowException`;
+    /// 2. upstream `$important` block from an ABP source;
+    /// 3. a selected service domain set (lexicographically first id on overlap);
+    /// 4. an ordinary upstream `@@` exception, reported as `AllowException`;
+    /// 5. a plain ABP block;
+    /// 6. a hosts/bare/wildcard list block (lexicographically first id);
+    /// 7. `NoMatch`.
     ///
     /// `AllowException` is a list-layer outcome. It never grants an allow
     /// against the household baseline policy owned by the DNS worker.
@@ -281,6 +282,11 @@ impl FilterSnapshot {
         #[cfg(feature = "abp")]
         if let Some(engine) = &self.abp {
             match engine.check(&host) {
+                AbpVerdict::ImportantException(evidence) => {
+                    // `@@||host^$important` outranks every block, including an
+                    // important block from the separate regex family.
+                    return FilterOutcome::AllowException { evidence };
+                }
                 AbpVerdict::ImportantBlock(evidence) => {
                     return FilterOutcome::Block { evidence };
                 }

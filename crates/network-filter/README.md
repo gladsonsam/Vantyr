@@ -51,7 +51,11 @@ Accepted, after an explicit DNS-representability guard **and** upstream parsing:
 - `||host^` — domain-anchored block, matching that host and its subdomains;
 - `@@||host^` — exception, yielding `AllowException` inside the list layer;
 - `||host^$important` — upstream `$important` precedence, read from
-  `BlockerResult` (an important block beats an exception);
+  `BlockerResult` (an important block beats an ordinary exception);
+- `@@||host^$important` — important domain exception. Upstream reports this in
+  the exception result rather than its `important` flag; the raw rule metadata
+  is read so it outranks important blocks from either rule family. An ordinary
+  block must also match for upstream to report the exception;
 - `/regexp/`, `@@/regexp/`, `/regexp/$important` — hostname regex rules. These
   match the canonical host directly (ASCII lowercase, punycode for IDN, no
   trailing dot). Patterns are case-insensitive, `^`/`$` anchor the whole
@@ -101,18 +105,23 @@ other record type returns `NoMatch`.
 
 Deterministic precedence (highest first):
 
-1. `$important` block from an ABP source (domain rule or hostname regex);
-2. a selected service domain set (lexicographically first id on overlap);
-3. `@@` exception from an ABP source (domain rule or hostname regex) ->
-   `AllowException`;
-4. a plain ABP block (domain rule or hostname regex);
-5. a hosts/bare/wildcard list block (lexicographically first id);
-6. `NoMatch`.
+1. `@@||host^$important` domain exception -> `AllowException`;
+2. `$important` block from an ABP source (domain rule or hostname regex);
+3. a selected service domain set (lexicographically first id on overlap);
+4. an ordinary `@@` exception from an ABP source (domain rule or hostname
+   regex) -> `AllowException`;
+5. a plain ABP block (domain rule or hostname regex);
+6. a hosts/bare/wildcard list block (lexicographically first id);
+7. `NoMatch`.
 
-Within one ABP source, important blocks outrank exceptions, which outrank plain
-blocks. Regex rules use the same ranking as upstream domain rules; on an equal
-rank the domain rule's evidence is kept. A service block always outranks an
-exception.
+Within one ABP source, important blocks outrank ordinary exceptions, which
+outrank plain blocks. Regex rules use the same ranking as upstream domain
+rules; on an equal rank the domain rule's evidence is kept. The one additional
+rank is the important domain exception, which outranks every block (including
+a regex important block) so domain important-exception semantics stay
+consistent across both source orders. Important regex exceptions are explicitly
+diagnosed instead of being silently weakened. A service block always outranks
+an ordinary exception.
 
 `AllowException` is strictly a **list-layer** outcome. It must never be used
 to override the household baseline policy owned by the DNS worker. This crate
@@ -127,10 +136,34 @@ and its own source id and line, independent of upstream debug information.
 ## Bounds and failure behaviour
 
 Defaults: 8 MiB aggregate raw bytes, at most 32 lists, 250 000 accepted rules,
-at most 64 retained diagnostics, 64 services, 512 domains per service. Regex
-patterns are additionally bounded to 200 bytes of text, 256 KiB of compiled
-program, 256 KiB of DFA cache and 32 levels of nesting. `compile_with_limits`
-lets callers lower the general bounds.
+at most 64 retained diagnostics, 64 services, 512 domains per service.
+`compile_with_limits` lets callers lower the general bounds.
+
+Each hostname regex pattern is bounded to 200 bytes of text, 256 KiB of
+compiled program, 256 KiB of DFA cache and 32 levels of nesting. Because every
+regex rule is tested on each supported query and the general `max_rules` bound
+(250 000) is far too loose for linear regex scanning, three additional limits
+are charged **globally across all ABP sources**, before any pattern is
+compiled:
+
+| Bound | Default | What it charges |
+| --- | --- | --- |
+| `max_regex_rules` | 512 | one per accepted regex pattern; caps the per-query scan length |
+| `max_regex_work_bytes` | 64 KiB | each pattern's text length, a proxy for per-query match work |
+| `max_regex_reservation_bytes` | 256 MiB | 512 KiB per pattern (full program allowance + full DFA allowance) |
+
+Exceeding any of them rejects the **entire** candidate with a bounded
+`DiagnosticKind::Limit` diagnostic (the oldest retained diagnostic is dropped
+to make room), not just the offending rule. The budget is checked before
+compilation so splitting adversarial patterns across many sources cannot spend
+unbounded compile work. An exact-at-budget candidate is accepted.
+
+The reservation is an accounting value, not a process-memory guarantee. The
+`regex` automata engine keeps its own lazily allocated DFA caches, and both
+engines allocate additional thread-local caches or use a mutex-protected regex
+manager under concurrent matching. Those engine cache and concurrency limits
+are unavoidable through these APIs, so **no strict process RSS bound is
+claimed**.
 
 `compile` is pure: it returns `Result`. Any non-`Note` diagnostic (unsupported
 rule, malformed/empty source, invalid catalog entry) or exceeded bound rejects

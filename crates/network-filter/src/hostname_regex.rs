@@ -13,14 +13,11 @@
 
 use regex::{Error as RegexError, Regex, RegexBuilder};
 
-use crate::limits::MAX_RULE_LEN;
+use crate::limits::{
+    Limits, MAX_REGEX_DFA_BYTES, MAX_REGEX_NEST, MAX_REGEX_PATTERN_LEN, MAX_REGEX_PROGRAM_BYTES,
+    REGEX_RESERVATION_PER_RULE,
+};
 use crate::types::{bounded_rule, DiagnosticKind, Evidence, SourceKind};
-
-/// One pattern's text is bounded by the same length used to bound evidence.
-const MAX_REGEX_PATTERN_LEN: usize = MAX_RULE_LEN;
-const MAX_REGEX_PROGRAM_BYTES: usize = 256 * 1024;
-const MAX_REGEX_DFA_BYTES: usize = 256 * 1024;
-const MAX_REGEX_NEST: u32 = 32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum RegexVerdictKind {
@@ -47,6 +44,108 @@ impl RegexVerdictKind {
     }
 }
 
+/// A classified but not yet compiled regex rule. `abp::build` charges the
+/// global budget against this plan *before* spending compilation work, then
+/// calls `compile`.
+#[derive(Debug)]
+pub(crate) struct RegexPlan {
+    pattern: String,
+    kind: RegexVerdictKind,
+    raw: String,
+}
+
+impl RegexPlan {
+    /// Compile with the per-pattern bounds. Kept separate from classification
+    /// so the aggregate budget can reject the whole candidate first.
+    pub(crate) fn compile(self, source_id: &str) -> Result<RegexRule, (DiagnosticKind, String)> {
+        let regex = RegexBuilder::new(&self.pattern)
+            // The matched host is already lowercase ASCII; folding keeps regex
+            // rules as insensitive to query case as the domain rules are.
+            .case_insensitive(true)
+            .size_limit(MAX_REGEX_PROGRAM_BYTES)
+            .dfa_size_limit(MAX_REGEX_DFA_BYTES)
+            .nest_limit(MAX_REGEX_NEST)
+            .build()
+            .map_err(|error| {
+                if matches!(error, RegexError::CompiledTooBig(_)) {
+                    (
+                        DiagnosticKind::Limit("regex compiled size".to_owned()),
+                        "regex pattern exceeds the bounded compilation size".to_owned(),
+                    )
+                } else {
+                    (
+                        DiagnosticKind::Malformed,
+                        format!("regex compile error: {error}"),
+                    )
+                }
+            })?;
+        Ok(RegexRule {
+            regex,
+            kind: self.kind,
+            source_id: source_id.to_owned(),
+            raw: self.raw,
+        })
+    }
+}
+
+/// Global, cumulative accounting for regex rules across ALL sources. It is
+/// charged before any pattern is compiled so an adversarial multi-source
+/// candidate cannot spend unbounded compilation work before being rejected.
+#[derive(Default)]
+pub(crate) struct RegexBudget {
+    rules: usize,
+    work_bytes: usize,
+    reservation_bytes: usize,
+}
+
+impl RegexBudget {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn charge(
+        &mut self,
+        plan: &RegexPlan,
+        limits: &Limits,
+    ) -> Result<(), (DiagnosticKind, String)> {
+        self.rules = self.rules.saturating_add(1);
+        self.work_bytes = self.work_bytes.saturating_add(plan.pattern.len());
+        self.reservation_bytes = self
+            .reservation_bytes
+            .saturating_add(REGEX_RESERVATION_PER_RULE);
+
+        if self.rules > limits.max_regex_rules {
+            return Err((
+                DiagnosticKind::Limit("regex rule count".to_owned()),
+                format!(
+                    "regex rule count exceeds global bound {}",
+                    limits.max_regex_rules
+                ),
+            ));
+        }
+        if self.work_bytes > limits.max_regex_work_bytes {
+            return Err((
+                DiagnosticKind::Limit("regex work".to_owned()),
+                format!(
+                    "aggregate regex pattern bytes exceed global bound {}",
+                    limits.max_regex_work_bytes
+                ),
+            ));
+        }
+        if self.reservation_bytes > limits.max_regex_reservation_bytes {
+            return Err((
+                DiagnosticKind::Limit("regex reservation".to_owned()),
+                format!(
+                    "aggregate regex compilation reservation exceeds global bound {}",
+                    limits.max_regex_reservation_bytes
+                ),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct RegexRule {
     regex: Regex,
     kind: RegexVerdictKind,
@@ -59,12 +158,9 @@ pub(crate) struct RegexVerdict {
     pub(crate) evidence: Evidence,
 }
 
-/// Parse one trimmed rule. `Ok(None)` means the rule is not a regex rule and
-/// must continue through the ordinary domain-rule path.
-pub(crate) fn parse(
-    rule: &str,
-    source_id: &str,
-) -> Result<Option<RegexRule>, (DiagnosticKind, String)> {
+/// Classify one trimmed rule without compiling it. `Ok(None)` means the rule
+/// is not a regex rule and must continue through the ordinary domain-rule path.
+pub(crate) fn classify(rule: &str) -> Result<Option<RegexPlan>, (DiagnosticKind, String)> {
     let (exception, remainder) = match rule.strip_prefix("@@") {
         Some(rest) => (true, rest),
         None => (false, rule),
@@ -92,28 +188,6 @@ pub(crate) fn parse(
     }
 
     let important = parse_modifiers(tail, exception)?;
-    let regex = RegexBuilder::new(pattern)
-        // The matched host is already lowercase ASCII; folding keeps regex
-        // rules as insensitive to query case as the domain rules are.
-        .case_insensitive(true)
-        .size_limit(MAX_REGEX_PROGRAM_BYTES)
-        .dfa_size_limit(MAX_REGEX_DFA_BYTES)
-        .nest_limit(MAX_REGEX_NEST)
-        .build()
-        .map_err(|error| {
-            if matches!(error, RegexError::CompiledTooBig(_)) {
-                (
-                    DiagnosticKind::Limit("regex compiled size".to_owned()),
-                    "regex pattern exceeds the bounded compilation size".to_owned(),
-                )
-            } else {
-                (
-                    DiagnosticKind::Malformed,
-                    format!("regex compile error: {error}"),
-                )
-            }
-        })?;
-
     let kind = if important {
         RegexVerdictKind::ImportantBlock
     } else if exception {
@@ -121,10 +195,9 @@ pub(crate) fn parse(
     } else {
         RegexVerdictKind::Block
     };
-    Ok(Some(RegexRule {
-        regex,
+    Ok(Some(RegexPlan {
+        pattern: pattern.to_owned(),
         kind,
-        source_id: source_id.to_owned(),
         raw: rule.to_owned(),
     }))
 }
@@ -220,19 +293,23 @@ mod tests {
 
     #[test]
     fn escaped_slashes_and_closing_delimiter_are_parsed() {
-        let rule = parse(r"/^a\/b$/", "id").unwrap().unwrap();
+        let rule = classify(r"/^a\/b$/")
+            .unwrap()
+            .unwrap()
+            .compile("id")
+            .unwrap();
         assert_eq!(rule.kind, RegexVerdictKind::Block);
         assert!(rule.regex.is_match("a/b"));
         assert!(!rule.regex.is_match("a"));
 
-        assert!(parse(r"/unterminated", "id").is_err());
-        assert!(parse(r"//", "id").is_err());
-        assert!(parse(r"||plain.example^", "id").unwrap().is_none());
+        assert!(classify(r"/unterminated").is_err());
+        assert!(classify(r"//").is_err());
+        assert!(classify(r"||plain.example^").unwrap().is_none());
     }
 
     #[test]
     fn important_exception_regex_is_diagnosed() {
-        let error = parse(r"@@/foo/$important", "id").unwrap_err();
+        let error = classify(r"@@/foo/$important").unwrap_err();
         assert_eq!(error.0, DiagnosticKind::Unsupported);
         assert!(error.1.contains("important exceptions"));
     }
@@ -244,8 +321,33 @@ mod tests {
         pattern.push('a');
         pattern.push_str(&")".repeat(usize::try_from(MAX_REGEX_NEST).unwrap() + 8));
         pattern.push('/');
-        let error = parse(&pattern, "id").unwrap_err();
+        let error = classify(&pattern)
+            .unwrap()
+            .unwrap()
+            .compile("id")
+            .unwrap_err();
         assert_eq!(error.0, DiagnosticKind::Malformed);
         assert!(error.1.contains("regex compile error"));
+    }
+
+    #[test]
+    fn global_budget_counts_across_plans_before_compilation() {
+        let limits = Limits {
+            max_regex_rules: 2,
+            max_regex_work_bytes: 8,
+            max_regex_reservation_bytes: 2 * REGEX_RESERVATION_PER_RULE,
+            ..Limits::default()
+        };
+        let mut budget = RegexBudget::new();
+        let first = classify(r"/^a$/").unwrap().unwrap();
+        let second = classify(r"/^bb$/").unwrap().unwrap();
+        let third = classify(r"/^ccc$/").unwrap().unwrap();
+        budget.charge(&first, &limits).unwrap();
+        budget.charge(&second, &limits).unwrap();
+        let error = budget.charge(&third, &limits).unwrap_err();
+        assert_eq!(
+            error.0,
+            DiagnosticKind::Limit("regex rule count".to_owned())
+        );
     }
 }

@@ -12,8 +12,10 @@
 //!   `BlocklistZoneHandler::add(Read)`, `entry_count()` and the public
 //!   `ZoneHandler::lookup()` matcher. The upstream API does not expose the
 //!   matched entry, so evidence is per-list and says so honestly.
-//! * DNS-representable ABP domain rules (`||host^`, `@@||host^`, `$important`)
-//!   -> `adblock` 0.13.6 (Brave `adblock-rust`, MPL-2.0), feature `abp`.
+//! * DNS-representable ABP domain rules (`||host^`, `@@||host^`, `$important`,
+//!   `@@||host^$important`) -> `adblock` 0.13.6 (Brave `adblock-rust`, MPL-2.0),
+//!   feature `abp`. Important domain exceptions are read from the upstream
+//!   exception metadata and outrank blocks from every rule family.
 //!   A minimal synthetic `http://<canonical-host>/` carrier is used only to
 //!   satisfy upstream's request-shaped matcher. Path, URL, scheme,
 //!   third-party, content-type and cosmetic rules are rejected with
@@ -21,7 +23,10 @@
 //! * bounded hostname regex rules (`/regex/`, `@@/regex/`, `/regex/$important`)
 //!   -> `regex` 1.13.2 (MIT OR Apache-2.0), feature `abp`. These match the
 //!   canonical hostname directly, with explicit compile-size, DFA-size and
-//!   nesting bounds. No synthetic URL is ever used for them.
+//!   nesting bounds. No synthetic URL is ever used for them. Regex rules also
+//!   share a global count/work/reservation budget charged across all sources
+//!   before compilation; the automata engines keep their own lazily allocated
+//!   and partly thread-local caches, so no strict process RSS bound is claimed.
 //!
 //! A small typed `ServiceCatalog` maps operator-selected service ids to exact
 //! and suffix domain sets. Services are compiled through the same Hickory
@@ -52,8 +57,10 @@ mod hostname_regex;
 
 pub use limits::{
     Limits, MAX_DIAGNOSTICS, MAX_DIAGNOSTIC_LEN, MAX_DOMAINS_PER_SERVICE, MAX_FIELD_LEN,
-    MAX_HOSTS_PER_LINE, MAX_LISTS, MAX_NAME_LEN, MAX_RULES, MAX_RULE_LEN, MAX_SERVICES,
-    MAX_TOTAL_SOURCE_BYTES,
+    MAX_HOSTS_PER_LINE, MAX_LISTS, MAX_NAME_LEN, MAX_REGEX_DFA_BYTES, MAX_REGEX_NEST,
+    MAX_REGEX_PATTERN_LEN, MAX_REGEX_PROGRAM_BYTES, MAX_REGEX_RESERVATION_BYTES, MAX_REGEX_RULES,
+    MAX_REGEX_WORK_BYTES, MAX_RULES, MAX_RULE_LEN, MAX_SERVICES, MAX_TOTAL_SOURCE_BYTES,
+    REGEX_RESERVATION_PER_RULE,
 };
 pub use service::{ServiceCatalog, ServiceDefinition, ServiceDomain, ServiceMeta};
 pub use snapshot::{compile, compile_with_limits, FilterSnapshot};

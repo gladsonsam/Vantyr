@@ -16,11 +16,16 @@ use adblock::request::Request;
 use adblock::sourcemap::FilterRuleDebugInfo;
 
 use crate::canonical::canonical_entry;
-use crate::hostname_regex::{self, HostnameRegexEngine, RegexRule, RegexVerdictKind};
+use crate::hostname_regex::{
+    self, HostnameRegexEngine, RegexBudget, RegexPlan, RegexRule, RegexVerdictKind,
+};
 use crate::limits::Limits;
 use crate::types::{bounded_rule, CompileError, Diagnostic, DiagnosticKind, Evidence, SourceKind};
 
 const NO_RULE_EVIDENCE: &str = "upstream adblock result did not expose a raw rule for this match";
+const IMPORTANT_BLOCK_NOTE: &str = "upstream reported an important blocking rule";
+const IMPORTANT_EXCEPTION_NOTE: &str = "upstream reported an important exception rule";
+const DOMAIN_RULE_NOTE: &str = "upstream-reported rule";
 
 pub(crate) struct AbpEngine {
     engine: Engine,
@@ -29,6 +34,12 @@ pub(crate) struct AbpEngine {
 }
 
 pub(crate) enum AbpVerdict {
+    /// An `@@||host^$important` exception. Upstream reports important
+    /// exceptions in its exception result, not in the `important` flag (that
+    /// flag describes blocking filters only). It outranks every block so the
+    /// domain-rule important-exception semantics are preserved when a regex
+    /// important block is also present.
+    ImportantException(Evidence),
     ImportantBlock(Evidence),
     Exception(Evidence),
     Block(Evidence),
@@ -38,6 +49,7 @@ pub(crate) enum AbpVerdict {
 impl AbpVerdict {
     fn rank(&self) -> u8 {
         match self {
+            Self::ImportantException(_) => 4,
             Self::ImportantBlock(_) => 3,
             Self::Exception(_) => 2,
             Self::Block(_) => 1,
@@ -50,7 +62,8 @@ impl AbpVerdict {
 enum Accepted {
     Skip,
     Domain,
-    Regex(RegexRule),
+    /// Classified but not compiled: the global budget is charged first.
+    Regex(RegexPlan),
 }
 
 /// `sources` are `(list id, list text)` sorted by id for deterministic
@@ -67,20 +80,41 @@ pub(crate) fn build(
     let mut source_ids: Vec<String> = Vec::new();
     let mut accepted_per_source: Vec<usize> = Vec::new();
     let mut regex_rules: Vec<RegexRule> = Vec::new();
+    let mut regex_budget = RegexBudget::new();
 
     for (id, text) in sources {
         let mut kept = String::new();
         let mut accepted = 0usize;
         for (index, line) in text.lines().enumerate() {
-            match validate(line, id) {
+            match validate(line) {
                 Ok(Accepted::Domain) => {
                     kept.push_str(line.trim());
                     kept.push('\n');
                     accepted += 1;
                 }
-                Ok(Accepted::Regex(rule)) => {
-                    regex_rules.push(rule);
-                    accepted += 1;
+                Ok(Accepted::Regex(plan)) => {
+                    // Charge the global budget before compiling anything: an
+                    // overflow rejects the whole candidate with a bounded
+                    // diagnostic, no matter how many sources it is split over.
+                    if let Err((kind, detail)) = regex_budget.charge(&plan, limits) {
+                        push_fatal(
+                            diagnostics,
+                            limits,
+                            Diagnostic::new(id, index + 1, kind, detail),
+                        );
+                        return Err(CompileError::Rejected(diagnostics.clone()));
+                    }
+                    match plan.compile(id) {
+                        Ok(rule) => {
+                            regex_rules.push(rule);
+                            accepted += 1;
+                        }
+                        Err((kind, detail)) => push(
+                            diagnostics,
+                            limits,
+                            Diagnostic::new(id, index + 1, kind, detail),
+                        ),
+                    }
                 }
                 Ok(Accepted::Skip) => {}
                 Err((kind, detail)) => push(
@@ -133,22 +167,24 @@ pub(crate) fn build(
     ))
 }
 
-/// Classify one line. Regex rules are compiled here; domain rules continue
-/// through the upstream parser guard. Comments and blanks are skipped, and
-/// every other form gets an explicit bounded diagnostic.
-fn validate(line: &str, source_id: &str) -> Result<Accepted, (DiagnosticKind, String)> {
+/// Classify one line. Regex rules are recognised before the cosmetic guard:
+/// a regex body may legitimately contain `##`, `#@#` or `$$`, which are only
+/// cosmetic markers at the rule boundary (outside a delimited regex). Domain
+/// rules continue through the upstream parser guard. Comments and blanks are
+/// skipped, and every other form gets an explicit bounded diagnostic.
+fn validate(line: &str) -> Result<Accepted, (DiagnosticKind, String)> {
     let rule = line.trim();
     if rule.is_empty() || rule.starts_with('!') || rule.starts_with('[') {
         return Ok(Accepted::Skip);
+    }
+    if let Some(plan) = hostname_regex::classify(rule)? {
+        return Ok(Accepted::Regex(plan));
     }
     if rule.contains("##") || rule.contains("#@#") || rule.contains("$$") || rule.starts_with('#') {
         return Err((
             DiagnosticKind::Unsupported,
             "cosmetic / element-hiding rules are not DNS-representable".to_owned(),
         ));
-    }
-    if let Some(regex_rule) = hostname_regex::parse(rule, source_id)? {
-        return Ok(Accepted::Regex(regex_rule));
     }
     if rule.contains("://") {
         return Err((
@@ -293,17 +329,20 @@ impl AbpEngine {
         let request = Request::preparsed(&url, host, "", "other", false, "");
         let result = self.engine.check_network_request(&request);
 
-        // Precedence is upstream's: `should_block` honours `$important` over
-        // exceptions. We only map its result to our typed outcome.
-        let upstream = if result.should_block() {
-            let evidence = self.evidence(result.filter.as_ref(), result.important);
-            if result.important {
-                AbpVerdict::ImportantBlock(evidence)
+        // Upstream's `important` flag describes a matched *blocking* filter;
+        // `@@...$important` is reported in the exception result instead. Read
+        // that metadata before mapping so a domain important exception keeps
+        // its semantics against important blocks from any rule family.
+        let upstream = if result.important {
+            AbpVerdict::ImportantBlock(self.evidence(result.filter.as_ref(), IMPORTANT_BLOCK_NOTE))
+        } else if let Some(info) = result.exception.as_ref() {
+            if is_important_exception(info) {
+                AbpVerdict::ImportantException(self.evidence(Some(info), IMPORTANT_EXCEPTION_NOTE))
             } else {
-                AbpVerdict::Block(evidence)
+                AbpVerdict::Exception(self.evidence(Some(info), DOMAIN_RULE_NOTE))
             }
-        } else if result.exception.is_some() {
-            AbpVerdict::Exception(self.evidence(result.exception.as_ref(), false))
+        } else if result.should_block() {
+            AbpVerdict::Block(self.evidence(result.filter.as_ref(), DOMAIN_RULE_NOTE))
         } else {
             AbpVerdict::NoMatch
         };
@@ -325,7 +364,7 @@ impl AbpEngine {
         upstream
     }
 
-    fn evidence(&self, info: Option<&FilterRuleDebugInfo>, important: bool) -> Evidence {
+    fn evidence(&self, info: Option<&FilterRuleDebugInfo>, note: &'static str) -> Evidence {
         let (source_id, rule) = match info {
             Some(info) => {
                 let source_id = info
@@ -339,11 +378,7 @@ impl AbpEngine {
             None => ("unknown".to_owned(), None),
         };
         let note = if rule.is_some() {
-            if important {
-                "upstream reported an important blocking rule"
-            } else {
-                "upstream-reported rule"
-            }
+            note
         } else {
             NO_RULE_EVIDENCE
         };
@@ -356,8 +391,35 @@ impl AbpEngine {
     }
 }
 
+/// An upstream exception rule is `important` when its retained raw line is an
+/// `@@` rule carrying `$important`. Debug info is enabled for our `FilterSet`,
+/// so the raw line is present for rules we accepted through `validate`.
+fn is_important_exception(info: &FilterRuleDebugInfo) -> bool {
+    match info.raw_line.as_deref() {
+        Some(line) => {
+            let line = line.trim();
+            line.starts_with("@@")
+                && line.split_once('$').is_some_and(|(_, options)| {
+                    options
+                        .split(',')
+                        .any(|option| option.eq_ignore_ascii_case("important"))
+                })
+        }
+        None => false,
+    }
+}
+
 fn push(diagnostics: &mut Vec<Diagnostic>, limits: &Limits, diagnostic: Diagnostic) {
     if diagnostics.len() < limits.max_diagnostics {
         diagnostics.push(diagnostic);
     }
+}
+
+/// A budget overflow must be reported even when earlier diagnostics already
+/// filled the bounded list: drop the oldest one to make room.
+fn push_fatal(diagnostics: &mut Vec<Diagnostic>, limits: &Limits, diagnostic: Diagnostic) {
+    if limits.max_diagnostics > 0 && diagnostics.len() >= limits.max_diagnostics {
+        diagnostics.pop();
+    }
+    push(diagnostics, limits, diagnostic);
 }
