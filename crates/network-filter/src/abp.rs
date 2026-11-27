@@ -305,8 +305,7 @@ fn validate(line: &str) -> Result<Accepted, (DiagnosticKind, String)> {
         rule_types: RuleTypes::NetworkOnly,
         ..ParseOptions::default()
     };
-    let mut important_exception = false;
-    match parse_filter(rule, true, opts) {
+    let important_exception = match parse_filter(rule, true, opts) {
         Ok(ParsedLine::Network(filter)) => {
             if filter.mask.is_regex()
                 || filter.mask.is_complete_regex()
@@ -355,7 +354,7 @@ fn validate(line: &str) -> Result<Accepted, (DiagnosticKind, String)> {
             }
             // Captured from upstream's own mask here while `filter` is in
             // scope, not later inferred from a selected raw line.
-            important_exception = exception && filter.mask.is_important();
+            exception && filter.mask.is_important()
         }
         Ok(ParsedLine::Cosmetic(_)) => {
             return Err((
@@ -369,7 +368,7 @@ fn validate(line: &str) -> Result<Accepted, (DiagnosticKind, String)> {
                 format!("upstream parser rejected rule: {error}"),
             ));
         }
-    }
+    };
     Ok(Accepted::Domain {
         important_exception,
     })

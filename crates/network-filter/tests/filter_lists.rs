@@ -633,8 +633,10 @@ fn regex_budget_is_global_across_sources_and_exact_budget_is_accepted() {
     let work: usize = texts.iter().map(|text| text.trim().len() - 2).sum();
 
     // Each source is tiny on its own; only the aggregate exceeds the bound.
-    let mut count_limited = Limits::default();
-    count_limited.max_regex_rules = 2;
+    let count_limited = Limits {
+        max_regex_rules: 2,
+        ..Limits::default()
+    };
     assert!(
         matches!(
             compile_with_limits(1, &sources, None, &[], &count_limited),
@@ -645,9 +647,11 @@ fn regex_budget_is_global_across_sources_and_exact_budget_is_accepted() {
         "the count budget must be global and bounded"
     );
 
-    let mut work_limited = Limits::default();
-    work_limited.max_regex_rules = 3;
-    work_limited.max_regex_work_bytes = work - 1;
+    let work_limited = Limits {
+        max_regex_rules: 3,
+        max_regex_work_bytes: work - 1,
+        ..Limits::default()
+    };
     assert!(
         matches!(
             compile_with_limits(1, &sources, None, &[], &work_limited),
@@ -657,10 +661,12 @@ fn regex_budget_is_global_across_sources_and_exact_budget_is_accepted() {
         "the work budget must be global"
     );
 
-    let mut reservation_limited = Limits::default();
-    reservation_limited.max_regex_rules = 3;
-    reservation_limited.max_regex_work_bytes = work;
-    reservation_limited.max_regex_reservation_bytes = 2 * REGEX_RESERVATION_PER_RULE;
+    let reservation_limited = Limits {
+        max_regex_rules: 3,
+        max_regex_work_bytes: work,
+        max_regex_reservation_bytes: 2 * REGEX_RESERVATION_PER_RULE,
+        ..Limits::default()
+    };
     assert!(
         matches!(
             compile_with_limits(1, &sources, None, &[], &reservation_limited),
