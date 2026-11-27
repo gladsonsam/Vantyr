@@ -115,7 +115,16 @@ domains list retrieved 2026-11-27, including AU/NZ, with no wildcard or lookalik
 matching. Independent review verified the live-source comparison; ten loopback
 integration tests, nine library tests and strict clippy pass. This supersedes
 the earlier four-domain limitation above. The catalog is a reviewed snapshot,
-not a live feed. Bing is unchanged; YouTube, per-client and HTTP/UI remain open.
+not a live feed. Bing is unchanged.
+
+YouTube restricted modes are accepted through `f8c4ada8` (source `addd858f`).
+The optional mode defaults off; moderate and strict select the five exact
+official aliases and their respective hostname targets. The master SafeSearch
+switch gates all providers, while Google, Bing and YouTube choices remain
+independent. Excluded hosts and canonical targets are never rewritten.
+Independent review passed 18 loopback integration tests, 12 filtered library
+tests and strict crate all-target clippy. Per-client overrides and HTTP/UI
+settings remain unfinished; this acceptance covers operator configuration only.
 
 The assembled current-contract upgrade candidate is `aa2126c2`, based on
 `705d99f2`; it includes the reviewed 0086 repair, evidence scripts and offline
