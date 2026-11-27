@@ -87,3 +87,16 @@ body bytes, digests or connection strings.
 No production DB or host change is made by these scripts. No Rust build,
 test, clippy or broad redesign is part of this change. No migration bytes or
 checksums are modified. No push, PR or deployment is performed.
+# Snapshot integrity and repeat execution
+
+The snapshot and metadata tables must be owned by the migration operator, with
+write grants restricted to that operator. Verify their table definitions and
+ownership before use; they are trusted recovery data, not untrusted input. The
+snapshot checks the original desired body's digest before capturing it. A
+completed marker records the captured row count, including zero: when there
+were no schema-1 configs, restore succeeds without changing evidence. A missing
+marker or changed row count refuses restoration.
+
+Restore is a one-shot operation for nonempty snapshots. Repeating a successful
+restore refuses the already-restored digests atomically; it does not delete the
+recovery data. Keep both tables until the upgrade has been verified.

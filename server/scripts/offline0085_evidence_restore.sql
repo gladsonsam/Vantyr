@@ -25,6 +25,7 @@ DECLARE
     rec           record;
     cur           record;
     current_digest text;
+    expected_rows bigint;
 BEGIN
     -- Preflight: both migrations applied, and a real snapshot exists.
     IF NOT EXISTS (SELECT 1 FROM _sqlx_migrations WHERE version = 85 AND success) THEN
@@ -36,8 +37,16 @@ BEGIN
     IF to_regclass('operator_offline0085_dns_evidence_snapshot') IS NULL THEN
         RAISE EXCEPTION 'offline0085 restore refused: no snapshot table; originals cannot be reconstructed';
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM operator_offline0085_dns_evidence_snapshot) THEN
-        RAISE EXCEPTION 'offline0085 restore refused: snapshot table is empty; originals cannot be reconstructed';
+    IF to_regclass('operator_offline0085_dns_snapshot_metadata') IS NULL THEN
+        RAISE EXCEPTION 'offline0085 restore refused: no completed snapshot marker';
+    END IF;
+    SELECT captured_rows INTO expected_rows
+    FROM operator_offline0085_dns_snapshot_metadata WHERE singleton;
+    IF NOT FOUND OR expected_rows <> (SELECT count(*) FROM operator_offline0085_dns_evidence_snapshot) THEN
+        RAISE EXCEPTION 'offline0085 restore refused: snapshot is incomplete or was changed';
+    END IF;
+    IF expected_rows = 0 THEN
+        RETURN; -- Completed preflight found no schema-1 evidence to restore.
     END IF;
 
     -- Guard the desired config: after 0085 + 0086 it must be exactly the

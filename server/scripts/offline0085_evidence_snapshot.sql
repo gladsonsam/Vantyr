@@ -47,10 +47,13 @@ BEGIN
     -- An overflow raises here, before any durable snapshot is produced, and
     -- the surrounding transaction rolls back any partial work.
     FOR rec IN
-        SELECT household_id, body
+        SELECT household_id, body, body_sha256
         FROM network_dns_management_config
         WHERE schema_version = 1
     LOOP
+        IF rec.body_sha256 <> encode(sha256(rec.body), 'hex') THEN
+            RAISE EXCEPTION 'offline0085 snapshot refused: original desired body digest is inconsistent';
+        END IF;
         IF right(convert_from(rec.body, 'UTF8'), 1) <> '}' THEN
             RAISE EXCEPTION 'offline0085 snapshot refused: non-canonical schema-1 body for household %', rec.household_id;
         END IF;
@@ -86,8 +89,16 @@ BEGIN
         (household_id, gateway_id, config_version, kind)
         WHERE kind <> 'desired_config';
 
+    -- A committed marker distinguishes a valid empty snapshot from a missing
+    -- or accidentally cleared backup. Both tables are operator-controlled.
+    CREATE TABLE IF NOT EXISTS operator_offline0085_dns_snapshot_metadata (
+        singleton BOOLEAN PRIMARY KEY CHECK (singleton),
+        captured_rows BIGINT NOT NULL CHECK (captured_rows >= 0)
+    );
+
     -- Idempotent only while pre-0085 (guarded above).
     DELETE FROM operator_offline0085_dns_evidence_snapshot;
+    DELETE FROM operator_offline0085_dns_snapshot_metadata;
 
     FOR rec IN
         SELECT household_id, config_version, body, body_sha256
@@ -156,6 +167,8 @@ BEGIN
               AND g.reported_sha256 = rec.body_sha256;
         END;
     END LOOP;
+    INSERT INTO operator_offline0085_dns_snapshot_metadata (singleton, captured_rows)
+    SELECT TRUE, count(*) FROM operator_offline0085_dns_evidence_snapshot;
 END
 $$;
 
