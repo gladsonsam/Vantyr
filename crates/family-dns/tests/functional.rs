@@ -8,6 +8,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
+use chrono::Utc;
 use family_dns::{Config, DnsServer};
 use family_policy::EffectiveIdentity;
 use hickory_server::proto::op::ResponseCode;
@@ -357,6 +358,170 @@ async fn ipv4_mapped_bind_and_source_share_the_ipv4_device_profile() {
         server.observations().iter().all(|o| o.device_id.is_some()),
         "mapped sources must not silently fall back to the unknown profile"
     );
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn exact_rewrites_are_served_over_udp_and_tcp_with_configured_ttl() {
+    let extra = r#","rewrites":[
+        {"type":"a","name":"rewrite.lab.example.","ttl":45,"addr":"192.0.2.40"},
+        {"type":"a","name":"rewrite.lab.example.","ttl":45,"addr":"192.0.2.41"},
+        {"type":"aaaa","name":"rewrite.lab.example.","ttl":45,"addr":"2001:db8::40"},
+        {"type":"cname","name":"aliasrewrite.lab.example.","ttl":30,"target":"www.lab.example."}
+    ]"#;
+    let config = Config::parse(test_config(0, extra).as_bytes()).unwrap();
+    let server = DnsServer::start(config).await.unwrap();
+    let addr = server.bind_addr();
+
+    for tcp in [false, true] {
+        let a = query(mapped(), addr, "rewrite.lab.example.", RecordType::A, tcp).await;
+        assert_code(&a, ResponseCode::NoError);
+        assert_flags(&a);
+        let mut ips = addresses(&a);
+        ips.sort();
+        assert_eq!(
+            ips,
+            vec![
+                IpAddr::V4(Ipv4Addr::new(192, 0, 2, 40)),
+                IpAddr::V4(Ipv4Addr::new(192, 0, 2, 41)),
+            ],
+            "all addresses for one exact owner must be summed"
+        );
+        assert!(a.answers.iter().all(|record| record.ttl == 45));
+
+        let aaaa = query(
+            mapped(),
+            addr,
+            "rewrite.lab.example.",
+            RecordType::AAAA,
+            tcp,
+        )
+        .await;
+        assert_code(&aaaa, ResponseCode::NoError);
+        assert_flags(&aaaa);
+        assert_eq!(
+            addresses(&aaaa),
+            vec![IpAddr::from_str("2001:db8::40").unwrap()]
+        );
+        assert!(aaaa.answers.iter().all(|record| record.ttl == 45));
+
+        let cname = query(
+            mapped(),
+            addr,
+            "aliasrewrite.lab.example.",
+            RecordType::CNAME,
+            tcp,
+        )
+        .await;
+        assert_code(&cname, ResponseCode::NoError);
+        assert_flags(&cname);
+        assert_eq!(cname_targets(&cname), vec!["www.lab.example.".to_owned()]);
+        assert!(cname.answers.iter().all(|record| record.ttl == 30));
+
+        // A matching owner with no record of the queried type is a deliberate
+        // NODATA answer, not a fall-through to a zone or an upstream.
+        let nodata = query(mapped(), addr, "rewrite.lab.example.", RecordType::TXT, tcp).await;
+        assert_code(&nodata, ResponseCode::NoError);
+        assert_flags(&nodata);
+        assert!(nodata.answers.is_empty());
+
+        // The override is exact: a sibling name keeps its own zone answer and
+        // a subdomain does not inherit the configured address.
+        let sibling = query(mapped(), addr, "www.lab.example.", RecordType::A, tcp).await;
+        assert_code(&sibling, ResponseCode::NoError);
+        assert_eq!(addresses(&sibling).len(), 2);
+        let sub = query(
+            mapped(),
+            addr,
+            "sub.rewrite.lab.example.",
+            RecordType::A,
+            tcp,
+        )
+        .await;
+        assert!(!addresses(&sub).contains(&IpAddr::V4(Ipv4Addr::new(192, 0, 2, 40))));
+    }
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn exact_rewrites_cannot_bypass_denials_or_alias_target_policy() {
+    let extra = r#","rewrites":[
+        {"type":"a","name":"blocked.lab.example.","ttl":45,"addr":"192.0.2.40"},
+        {"type":"cname","name":"rewrittenalias.lab.example.","ttl":30,"target":"blocked.lab.example."}
+    ]"#;
+    let config = Config::parse(test_config(0, extra).as_bytes()).unwrap();
+    let server = DnsServer::start(config).await.unwrap();
+    let addr = server.bind_addr();
+
+    for tcp in [false, true] {
+        let denied = query(mapped(), addr, "blocked.lab.example.", RecordType::A, tcp).await;
+        assert_code(&denied, ResponseCode::NXDomain);
+        assert_flags(&denied);
+        assert!(
+            addresses(&denied).is_empty(),
+            "a household deny must win over an exact rewrite"
+        );
+
+        let aliased = query(
+            mapped(),
+            addr,
+            "rewrittenalias.lab.example.",
+            RecordType::A,
+            tcp,
+        )
+        .await;
+        assert_code(&aliased, ResponseCode::NXDomain);
+        assert_flags(&aliased);
+        assert!(
+            addresses(&aliased).is_empty(),
+            "a rewrite CNAME must not leak a denied canonical target"
+        );
+    }
+
+    let observations = server.observations();
+    assert!(observations
+        .iter()
+        .any(|o| { o.name == "blocked.lab.example." && !o.allow && o.device_id.is_some() }));
+    assert!(observations.iter().any(|o| {
+        o.name == "rewrittenalias.lab.example."
+            && !o.allow
+            && o.denied_alias_target.as_deref() == Some("blocked.lab.example.")
+    }));
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn reload_swaps_exact_rewrites_on_one_immutable_snapshot() {
+    let server = DnsServer::start(Config::parse(test_config(0, "").as_bytes()).unwrap())
+        .await
+        .unwrap();
+    let addr = server.bind_addr();
+    let before = udp_query(mapped(), addr, "rewrite.lab.example.", RecordType::A).await;
+    assert!(addresses(&before).is_empty());
+
+    let extra =
+        r#","rewrites":[{"type":"a","name":"rewrite.lab.example.","ttl":50,"addr":"192.0.2.50"}]"#;
+    let candidate =
+        test_config(0, extra).replace("\"policy_revision\": 7", "\"policy_revision\": 8");
+    let outcome = server.reload(candidate.as_bytes(), Utc::now()).unwrap();
+    assert_eq!(outcome.revision, 8);
+    assert_eq!(outcome.generation, 8);
+    assert_eq!(server.status().bundle_generation, 8);
+
+    for tcp in [false, true] {
+        let after = query(mapped(), addr, "rewrite.lab.example.", RecordType::A, tcp).await;
+        assert_code(&after, ResponseCode::NoError);
+        assert_flags(&after);
+        assert_eq!(
+            addresses(&after),
+            vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 50))]
+        );
+        assert!(after.answers.iter().all(|record| record.ttl == 50));
+    }
+    assert!(server
+        .observations()
+        .iter()
+        .any(|o| { o.name == "rewrite.lab.example." && o.allow && o.policy_revision == 8 }));
     server.stop().await;
 }
 

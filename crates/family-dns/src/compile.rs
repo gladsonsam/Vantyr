@@ -141,6 +141,9 @@ pub fn compile(base: &Config, policy: &Policy) -> Result<Config, CompileError> {
         upstreams: base.upstreams.clone(),
         encrypted_upstreams: base.encrypted_upstreams.clone(),
         local_zones: base.local_zones.clone(),
+        // Exact answer overrides are local operator settings. A controller
+        // pull must never silently drop or replace them.
+        rewrites: base.rewrites.clone(),
         default_device_profile: base.default_device_profile.clone(),
         devices: base.devices.clone(),
         // Current local filtering settings travel with every other local
@@ -187,6 +190,7 @@ mod tests {
                   "deny": {{ "mode": "refused" }},
                   "upstreams": ["127.0.0.1:5353"],
                   "local_zones": {{ "lab.example.": [] }},
+                  "rewrites": [{{ "type": "a", "name": "override.example.", "ttl": 45, "addr": "192.0.2.40" }}],
                   "profiles": {{ "adult": [] }},
                   "default_device_profile": "adult",
                   "devices": [{{
@@ -259,6 +263,7 @@ mod tests {
         assert_eq!(compiled.deny, base.deny);
         assert_eq!(compiled.upstreams, base.upstreams);
         assert_eq!(compiled.local_zones, base.local_zones);
+        assert_eq!(compiled.rewrites, base.rewrites);
         assert_eq!(compiled.devices, base.devices);
         assert_eq!(compiled.event_retention_secs, Some(86_400));
     }

@@ -30,6 +30,8 @@ pub const MAX_CONFIG_BYTES: usize = 64 * 1024;
 pub const MAX_UPSTREAMS: usize = 8;
 pub const MAX_ZONES: usize = 32;
 pub const MAX_RECORDS_PER_ZONE: usize = 512;
+/// Bound on operator-configured exact-domain answer overrides.
+pub const MAX_REWRITES: usize = MAX_RECORDS_PER_ZONE;
 pub const MAX_DEVICES: usize = 256;
 pub const MAX_SOURCE_IPS_PER_DEVICE: usize = 16;
 pub const MAX_PROFILES: usize = 64;
@@ -98,6 +100,38 @@ fn parsed_ip(raw: &str, field: &str) -> Result<IpAddr> {
     let ip = IpAddr::from_str(raw)
         .map_err(|_| anyhow::anyhow!("{field} '{raw}' must be an IP literal"))?;
     Ok(normalize_ip(ip))
+}
+
+/// Shape and TTL bounds for one exact-domain rewrite record. Names are
+/// absolute so a rewrite can never depend on a resolver search suffix.
+fn validate_rewrite_record(record: &RecordSpec) -> Result<()> {
+    let name = record.name();
+    if name.is_empty() || name.len() > MAX_NAME_LEN || !name.ends_with('.') {
+        bail!("rewrite name must be a fully qualified name within {MAX_NAME_LEN} characters");
+    }
+    hickory_server::proto::rr::Name::from_str(name)
+        .map_err(|_| anyhow::anyhow!("invalid rewrite name '{name}'"))?;
+    if !(1..=MAX_TTL_SECS).contains(&record.ttl()) {
+        bail!("rewrite TTL must be 1..={MAX_TTL_SECS}");
+    }
+    match record {
+        RecordSpec::A { addr, .. } => {
+            Ipv4Addr::from_str(addr)
+                .map_err(|_| anyhow::anyhow!("invalid rewrite A address '{addr}'"))?;
+        }
+        RecordSpec::Aaaa { addr, .. } => {
+            Ipv6Addr::from_str(addr)
+                .map_err(|_| anyhow::anyhow!("invalid rewrite AAAA address '{addr}'"))?;
+        }
+        RecordSpec::Cname { target, .. } => {
+            if target.is_empty() || target.len() > MAX_NAME_LEN || !target.ends_with('.') {
+                bail!("rewrite CNAME target must be a fully qualified name within {MAX_NAME_LEN} characters");
+            }
+            hickory_server::proto::rr::Name::from_str(target)
+                .map_err(|_| anyhow::anyhow!("invalid rewrite CNAME target '{target}'"))?;
+        }
+    }
+    Ok(())
 }
 
 /// One bounded rule check shared by the safety baseline and device profiles.
@@ -944,6 +978,13 @@ pub struct Config {
     pub encrypted_upstreams: Vec<EncryptedUpstreamSpec>,
     #[serde(default)]
     pub local_zones: BTreeMap<String, Vec<RecordSpec>>,
+    /// Exact-owner answer overrides. Unlike `local_zones`, an override does
+    /// not make the worker authoritative for an origin: only the configured
+    /// owner and query type are answered locally, while every other name keeps
+    /// the normal catalog path. An override is applied only after the
+    /// household decision has allowed the question.
+    #[serde(default)]
+    pub rewrites: Vec<RecordSpec>,
     /// Non-overridable deny-only safety rules. Empty for local-only configs.
     #[serde(default)]
     pub baseline: Vec<RuleSpec>,
@@ -1149,6 +1190,38 @@ impl Config {
                             .map_err(|_| anyhow::anyhow!("invalid CNAME target '{target}'"))?;
                     }
                 }
+            }
+        }
+
+        if self.rewrites.len() > MAX_REWRITES {
+            bail!("at most {MAX_REWRITES} exact rewrites are allowed");
+        }
+        // One owner is either canonical (CNAME) or carries address data, never
+        // both. Duplicate values are rejected so the answer set is deterministic.
+        let mut seen_rewrites = BTreeSet::new();
+        let mut cname_owners = BTreeSet::new();
+        let mut address_owners = BTreeSet::new();
+        for record in &self.rewrites {
+            validate_rewrite_record(record)?;
+            let owner = record.name().to_ascii_lowercase();
+            let (kind, value) = match record {
+                RecordSpec::A { addr, .. } => ("a", addr.clone()),
+                RecordSpec::Aaaa { addr, .. } => ("aaaa", addr.clone()),
+                RecordSpec::Cname { target, .. } => ("cname", target.to_ascii_lowercase()),
+            };
+            if !seen_rewrites.insert((owner.clone(), kind, value)) {
+                bail!("duplicate exact rewrite for {owner}");
+            }
+            if matches!(record, RecordSpec::Cname { .. }) {
+                if address_owners.contains(&owner) {
+                    bail!("rewrite owner {owner} has both a canonical name and address data");
+                }
+                cname_owners.insert(owner);
+            } else {
+                if cname_owners.contains(&owner) {
+                    bail!("rewrite owner {owner} has both a canonical name and address data");
+                }
+                address_owners.insert(owner);
             }
         }
 
@@ -1605,5 +1678,73 @@ mod tests {
         );
         let config = Config::parse(with_filter.as_bytes()).unwrap();
         assert!(config.filter.enabled_source_ids().is_empty());
+    }
+
+    fn with_rewrites(rewrites: &str) -> String {
+        VALID.replace(
+            "\"household_id\":",
+            &format!("\"rewrites\": {rewrites},\n        \"household_id\":"),
+        )
+    }
+
+    #[test]
+    fn exact_rewrites_default_empty_and_survive_a_config_round_trip() {
+        let plain = Config::parse(VALID.as_bytes()).unwrap();
+        assert!(plain.rewrites.is_empty());
+
+        let json = with_rewrites(
+            r#"[
+            {"type":"a","name":"one.example.","ttl":45,"addr":"192.0.2.40"},
+            {"type":"a","name":"one.example.","ttl":45,"addr":"192.0.2.41"},
+            {"type":"aaaa","name":"one.example.","ttl":45,"addr":"2001:db8::40"},
+            {"type":"cname","name":"alias.example.","ttl":30,"target":"one.example."}
+        ]"#,
+        );
+        let config = Config::parse(json.as_bytes()).unwrap();
+        assert_eq!(config.rewrites.len(), 4);
+        let bytes = serde_json::to_vec(&config).unwrap();
+        let again = Config::parse(&bytes).unwrap();
+        assert_eq!(again.rewrites, config.rewrites);
+        assert_eq!(serde_json::to_vec(&again).unwrap(), bytes);
+    }
+
+    #[test]
+    fn exact_rewrites_validate_ttl_names_values_and_canonical_shape() {
+        let good = r#"[{"type":"a","name":"one.example.","ttl":1,"addr":"192.0.2.40"}]"#;
+        assert!(Config::parse(with_rewrites(good).as_bytes()).is_ok());
+        let good_max = good.replace("\"ttl\":1", &format!("\"ttl\":{MAX_TTL_SECS}"));
+        assert!(Config::parse(with_rewrites(&good_max).as_bytes()).is_ok());
+
+        let bads: &[&str] = &[
+            r#"[{"type":"a","name":"one.example.","ttl":0,"addr":"192.0.2.40"}]"#,
+            &format!(
+                r#"[{{"type":"a","name":"one.example.","ttl":{},"addr":"192.0.2.40"}}]"#,
+                MAX_TTL_SECS + 1
+            ),
+            r#"[{"type":"a","name":"one.example","ttl":60,"addr":"192.0.2.40"}]"#,
+            r#"[{"type":"a","name":"one.example.","ttl":60,"addr":"not-an-ip"}]"#,
+            r#"[{"type":"aaaa","name":"one.example.","ttl":60,"addr":"192.0.2.40"}]"#,
+            r#"[{"type":"cname","name":"alias.example.","ttl":60,"target":"relative"}]"#,
+            r#"[{"type":"cname","name":"alias.example.","ttl":60,"target":"one.example"}]"#,
+            r#"[{"type":"cname","name":"alias.example.","ttl":60,"target":"one.example."},{"type":"a","name":"alias.example.","ttl":60,"addr":"192.0.2.40"}]"#,
+            r#"[{"type":"a","name":"one.example.","ttl":60,"addr":"192.0.2.40"},{"type":"a","name":"ONE.EXAMPLE.","ttl":60,"addr":"192.0.2.40"}]"#,
+        ];
+        for bad in bads {
+            assert!(
+                Config::parse(with_rewrites(bad).as_bytes()).is_err(),
+                "invalid rewrite accepted: {bad}"
+            );
+        }
+
+        let many = format!(
+            "[{}]",
+            (0..=MAX_REWRITES)
+                .map(|i| format!(
+                    r#"{{"type":"a","name":"n{i}.example.","ttl":60,"addr":"192.0.2.40"}}"#
+                ))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        assert!(Config::parse(with_rewrites(&many).as_bytes()).is_err());
     }
 }

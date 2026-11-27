@@ -5,8 +5,10 @@
 //! port by default. Every query is evaluated with the accepted policy engine;
 //! allowed queries are answered by an immutable catalog snapshot (local split
 //! zones plus forwarding), while denied queries receive a configured
-//! NXDOMAIN, REFUSED, or sinkhole answer. Alias inspection currently covers
-//! CNAME and differing-owner A/AAAA answers; SVCB/HTTPS, DNAME and other
+//! NXDOMAIN, REFUSED, or sinkhole answer. Operator-configured exact-domain
+//! answer overrides are applied only after a question is allowed. Alias
+//! inspection currently covers CNAME and differing-owner A/AAAA answers;
+//! SVCB/HTTPS, DNAME and other
 //! redirection mechanisms are explicitly out of scope, as are TSIG-signed
 //! queries (keys are not validated and signatures are not preserved).
 //!

@@ -404,6 +404,51 @@ async fn restart_loads_the_bundle_and_ignores_a_changed_config() {
 }
 
 #[tokio::test]
+async fn restart_preserves_exact_rewrites_from_the_last_persisted_bundle() {
+    let rewrites =
+        r#","rewrites":[{"type":"a","name":"rewrite.lab.example.","ttl":55,"addr":"192.0.2.55"}]"#;
+    let json = test_config(0, rewrites).replace("\"policy_revision\": 7", "\"policy_revision\": 5");
+    let st = new_state("rewrite-restart", &json);
+    let now = Utc::now();
+    let first = DnsServer::start_durable(options(&st, now)).await.unwrap();
+
+    let response = udp_query(
+        mapped(),
+        first.bind_addr(),
+        "rewrite.lab.example.",
+        RecordType::A,
+    )
+    .await;
+    assert_code(&response, ResponseCode::NoError);
+    assert_flags(&response);
+    assert_eq!(v4(&response), vec!["192.0.2.55".parse().unwrap()]);
+    assert_eq!(response.answers[0].ttl, 55);
+    first.stop().await;
+
+    // A changed on-disk config while the worker is down must not replace the
+    // rewrite that was actually persisted.
+    fs::write(
+        &st.config,
+        test_config(0, "").replace("\"policy_revision\": 7", "\"policy_revision\": 9"),
+    )
+    .unwrap();
+    let restarted = DnsServer::start_durable(options(&st, now)).await.unwrap();
+    let response = tcp_query(
+        mapped(),
+        restarted.bind_addr(),
+        "rewrite.lab.example.",
+        RecordType::A,
+    )
+    .await;
+    assert_code(&response, ResponseCode::NoError);
+    assert_flags(&response);
+    assert_eq!(v4(&response), vec!["192.0.2.55".parse().unwrap()]);
+    assert_eq!(restarted.revision(), 5);
+    assert_eq!(restarted.status().bundle_generation, 5);
+    restarted.stop().await;
+}
+
+#[tokio::test]
 async fn stale_policy_age_fails_closed_until_a_fresh_reload() {
     let st = new_state(
         "stale",

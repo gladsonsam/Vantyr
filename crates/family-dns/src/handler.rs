@@ -2,11 +2,12 @@
 //! accepted policy evaluator.
 //!
 //! Allowed questions are answered by the immutable catalog snapshot (local
-//! zones and forwarding resolver). The handler inspects the answer the client
-//! would receive; if an allowed alias resolves to a denied target, the answer
-//! is replaced with the configured denial. Denied questions are answered
-//! directly with a library-built message. No DNS/TLS wire format is authored
-//! here.
+//! zones and forwarding resolver) or by an operator-configured exact-domain
+//! answer override carried in that same snapshot. The handler inspects the
+//! answer the client would receive; if an allowed alias resolves to a denied
+//! target, the answer is replaced with the configured denial. Denied questions
+//! are answered directly with a library-built message. No DNS/TLS wire format
+//! is authored here.
 //!
 //! Scope of alias inspection: only `CNAME` records and `A`/`AAAA` answers at
 //! a different owner are checked. `SVCB`/`HTTPS`, `DNAME` and other alias or
@@ -15,7 +16,8 @@
 //! queries are likewise not guaranteed: the capture path does not validate
 //! keys, and signatures are not preserved when an allowed answer is rebuilt.
 
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -23,7 +25,7 @@ use chrono::Utc;
 use hickory_server::net::runtime::Time;
 use hickory_server::net::NetError;
 use hickory_server::proto::op::{Message, MessageType, Metadata, OpCode, ResponseCode};
-use hickory_server::proto::rr::rdata::{A as AData, AAAA as AaaaData};
+use hickory_server::proto::rr::rdata::{A as AData, AAAA as AaaaData, CNAME as CnameData};
 use hickory_server::proto::rr::{Name, RData, Record, RecordType};
 use hickory_server::proto::serialize::binary::BinEncoder;
 use hickory_server::server::{Request, RequestHandler, ResponseHandler, ResponseInfo};
@@ -31,7 +33,7 @@ use hickory_server::zone_handler::{MessageResponse, MessageResponseBuilder};
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-use crate::config::DenyConfig;
+use crate::config::{DenyConfig, RecordSpec};
 use crate::events::{protocol_label, query_type_label, EventQueue, FinalDecision, FlagsDto};
 use crate::policy::DecisionView;
 use crate::runtime::{RuntimeSnapshot, SnapshotHandle};
@@ -81,6 +83,77 @@ pub struct FilteringHandler {
 impl FilteringHandler {
     pub(crate) fn with_events(current: SnapshotHandle, events: Option<Arc<EventQueue>>) -> Self {
         Self { current, events }
+    }
+
+    /// Select operator-configured records for one exact owner and query type.
+    /// A matching owner with no record of the queried type yields an empty
+    /// answer set on purpose (NODATA); it never falls through to the catalog.
+    /// CNAME records accompany A/AAAA questions, as they do for normal answers.
+    fn rewrite_records<'a>(
+        snapshot: &'a RuntimeSnapshot,
+        qname: &Name,
+        qtype: RecordType,
+    ) -> Option<Vec<&'a RecordSpec>> {
+        if snapshot.config.rewrites.is_empty() {
+            return None;
+        }
+        let owner = qname.to_string().to_ascii_lowercase();
+        let mut matched_owner = false;
+        let mut selected = Vec::new();
+        for record in &snapshot.config.rewrites {
+            if !record.name().eq_ignore_ascii_case(&owner) {
+                continue;
+            }
+            matched_owner = true;
+            let applies = match (qtype, record) {
+                (RecordType::A, RecordSpec::A { .. } | RecordSpec::Cname { .. })
+                | (RecordType::AAAA, RecordSpec::Aaaa { .. } | RecordSpec::Cname { .. })
+                | (RecordType::CNAME, RecordSpec::Cname { .. })
+                | (RecordType::ANY, _) => true,
+                _ => false,
+            };
+            if applies {
+                selected.push(record);
+            }
+        }
+        matched_owner.then_some(selected)
+    }
+
+    /// Build a complete response for an exact rewrite without consulting the
+    /// catalog or an upstream. Metadata is derived from the request, so the
+    /// transaction id and RD/CD flags match every other response path. The
+    /// answer is still passed through alias, bogus-IP and IPv6 shaping below.
+    fn rewritten_message(request: &Request, qname: &Name, records: &[&RecordSpec]) -> Message {
+        let mut metadata = Metadata::response_from_request(&request.metadata);
+        metadata.response_code = ResponseCode::NoError;
+        let mut message = Message::new(metadata.id, MessageType::Response, OpCode::Query);
+        message.metadata = metadata;
+        for record in records {
+            let (ttl, rdata) = match record {
+                RecordSpec::A { ttl, addr, .. } => (
+                    *ttl,
+                    RData::A(AData::from(
+                        Ipv4Addr::from_str(addr).expect("validated rewrite A address"),
+                    )),
+                ),
+                RecordSpec::Aaaa { ttl, addr, .. } => (
+                    *ttl,
+                    RData::AAAA(AaaaData::from(
+                        Ipv6Addr::from_str(addr).expect("validated rewrite AAAA address"),
+                    )),
+                ),
+                RecordSpec::Cname { ttl, target, .. } => (
+                    *ttl,
+                    RData::CNAME(CnameData(
+                        Name::from_str(target).expect("validated rewrite CNAME target"),
+                    )),
+                ),
+            };
+            message
+                .answers
+                .push(Record::from_rdata(qname.clone(), ttl, rdata));
+        }
+        message
     }
 
     /// Inspect the answer records for an allowed alias that leads to a denied
@@ -362,26 +435,40 @@ impl RequestHandler for FilteringHandler {
                 .await;
         }
 
-        let capture = CaptureHandler::default();
-        let catalog_info = snapshot
-            .catalog
-            .handle_request::<CaptureHandler, T>(request, capture.clone())
-            .await;
-        let Some(bytes) = capture
-            .encoded
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take()
-        else {
-            warn!("catalog produced no response for an allowed query");
-            return send_error(request, &mut response_handle, ResponseCode::ServFail).await;
-        };
-        let message = match Message::from_vec(&bytes) {
-            Ok(message) => message,
-            Err(error) => {
-                warn!(%error, "could not inspect catalog response");
+        // An exact rewrite is answered from the immutable snapshot itself. It
+        // never reaches an upstream, so it cannot be defeated by an outage or
+        // enriched with data the operator did not configure. The policy
+        // decision above still gates every rewrite unconditionally.
+        let (message, catalog_info) = if let Some(records) =
+            Self::rewrite_records(&snapshot, &qname, qtype)
+        {
+            (
+                Self::rewritten_message(request, &qname, &records),
+                error_response(request, ResponseCode::NoError),
+            )
+        } else {
+            let capture = CaptureHandler::default();
+            let catalog_info = snapshot
+                .catalog
+                .handle_request::<CaptureHandler, T>(request, capture.clone())
+                .await;
+            let Some(bytes) = capture
+                .encoded
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take()
+            else {
+                warn!("catalog produced no response for an allowed query");
                 return send_error(request, &mut response_handle, ResponseCode::ServFail).await;
-            }
+            };
+            let message = match Message::from_vec(&bytes) {
+                Ok(message) => message,
+                Err(error) => {
+                    warn!(%error, "could not inspect catalog response");
+                    return send_error(request, &mut response_handle, ResponseCode::ServFail).await;
+                }
+            };
+            (message, catalog_info)
         };
         if let Some(alias) = Self::denied_alias_target(&snapshot, &message, &qname, source, qtype) {
             debug!(%qname, target = %alias.target, "denied via alias chain");
