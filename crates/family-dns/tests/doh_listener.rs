@@ -188,6 +188,11 @@ fn dns_query_bytes(name: &str) -> Vec<u8> {
     message.to_vec().unwrap()
 }
 
+struct TlsTrust<'a> {
+    ca_pem: &'a str,
+    server_name: &'a str,
+}
+
 /// One raw DoH request through a normal verifying reqwest client. Every part
 /// of the request (method, path, headers, body, trust root and verification
 /// name) is caller-controlled so malformed cases are expressible here.
@@ -198,9 +203,12 @@ async fn doh_request(
     accept: Option<&str>,
     content_type: Option<&str>,
     body: Option<Vec<u8>>,
-    ca_pem: &str,
-    server_name: &str,
+    trust: TlsTrust<'_>,
 ) -> Result<Vec<u8>, String> {
+    let TlsTrust {
+        ca_pem,
+        server_name,
+    } = trust;
     let cert =
         reqwest::Certificate::from_pem(ca_pem.as_bytes()).map_err(|error| error.to_string())?;
     // `tls_certs_only` trusts exactly this generated CA: real rustls path and
@@ -250,8 +258,10 @@ async fn doh_get(
         Some("application/dns-message"),
         None,
         None,
-        ca_pem,
-        server_name,
+        TlsTrust {
+            ca_pem,
+            server_name,
+        },
     )
     .await?;
     Message::from_vec(&bytes).map_err(|error| error.to_string())
@@ -272,8 +282,10 @@ async fn doh_post(
         Some("application/dns-message"),
         Some(content_type),
         Some(dns_query_bytes(name)),
-        ca_pem,
-        server_name,
+        TlsTrust {
+            ca_pem,
+            server_name,
+        },
     )
     .await?;
     Message::from_vec(&bytes).map_err(|error| error.to_string())
@@ -473,8 +485,10 @@ async fn malformed_method_path_and_content_type_produce_no_dns_egress() {
         Some("application/dns-message"),
         Some("application/dns-message"),
         Some(dns_query_bytes("www.allowed.example.")),
-        &cert.ca_pem,
-        HOSTNAME,
+        TlsTrust {
+            ca_pem: &cert.ca_pem,
+            server_name: HOSTNAME,
+        },
     )
     .await
     .map(|_| ());
@@ -485,8 +499,10 @@ async fn malformed_method_path_and_content_type_produce_no_dns_egress() {
         Some("application/dns-message"),
         None,
         None,
-        &cert.ca_pem,
-        HOSTNAME,
+        TlsTrust {
+            ca_pem: &cert.ca_pem,
+            server_name: HOSTNAME,
+        },
     )
     .await
     .map(|_| ());
