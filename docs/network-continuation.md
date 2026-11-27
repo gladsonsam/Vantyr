@@ -14,7 +14,7 @@ Pending Hermes slices are isolated from the integrated branch:
 | Source checkpoint | Scope | Evidence / remaining gate |
 |---|---|---|
 | `497a541d` | Desired-only migration 0086 | Independently accepted in its bounded scope; two real-PG tests pass. Depends on unaccepted DNS contract upgrade; not integrated. |
-| `149d769b` | Explicit pre-0085 evidence snapshot/restore scripts | Implementation only; DB execution and independent review pending. |
+| `cca53f6b` | Explicit pre-0085 evidence snapshot/restore scripts | Independently accepted with real-schema PostgreSQL tests, including empty snapshot, corruption and rollback cases; combined upgrade E2E remains pending. |
 | `2e927fc7` | Explicit offline worker-bundle converter | Independently accepted in bounded scope: five focused tests pass and CLI compiles. Full upgrade E2E remains pending; not integrated. |
 | `cedc2148` | Hostname regex filtering | Blocked by test compilation, aggregate pattern budget and important-exception precedence; bounded correction in progress. |
 
@@ -31,6 +31,21 @@ remaining/rechecked targets passed 31 tests. The final equivalent `matches!`
 selection passed strict crate all-target clippy. This is scoped cumulative
 evidence, not a single final whole-workspace pass. Filter-text rewrites,
 wildcards, suppression forms, broader RR types, HTTP and UI remain unfinished.
+
+CIDR source-to-device selection is accepted and integrated through `3d5312c8`
+(source `55afc67c` + `ca2554d8`). Exact IPs take priority, then longest-prefix
+ranges; unknown sources retain the restrictive default and no person identity
+is inferred. Independent review recorded 142 passing tests and one new source
+presentation assertion failure; after a test-only canonical-IP correction, all
+34 tests in the remaining/rechecked targets passed, followed by strict crate
+all-target clippy. Tags, per-client upstreams, broader identity sources, HTTP
+and UI controls remain unfinished.
+
+The assembled current-contract upgrade candidate is `aa2126c2`, based on
+`705d99f2`; it includes the reviewed 0086 repair, evidence scripts and offline
+converter while preserving strict persistence cleanup and exact rewrites.
+It is not integrated or accepted: combined server/worker settings, cache-clear
+lifecycle and upgrade/restart validation are still required.
 
 ## Hermes resumption checkpoint (2026-11-27)
 

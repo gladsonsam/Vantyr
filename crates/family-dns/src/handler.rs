@@ -107,10 +107,14 @@ impl FilteringHandler {
             matched_owner = true;
             let applies = matches!(
                 (qtype, record),
-                (RecordType::A, RecordSpec::A { .. } | RecordSpec::Cname { .. })
-                | (RecordType::AAAA, RecordSpec::Aaaa { .. } | RecordSpec::Cname { .. })
-                | (RecordType::CNAME, RecordSpec::Cname { .. })
-                | (RecordType::ANY, _)
+                (
+                    RecordType::A,
+                    RecordSpec::A { .. } | RecordSpec::Cname { .. }
+                ) | (
+                    RecordType::AAAA,
+                    RecordSpec::Aaaa { .. } | RecordSpec::Cname { .. }
+                ) | (RecordType::CNAME, RecordSpec::Cname { .. })
+                    | (RecordType::ANY, _)
             );
             if applies {
                 selected.push(record);
