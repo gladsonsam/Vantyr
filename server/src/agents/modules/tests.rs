@@ -34,7 +34,6 @@ fn connect(state: &AppState, id: Uuid) -> (Uuid, tokio::sync::mpsc::Receiver<Age
             connected_at: chrono::Utc::now(),
             session_id: 1,
             shutdown,
-            legacy_policy_delivery: false,
             screen_live_tuning: false,
         },
     );
@@ -169,17 +168,18 @@ async fn all_command_families_fail_closed_and_queue_generations_cannot_resurrect
     );
 }
 #[tokio::test]
-async fn legacy_devices_keep_policy_pushes_but_reporting_devices_enforce_grants() {
+async fn policy_commands_need_current_report_and_bind_to_their_capability() {
     let state = state();
     let id = Uuid::new_v4();
     let (conn, mut rx) = connect(&state, id);
-    let policies = [
-        "set_app_block_rules",
-        "set_network_policy",
-        "set_internet_block_rules",
-    ];
-    // A device with a persisted report history never gets the legacy path.
-    for kind in policies {
+    let app = "set_app_block_rules";
+    let network = ["set_network_policy", "set_internet_block_rules"];
+
+    // With no report on this connection, every policy push is denied. This is the
+    // single authorization chokepoint used by the server's initial policy pushes
+    // and by admin/viewer command relays, so there is no implicit platform-admin,
+    // persisted-history or legacy-installation bypass.
+    for kind in [app, network[0], network[1]] {
         assert_eq!(
             state
                 .agents
@@ -189,39 +189,28 @@ async fn legacy_devices_keep_policy_pushes_but_reporting_devices_enforce_grants(
             "module_report_required"
         );
     }
-    state
+    assert!(rx.try_recv().is_err());
+
+    // A current report granting only AppPolicy authorizes `set_app_block_rules`
+    // and binds it to AppPolicy's revision; both network commands stay denied.
+    let mut app_only = module_report(1, false);
+    for module in &mut app_only.modules {
+        if module.module == Module::AppPolicy {
+            module.available = true;
+            module.enabled = true;
+            module.authorization_required = false;
+        }
+    }
+    install(&state, id, conn, app_only);
+    let authorized = state
         .agents
-        .connections
-        .lock()
-        .get_mut(&id)
-        .unwrap()
-        .legacy_policy_delivery = true;
-    for kind in policies {
-        state
-            .agents
-            .send_agent_command_json(id, &serde_json::json!({"type":kind}))
-            .unwrap();
-        let Some(AgentControl::Text(cmd)) = rx.recv().await else {
-            panic!()
-        };
-        let cmd: serde_json::Value = serde_json::from_str(&cmd).unwrap();
-        assert!(cmd.get("__module_generation").is_none());
-        assert!(state.command_deliverable(id, conn, &cmd));
-    }
-    // Only policy pushes are grandfathered; other modules still need a report.
-    for kind in ["RunScript", "start_audio", "ReadFile"] {
-        assert_eq!(
-            state
-                .agents
-                .authorize_agent_command(id, &serde_json::json!({"type":kind}))
-                .unwrap_err()
-                .code,
-            "module_report_required"
-        );
-    }
-    // Once the device reports on this connection, its grants are authoritative.
-    install(&state, id, conn, module_report(1, false));
-    for kind in policies {
+        .authorize_agent_command(id, &serde_json::json!({"type":app}))
+        .unwrap();
+    assert_eq!(
+        authorized["__module_generation"],
+        serde_json::json!({"module":"app_policy","revision":1})
+    );
+    for kind in network {
         assert_eq!(
             state
                 .agents
@@ -231,6 +220,36 @@ async fn legacy_devices_keep_policy_pushes_but_reporting_devices_enforce_grants(
             "module_not_authorized"
         );
     }
+
+    // The reverse report grants only NetworkPolicy: both network commands are
+    // bound to NetworkPolicy's revision, and the app command is denied.
+    let mut network_only = module_report(2, false);
+    for module in &mut network_only.modules {
+        if module.module == Module::NetworkPolicy {
+            module.available = true;
+            module.enabled = true;
+            module.authorization_required = false;
+        }
+    }
+    install(&state, id, conn, network_only);
+    for kind in network {
+        let authorized = state
+            .agents
+            .authorize_agent_command(id, &serde_json::json!({"type":kind}))
+            .unwrap();
+        assert_eq!(
+            authorized["__module_generation"],
+            serde_json::json!({"module":"network_policy","revision":2})
+        );
+    }
+    assert_eq!(
+        state
+            .agents
+            .authorize_agent_command(id, &serde_json::json!({"type":app}))
+            .unwrap_err()
+            .code,
+        "module_not_authorized"
+    );
 }
 async fn fixture(
     db: PgPool,
