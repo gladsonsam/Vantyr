@@ -22,7 +22,7 @@ pub struct UrlTopRow {
 /// Insert a URL visit, skipping exact consecutive duplicates for this agent.
 /// Callers filter out incomplete navigations first (see `web_activity::ingest`).
 pub async fn insert_url(pool: &PgPool, agent: Uuid, ev: &UrlVisit) -> Result<()> {
-    let ts = unix_to_dt(ev.ts);
+    let ts = unix_to_dt(Some(ev.ts));
     let user_name = ev.user.as_deref();
 
     // Skip if same URL as the most-recent visit for this agent.
@@ -45,8 +45,8 @@ pub async fn insert_url(pool: &PgPool, agent: Uuid, ev: &UrlVisit) -> Result<()>
         ",
         agent,
         ev.url,
-        ev.title.as_deref(),
-        ev.browser.as_deref(),
+        &ev.title,
+        &ev.browser,
         ts,
         user_name
     )
@@ -98,8 +98,8 @@ pub async fn insert_url_session(
     hostname: &str,
     category_id: Option<i64>,
 ) -> Result<()> {
-    let start_ts = unix_to_dt(ev.started_at_ts);
-    let end_ts = unix_to_dt(ev.ended_at_ts);
+    let start_ts = unix_to_dt(Some(ev.started_at_ts));
+    let end_ts = unix_to_dt(Some(ev.ended_at_ts));
     let user_name = ev.user.as_deref();
 
     sqlx::query!(

@@ -11,7 +11,7 @@ use crate::db::unix_to_dt;
 use ts_rs::TS;
 
 pub async fn insert_window(pool: &PgPool, agent: Uuid, ev: &WindowFocusEvent) -> Result<()> {
-    let ts = unix_to_dt(ev.ts);
+    let ts = unix_to_dt(Some(ev.ts));
     let user_name = ev.user.as_deref();
 
     sqlx::query!(
@@ -56,7 +56,7 @@ pub async fn insert_window(pool: &PgPool, agent: Uuid, ev: &WindowFocusEvent) ->
 /// Append text to an open session (same agent/app/window, updated ≤ 30 s ago).
 /// Creates a new session row if no open one exists.
 pub async fn upsert_keys(pool: &PgPool, agent: Uuid, ev: &KeysEvent) -> Result<()> {
-    let ts = unix_to_dt(ev.ts);
+    let ts = unix_to_dt(Some(ev.ts));
     let user_name = ev.user.as_deref();
 
     let updated = sqlx::query!(
@@ -104,7 +104,7 @@ pub async fn upsert_keys(pool: &PgPool, agent: Uuid, ev: &KeysEvent) -> Result<(
 }
 
 pub async fn insert_activity(pool: &PgPool, agent: Uuid, ev: &ActivityEvent) -> Result<()> {
-    let ts = unix_to_dt(ev.ts);
+    let ts = unix_to_dt(Some(ev.ts));
     let user_name = ev.user.as_deref();
 
     sqlx::query!(

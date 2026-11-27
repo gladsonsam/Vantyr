@@ -132,13 +132,16 @@ fn actual_linux_helpers_reject_commands_rotated_after_admission_before_start() {
         old.local_set(module, true).unwrap();
     }
     with_test_store(&old, || {
-        let binding = |kind: &str| {
-            let admitted = admit_command(serde_json::json!({"type":kind})).unwrap();
-            serde_json::from_value::<Generation>(admitted["__module_generation"].clone()).unwrap()
+        let binding = |kind: &str, module: Module| {
+            let generation = Generation::from_state(&old, module).unwrap();
+            let command = stamp(serde_json::json!({"type":kind}), Some(generation));
+            let admitted = admit_command(command).unwrap();
+            assert_eq!(admitted["__module_generation"], serde_json::to_value(generation).unwrap());
+            generation
         };
-        let terminal = binding("TerminalStart");
-        let screen = binding("start_capture");
-        let inventory = binding("CollectSoftware");
+        let terminal = binding("TerminalStart", Module::Terminal);
+        let screen = binding("start_capture", Module::LiveScreen);
+        let inventory = binding("CollectSoftware", Module::SoftwareInventory);
         transaction(
             |s| {
                 for module in [
@@ -195,9 +198,12 @@ fn command_allowed_rejects_old_server_revision_after_regrant() {
     assert!(!command_allowed_in(&s, &command));
     assert!(admit_command_in(&s, command).is_none());
     let current = Generation::from_state(&s, Module::RemoteInput).unwrap();
-    let legacy = serde_json::json!({"type":"KeyChar", "char":"a"});
-    let admitted = admit_command_in(&s, legacy.clone()).unwrap();
-    assert_eq!(admitted, stamp(legacy, Some(current)));
+    // A gated command without a binding is no longer stamped into existence.
+    let unbound = serde_json::json!({"type":"KeyChar", "char":"a"});
+    assert!(!command_allowed_in(&s, &unbound));
+    assert!(admit_command_in(&s, unbound).is_none());
+    let admitted = stamp(serde_json::json!({"type":"KeyChar", "char":"a"}), Some(current));
+    assert_eq!(admit_command_in(&s, admitted.clone()), Some(admitted.clone()));
     assert!(command_allowed_in(&s, &admitted));
     for invalid in [
         serde_json::Value::Null,
@@ -208,6 +214,27 @@ fn command_allowed_rejects_old_server_revision_after_regrant() {
         command["__module_generation"] = invalid;
         assert!(!command_allowed_in(&s, &command));
         assert!(admit_command_in(&s, command).is_none());
+    }
+}
+
+#[test]
+fn malformed_and_unknown_commands_are_denied_before_admission() {
+    let mut s = State::default();
+    s.local_set(Module::Terminal, true).unwrap();
+    let valid = stamp(
+        serde_json::json!({"type":"TerminalStart","session_id":uuid::Uuid::new_v4().to_string()}),
+        Some(Generation::from_state(&s, Module::Terminal).unwrap()),
+    );
+    assert!(command_allowed_in(&s, &valid));
+    for bad in [
+        serde_json::json!({"type":"unknown_command"}),
+        serde_json::json!({"type":"TerminalStart","session_id":7}),
+        serde_json::json!({"type":"TerminalStart"}),
+        serde_json::json!({"type":"set_network_policy","blocked":"yes"}),
+        serde_json::json!({"type":"TerminalStart","session_id":valid["__module_generation"]}),
+    ] {
+        assert!(!command_allowed_in(&s, &bad), "{bad}");
+        assert!(admit_command_in(&s, bad).is_none());
     }
 }
 

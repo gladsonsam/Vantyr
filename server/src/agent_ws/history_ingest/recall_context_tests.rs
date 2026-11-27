@@ -89,21 +89,16 @@ async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs(d
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 #[sqlx::test(migrations = false)]
-async fn recall_context_legacy_binary_json_malformed_and_invalid_identity(db: sqlx::PgPool) {
+async fn recall_context_binary_json_malformed_and_invalid_identity(db: sqlx::PgPool) {
     let (s, agent, conn, mut queue) = fixture(db).await;
     std::fs::create_dir_all(&s.settings.screen_history_dir).unwrap();
     let lease = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
     let jpeg = b"\xff\xd8legacy\xff\xd9";
-    let mut legacy = header();
-    legacy.as_object_mut().unwrap().remove("context");
-    legacy
-        .as_object_mut()
-        .unwrap()
-        .remove("capture_duration_ms");
-    legacy["captured_at"] = json!("invalid legacy timestamp");
-    legacy["jpeg_b64"] = json!(base64::engine::general_purpose::STANDARD.encode(jpeg));
-    ingest_history_frame(agent, conn, &legacy, &s, &lease).await;
-    assert!(row(&s, agent, &legacy["uid"]).await["context"].is_null());
+    // A JSON/base64 `history_frame` is no longer a current wire type: the strict
+    // boundary rejects it, so it cannot write a row or reach any consumer.
+    let legacy = json!({"type":"history_frame","jpeg_b64":"AAAA","uid":"not-a-current-frame"});
+    assert!(vantyr_protocol::AgentMessage::try_parse(&legacy).is_err());
+    assert!(vantyr_protocol::AgentMessage::try_parse(&json!({"type":"history_frame","captured_at":"bad"})).is_err());
     let mut h = header();
     h["context"]["window"]["app"] = json!(true);
     let bytes = serde_json::to_vec(&h).unwrap();
@@ -138,7 +133,7 @@ async fn recall_context_legacy_binary_json_malformed_and_invalid_identity(db: sq
         serde_json::from_str::<Value>(&ack).unwrap()["rejected"],
         true
     );
-    assert_eq!(files(&s, agent), 2);
+    assert_eq!(files(&s, agent), 1);
     drop(lease);
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }

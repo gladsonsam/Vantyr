@@ -1,5 +1,6 @@
 //! Inbound agent events: validates and persists telemetry, routes RPC replies, and fans
-//! events out to dashboard viewers.
+//! events out to dashboard viewers. One strict parse at the boundary: a rejected
+//! frame is dropped here, before any database mutation, RPC completion or broadcast.
 
 use std::sync::Arc;
 
@@ -8,18 +9,17 @@ use base64::Engine;
 use tracing::{error, warn};
 use uuid::Uuid;
 use vantyr_protocol::agent_message::{TerminalExit, TerminalOutput};
+use vantyr_protocol::telemetry::{SoftwareItem, UrlSessionEvent, UrlVisit};
 use vantyr_protocol::AgentMessage;
 
-use super::history_ingest::ingest_history_frame;
 use super::policy_push::push_initial_policies;
-use super::{MAX_KEYS_TEXT_CHARS, MAX_URL_STR_BYTES, MAX_WINDOW_APP_CHARS, MAX_WINDOW_TITLE_CHARS};
+use super::{MAX_AGENT_TEXT_BYTES, MAX_KEYS_TEXT_CHARS, MAX_URL_STR_BYTES, MAX_WINDOW_APP_CHARS, MAX_WINDOW_TITLE_CHARS};
 use crate::agents::db as agents_db;
 use crate::agents::telemetry::db as telemetry_db;
 use crate::agents::telemetry::ingest as telemetry_ingest;
 use crate::policy::alert_rules;
 use crate::policy::app_block::db as app_block_db;
 use crate::scripts::software_inventory::db as software_db;
-use crate::scripts::software_inventory::ingest as software_ingest;
 use crate::state::AppState;
 use crate::web_activity;
 
@@ -86,9 +86,11 @@ async fn dispatch_val(
 
     // One-shot RPC responses (agent -> server -> HTTP). Do not persist to DB; do not broadcast.
     if let AgentMessage::LogTail(reply) | AgentMessage::LogSources(reply) = &message {
-        if let Some(rid) = reply.request_id {
-            let _ = state.rpc.try_complete_log_waiter(rid, val);
-        }
+        let _ = state.rpc.try_complete_log_waiter(reply.request_id, val);
+        return;
+    }
+    if let AgentMessage::ScriptResult(reply) = &message {
+        let _ = state.rpc.try_complete_script_waiter(reply.request_id, val.clone());
         return;
     }
 
@@ -97,125 +99,86 @@ async fn dispatch_val(
     if let AgentMessage::TerminalOutput(TerminalOutput { session_id, .. })
     | AgentMessage::TerminalExit(TerminalExit { session_id }) = &message
     {
-        if let Some(sid) = *session_id {
-            let _ = state.rpc.route_terminal_output(sid, val.to_string());
-        }
-        return;
-    }
-
-    // Screen-history keyframe: persist JPEG to the blob store + index row. Handled
-    // here (early return) so the large base64 payload is never fanned out to viewers.
-    if matches!(message, AgentMessage::HistoryFrame) {
-        if state
-            .agents
-            .module_authorized(agent_id, crate::agents::modules::Module::Recall)
-        {
-            ingest_history_frame(agent_id, conn_id, &val, state, lease).await;
-        }
+        let _ = state.rpc.route_terminal_output(*session_id, val.to_string());
         return;
     }
 
     let result = match &message {
-        AgentMessage::Keys(keys) => {
-            let too_long = keys
-                .text
-                .as_deref()
-                .is_some_and(|s| s.chars().count() > MAX_KEYS_TEXT_CHARS);
+        AgentMessage::Keys(ev) => {
+            let too_long = ev.text.chars().count() > MAX_KEYS_TEXT_CHARS;
             if too_long {
                 warn!("Dropping 'keys' event from {agent_id}: text too large");
                 Ok(())
             } else {
-                telemetry_db::events::upsert_keys(
-                    &state.db,
-                    agent_id,
-                    &telemetry_ingest::KeysEvent::parse(&val),
-                )
-                .await
+                telemetry_db::events::upsert_keys(&state.db, agent_id, ev).await
             }
         }
-        AgentMessage::WindowFocus(focus) => {
-            let title_ok = focus
-                .title
-                .as_deref()
-                .is_none_or(|s| s.chars().count() <= MAX_WINDOW_TITLE_CHARS);
-            let app_ok = focus
-                .app
-                .as_deref()
-                .is_none_or(|s| s.chars().count() <= MAX_WINDOW_APP_CHARS);
+        AgentMessage::WindowFocus(ev) => {
+            let title_ok = ev.title.chars().count() <= MAX_WINDOW_TITLE_CHARS;
+            let app_ok = ev.app.chars().count() <= MAX_WINDOW_APP_CHARS;
             if !title_ok || !app_ok {
                 warn!("Dropping 'window_focus' event from {agent_id}: title/app too large");
                 Ok(())
             } else {
-                telemetry_db::events::insert_window(
-                    &state.db,
-                    agent_id,
-                    &telemetry_ingest::WindowFocusEvent::parse(&val),
-                )
-                .await
+                telemetry_db::events::insert_window(&state.db, agent_id, ev).await
             }
         }
-        AgentMessage::Url(visit) => {
-            let url_ok = visit
-                .url
-                .as_deref()
-                .is_none_or(|s| s.len() <= MAX_URL_STR_BYTES);
-            if url_ok {
-                web_activity::ingest::record_url_visit(&state.db, agent_id, &val).await
-            } else {
+        AgentMessage::Url(ev) => {
+            if ev.url.len() > MAX_URL_STR_BYTES {
                 warn!("Dropping 'url' event from {agent_id}: url too large");
                 Ok(())
+            } else {
+                web_activity::ingest::record_url_visit(&state.db, agent_id, ev).await
             }
         }
-        AgentMessage::UrlSession => {
-            web_activity::ingest::record_url_session(&state.db, agent_id, &val).await
+        AgentMessage::UrlSession(ev) => {
+            web_activity::ingest::record_url_session(&state.db, agent_id, ev).await
         }
         AgentMessage::Afk | AgentMessage::Active => {
-            telemetry_db::events::insert_activity(
-                &state.db,
-                agent_id,
-                &telemetry_ingest::ActivityEvent::parse(&val),
-            )
-            .await
+            match telemetry_ingest::ActivityEvent::parse(&val) {
+                Ok(ev) => telemetry_db::events::insert_activity(&state.db, agent_id, &ev).await,
+                Err(e) => {
+                    warn!(%agent_id, error=%e, "Rejected activity event");
+                    Ok(())
+                }
+            }
         }
         AgentMessage::AppIcon(icon) => {
             // Expected: { type:"app_icon", exe_name:"winword.exe", png_base64:"..." }
-            let exe_ok = icon
-                .exe_name
-                .as_deref()
-                .is_some_and(|s| !s.trim().is_empty() && s.len() <= MAX_WINDOW_APP_CHARS);
-            let b64 = icon.png_base64.as_deref().unwrap_or("");
-            if !exe_ok || b64.is_empty() {
+            let exe_ok = !icon.exe_name.trim().is_empty()
+                && icon.exe_name.len() <= MAX_WINDOW_APP_CHARS;
+            if !exe_ok || icon.png_base64.is_empty() {
+                Ok(())
+            } else if icon.png_base64.len() > 300_000 {
+                // Hard cap to avoid DB bloat / abuse (~200KB decoded).
+                warn!("Dropping 'app_icon' from {agent_id}: payload too large");
                 Ok(())
             } else {
-                // Hard cap to avoid DB bloat / abuse (~200KB decoded).
-                if b64.len() > 300_000 {
-                    warn!("Dropping 'app_icon' from {agent_id}: payload too large");
-                    Ok(())
-                } else {
-                    match base64::engine::general_purpose::STANDARD.decode(b64) {
-                        Ok(bytes) => {
-                            telemetry_db::app_icons::upsert_app_icon(
-                                &state.db,
-                                agent_id,
-                                icon.exe_name.as_deref().unwrap_or(""),
-                                &bytes,
-                            )
-                            .await
-                        }
-                        Err(_) => Ok(()),
+                match base64::engine::general_purpose::STANDARD.decode(&icon.png_base64) {
+                    Ok(bytes) => {
+                        telemetry_db::app_icons::upsert_app_icon(
+                            &state.db,
+                            agent_id,
+                            &icon.exe_name,
+                            &bytes,
+                        )
+                        .await
                     }
+                    Err(_) => Ok(()),
                 }
             }
         }
         AgentMessage::AppBlockKill(kill) => {
-            let rule_id = kill.rule_id;
-            let rule_name = kill.rule_name.as_deref();
-            let exe_name = kill.exe_name.as_deref().unwrap_or("").trim().to_string();
+            let exe_name = kill.exe_name.trim();
             if exe_name.is_empty() {
                 Ok(())
             } else {
                 app_block_db::events::log_app_block_event(
-                    &state.db, agent_id, rule_id, rule_name, &exe_name,
+                    &state.db,
+                    agent_id,
+                    kill.rule_id,
+                    Some(&kill.rule_name),
+                    exe_name,
                 )
                 .await
             }
@@ -233,19 +196,31 @@ async fn dispatch_val(
             }
             agents_db::upsert_agent_info(&state.db, agent_id, &val).await
         }
-        AgentMessage::Metrics => {
-            telemetry_db::metrics::insert_agent_metrics(
-                &state.db,
-                agent_id,
-                &telemetry_ingest::MetricsSample::parse(&val),
-            )
-            .await
+        AgentMessage::Metrics(ev) => {
+            telemetry_db::metrics::insert_agent_metrics(&state.db, agent_id, ev).await
         }
-        AgentMessage::SoftwareInventory(inventory) => {
+        AgentMessage::SoftwareInventory(inv) => {
             use std::collections::{HashMap, HashSet};
 
             const MAX_SOFTWARE_ITEMS: usize = 12_000;
             const MAX_SOFTWARE_CHANGE_EVENTS: usize = 250;
+
+            if inv.items.len() > MAX_SOFTWARE_ITEMS {
+                warn!("Dropping 'software_inventory' from {agent_id}: too many items");
+                return;
+            }
+            // One bad entry rejects the whole snapshot before any mutation.
+            let mut typed_items = Vec::with_capacity(inv.items.len());
+            for it in &inv.items {
+                match SoftwareItem::parse(it) {
+                    Ok(Some(item)) => typed_items.push(item),
+                    Ok(None) => {}
+                    Err(e) => {
+                        warn!(%agent_id, error=%e, "Rejected software inventory entry");
+                        return;
+                    }
+                }
+            }
 
             fn key_for_row(r: &software_db::AgentSoftwareRow) -> String {
                 let version = r.version.as_deref().unwrap_or("").trim();
@@ -263,23 +238,9 @@ async fn dispatch_val(
                 .await
                 .unwrap_or_default();
 
-            let items = val["items"].as_array().cloned().unwrap_or_default();
-            // The raw entries stay the fan-out payloads (same bytes sent);
-            // the typed ones are what gets stored. Entries without a usable
-            // name are dropped here, like both consumers always skipped them.
-            let mut new_items: Vec<serde_json::Value> = Vec::new();
-            let mut typed_items: Vec<software_ingest::SoftwareItem> = Vec::new();
-            for it in items.into_iter().take(MAX_SOFTWARE_ITEMS) {
-                if let Some(parsed) = software_ingest::SoftwareItem::parse(&it) {
-                    typed_items.push(parsed);
-                    new_items.push(it);
-                }
-            }
-
-            let replace_res =
-                software_db::replace_agent_software(&state.db, agent_id, &typed_items)
-                    .await
-                    .map(|_| ());
+            let replace_res = software_db::replace_agent_software(&state.db, agent_id, &typed_items)
+                .await
+                .map(|_| ());
             if let Err(e) = replace_res {
                 Err(e)
             } else {
@@ -292,18 +253,17 @@ async fn dispatch_val(
                     }
 
                     let mut new_by_key: HashMap<String, serde_json::Value> =
-                        HashMap::with_capacity(new_items.len().saturating_mul(2));
+                        HashMap::with_capacity(typed_items.len().saturating_mul(2));
                     let mut new_keys: HashSet<String> =
-                        HashSet::with_capacity(new_items.len().saturating_mul(2));
-                    for (parsed, it) in typed_items.iter().zip(new_items.iter()) {
+                        HashSet::with_capacity(typed_items.len().saturating_mul(2));
+                    for (parsed, it) in typed_items.iter().zip(inv.items.iter()) {
                         if let Some(k) = parsed.key() {
                             new_keys.insert(k.clone());
-                            // Keep the first encountered payload for this key.
                             new_by_key.entry(k).or_insert_with(|| it.clone());
                         }
                     }
 
-                    let captured_at = inventory.captured_at;
+                    let captured_at = inv.captured_at;
 
                     let mut installed: Vec<serde_json::Value> = Vec::new();
                     for k in new_keys.difference(&prev_keys) {
@@ -334,7 +294,6 @@ async fn dispatch_val(
                         }
                     }
 
-                    // Emit a summary first if there are any changes.
                     if !installed.is_empty() || !removed.is_empty() {
                         state.broadcast(
                         serde_json::json!({
@@ -352,7 +311,6 @@ async fn dispatch_val(
                     );
                     }
 
-                    // Then emit per-item change events (same viewer fanout format as other telemetry).
                     for ev in installed.into_iter().chain(removed) {
                         let ev_type = ev["type"].as_str().unwrap_or("software_change");
                         state.broadcast(
@@ -370,13 +328,6 @@ async fn dispatch_val(
                 Ok(())
             }
         }
-        AgentMessage::ScriptResult(reply) => {
-            if let Some(rid) = reply.request_id {
-                let _ = state.rpc.try_complete_script_waiter(rid, val.clone());
-            }
-            Ok(())
-        }
-        AgentMessage::DirList | AgentMessage::FileChunk | AgentMessage::FileUploadResult => Ok(()),
         // Answered by the early returns above; listed so a new message type has to
         // pick a route here.
         AgentMessage::Batch(_)
@@ -385,10 +336,12 @@ async fn dispatch_val(
         | AgentMessage::ClipboardResult
         | AgentMessage::LogTail(_)
         | AgentMessage::LogSources(_)
+        | AgentMessage::ScriptResult(_)
         | AgentMessage::TerminalOutput(_)
-        | AgentMessage::TerminalExit(_)
-        | AgentMessage::HistoryFrame => Ok(()),
+        | AgentMessage::TerminalExit(_) => Ok(()),
+        AgentMessage::DirList | AgentMessage::FileChunk | AgentMessage::FileUploadResult => Ok(()),
         AgentMessage::Unknown => {
+            // Strict parsing never reaches here; kept exhaustive for safety.
             warn!("Unknown event type '{kind}' from {agent_id}");
             Ok(())
         }
@@ -413,7 +366,7 @@ async fn dispatch_val(
         alert_rules::on_url_or_keys_event(state, agent_id, name, kind, &val).await;
     }
 
-    if matches!(message, AgentMessage::Metrics) {
+    if matches!(message, AgentMessage::Metrics(_)) {
         alert_rules::on_metrics_event(state, agent_id, name, &val).await;
     }
 
@@ -438,15 +391,29 @@ pub(super) async fn dispatch_text(
     lease: &IngestionLease,
 ) {
     let Ok(val) = serde_json::from_str::<serde_json::Value>(text) else {
-        warn!("Bad JSON from {agent_id}");
+        warn!("Rejected agent frame (malformed_json) from {agent_id}");
         return;
     };
 
+    let message = match AgentMessage::try_parse(&val) {
+        Ok(message) => message,
+        Err(e) => {
+            // The error is code-only; the raw frame is never logged.
+            warn!(%agent_id, error=%e, "Rejected agent frame");
+            return;
+        }
+    };
+
     // Agent-side batching: { type:"batch", events:[{type:"url",...}, ...] }
-    let message = AgentMessage::parse(&val);
     if let AgentMessage::Batch(batch) = message {
         for ev in batch.events {
-            let message = AgentMessage::parse(&ev);
+            let message = match AgentMessage::try_parse(&ev) {
+                Ok(message) => message,
+                Err(e) => {
+                    warn!(%agent_id, error=%e, "Rejected batched agent frame");
+                    continue;
+                }
+            };
             // Prevent recursive batches.
             if matches!(message, AgentMessage::Batch(_)) {
                 continue;

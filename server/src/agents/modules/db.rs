@@ -74,15 +74,6 @@ pub async fn module_report(
     })
     .transpose()
 }
-/// Whether this device has ever sent a module report (i.e. runs a modern agent).
-pub async fn has_module_report(pool: &PgPool, id: Uuid) -> Result<bool> {
-    Ok(sqlx::query_scalar!(
-        r#"SELECT EXISTS(SELECT 1 FROM agent_module_reports WHERE agent_id=$1) AS "exists!""#,
-        id
-    )
-    .fetch_one(pool)
-    .await?)
-}
 pub async fn save_module_report(
     pool: &PgPool,
     id: Uuid,

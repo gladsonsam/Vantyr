@@ -15,7 +15,7 @@ Every command the server sends an agent is a WebSocket text frame holding a JSON
 
 ## Commands
 
-Replies are built from the typed structs in [`outbound/replies.rs`](../src/outbound/replies.rs). Field types are what the agent reads. Every field is lenient: missing, `null` or the wrong JSON type is treated as absent and takes the listed default (or makes the handler ignore the command), never a parse failure of the whole frame.
+Replies are built from the typed structs in [`outbound/replies.rs`](../src/outbound/replies.rs). The wire contract is strict and shared with the server in `vantyr-protocol`: a required field that is missing or wrongly typed rejects the whole command at admission — no stale value is silently defaulted. Fields marked optional in the table are legitimately optional in the current contract. A gated command must carry a current `__module_generation`; the agent never synthesizes a missing one.
 
 | `type` | Fields (default) | Module | Handler | Reply |
 | --- | --- | --- | --- | --- |

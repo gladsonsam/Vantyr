@@ -1,9 +1,10 @@
-//! Recall keyframe ingest: the `HST\0` binary frame codec, legacy base64 JSON frames,
-//! blob storage under the lifecycle lease, and spool acks back to the agent.
+//! Recall keyframe ingest: the `HST\0` binary frame codec, blob storage under the
+//! lifecycle lease, and spool acks back to the agent.
 
 use std::sync::Arc;
 
 use crate::state::agent_lifecycle::{spawn_blocking_ingestion, IngestionLease};
+#[cfg(test)]
 use base64::Engine;
 use tracing::{error, warn};
 use uuid::Uuid;
@@ -47,49 +48,11 @@ fn ack_history_frame(
         .try_send_command(agent_id, &ServerCommand::HistoryFrameAck(ack));
 }
 
-/// Persist a legacy JSON `history_frame` (base64 JPEG).
-///
-/// Superseded by the binary `HST\0` frame, which avoids base64's ~33% inflation on a
-/// socket shared with live telemetry. Kept so an agent that hasn't been updated yet
-/// keeps recording rather than silently losing its history.
-pub(super) async fn ingest_history_frame(
-    agent_id: Uuid,
-    conn_id: Uuid,
-    val: &serde_json::Value,
-    state: &Arc<AppState>,
-    lease: &IngestionLease,
-) {
-    let b64 = val["jpeg_b64"].as_str().unwrap_or("");
-    if b64.is_empty() {
-        warn!("Dropping history_frame from {agent_id}: empty jpeg_b64");
-        ack_history_frame(agent_id, val, state, Some("empty jpeg"));
-        return;
-    }
-    let jpeg = match base64::engine::general_purpose::STANDARD.decode(b64) {
-        Ok(bytes) if bytes.len() <= MAX_HISTORY_JPEG_BYTES => bytes,
-        Ok(bytes) => {
-            warn!(
-                "Dropping history_frame from {agent_id}: jpeg too large ({} bytes)",
-                bytes.len()
-            );
-            ack_history_frame(agent_id, val, state, Some("jpeg too large"));
-            return;
-        }
-        Err(e) => {
-            warn!("Dropping history_frame from {agent_id}: bad base64 ({e})");
-            ack_history_frame(agent_id, val, state, Some("bad base64"));
-            return;
-        }
-    };
-
-    store_history_frame(agent_id, conn_id, val, jpeg, state, lease).await;
-}
-
 /// Decode a binary `HST\0` keyframe and persist it.
 ///
-/// Layout: `HST\0` + u32 LE header length + header JSON + raw JPEG bytes. This is the
-/// path modern agents use; the JSON/base64 `history_frame` event above is kept so an
-/// agent that hasn't been updated yet still works.
+/// Layout: `HST\0` + u32 LE header length + header JSON + raw JPEG bytes. This is
+/// the one current Recall keyframe path; a JSON/base64 frame is not a current
+/// wire type and is rejected by the strict message parser.
 pub(super) async fn ingest_history_frame_binary(
     agent_id: Uuid,
     conn_id: Uuid,

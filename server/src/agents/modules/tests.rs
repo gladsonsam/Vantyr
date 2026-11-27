@@ -34,7 +34,6 @@ fn connect(state: &AppState, id: Uuid) -> (Uuid, tokio::sync::mpsc::Receiver<Age
             connected_at: chrono::Utc::now(),
             session_id: 1,
             shutdown,
-            legacy_policy_delivery: false,
             screen_live_tuning: false,
         },
     );
@@ -169,57 +168,29 @@ async fn all_command_families_fail_closed_and_queue_generations_cannot_resurrect
     );
 }
 #[tokio::test]
-async fn legacy_devices_keep_policy_pushes_but_reporting_devices_enforce_grants() {
+async fn policy_pushes_require_a_current_report_no_legacy_bypass() {
     let state = state();
     let id = Uuid::new_v4();
-    let (conn, mut rx) = connect(&state, id);
+    let (conn, _rx) = connect(&state, id);
     let policies = [
         "set_app_block_rules",
         "set_network_policy",
         "set_internet_block_rules",
     ];
-    // A device with a persisted report history never gets the legacy path.
-    for kind in policies {
-        assert_eq!(
-            state
-                .agents
-                .send_agent_command_json(id, &serde_json::json!({"type":kind}))
-                .unwrap_err()
-                .code,
-            "module_report_required"
-        );
-    }
-    state
-        .agents
-        .connections
-        .lock()
-        .get_mut(&id)
-        .unwrap()
-        .legacy_policy_delivery = true;
-    for kind in policies {
-        state
-            .agents
-            .send_agent_command_json(id, &serde_json::json!({"type":kind}))
-            .unwrap();
-        let Some(AgentControl::Text(cmd)) = rx.recv().await else {
-            panic!()
-        };
-        let cmd: serde_json::Value = serde_json::from_str(&cmd).unwrap();
-        assert!(cmd.get("__module_generation").is_none());
-        assert!(state.command_deliverable(id, conn, &cmd));
-    }
-    // Only policy pushes are grandfathered; other modules still need a report.
-    for kind in ["RunScript", "start_audio", "ReadFile"] {
+    // No report on this connection: every policy push is denied, as are all
+    // other gated commands. There is no flag that restores unconditional delivery.
+    for kind in policies.iter().copied().chain(["RunScript", "start_audio", "ReadFile"]) {
         assert_eq!(
             state
                 .agents
                 .authorize_agent_command(id, &serde_json::json!({"type":kind}))
                 .unwrap_err()
                 .code,
-            "module_report_required"
+            "module_report_required",
+            "{kind}"
         );
     }
-    // Once the device reports on this connection, its grants are authoritative.
+    // A current report with grants off still denies every policy module.
     install(&state, id, conn, module_report(1, false));
     for kind in policies {
         assert_eq!(
@@ -230,6 +201,16 @@ async fn legacy_devices_keep_policy_pushes_but_reporting_devices_enforce_grants(
                 .code,
             "module_not_authorized"
         );
+    }
+    // With the grant on, each push is bound to the reported generation.
+    install(&state, id, conn, module_report(2, true));
+    for kind in policies {
+        let cmd = state
+            .agents
+            .authorize_agent_command(id, &serde_json::json!({"type":kind}))
+            .unwrap();
+        assert_eq!(cmd["__module_generation"]["revision"], 2);
+        assert!(state.command_deliverable(id, conn, &cmd));
     }
 }
 async fn fixture(

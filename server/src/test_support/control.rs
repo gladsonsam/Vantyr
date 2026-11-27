@@ -71,7 +71,6 @@ pub fn connect(
             connected_at: chrono::Utc::now(),
             session_id: 1,
             shutdown,
-            legacy_policy_delivery: false,
             screen_live_tuning: false,
         },
     );

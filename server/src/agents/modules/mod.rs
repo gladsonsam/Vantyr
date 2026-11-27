@@ -36,19 +36,8 @@ impl ModuleReport {
             report.kind == "module_states" && report.schema_version == 1,
             "unsupported module report schema"
         );
-        // Older agents report the complete original set. Only clipboard may be
-        // omitted; synthesize an unavailable grant, never infer authorization.
-        if report.modules.len() == MODULES.len() - 1
-            && !report.modules.iter().any(|m| m.module == Module::Clipboard)
-        {
-            report.modules.push(ModuleState {
-                module: Module::Clipboard,
-                available: false,
-                enabled: false,
-                revision: 0,
-                authorization_required: true,
-            });
-        }
+        // One current report contract: the complete module set is required.
+        // No synthesized grant for a peer that omitted a module.
         anyhow::ensure!(
             report.modules.len() == MODULES.len(),
             "report must contain all modules"
@@ -134,13 +123,16 @@ impl CommandDenied {
 /// The module gating a command `"type"`; `None` for ungated and unknown commands.
 /// The table is `vantyr_protocol::ServerCommand::gate`, shared with the agent.
 pub fn command_module(kind: &str) -> Option<Module> {
-    ServerCommand::from_kind(kind).module()
+    match ServerCommand::gate_for_kind(kind) {
+        Gate::Module(module) => Some(module),
+        _ => None,
+    }
 }
 /// Non-collecting commands passed through without a module grant. `disable_module`
 /// is not one of them: the agent accepts it ungated, but the server only sends
 /// one that matches a persisted disable request (see `authorize_agent_command`).
 pub fn protocol_command(kind: &str) -> bool {
-    ServerCommand::from_kind(kind).gate() == Gate::Protocol
+    ServerCommand::gate_for_kind(kind) == Gate::Protocol
 }
 impl AgentRegistry {
     pub fn module_authorized(&self, id: Uuid, module: Module) -> bool {
@@ -248,15 +240,8 @@ impl AgentRegistry {
                 None,
             )
         })?;
-        // Agents that predate module reports cannot grant policy modules; keep
-        // their old unconditional policy delivery. Once any report has been
-        // persisted for the device, a current report is always required.
-        if runtime.is_none()
-            && connection.legacy_policy_delivery
-            && matches!(module, Module::AppPolicy | Module::NetworkPolicy)
-        {
-            return Ok(command);
-        }
+        // No legacy policy-delivery bypass: policy modules are gated like every
+        // other module. A current, validated report on this connection is required.
         let runtime = runtime.ok_or_else(|| CommandDenied::new("module_report_required", "Update the agent and authorize this module on the device; no current module report is available.", Some(module)))?;
         let grant = runtime.report.get(module);
         if !grant.available || !grant.enabled || grant.authorization_required {

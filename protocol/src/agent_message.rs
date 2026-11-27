@@ -1,24 +1,21 @@
-//! The typed agent -> server message protocol.
+//! The one typed agent -> server message contract.
 //!
 //! Every agent text frame is a JSON object tagged by `"type"`. [`AgentMessage`]
-//! names the types the server dispatches on and carries the few fields the
-//! server reads *to route or validate* a message. It is a view, not the full
-//! payload: persistence and the dashboard fan-out keep working on the raw JSON
-//! (unknown fields and future additions flow through untouched), so payload
-//! fields only appear here when dispatch itself needs them.
-//!
-//! Parsing never fails a message. A missing or wrongly-typed field reads as
-//! absent, exactly like the `val["x"].as_str()` reads this replaced, and a
-//! frame with an unknown or non-string `"type"` is [`AgentMessage::Unknown`]
-//! (the server still logs and fans it out).
-//!
-//! Only the variants that carry a payload struct with every wire field
-//! ([`TerminalOutput`], [`TerminalExit`]) are meant to be built and serialized,
-//! by the agent; the other variants describe what the server reads.
+//! names the current types the server dispatches on and carries the *full*
+//! validated payload for the fields the server reads. Parsing is strict: a
+//! missing or wrongly-typed field is an error, an unknown `"type"` is an error,
+//! and there is no fallback that turns malformed input into a usable message.
+//! The `Unknown` variant exists only as the signature-compatible result of
+//! [`AgentMessage::parse`]; every owned boundary uses [`AgentMessage::try_parse`]
+//! and fails closed.
 
 use serde::{Deserialize, Serialize};
 
-use crate::lenient;
+use crate::error::{from_serde, ProtocolError};
+use crate::telemetry::{
+    AppBlockKillFields, AppIconFields, KeysEvent, MetricsSample, SoftwareInventoryEvent,
+    UrlSessionEvent, UrlVisit, WindowFocusEvent,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -27,7 +24,7 @@ pub enum AgentMessage {
     #[serde(rename = "batch")]
     Batch(Batch),
 
-    // ── Module protocol (payload parsed by the server's module report types) ──
+    // ── Module protocol (validated by the server's module report types) ──
     #[serde(rename = "module_states")]
     ModuleStates,
     #[serde(rename = "module_disable_ack")]
@@ -56,46 +53,52 @@ pub enum AgentMessage {
     #[serde(rename = "terminal_exit")]
     TerminalExit(TerminalExit),
 
-    // ── Recall ──────────────────────────────────────────────────────────────
-    /// Legacy base64 keyframe (superseded by the binary `HST\0` frame).
-    #[serde(rename = "history_frame")]
-    HistoryFrame,
-
     // ── Telemetry ───────────────────────────────────────────────────────────
     #[serde(rename = "keys")]
-    Keys(Keys),
+    Keys(KeysEvent),
     #[serde(rename = "window_focus")]
-    WindowFocus(WindowFocus),
+    WindowFocus(WindowFocusEvent),
     #[serde(rename = "url")]
-    Url(Url),
+    Url(UrlVisit),
     #[serde(rename = "url_session")]
-    UrlSession,
+    UrlSession(UrlSessionEvent),
     #[serde(rename = "afk")]
     Afk,
     #[serde(rename = "active")]
     Active,
     #[serde(rename = "app_icon")]
-    AppIcon(AppIcon),
+    AppIcon(AppIconFields),
     #[serde(rename = "app_block_kill")]
-    AppBlockKill(AppBlockKill),
+    AppBlockKill(AppBlockKillFields),
     #[serde(rename = "agent_info")]
     AgentInfo,
     #[serde(rename = "metrics")]
-    Metrics,
-    /// The `items` array stays raw JSON (up to thousands of entries).
+    Metrics(MetricsSample),
     #[serde(rename = "software_inventory")]
-    SoftwareInventory(SoftwareInventory),
+    SoftwareInventory(SoftwareInventoryEvent),
 
-    /// Any other `"type"`, or a frame with no string `"type"`.
+    /// Only produced by [`AgentMessage::parse`] for a rejected frame.
     #[serde(other)]
     Unknown,
 }
 
 impl AgentMessage {
-    /// Parse an agent frame. Unknown or untagged frames become
-    /// [`AgentMessage::Unknown`] rather than an error.
+    /// Strict parse: `Err` for an unknown type, a bad tag, or any missing or
+    /// wrongly-typed field. Callers must drop the frame on error, before any
+    /// mutation or fan-out. The error carries no frame or secret bytes.
+    pub fn try_parse(val: &serde_json::Value) -> Result<Self, ProtocolError> {
+        let message: Self = serde_json::from_value(val.clone()).map_err(from_serde)?;
+        if matches!(message, Self::Unknown) {
+            return Err(ProtocolError::UnknownType);
+        }
+        Ok(message)
+    }
+
+    /// Signature-compatible fallback for callers that only need a value. It
+    /// returns `Unknown` for any rejected frame; `Unknown` is denied at every
+    /// owned boundary. New code must use [`AgentMessage::try_parse`].
     pub fn parse(val: &serde_json::Value) -> Self {
-        Self::deserialize(val).unwrap_or(Self::Unknown)
+        Self::try_parse(val).unwrap_or(Self::Unknown)
     }
 
     /// The wire value for a message the agent builds.
@@ -104,158 +107,52 @@ impl AgentMessage {
     }
 }
 
-/// `batch`; events that are not objects are carried through and fall to `Unknown`.
-#[derive(Debug, Default, Serialize, Deserialize)]
+/// `batch`; `events` is required and must be an array. Batch events are parsed
+/// one by one by the server, with the same strict rule.
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Batch {
-    #[serde(default, deserialize_with = "lenient::array")]
     pub events: Vec<serde_json::Value>,
 }
 
 /// The `request_id` a reply is routed back to its waiting HTTP request by.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RequestId {
-    #[serde(
-        default,
-        deserialize_with = "lenient::uuid",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub request_id: Option<uuid::Uuid>,
+    pub request_id: uuid::Uuid,
+}
+
+impl RequestId {
+    pub fn new(request_id: uuid::Uuid) -> Self {
+        Self { request_id }
+    }
 }
 
 /// `terminal_output`: a chunk of shell output, routed to the owning browser session.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TerminalOutput {
-    #[serde(
-        default,
-        deserialize_with = "lenient::uuid",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub session_id: Option<uuid::Uuid>,
+    pub session_id: uuid::Uuid,
     /// Base64 of the raw bytes read from the pty.
-    #[serde(
-        default,
-        deserialize_with = "lenient::opt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub data_b64: Option<String>,
+    pub data_b64: String,
 }
 
 impl TerminalOutput {
     pub fn new(session_id: uuid::Uuid, data_b64: String) -> Self {
         Self {
-            session_id: Some(session_id),
-            data_b64: Some(data_b64),
+            session_id,
+            data_b64,
         }
     }
 }
 
 /// `terminal_exit`: the shell ended.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TerminalExit {
-    #[serde(
-        default,
-        deserialize_with = "lenient::uuid",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub session_id: Option<uuid::Uuid>,
+    pub session_id: uuid::Uuid,
 }
 
 impl TerminalExit {
     pub fn new(session_id: uuid::Uuid) -> Self {
-        Self {
-            session_id: Some(session_id),
-        }
+        Self { session_id }
     }
-}
-
-/// `keys`: typed text, dropped by the server when over its length cap.
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct Keys {
-    #[serde(
-        default,
-        deserialize_with = "lenient::opt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub text: Option<String>,
-}
-
-/// `window_focus`: foreground window; the server caps `title` and `app`.
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct WindowFocus {
-    #[serde(
-        default,
-        deserialize_with = "lenient::opt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub title: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "lenient::opt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub app: Option<String>,
-}
-
-/// `url`: a page visit; the server caps `url`.
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct Url {
-    #[serde(
-        default,
-        deserialize_with = "lenient::opt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub url: Option<String>,
-}
-
-/// `app_icon`: `{exe_name, png_base64}`; ignored unless both are usable.
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct AppIcon {
-    #[serde(
-        default,
-        deserialize_with = "lenient::opt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub exe_name: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "lenient::opt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub png_base64: Option<String>,
-}
-
-/// `app_block_kill`: an app-block rule ended a process; ignored without an `exe_name`.
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct AppBlockKill {
-    #[serde(
-        default,
-        deserialize_with = "lenient::opt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub rule_id: Option<i64>,
-    #[serde(
-        default,
-        deserialize_with = "lenient::opt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub rule_name: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "lenient::opt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub exe_name: Option<String>,
-}
-
-/// `software_inventory`: a full snapshot; only the capture time is read here.
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct SoftwareInventory {
-    #[serde(
-        default,
-        deserialize_with = "lenient::opt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub captured_at: Option<i64>,
 }
 
 #[cfg(test)]
@@ -267,111 +164,89 @@ mod tests {
     const ID_STR: &str = "01234567-89ab-cdef-0123-456789abcdef";
 
     #[test]
-    fn every_dispatched_type_parses_from_just_its_tag() {
-        for kind in [
-            "batch",
-            "module_states",
-            "module_disable_ack",
-            "clipboard_result",
-            "log_tail",
-            "log_sources",
-            "script_result",
-            "dir_list",
-            "file_chunk",
-            "file_upload_result",
-            "terminal_output",
-            "terminal_exit",
-            "history_frame",
-            "keys",
-            "window_focus",
-            "url",
-            "url_session",
-            "afk",
-            "active",
-            "app_icon",
-            "app_block_kill",
-            "agent_info",
-            "metrics",
-            "software_inventory",
+    fn current_payload_frames_parse() {
+        for frame in [
+            json!({"type":"batch","events":[]}),
+            json!({"type":"module_states"}),
+            json!({"type":"module_disable_ack"}),
+            json!({"type":"clipboard_result"}),
+            json!({"type":"log_tail","request_id":ID_STR}),
+            json!({"type":"log_sources","request_id":ID_STR}),
+            json!({"type":"script_result","request_id":ID_STR}),
+            json!({"type":"dir_list"}),
+            json!({"type":"file_chunk"}),
+            json!({"type":"file_upload_result"}),
+            json!({"type":"terminal_output","session_id":ID_STR,"data_b64":"aGk="}),
+            json!({"type":"terminal_exit","session_id":ID_STR}),
+            json!({"type":"keys","text":"t","app":"a","app_display":"A","window":"w","ts":1,"user":null}),
+            json!({"type":"window_focus","title":"t","app":"a","app_display":"A","hwnd":1,"ts":1,"user":null}),
+            json!({"type":"url","url":"u","title":"t","browser":"b","ts":1,"user":null}),
+            json!({"type":"url_session","url":"u","title":null,"browser":"b","user":null,"started_at_ts":1,"ended_at_ts":2,"duration_ms":3}),
+            json!({"type":"afk"}),
+            json!({"type":"active"}),
+            json!({"type":"app_icon","exe_name":"a.exe","png_base64":"AAAA"}),
+            json!({"type":"app_block_kill","rule_id":1,"rule_name":"r","exe_name":"e.exe"}),
+            json!({"type":"agent_info"}),
+            json!({"type":"metrics","cpu_pct":1.0,"mem_used_mb":2,"mem_total_mb":3,"mem_pct":4.0,"disk_pct":5.0,"disk_used_gb":6.0,"disk_total_gb":7.0}),
+            json!({"type":"software_inventory","items":[],"captured_at":1}),
         ] {
-            let msg = AgentMessage::parse(&json!({ "type": kind }));
-            assert!(!matches!(msg, AgentMessage::Unknown), "{kind}");
+            assert!(
+                AgentMessage::try_parse(&frame).is_ok(),
+                "current frame rejected: {frame}"
+            );
         }
     }
 
     #[test]
-    fn unknown_or_untagged_frames_parse_as_unknown() {
+    fn unknown_or_untagged_frames_are_errors() {
         for frame in [
-            json!({ "type": "fs_op_result" }),
-            json!({ "type": "Keys" }),
-            json!({ "type": 5 }),
-            json!({ "type": null }),
+            json!({"type":"fs_op_result"}),
+            json!({"type":"history_frame"}),
+            json!({"type":"Keys"}),
+            json!({"type":5}),
+            json!({"type":null}),
             json!({}),
             json!("keys"),
             json!([1, 2]),
         ] {
+            assert!(AgentMessage::try_parse(&frame).is_err(), "{frame}");
             assert!(matches!(AgentMessage::parse(&frame), AgentMessage::Unknown));
         }
     }
 
     #[test]
-    fn wrong_typed_fields_read_as_absent_instead_of_dropping_the_message() {
-        let AgentMessage::Keys(keys) = AgentMessage::parse(&json!({ "type": "keys", "text": 7 }))
-        else {
-            panic!("not keys");
-        };
-        assert_eq!(keys.text, None);
-        let AgentMessage::WindowFocus(focus) = AgentMessage::parse(
-            &json!({ "type": "window_focus", "title": ["t"], "app": "editor.exe" }),
-        ) else {
-            panic!("not window_focus");
-        };
-        assert_eq!(
-            (focus.title, focus.app.as_deref()),
-            (None, Some("editor.exe"))
-        );
-        let AgentMessage::AppBlockKill(kill) = AgentMessage::parse(
-            &json!({ "type": "app_block_kill", "rule_id": 1.5, "rule_name": null, "exe_name": "a.exe" }),
-        ) else {
-            panic!("not app_block_kill");
-        };
-        assert_eq!(kill.rule_id, None);
-        assert_eq!(kill.rule_name, None);
-        assert_eq!(kill.exe_name.as_deref(), Some("a.exe"));
-        let AgentMessage::LogTail(reply) =
-            AgentMessage::parse(&json!({ "type": "log_tail", "request_id": "nope" }))
-        else {
-            panic!("not log_tail");
-        };
-        assert_eq!(reply.request_id, None);
-        let AgentMessage::Batch(batch) =
-            AgentMessage::parse(&json!({ "type": "batch", "events": "x" }))
-        else {
-            panic!("not batch");
-        };
-        assert!(batch.events.is_empty());
+    fn missing_or_wrong_typed_fields_reject_the_whole_frame() {
+        for frame in [
+            json!({"type":"keys","text":7,"app":"a","app_display":"A","window":"w","ts":1}),
+            json!({"type":"keys","text":"t"}),
+            json!({"type":"window_focus","title":"t","app":"a","app_display":"A","hwnd":"1","ts":1}),
+            json!({"type":"log_tail","request_id":"nope"}),
+            json!({"type":"batch","events":"x"}),
+            json!({"type":"metrics","cpu_pct":"high"}),
+            json!({"type":"software_inventory","items":"x","captured_at":1}),
+            json!({"type":"app_icon","exe_name":1,"png_base64":"AAAA"}),
+        ] {
+            assert!(AgentMessage::try_parse(&frame).is_err(), "{frame}");
+        }
     }
 
     #[test]
     fn routing_fields_are_read() {
-        let AgentMessage::ScriptResult(reply) = AgentMessage::parse(
-            &json!({ "type": "script_result", "request_id": ID_STR, "output": "x" }),
-        ) else {
+        let AgentMessage::ScriptResult(reply) =
+            AgentMessage::try_parse(&json!({"type":"script_result","request_id":ID_STR,"output":"x"}))
+                .unwrap()
+        else {
             panic!("not script_result");
         };
-        assert_eq!(reply.request_id, Some(ID));
-        let AgentMessage::Batch(batch) = AgentMessage::parse(
-            &json!({ "type": "batch", "events": [{ "type": "afk" }, { "type": "batch" }] }),
-        ) else {
+        assert_eq!(reply.request_id, ID);
+        let AgentMessage::Batch(batch) = AgentMessage::try_parse(&json!({
+            "type":"batch", "events":[{"type":"afk"}, {"type":"batch"}]
+        }))
+        .unwrap()
+        else {
             panic!("not batch");
         };
         assert_eq!(batch.events.len(), 2);
-        let AgentMessage::SoftwareInventory(inv) = AgentMessage::parse(
-            &json!({ "type": "software_inventory", "captured_at": 12, "items": [] }),
-        ) else {
-            panic!("not software_inventory");
-        };
-        assert_eq!(inv.captured_at, Some(12));
     }
 
     #[test]
@@ -386,9 +261,11 @@ mod tests {
             exit.to_value(),
             json!({ "type": "terminal_exit", "session_id": ID_STR })
         );
-        let AgentMessage::TerminalOutput(back) = AgentMessage::parse(&output.to_value()) else {
+        let AgentMessage::TerminalOutput(back) = AgentMessage::try_parse(&output.to_value()).unwrap()
+        else {
             panic!("not terminal_output");
         };
-        assert_eq!(back.session_id, Some(ID));
+        assert_eq!(back.session_id, ID);
+        assert_eq!(back.data_b64, "aGk=");
     }
 }

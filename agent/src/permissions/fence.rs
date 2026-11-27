@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::modules::{command_module, Module};
+use super::modules::Module;
 use super::store::{load, with_cached, State};
 use super::workers::{Generation, WorkerLease};
 use crate::capture::recall_context::ContextExt;
@@ -22,9 +22,12 @@ pub fn tag_message(
 ) -> tokio_tungstenite::tungstenite::Message {
     use tokio_tungstenite::tungstenite::Message;
     match msg {
-        Message::Text(t) => Message::text(
-            stamp(serde_json::from_str(&t).unwrap_or_default(), generation).to_string(),
-        ),
+        Message::Text(t) => {
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) else {
+                return Message::Text(t);
+            };
+            Message::text(stamp(v, generation).to_string())
+        }
         Message::Binary(b) => Message::binary(tag_binary(b.to_vec(), generation)),
         other => other,
     }
@@ -159,20 +162,26 @@ pub fn prepare_message(
     }
 }
 pub(super) fn command_allowed_in(s: &State, v: &serde_json::Value) -> bool {
-    if v.get("__module_generation").is_some() {
-        let Ok(g) = serde_json::from_value::<Generation>(v["__module_generation"].clone()) else {
-            return false;
-        };
-        if command_module(v["type"].as_str().unwrap_or("")) != Some(g.module) || !g.matches(s) {
-            return false;
-        }
+    // Strict admission: a malformed or unknown command is rejected before any
+    // grant decision, stamp, queue or dispatch. `Unknown` from the compatibility
+    // parse fallback can never reach this point.
+    let Ok(command) = ServerCommand::try_parse(v) else {
+        return false;
+    };
+    let stamp = v.get("__module_generation").and_then(|raw| {
+        serde_json::from_value::<Generation>(raw.clone())
+            .ok()
+            .filter(|g| g.matches(s))
+    });
+    if v.get("__module_generation").is_some() && stamp.is_none() {
+        return false;
     }
-    // Gated commands need their module granted. Everything else must be an explicit
-    // non-collecting protocol/config command (`disable_module` included: the agent
-    // answers it itself). Recall settings are tunables only: capture still checks
-    // its independent local grant.
-    match ServerCommand::from_kind(v["type"].as_str().unwrap_or("")).gate() {
-        Gate::Module(m) => s.enabled(m),
+    // Gated commands need the module granted *and* a current binding matching
+    // that module. A missing stamp is never synthesized here or below.
+    match command.gate() {
+        Gate::Module(m) => {
+            s.enabled(m) && stamp.is_some_and(|g| g.module == m)
+        }
         Gate::Protocol | Gate::DisableModule => true,
         Gate::Denied => false,
     }
@@ -185,14 +194,9 @@ pub(super) fn admit_command_in(s: &State, v: serde_json::Value) -> Option<serde_
     if !command_allowed_in(s, &v) {
         return None;
     }
-    // Preserve a server binding exactly. A missing stamp is legacy compatibility,
-    // bound once here before any queue or cross-process IPC forwarding.
-    if v.get("__module_generation").is_some() {
-        return Some(v);
-    }
-    let generation =
-        command_module(v["type"].as_str().unwrap_or("")).and_then(|m| Generation::from_state(s, m));
-    Some(stamp(v, generation))
+    // One current contract: the server binding is preserved verbatim. A gated
+    // command without a valid stamp was already rejected; no legacy stamping.
+    Some(v)
 }
 pub fn admit_command(v: serde_json::Value) -> Option<serde_json::Value> {
     admit_command_in(&load().unwrap_or_default(), v)
