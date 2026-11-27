@@ -1,6 +1,6 @@
 # Durable DNS events and statistics (server foundation)
 
-Status: **server foundation accepted in local source; worker emitter integration is an explicit later gate.** Migration `0081` is additive and latest; migrations `0073`–`0080` and their checksums are untouched. This slice stores worker-reported DNS observations and serves bounded query-log/stats reads. It does **not** configure a worker, publish policy, change management revisions, claim enforcement, or verify coverage. No family-dns, proxy, runtime, filter, frontend, lab or host-network file is changed here.
+Status: **server foundation and production worker integration independently reviewed; parent cancellation-accounting fix verified.** Migrations `0081` and `0084` are additive; migrations `0073`–`0080` and their checksums are untouched. This slice stores worker-reported DNS observations and serves bounded query-log/stats reads. It does **not** configure a worker, publish policy, change management revisions, claim enforcement, or verify coverage. The worker integration is in `family-dns`; no proxy, runtime, filter, frontend, lab or host-network changes are implied.
 
 ## Routes and grants
 
@@ -74,4 +74,6 @@ Response fields include the frontend integration shape: `event_id`, `time`/`obse
 - No proxy or agent observation ingestion, no inspected/traffic-count synthesis, no `by_host` grouping, no verified-person attribution, no canary/coverage signal, no policy management/history change and no UI work.
 - Read/ingest semantics are DNS-observation-only; the 30-day maximum age is a storage bound, not a coverage promise.
 
-Independent server-foundation review confirmed 10 focused tests and 117 network tests, formatting, strict clippy and SQLx preparation checks. Parent follow-up rejects root-dot-only names before database writes and preserves PostgreSQL microseconds in bounded opaque cursors. No worker emits these batches yet.
+Independent server-foundation review confirmed 10 focused tests and 117 network tests, formatting, strict clippy and SQLx preparation checks. Parent follow-up rejects root-dot-only names before database writes and preserves PostgreSQL microseconds in bounded opaque cursors. The opt-in worker emits batches through its real reporting loop.
+
+Parent validation after the cancellation fix: nine event unit tests (including multi-batch cancellation for HTTP and transport retry), the real-binary event process test, and strict scoped clippy for DNS/server all pass. Cancellation restores all pending batches in FIFO order; oversized responses are terminal. Rust validation is serialized with the shared flock.

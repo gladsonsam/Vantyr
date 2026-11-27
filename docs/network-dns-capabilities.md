@@ -122,11 +122,11 @@ written for a `Missing` row.
 | CLI-06 | Explicit allow/deny client lists and blocked-host handling | `PartialRuntime` | [config.rs](../crates/family-dns/src/config.rs) only has restrictive unknown default | Explicit allow/deny lists applied; blocked hosts answered or dropped as configured |
 | CLI-07 | BYOD enrollment using existing OIDC identity and scoped grants | `AcceptedRuntime` | `server/src/network/enroll_*`, migration `0078` (`3afcb9fc` + `db942852`, independent review: 66 network tests) | Single-use grant binds authorized device, admin-mapped OIDC principal, expiry and purpose; revocation works; no runtime DNS/proxy identity or remote privilege claimed |
 | CLI-08 | Scoped worker API authorization with household isolation | `AcceptedRuntime` | `server/src/network/{authz,gateway_auth}.rs` | Unknown scope, command or household gets uniform denial |
-| CLI-09 | Query-log richness: protocol, cache, upstream, time, flags, reason, rule and service attributes | `PartialRuntime` | [observe.rs](../crates/family-dns/src/observe.rs) bounded in-process records | Durable entry carries protocol, upstream, reason and rule text; no URLs stored |
-| CLI-10 | Time-bounded retention, anonymisation flag and ignored hosts | `PartialRuntime` | count-bounded ring only; retention field carried but unwired | 24h retention prunes; anonymisation and ignore lists honoured |
-| CLI-11 | Query-log search and pagination | `Missing` | none | Paginated search by domain, client and reason |
+| CLI-09 | Query-log richness: protocol, cache, upstream, time, flags, reason, rule and service attributes | `PartialRuntime` | [events.rs](../crates/family-dns/src/events.rs) opt-in final-query reporting and durable scoped server reads; actual protocol/flags/rules, cache/upstream identity explicitly unknown | Durable entry carries protocol, upstream, reason and rule text; no URLs stored |
+| CLI-10 | Time-bounded retention, anonymisation flag and ignored hosts | `PartialRuntime` | server age/count retention on ingestion and idle sweeps; worker volatile queue has explicit loss counters; anonymisation and ignore lists remain open | 24h retention prunes; anonymisation and ignore lists honoured |
+| CLI-11 | Query-log search and pagination | `AcceptedRuntime` | [dns_events_service.rs](../server/src/network/dns_events_service.rs) scoped DNS-only search, keyset/offset pagination, microsecond cursors; real worker/TLS/PG integration reviewed | Paginated search by domain, client and reason |
 | CLI-12 | Test-domain check-host endpoint | `PartialRuntime` | in-process decision view, no endpoint | Endpoint returns rule id and reason for a blocked name |
-| CLI-13 | Top clients/domains stats with windows and reset | `Missing` | none | 1h/24h windows return counts; reset zeroes them |
+| CLI-13 | Top clients/domains stats with windows and reset | `PartialRuntime` | scoped received-observation statistics for 1h/24h/7d/30d; conservative retained-history warning; reset remains missing | 1h/24h windows return counts; reset zeroes them |
 
 ## G. Configuration, operations and platform
 

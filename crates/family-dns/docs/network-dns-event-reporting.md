@@ -1,6 +1,6 @@
 # Worker DNS event reporting (opt-in)
 
-Status: **library + real E2E accepted; CLI wiring is an explicit parent-owned gate.** This slice adds a producer for the accepted server route `POST /worker/network/dns/events` (`server/docs/network-dns-events.md`, migration `0081`). It does not configure a worker, publish policy, change management revisions, claim enforcement, or create a UI. No proxy/agent ingestion, no public provider, no host/router DNS, no CA-trust change and no deploy is involved.
+Status: **production CLI and durable event integration independently reviewed; parent cancellation-accounting fix verified.** This slice adds a producer for the accepted server route `POST /worker/network/dns/events` (`server/docs/network-dns-events.md`, migration `0081`). It does not configure a worker, publish policy, change management revisions, claim enforcement, or create a UI. No proxy/agent ingestion, no public provider, no host/router DNS, no CA-trust change and no deploy is involved.
 
 ## Opt-in inputs
 
@@ -34,7 +34,7 @@ One observation per query, captured by a drop-guard in the query handler after t
 
 The event channel is a bounded in-memory FIFO with a declared loss strategy: when full it drops the **incoming** event and increments `lost_queue`; the oldest retained observations survive. Counters: `emitted`, `lost_queue`, `invalid`, `sent`, `acked`, `rejected`, `dropped_retry`, `restored_on_shutdown`, exposed through `EventQueue::metrics()` as bounded diagnostics (no PII). No per-query churn is written into the one durable policy bundle. A process restart resets the queue and its identifiers; there is no spool and no ordered-delivery guarantee across restarts. Without a spool the exact count of events lost before a restart is unknowable and is never reconstructed or guessed. `EventWorker::metrics()` is a production-facing status surface (used by the CLI's final status line and periodic `tracing` status logs); it reports this process's counters only and marks `prior_run_losses_unknown = true`. Do not present these figures as coverage, enforcement or a durable audit log.
 
-`event_id` is generated at query time; `batch_id` at batch creation. Both stay stable across retries of the same batch, so an exact replay is deduplicated by the server's `(household_id, event_id)` unique key and receipts. A successful ack removes exactly the drained batch; a permanent rejection or exhausted retry is counted and dropped, never silently retried forever. Cancellation restores unacknowledged work to the front of the queue and joins the task.
+`event_id` is generated at query time; `batch_id` at batch creation. Both stay stable across retries of the same batch, so an exact replay is deduplicated by the server's `(household_id, event_id)` unique key and receipts. A successful ack removes exactly the drained batch; a permanent rejection or exhausted retry is counted and dropped, never silently retried forever. Cancellation restores all unacknowledged batches to the front of the queue in FIFO order and joins the task. Concurrent queue overflow remains counted. Event counters (`emitted`, `sent`, `acked`, `lost_queue`, `invalid`) count observations; `rejected`, `dropped_retry` and `restored_on_shutdown` count batches. An allowed policy decision can still end in an upstream SERVFAIL; `allow` is the policy decision, not proof of a successful DNS answer.
 
 ## Capability contract / gaps
 
@@ -46,3 +46,5 @@ The event channel is a bounded in-memory FIFO with a declared loss strategy: whe
 ## Verification
 
 `cargo test -p family-dns --offline events::` covers queue bounds/loss, reinstatement/order, final-decision validation, strict wire DTOs, options validation and batch bounds. The real E2E test `server/src/network/dns_events_worker_e2e_tests.rs` runs the actual router over verified loopback TLS against a fresh migrated throwaway PostgreSQL, issues an explicit scoped credential, queries the real UDP/TCP listener (deny, allow, alias, cache path, unmapped source), and reads events/stats back over HTTP. It also covers outage (one retry then counted drop), auth denial, queue overflow, replay dedupe and clean shutdown.
+
+Parent validation after the cancellation fix: nine event unit tests (including multi-batch cancellation for HTTP and transport retry), the real-binary event process test, and strict scoped clippy for DNS/server all pass. Cancellation restores all pending batches in FIFO order; oversized responses are terminal. Rust validation is serialized with the shared flock.

@@ -7,8 +7,14 @@
   microsecond cursor precision and inclusive statistics boundaries. Eleven
   focused tests pass against fresh throwaway PostgreSQL databases. Explicit
   `report_dns_events` worker scope, scoped reads and idle-household retention
-  are implemented; no worker emits these batches yet. Worker integration and
-  real frontend wiring remain separate gates. Statistics describe retained
+  are implemented. Worker CLI/durable integration (`7b5e9d32` + `7df43691`,
+  source `9bd92592` + `fa9a1e91`) passed independent review apart from a
+  cancellation-accounting defect corrected and regression-tested by the parent.
+  Nine event unit tests, a real-binary process test and strict DNS/server clippy
+  pass; independent review also ran 14 server event tests including real TLS/PG
+  worker integration. Reporting is opt-in with a bounded volatile queue and
+  explicit loss counters; cache state is unknown and upstream identity absent.
+  Real frontend wiring remains a separate gate. Statistics describe retained
   observations, not visits or independently verified coverage.
 - Proxy credential/session-evidence foundation: `4adffadf` + `75f1ab02`
   (source `60294671` + `29f21ed3`) independently accepted: 82 tests and

@@ -988,7 +988,9 @@ impl EventWorker {
                         }
                         tokio::select! {
                             _ = self.cancel.cancelled() => {
-                                self.queue.reinstate(batch.clone());
+                                for rest in pending.drain(..).rev() {
+                                    self.queue.reinstate(rest);
+                                }
                                 return;
                             }
                             _ = tokio::time::sleep(delay) => {}
@@ -1004,14 +1006,17 @@ impl EventWorker {
                     }
                     Err(EventError::Integrity(_))
                     | Err(EventError::Malformed)
-                    | Err(EventError::BodyTooLarge) => {
+                    | Err(EventError::BodyTooLarge)
+                    | Err(EventError::LimitExceeded) => {
                         outcome = Some(false);
                         break;
                     }
                     Err(_) if attempt + 1 < MAX_ATTEMPTS => {
                         tokio::select! {
                             _ = self.cancel.cancelled() => {
-                                self.queue.reinstate(batch.clone());
+                                for rest in pending.drain(..).rev() {
+                                    self.queue.reinstate(rest);
+                                }
                                 return;
                             }
                             _ = tokio::time::sleep(delay) => {}
@@ -1036,7 +1041,7 @@ impl EventWorker {
             }
             pending.remove(0);
             if self.cancel.is_cancelled() {
-                for rest in pending.drain(..) {
+                for rest in pending.drain(..).rev() {
                     self.queue.reinstate(rest);
                 }
                 return;
@@ -1076,6 +1081,112 @@ mod tests {
             denied_alias_target: None,
             correlation_id: None,
         }
+    }
+
+    // Private transport injection isolates retry/cancellation behavior. The
+    // production constructor still requires verified HTTPS, tested elsewhere.
+    async fn cancel_multibatch_after_failure(http_failure: bool) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let requested = Arc::new(tokio::sync::Notify::new());
+        let notify = Arc::clone(&requested);
+        let collector = tokio::spawn(async move {
+            if http_failure {
+                let app = axum::Router::new().route(
+                    "/",
+                    axum::routing::post(move |_: axum::body::Bytes| {
+                        let notify = Arc::clone(&notify);
+                        async move {
+                            notify.notify_one();
+                            axum::http::StatusCode::SERVICE_UNAVAILABLE
+                        }
+                    }),
+                );
+                axum::serve(listener, app).await.unwrap();
+            } else {
+                let (stream, _) = listener.accept().await.unwrap();
+                notify.notify_one();
+                drop(stream);
+            }
+        });
+        let queue = Arc::new(EventQueue::new(256));
+        let long_name = format!(
+            "{}.{}.{}.{}",
+            "a".repeat(63),
+            "b".repeat(63),
+            "c".repeat(63),
+            "d".repeat(61)
+        );
+        for id in 1..=256 {
+            let mut e = event(id, &long_name);
+            e.applied_rule = Some("r".repeat(200));
+            e.reason_code = "r".repeat(64);
+            e.denied_alias_target = Some(long_name.clone());
+            e.filter_source_id = Some("s".repeat(64));
+            assert!(queue.push(e));
+        }
+        let expected = queue
+            .entries
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| e.event_id)
+            .collect::<Vec<_>>();
+        let batches = build_batches(queue.entries.lock().unwrap().iter().cloned().collect(), 256);
+        assert!(batches.len() > 1, "must exercise byte-budget splitting");
+        let client = Arc::new(EventClient {
+            http: Client::builder()
+                .no_proxy()
+                .timeout(Duration::from_secs(2))
+                .build()
+                .unwrap(),
+            url: Url::parse(&format!("http://{address}/")).unwrap(),
+            credential: Bearer(SecretString::from("test-only".to_owned())),
+            household_id: Uuid::new_v4(),
+            gateway_id: Uuid::new_v4(),
+            max_response_bytes: 1024,
+        });
+        let worker = Arc::new(EventWorker {
+            queue: Arc::clone(&queue),
+            client,
+            max_batch: 256,
+            flush_interval: Duration::from_secs(60),
+            backoff: Duration::from_secs(30),
+            max_backoff: Duration::from_secs(30),
+            cancel: CancellationToken::new(),
+            task: Mutex::new(None),
+        });
+        worker.start();
+        tokio::time::timeout(Duration::from_secs(5), requested.notified())
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), worker.shutdown())
+            .await
+            .unwrap();
+        let restored = queue
+            .drain(256)
+            .iter()
+            .map(|e| e.event_id)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            restored, expected,
+            "all drained batches must return in FIFO order"
+        );
+        assert_eq!(worker.metrics().restored_on_shutdown, batches.len() as u64);
+        assert_eq!(worker.metrics().lost_queue, 0);
+        assert_eq!(worker.metrics().dropped_retry, 0);
+        collector.abort();
+        let _ = collector.await;
+    }
+
+    #[tokio::test]
+    async fn cancellation_restores_every_batch_after_http_retry() {
+        cancel_multibatch_after_failure(true).await;
+    }
+
+    #[tokio::test]
+    async fn cancellation_restores_every_batch_after_transport_retry() {
+        cancel_multibatch_after_failure(false).await;
     }
 
     #[test]
