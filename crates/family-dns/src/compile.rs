@@ -141,6 +141,7 @@ pub fn compile(base: &Config, policy: &Policy) -> Result<Config, CompileError> {
         // never something a controller policy pull may add, drop or rewrite.
         dot_listener: base.dot_listener.clone(),
         doh_listener: base.doh_listener.clone(),
+        doq_listener: base.doq_listener.clone(),
         deny: base.deny.clone(),
         upstreams: base.upstreams.clone(),
         encrypted_upstreams: base.encrypted_upstreams.clone(),

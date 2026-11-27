@@ -33,13 +33,16 @@ chrono           = { version = "=0.4.45", features = ["serde"] }
 serde            = { version = "=1.0.229", features = ["derive"] }
 serde_json       = "=1.0.154"
 tokio            = { version = "=1.54.1", features = ["macros", "rt", "rt-multi-thread", "net", "sync", "time", "signal"] }
-# `tls-aws-lc-rs` enables the maintained DoT server listener API and
-# `https-aws-lc-rs` the maintained DoH/h2 server listener API, on the same
-# pinned version already used by the test-only listener below; no new lock edge.
-hickory-server   = { version = "=0.26.4", features = ["resolver", "tls-aws-lc-rs", "https-aws-lc-rs"] }
-# Maintained DoT/DoH upstream transports. `webpki-roots` is mandatory: without
-# a root source Hickory's client config is empty and every verification fails.
-hickory-resolver = { version = "=0.26.4", default-features = false, features = ["tokio", "serde", "tls-aws-lc-rs", "https-aws-lc-rs", "webpki-roots"] }
+# `tls-aws-lc-rs` enables the maintained DoT server listener API,
+# `https-aws-lc-rs` the maintained DoH/h2 server listener API and
+# `quic-aws-lc-rs` the maintained DoQ server listener API, on the same pinned
+# version already used by the test-only listener below; no new lock version.
+hickory-server   = { version = "=0.26.4", features = ["resolver", "tls-aws-lc-rs", "https-aws-lc-rs", "quic-aws-lc-rs"] }
+# Maintained DoT/DoH/DoQ upstream and client transports. `webpki-roots` is
+# mandatory: without a root source Hickory's client config is empty and every
+# verification fails. `quic-aws-lc-rs` also supplies the test-only verifying
+# DoQ client; all are feature edges on the pinned version, no new stack.
+hickory-resolver = { version = "=0.26.4", default-features = false, features = ["tokio", "serde", "tls-aws-lc-rs", "https-aws-lc-rs", "quic-aws-lc-rs", "webpki-roots"] }
 # Maintained range type for operator-configured CIDR source ranges. Already
 # pinned in the shared workspace lock by the DNS stack; no new version.
 ipnet            = "=2.12.2"
@@ -65,9 +68,12 @@ thiserror        = "=1.0.69"
 libc             = "=0.2.191"
 
 [dev-dependencies]
-# Test-only DoT/DoH helpers. Cargo unifies these features with the production
-# hickory-server package while building integration tests.
-hickory-server   = { version = "=0.26.4", features = ["resolver", "tls-aws-lc-rs", "https-aws-lc-rs"] }
+# Test-only DoT/DoH/DoQ helpers. Cargo unifies these features with the
+# production hickory-server package while building integration tests.
+hickory-server   = { version = "=0.26.4", features = ["resolver", "tls-aws-lc-rs", "https-aws-lc-rs", "quic-aws-lc-rs"] }
+# Already pinned by the Hickory stack; used only to poll the single response
+# stream returned by the test-only DoQ client. No new version or checksum.
+futures-util     = "=0.3.34"
 # Test-only client-side DoH support. `http2` lets reqwest negotiate the single
 # `h2` ALPN offered by the listener; h2 is already pinned in the workspace lock,
 # so this adds no version or checksum churn. All verification is real CA/SNI.

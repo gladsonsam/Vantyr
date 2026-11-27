@@ -25,8 +25,8 @@ use hickory_server::zone_handler::{AxfrPolicy, Catalog, ZoneType};
 use vantyr_network_filter::FilterSnapshot;
 
 use crate::config::{
-    forwards_to_self, CacheConfig, Config, DenyConfig, DohListenerConfig, DotListenerConfig,
-    RecordSpec,
+    forwards_to_self, CacheConfig, Config, DenyConfig, DohListenerConfig, DoqListenerConfig,
+    DotListenerConfig, RecordSpec,
 };
 use crate::filter::FilterMaterial;
 use crate::management::ManagementState;
@@ -279,6 +279,7 @@ pub(crate) fn same_transport(a: &Config, b: &Config) -> bool {
         && a.bind.allow_non_loopback == b.bind.allow_non_loopback
         && same_dot_listener(a.dot_listener.as_ref(), b.dot_listener.as_ref())
         && same_doh_listener(a.doh_listener.as_ref(), b.doh_listener.as_ref())
+        && same_doq_listener(a.doq_listener.as_ref(), b.doq_listener.as_ref())
 }
 
 /// The DoT listener block is transport identity. Certificate rotation is not
@@ -308,6 +309,22 @@ fn same_doh_listener(a: Option<&DohListenerConfig>, b: Option<&DohListenerConfig
                 && a.bind == b.bind
                 && a.hostname == b.hostname
                 && a.path == b.path
+                && a.cert_path == b.cert_path
+                && a.key_path == b.key_path
+        }
+        _ => false,
+    }
+}
+
+/// Same transport identity for the DoQ listener. Its bind and certificate paths
+/// define the accepted wire identity; no field can change on reload. There is
+/// no certificate rotation and no per-client identity in this contract.
+fn same_doq_listener(a: Option<&DoqListenerConfig>, b: Option<&DoqListenerConfig>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.enabled == b.enabled
+                && a.bind == b.bind
                 && a.cert_path == b.cert_path
                 && a.key_path == b.key_path
         }

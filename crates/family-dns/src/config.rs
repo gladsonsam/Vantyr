@@ -327,6 +327,27 @@ pub struct DohListenerConfig {
     pub key_path: String,
 }
 
+/// Explicit operator opt-in for a DNS-over-QUIC (DoQ) server listener. Like
+/// the DoT block it is inert unless `enabled` is true AND both bounded paths
+/// are supplied. It has no hostname or path: the wire identity is the single
+/// `doq` ALPN and the certificate carried by the prepared rustls config, and the
+/// client source is always the accepted QUIC connection address.
+///
+/// The bind is UDP on its own port. The same `FilteringHandler`, immutable
+/// policy and source-IP device mapping apply to decrypted queries. Certificate
+/// rotation is not supported here, so this whole block is transport identity
+/// and a reload that changes any field is rejected.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DoqListenerConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_bind")]
+    pub bind: BindConfig,
+    pub cert_path: String,
+    pub key_path: String,
+}
+
 impl Default for BindConfig {
     fn default() -> Self {
         default_bind()
@@ -1149,6 +1170,10 @@ pub struct Config {
     /// implicitly.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doh_listener: Option<DohListenerConfig>,
+    /// Optional, explicit DoQ server listener. Omitted or `enabled = false`
+    /// means no QUIC listener is created; nothing enables it implicitly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doq_listener: Option<DoqListenerConfig>,
     #[serde(default)]
     pub deny: DenyConfig,
     #[serde(default)]
@@ -1259,6 +1284,7 @@ impl Config {
         }
         self.validate_dot_listener()?;
         self.validate_doh_listener()?;
+        self.validate_doq_listener()?;
 
         if self.upstreams.len() + self.encrypted_upstreams.len() > MAX_UPSTREAMS {
             bail!("at most {MAX_UPSTREAMS} upstreams are allowed");
@@ -1716,6 +1742,99 @@ impl Config {
                 if forwards_to_self(&candidate, &doh_addr) {
                     bail!(
                         "{} encrypted upstream points back at the DoH listener",
+                        spec.scheme()
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate the optional DoQ (UDP/QUIC) listener block without reading a
+    /// file or opening a socket. Bounded certificate paths, public bind,
+    /// privileged port, distinct-port and self-loop checks all run before any
+    /// listener exists. A zero port is allowed for loopback test binds; the
+    /// ACTUAL bound address is checked for cross-listener collisions in
+    /// `server::serve` after every socket is bound.
+    fn validate_doq_listener(&self) -> Result<()> {
+        let Some(doq) = &self.doq_listener else {
+            return Ok(());
+        };
+        for (value, label) in [
+            (&doq.cert_path, "DoQ cert_path"),
+            (&doq.key_path, "DoQ key_path"),
+        ] {
+            if value.is_empty()
+                || value.len() > MAX_TLS_PATH_LEN
+                || value.chars().any(char::is_control)
+            {
+                bail!("{label} is empty, unbounded or malformed");
+            }
+        }
+        // A present but disabled block stays inert: no certificate is read and
+        // no socket is bound. Enabling is an explicit operator decision.
+        if !doq.enabled {
+            return Ok(());
+        }
+        let ip = parsed_ip(&doq.bind.address, "DoQ listener address")?;
+        let canonical = normalize_ip(ip);
+        if doq.bind.port != 0 && doq.bind.port < 1024 {
+            bail!("DoQ listener port must be 1024 or higher; privileged ports are not used");
+        }
+        if !canonical.is_loopback() {
+            if !doq.bind.allow_non_loopback {
+                bail!("non-loopback DoQ listener requires doq_listener.bind.allow_non_loopback = true");
+            }
+            if canonical.is_unspecified() {
+                bail!("an unspecified DoQ listener address is never allowed");
+            }
+            if is_public_address(canonical) {
+                bail!("a public DoQ listener address is never allowed");
+            }
+        }
+        let doq_addr = SocketAddr::new(canonical, doq.bind.port);
+        let plain_addr = SocketAddr::new(normalize_ip(self.bind.address()), self.bind.port);
+        if doq.bind.port != 0 && doq_addr == plain_addr {
+            bail!("DoQ listener must use a different port from the plaintext listener");
+        }
+        // All configured encrypted listeners must claim distinct ports on the
+        // same address. A zero port is checked against the ACTUAL bound socket
+        // after binding, together with every other listener.
+        if doq.bind.port != 0 {
+            if let Some(dot) = &self.dot_listener {
+                if dot.enabled && dot.bind.port == doq.bind.port {
+                    let dot_ip = normalize_ip(parsed_ip(&dot.bind.address, "DoT listener address")?);
+                    if dot_ip == canonical {
+                        bail!("DoQ listener must use a different port from the DoT listener");
+                    }
+                }
+            }
+            if let Some(doh) = &self.doh_listener {
+                if doh.enabled && doh.bind.port == doq.bind.port {
+                    let doh_ip = normalize_ip(parsed_ip(&doh.bind.address, "DoH listener address")?);
+                    if doh_ip == canonical {
+                        bail!("DoQ listener must use a different port from the DoH listener");
+                    }
+                }
+            }
+        }
+        // Upstreams may not point back at the DoQ listener either. A zero port
+        // defers this to the post-bind guard in `server::serve`.
+        if doq.bind.port != 0 {
+            for raw in &self.upstreams {
+                let addr = SocketAddr::from_str(raw)
+                    .map_err(|_| anyhow::anyhow!("upstream '{raw}' must be an IP:port literal"))?;
+                if forwards_to_self(&addr, &doq_addr) {
+                    bail!("upstream {addr} points back at the DoQ listener");
+                }
+            }
+            for spec in &self.encrypted_upstreams {
+                let bootstrap = IpAddr::from_str(spec.bootstrap())
+                    .map_err(|_| anyhow::anyhow!("encrypted bootstrap is not an IP literal"))?;
+                let candidate = SocketAddr::new(normalize_ip(bootstrap), spec.port());
+                if forwards_to_self(&candidate, &doq_addr) {
+                    bail!(
+                        "{} encrypted upstream points back at the DoQ listener",
                         spec.scheme()
                     );
                 }

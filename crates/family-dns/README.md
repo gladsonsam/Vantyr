@@ -213,7 +213,62 @@ URLs, hostnames, zero ports, self-loops (including mapped IPs), malformed CA
 material and oversized values are rejected before any listener binds. The
 settings live in the one durable bundle, are preserved by controller pulls and
 local reloads, and are recompiled unchanged after restart. Per-domain routing,
-fallback, DoQ/H3 and DNSCrypt are not part of this slice.
+fallback, and DoQ/H3 or DNSCrypt **upstreams** are not part of this slice.
+
+## Explicit DNS-over-QUIC server listener
+
+This listener is an unaccepted candidate: eight focused tests passed, while
+shutdown/restart tests exposed asynchronous UDP-port release. The lifecycle
+gate must be resolved before deployment or runtime acceptance.
+
+A top-level `doq_listener` is an optional, default-off server listener on its
+own UDP port:
+
+```json
+"doq_listener": {
+  "enabled": true,
+  "bind": { "address": "127.0.0.1", "port": 15354 },
+  "cert_path": "/etc/vantyr/doq-server.pem",
+  "key_path": "/etc/vantyr/doq-server.key"
+}
+```
+
+It is inert unless `enabled` is true and both bounded paths are supplied. The
+bind is UDP (a separate port from the plaintext, DoT and DoH listeners); public
+addresses, unspecified addresses, privileged ports and self-loops are rejected,
+and the OS-assigned address is checked against the other listeners after bind.
+Certificate/key custody, validity and key matching use the same protected,
+no-follow, descriptor-based preparation as DoT/DoH: material for the **actually
+selected** config is prepared once, before any durable write or bind, and is
+never re-read while serving. A change to any field of the block (including
+enable/disable or a path) is a transport change and is rejected by reload.
+
+DoQ runs on the very same `FilteringHandler` and immutable snapshot as the
+plaintext, DoT and DoH sockets. Household policy, deny mode, local zones,
+rewrites, CIDR/device selection, SafeSearch and applied management settings are
+therefore identical on every transport. The client source is the accepted QUIC
+connection address; no person, session or privilege is derived from it, and
+forwarding metadata is never consulted. Event protocol reporting stays honest:
+an encrypted-quic decision is labelled `unknown` rather than being given a new
+scope or label.
+
+The listener uses the maintained Hickory/rustls/QUIC APIs only. It offers TLS
+1.3 with the single `doq` ALPN and no client-certificate requirement; there is
+no custom or skipping verifier anywhere on either side. Inherited limits from
+the maintained library are documented here rather than reimplemented:
+
+- 5-second handshake timeout before a connection is accepted.
+- 100 requests per connection, after which the connection is closed.
+- A stream/request timeout (the bounded value used at registration, matching
+  the other encrypted listeners); a connection that goes idle is closed.
+- Early data / 0-RTT is explicitly disabled; no query is accepted as early
+  data.
+- Endpoint release is asynchronous in the pinned library; `stop` currently
+  does not prove that the UDP port is immediately available for restart.
+
+Not included: DNS-over-HTTP/3, DNSCrypt, atomic certificate rotation,
+per-client encrypted IDs, and any HTTP management or UI claim for this
+listener. Like the other encrypted listeners, it is operator config only.
 
 ## Optional DNS management consumer
 

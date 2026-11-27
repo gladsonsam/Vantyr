@@ -493,6 +493,23 @@ impl DnsServer {
                 spec.path.clone(),
             )?;
         }
+        // Optional DoQ listener: UDP on its own port, TLS 1.3 with the single
+        // `doq` ALPN. Hickory's maintained QUIC handler takes the client source
+        // from the accepted connection address; no identity is inferred from it.
+        // It is registered last, so any failure here drops the already-registered
+        // sockets and tasks before the serving task is started.
+        if let (Some(spec), Some(cfg)) = (config.doq_listener.as_ref(), tls.doq) {
+            let doq = UdpSocket::bind(spec.bind.configured_addr()).await?;
+            let doq_bound = doq.local_addr()?;
+            reject_upstream_self_loop(&config, doq_bound)?;
+            reject_duplicate_bind(&bound_addrs, doq_bound)?;
+            bound_addrs.push(doq_bound);
+            server.register_quic_listener_and_tls_config(
+                doq,
+                Duration::from_secs(TCP_TIMEOUT_SECS),
+                cfg,
+            )?;
+        }
         let shutdown = server.shutdown_token().clone();
         let task = tokio::spawn(async move {
             if let Err(error) = server.block_until_done().await {
