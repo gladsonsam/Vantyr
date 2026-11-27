@@ -27,6 +27,6 @@ pub use events::{
     HARD_MAX_EVENT_BYTES, MAX_FUTURE_SKEW_SECS,
 };
 pub use persistence::{
-    check_policy_shape, IoHook, LkgError, LkgSnapshot, LkgStore, Persistable, PolicyValidator,
-    TypedLkgStore, TypedSnapshot, Validator, WriteHooks, MAX_SNAPSHOT_BYTES, SNAPSHOT_SCHEMA,
+    check_policy_shape, IoHook, LkgError, Persistable, TypedLkgStore, TypedSnapshot, Validator,
+    WriteHooks, MAX_SNAPSHOT_BYTES, SNAPSHOT_SCHEMA,
 };

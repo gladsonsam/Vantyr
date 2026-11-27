@@ -4,16 +4,16 @@ Worker-local building blocks shared by the Vantyr Network protocol workers.
 
 ## Typed last-known-good persistence
 
-`TypedLkgStore<T, V>` keeps one typed payload in one file. It was generalised
-from the original policy-only store; `LkgStore<V>` and `LkgSnapshot` remain as
-policy-only aliases so existing callers and their tests are unchanged.
+`TypedLkgStore<T, V>` is the one last-known-good store: it keeps one typed
+payload in one file. There are no policy-only aliases; every caller supplies
+its payload type and its validator explicitly.
 
 - `Persistable` supplies `revision()`, `household_id()` and shape checks for a
   payload. `Policy` has an implementation; a DNS worker supplies its complete
-  config+policy `Bundle` as another.
-- `Validator<T>` is the "can this worker enforce it?" seam. `PolicyValidator`
-  and its closure implementation are retained and bridged to
-  `Validator<Policy>`.
+  config+policy `Bundle` as another. Shape checks run on both new candidates
+  and payloads read from disk; a missing field is rejected, never repaired.
+- `Validator<T>` is the "can this worker enforce it?" seam. Each payload type
+  supplies its own implementation.
 - `TypedSnapshot<T>` carries schema, immutable household and worker ids, a
   monotonic `highwater`, the payload and `saved_at`. The field name `policy`
   is kept for source compatibility; for a generic store it holds that store's
@@ -49,7 +49,7 @@ deduplicated or aggregated into a fabricated "visit".
 
 ## Tests
 
-`cargo test -p vantyr-network-runtime` covers the original 22 policy/event
-contracts plus a typed non-policy payload using the same store protocol.
+`cargo test -p vantyr-network-runtime` covers the policy/event contracts
+through the typed store plus a non-policy payload using the same protocol.
 The shared policy package name has not changed; this crate reaches it through
 the `vantyr-network-policy` manifest alias.

@@ -1,6 +1,6 @@
-//! Explicit schema-1 generation migration and on-disk material tamper checks.
-//! Legacy payloads are accepted only in the recognized shape; impossible or
-//! mixed counters are rejected before a listener exists.
+//! Current-shape generation counter and on-disk material tamper checks.
+//! Bundles with missing, partial or impossible counters are rejected before a
+//! listener exists; no legacy counter shape is migrated or repaired.
 
 mod support;
 
@@ -131,52 +131,22 @@ fn drop_counters(bundle: &mut Value) {
 }
 
 #[tokio::test]
-async fn legacy_counters_are_migrated_without_freshening_policy_age() {
-    let st = fixture("legacy-plain", false);
-    bootstrap(&st).await;
-    mutate(&st, drop_counters);
-    let server = DnsServer::start_durable(st.options()).await.unwrap();
-    let status = server.status();
-    assert_eq!(status.policy_revision, 3);
-    assert_eq!(
-        status.bundle_generation, 3,
-        "legacy highwater becomes generation"
-    );
-    assert_eq!(status.filter_generation, 0);
-    assert_eq!(
-        server.published_at(),
-        STAMP.parse::<DateTime<Utc>>().unwrap()
-    );
-    let message = udp_query(
-        "127.0.0.2".parse().unwrap(),
-        server.bind_addr(),
-        "ok.migrate.example.",
-        RecordType::A,
-    )
-    .await;
-    assert_code(&message, ResponseCode::NoError);
-    server.stop().await;
-}
+async fn bundles_with_missing_counters_are_rejected_without_repair() {
+    for (name, with_filter) in [("missing-plain", false), ("missing-filter", true)] {
+        let st = fixture(name, with_filter);
+        bootstrap(&st).await;
+        let mutated = mutate(&st, drop_counters);
 
-#[tokio::test]
-async fn legacy_filter_material_migrates_with_generation_one() {
-    let st = fixture("legacy-filter", true);
-    bootstrap(&st).await;
-    mutate(&st, drop_counters);
-    let server = DnsServer::start_durable(st.options()).await.unwrap();
-    let status = server.status();
-    assert_eq!(status.filter_generation, 1);
-    assert_eq!(status.bundle_generation, 3);
-    assert_eq!(status.filter_identity.len(), 64);
-    let message = udp_query(
-        "127.0.0.2".parse().unwrap(),
-        server.bind_addr(),
-        "blocked.migrate.example.",
-        RecordType::A,
-    )
-    .await;
-    assert_code(&message, ResponseCode::NXDomain);
-    server.stop().await;
+        assert!(
+            DnsServer::start_durable(st.options()).await.is_err(),
+            "{name}: a bundle without generation counters must be rejected"
+        );
+        assert_eq!(
+            st.disk(),
+            mutated,
+            "{name}: a rejected bundle must not be silently repaired on disk"
+        );
+    }
 }
 
 #[tokio::test]

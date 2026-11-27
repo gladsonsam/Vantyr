@@ -58,16 +58,9 @@ pub trait Persistable: Clone + Serialize + DeserializeOwned {
     fn revision(&self) -> PolicyRevision;
     fn household_id(&self) -> HouseholdId;
     /// Payload-specific shape checks shared by disk loads and new candidates.
+    /// A deserialized payload must satisfy these checks exactly as written;
+    /// missing fields are rejected, never repaired.
     fn check(&self) -> Result<(), LkgError>;
-    /// Explicit one-time migration of a *recognized legacy* schema-1 payload
-    /// after deserialization and before any accessor or envelope check runs.
-    /// The default is a no-op, so non-DNS payloads keep their exact behaviour.
-    /// Implementations must reject impossible or partially present counters
-    /// instead of silently repairing them, and must not freshen timestamps or
-    /// replay any history.
-    fn normalize(&mut self, _envelope_highwater: PolicyRevision) -> Result<(), LkgError> {
-        Ok(())
-    }
 }
 
 /// The caller's "can this worker enforce this payload?" seam. Persistence calls
@@ -75,27 +68,6 @@ pub trait Persistable: Clone + Serialize + DeserializeOwned {
 /// unsupported payload is never promoted to last-known-good by the file layer.
 pub trait Validator<T> {
     fn validate(&self, payload: &T) -> Result<(), String>;
-}
-
-/// Original policy-only validator seam, retained so existing callers keep
-/// working unchanged. It bridges into the generic [`Validator`].
-pub trait PolicyValidator {
-    fn validate(&self, policy: &Policy) -> Result<(), String>;
-}
-
-impl<F> PolicyValidator for F
-where
-    F: Fn(&Policy) -> Result<(), String>,
-{
-    fn validate(&self, policy: &Policy) -> Result<(), String> {
-        self(policy)
-    }
-}
-
-impl<V: PolicyValidator> Validator<Policy> for V {
-    fn validate(&self, policy: &Policy) -> Result<(), String> {
-        PolicyValidator::validate(self, policy)
-    }
 }
 
 /// Shape checks that every `Policy` payload must pass, regardless of whether
@@ -127,8 +99,8 @@ impl Persistable for Policy {
 /// Exactly the state written by one apply. `highwater` is the highest
 /// revision this worker has applied; a candidate must be strictly newer.
 /// Every snapshot we write has `highwater == payload.revision()`; a mismatch on
-/// load is treated as corruption. The field name `policy` is retained for the
-/// policy-only alias; for a generic store it holds that store's typed payload.
+/// load is treated as corruption. The field name `policy` is retained in the
+/// on-disk shape; for a generic store it holds that store's typed payload.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TypedSnapshot<T = Policy> {
     pub schema: u32,
@@ -138,9 +110,6 @@ pub struct TypedSnapshot<T = Policy> {
     pub policy: T,
     pub saved_at: DateTime<Utc>,
 }
-
-/// Backwards-compatible name for the policy-only snapshot.
-pub type LkgSnapshot = TypedSnapshot<Policy>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LkgError {
@@ -299,7 +268,7 @@ impl<T: Persistable, V: Validator<T>> TypedLkgStore<T, V> {
 
     /// Restart variant of [`Self::open_with_limit`]: household identity still
     /// comes from the one durable file, but the read is bounded by the caller's
-    /// payload size rather than the policy-only default.
+    /// payload size rather than the crate default.
     pub fn open_from_snapshot_with_limit(
         path: impl Into<PathBuf>,
         worker_id: impl Into<String>,
@@ -405,10 +374,6 @@ impl<T: Persistable, V: Validator<T>> TypedLkgStore<T, V> {
     }
 }
 
-/// Backwards-compatible policy-only store. New callers can use
-/// [`TypedLkgStore`] directly with a bundle payload.
-pub type LkgStore<V> = TypedLkgStore<Policy, V>;
-
 fn check_payload<T: Persistable, V: Validator<T>>(
     payload: &T,
     validator: &V,
@@ -423,7 +388,7 @@ fn validate_snapshot<T: Persistable, V: Validator<T>>(
     worker_id: &str,
     validator: &V,
 ) -> Result<TypedSnapshot<T>, LkgError> {
-    let mut snapshot: TypedSnapshot<T> =
+    let snapshot: TypedSnapshot<T> =
         serde_json::from_slice(bytes).map_err(|e| LkgError::Malformed(e.to_string()))?;
     if snapshot.schema != SNAPSHOT_SCHEMA {
         return Err(LkgError::SchemaMismatch {
@@ -431,10 +396,6 @@ fn validate_snapshot<T: Persistable, V: Validator<T>>(
             expected: SNAPSHOT_SCHEMA,
         });
     }
-    // Migrate a recognized legacy payload before any accessor that assumes
-    // normalized counters runs, then compare the envelope high-water mark with
-    // the migrated generation. Candidates are never normalized here.
-    snapshot.policy.normalize(snapshot.highwater)?;
     // Deserialized payloads have not passed their shape checks yet. Accessors
     // may rely on those invariants (for example a validated UUID string).
     check_payload(&snapshot.policy, validator)?;
@@ -601,8 +562,8 @@ mod tests {
         }
     }
 
-    fn snapshot(h: HouseholdId, worker: &str, revision: u64) -> LkgSnapshot {
-        LkgSnapshot {
+    fn snapshot(h: HouseholdId, worker: &str, revision: u64) -> TypedSnapshot<Policy> {
+        TypedSnapshot {
             schema: SNAPSHOT_SCHEMA,
             household_id: h,
             worker_id: worker.to_owned(),
@@ -616,17 +577,25 @@ mod tests {
         fs::write(path, bytes).unwrap();
     }
 
-    fn write_snapshot(path: &Path, snapshot: &LkgSnapshot) {
+    fn write_snapshot(path: &Path, snapshot: &TypedSnapshot<Policy>) {
         write_raw(path, &serde_json::to_vec(snapshot).unwrap());
     }
 
-    fn accepting() -> impl Fn(&Policy) -> Result<(), String> {
-        |_p: &Policy| Ok(())
+    #[derive(Clone, Copy)]
+    struct AcceptAll;
+
+    impl Validator<Policy> for AcceptAll {
+        fn validate(&self, _policy: &Policy) -> Result<(), String> {
+            Ok(())
+        }
     }
 
-    fn rejecting_unsupported() -> impl Fn(&Policy) -> Result<(), String> {
-        |p: &Policy| {
-            if p.baseline.iter().any(|r| r.id == "unsupported") {
+    #[derive(Clone, Copy)]
+    struct RejectUnsupported;
+
+    impl Validator<Policy> for RejectUnsupported {
+        fn validate(&self, policy: &Policy) -> Result<(), String> {
+            if policy.baseline.iter().any(|r| r.id == "unsupported") {
                 Err("rule not enforceable by this worker".into())
             } else {
                 Ok(())
@@ -637,13 +606,9 @@ mod tests {
     #[test]
     fn empty_directory_is_a_valid_no_snapshot_start() {
         let dir = tempfile::tempdir().unwrap();
-        let store = LkgStore::open(
-            dir.path().join("lkg.json"),
-            household(),
-            WORKER,
-            accepting(),
-        )
-        .unwrap();
+        let store =
+            TypedLkgStore::open(dir.path().join("lkg.json"), household(), WORKER, AcceptAll)
+                .unwrap();
         assert!(store.current().is_none());
         assert_eq!(store.highwater(), 0);
         assert!(store.snapshot().is_none());
@@ -656,7 +621,7 @@ mod tests {
         let h = household();
         let now = ts("2026-11-26T10:00:00Z");
 
-        let first = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        let first = TypedLkgStore::open(path.clone(), h, WORKER, AcceptAll).unwrap();
         first.apply(policy(h, 1, "base"), now).unwrap();
         assert_eq!(
             first.apply(policy(h, 1, "base"), now),
@@ -667,7 +632,7 @@ mod tests {
             .unwrap();
         drop(first); // simulate a worker restart whose ack never reached the controller
 
-        let restarted = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        let restarted = TypedLkgStore::open(path.clone(), h, WORKER, AcceptAll).unwrap();
         let loaded = restarted.snapshot().unwrap();
         assert_eq!(loaded.schema, SNAPSHOT_SCHEMA);
         assert_eq!(loaded.worker_id, WORKER);
@@ -693,7 +658,7 @@ mod tests {
             .unwrap();
         drop(restarted);
 
-        let rolled_back = LkgStore::open(path, h, WORKER, accepting()).unwrap();
+        let rolled_back = TypedLkgStore::open(path, h, WORKER, AcceptAll).unwrap();
         assert_eq!(rolled_back.highwater(), 3);
         assert_eq!(rolled_back.current().unwrap().revision, 3);
         assert_eq!(rolled_back.current().unwrap().baseline[0].id, "base");
@@ -705,7 +670,7 @@ mod tests {
         let path = dir.path().join("lkg.json");
         let h = household();
         let now = ts("2026-11-26T10:00:00Z");
-        let store = LkgStore::open(path.clone(), h, WORKER, rejecting_unsupported()).unwrap();
+        let store = TypedLkgStore::open(path.clone(), h, WORKER, RejectUnsupported).unwrap();
 
         assert_eq!(
             store.apply(policy(h, 1, "unsupported"), now),
@@ -741,7 +706,7 @@ mod tests {
         write_snapshot(&path, &bad);
 
         assert_eq!(
-            LkgStore::open(path, h, WORKER, rejecting_unsupported()).err(),
+            TypedLkgStore::open(path, h, WORKER, RejectUnsupported).err(),
             Some(LkgError::Unsupported(
                 "rule not enforceable by this worker".into()
             ))
@@ -788,12 +753,13 @@ mod tests {
         for (index, (snap, expected)) in cases.into_iter().enumerate() {
             let path = dir.path().join(format!("case-{index}.json"));
             write_snapshot(&path, &snap);
-            let result = LkgStore::open(path, h, WORKER, accepting());
+            let result = TypedLkgStore::open(path, h, WORKER, AcceptAll);
             assert_eq!(result.err(), Some(expected), "case {index}");
         }
 
         // The same checks apply to a candidate at apply time.
-        let store = LkgStore::open(dir.path().join("apply.json"), h, WORKER, accepting()).unwrap();
+        let store =
+            TypedLkgStore::open(dir.path().join("apply.json"), h, WORKER, AcceptAll).unwrap();
         let mut foreign_candidate = policy(h, 1, "base");
         foreign_candidate.household_id = household();
         assert_eq!(
@@ -818,21 +784,21 @@ mod tests {
         let malformed = dir.path().join("malformed.json");
         write_raw(&malformed, b"{\"schema\":");
         assert!(matches!(
-            LkgStore::open(&malformed, h, WORKER, accepting()),
+            TypedLkgStore::open(&malformed, h, WORKER, AcceptAll),
             Err(LkgError::Malformed(_))
         ));
 
         let truncated = dir.path().join("truncated.json");
         write_raw(&truncated, &valid[..valid.len() / 2]);
         assert!(matches!(
-            LkgStore::open(&truncated, h, WORKER, accepting()),
+            TypedLkgStore::open(&truncated, h, WORKER, AcceptAll),
             Err(LkgError::Malformed(_))
         ));
 
         let oversize = dir.path().join("oversize.json");
         write_raw(&oversize, &vec![b'a'; MAX_SNAPSHOT_BYTES as usize + 1]);
         assert_eq!(
-            LkgStore::open(&oversize, h, WORKER, accepting()).err(),
+            TypedLkgStore::open(&oversize, h, WORKER, AcceptAll).err(),
             Some(LkgError::TooLarge {
                 bytes: MAX_SNAPSHOT_BYTES + 1,
                 limit: MAX_SNAPSHOT_BYTES,
@@ -853,7 +819,7 @@ mod tests {
         symlink(&real, &linked).unwrap();
 
         assert_eq!(
-            LkgStore::open(linked, h, WORKER, accepting()).err(),
+            TypedLkgStore::open(linked, h, WORKER, AcceptAll).err(),
             Some(LkgError::SymlinkRejected)
         );
     }
@@ -872,7 +838,7 @@ mod tests {
         let path = dir.path().join("lkg.json");
         let h = household();
         let now = ts("2026-11-26T10:00:00Z");
-        let store = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        let store = TypedLkgStore::open(path.clone(), h, WORKER, AcceptAll).unwrap();
         store.apply(policy(h, 1, "base"), now).unwrap();
         let committed = fs::read(&path).unwrap();
 
@@ -896,7 +862,7 @@ mod tests {
         assert_eq!(store.current().unwrap().revision, 1, "memory retained");
         drop(store);
 
-        let reopened = LkgStore::open(path, h, WORKER, accepting()).unwrap();
+        let reopened = TypedLkgStore::open(path, h, WORKER, AcceptAll).unwrap();
         assert_eq!(reopened.current().unwrap().revision, 1);
         assert_eq!(reopened.highwater(), 1);
     }
@@ -909,7 +875,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("lkg.json");
         let h = household();
-        let store = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        let store = TypedLkgStore::open(path.clone(), h, WORKER, AcceptAll).unwrap();
         store
             .apply(policy(h, 1, "base"), ts("2026-11-26T10:00:00Z"))
             .unwrap();
@@ -925,7 +891,7 @@ mod tests {
         let now = ts("2026-11-26T10:00:00Z");
         let mut huge = policy(h, 2, "too-big");
         huge.baseline[0].reason = "x".repeat(MAX_SNAPSHOT_BYTES as usize + 1);
-        let probe = LkgSnapshot {
+        let probe = TypedSnapshot {
             schema: SNAPSHOT_SCHEMA,
             household_id: h,
             worker_id: WORKER.to_owned(),
@@ -940,12 +906,12 @@ mod tests {
             limit: MAX_SNAPSHOT_BYTES,
         };
 
-        let fresh = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        let fresh = TypedLkgStore::open(path.clone(), h, WORKER, AcceptAll).unwrap();
         assert_eq!(fresh.apply(huge.clone(), now), Err(expected.clone()));
         assert!(!path.exists(), "no file created for an oversize candidate");
         assert!(fresh.current().is_none());
 
-        let store = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        let store = TypedLkgStore::open(path.clone(), h, WORKER, AcceptAll).unwrap();
         store.apply(policy(h, 1, "base"), now).unwrap();
         let committed = fs::read(&path).unwrap();
         assert_eq!(store.apply(huge, now), Err(expected));
@@ -959,7 +925,7 @@ mod tests {
         let path = dir.path().join("lkg.json");
         let h = household();
         let now = ts("2026-11-26T10:00:00Z");
-        let mut store = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        let mut store = TypedLkgStore::open(path.clone(), h, WORKER, AcceptAll).unwrap();
         store.apply(policy(h, 1, "base"), now).unwrap();
         let committed = fs::read(&path).unwrap();
 
@@ -979,7 +945,7 @@ mod tests {
         let path = dir.path().join("lkg.json");
         let h = household();
         let now = ts("2026-11-26T10:00:00Z");
-        let mut store = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        let mut store = TypedLkgStore::open(path.clone(), h, WORKER, AcceptAll).unwrap();
         store.apply(policy(h, 1, "base"), now).unwrap();
 
         store.hooks.after_rename = |_| Err(io::Error::other("injected directory fsync"));
@@ -987,7 +953,8 @@ mod tests {
         // last-known-good advances with the file. Power-loss survival of the
         // directory entry is the only uncertainty.
         store.apply(policy(h, 2, "new"), now).unwrap();
-        let on_disk: LkgSnapshot = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let on_disk: TypedSnapshot<Policy> =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(
             on_disk.highwater, 2,
             "new file committed before the sync hook"
@@ -995,7 +962,7 @@ mod tests {
         assert_eq!(store.current().unwrap().revision, 2);
         drop(store);
 
-        let reopened = LkgStore::open(path, h, WORKER, accepting()).unwrap();
+        let reopened = TypedLkgStore::open(path, h, WORKER, AcceptAll).unwrap();
         assert_eq!(reopened.current().unwrap().revision, 2);
     }
 
@@ -1088,7 +1055,7 @@ mod tests {
         bigger.baseline[0].reason = "x".repeat(MAX_SNAPSHOT_BYTES as usize + 1);
 
         // The default store still rejects the oversized candidate.
-        let fresh = LkgStore::open(path.clone(), h, WORKER, accepting()).unwrap();
+        let fresh = TypedLkgStore::open(path.clone(), h, WORKER, AcceptAll).unwrap();
         assert!(matches!(
             fresh.apply(bigger.clone(), now),
             Err(LkgError::TooLarge { .. })
@@ -1096,9 +1063,14 @@ mod tests {
         assert!(!path.exists());
 
         // An explicitly opted-in store accepts the same typed payload...
-        let raised =
-            LkgStore::open_with_limit(path.clone(), h, WORKER, accepting(), MAX_SNAPSHOT_BYTES * 2)
-                .unwrap();
+        let raised = TypedLkgStore::open_with_limit(
+            path.clone(),
+            h,
+            WORKER,
+            AcceptAll,
+            MAX_SNAPSHOT_BYTES * 2,
+        )
+        .unwrap();
         raised.apply(bigger, now).unwrap();
         let on_disk = fs::read(&path).unwrap().len() as u64;
         assert!(on_disk > MAX_SNAPSHOT_BYTES);
@@ -1107,13 +1079,13 @@ mod tests {
 
         // ...and a restart reads it only when the same raised limit is given.
         assert!(matches!(
-            LkgStore::open_from_snapshot(&path, WORKER, accepting()),
+            TypedLkgStore::open_from_snapshot(&path, WORKER, AcceptAll),
             Err(LkgError::TooLarge { .. })
         ));
-        let reopened = LkgStore::open_from_snapshot_with_limit(
+        let reopened = TypedLkgStore::open_from_snapshot_with_limit(
             &path,
             WORKER,
-            accepting(),
+            AcceptAll,
             MAX_SNAPSHOT_BYTES * 2,
         )
         .unwrap();

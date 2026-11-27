@@ -272,11 +272,11 @@ The one durable bundle carries three independent counter spaces:
   actually changes. Identical re-downloads are idempotent: no new generation,
   no disk write.
 
-`--state-status` prints all three separately. A schema-1 bundle written before
-these counters existed is migrated explicitly on load from its old high-water
-mark; impossible, partial or inconsistent counters are rejected before a
-listener exists. No timestamp or policy content is freshened by migration, and
-a generation overflow is an explicit error rather than a wrap.
+`--state-status` prints all three separately. Every current bundle must carry
+all three counters; a bundle with a missing, partial, impossible or inconsistent
+set is rejected before a listener exists. There is no legacy counter migration
+or repair on load, and a generation overflow is an explicit error rather than
+a wrap.
 
 An **explicit** `--subscriptions <FILE>` (durable mode required) enables a
 single cancellable integrator loop that reuses the accepted
@@ -355,8 +355,8 @@ preservation, and the typed material seam.
 list-server tests for first-boot fail-closed, 200/304/changed-200 behaviour,
 bad/outage responses, counter-space separation, offline restart, persist
 failure retry, idempotent refreshes and baseline authority.
-`cargo test -p family-dns --test generation_migration` covers legacy counter
-migration, impossible/mixed/zero/overflow counters and on-disk material
+`cargo test -p family-dns --test generation_migration` covers strict rejection
+of missing/partial/impossible/mixed/zero/overflow counters and on-disk material
 tampering. `cargo test -p family-dns --test controller` adds real-TLS mock-controller
 tests: the exact read-policy request/contract, scoped bearer custody, digest
 and outer-field mismatch rejection, bad-CA/plain-HTTP rejection, 401/404
