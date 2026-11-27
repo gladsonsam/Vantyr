@@ -1,4 +1,4 @@
-//! Real UDP tests for the global SafeSearch opt-in slice.
+//! Real socket tests for global and per-device SafeSearch policies.
 //!
 //! Providers use only the hostnames named by their official support documents:
 //! the checked-in `www.<supported Google domain>` catalog (including
@@ -936,5 +936,81 @@ async fn device_override_change_survives_a_reload() {
     assert!(addresses_owned_by(&after, GOOGLE_TARGET));
 
     worker.stop().await;
+    upstream.stop().await;
+}
+
+#[tokio::test]
+async fn device_override_survives_durable_restart_with_changed_external_config() {
+    struct StateDir(std::path::PathBuf);
+    impl Drop for StateDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let dir = StateDir(std::env::temp_dir().join(format!(
+        "vantyr-safe-search-restart-{}",
+        uuid::Uuid::new_v4()
+    )));
+    std::fs::create_dir_all(&dir.0).unwrap();
+    let config_path = dir.0.join("config.json");
+    let state_path = dir.0.join("state.json");
+    let upstream = DnsServer::start(Config::parse(upstream_config(0).as_bytes()).unwrap())
+        .await
+        .unwrap();
+    let devices = r#"[{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","source_ips":["127.0.0.2"],"safe_search":{"enabled":true,"google":true}}]"#;
+    let config = worker_config_with(
+        upstream.bind_addr(),
+        r#"{"enabled":false}"#,
+        "",
+        devices,
+        "",
+    );
+    std::fs::write(&config_path, &config).unwrap();
+    let options = || family_dns::DurableOptions {
+        state_path: state_path.clone(),
+        worker_id: "safe-search-restart".to_owned(),
+        config_path: Some(config_path.clone()),
+        now: chrono::Utc::now(),
+        hooks: None,
+    };
+    let first = DnsServer::start_durable(options()).await.unwrap();
+    let answer = udp_query(
+        source(),
+        first.bind_addr(),
+        "www.google.com.",
+        RecordType::A,
+    )
+    .await;
+    assert_code(&answer, ResponseCode::NoError);
+    assert!(cname_targets(&answer).contains(&GOOGLE_TARGET.to_owned()));
+    assert!(addresses(&answer).contains(&v4(120)));
+    let status = first.status();
+    first.stop().await;
+    let saved = std::fs::read(&state_path).unwrap();
+
+    // A newer external config disables the override, but the persisted bundle
+    // remains authoritative until an explicit successful reload.
+    std::fs::write(
+        &config_path,
+        config
+            .replace("\"policy_revision\": 7", "\"policy_revision\": 99")
+            .replace("\"enabled\":true", "\"enabled\":false"),
+    )
+    .unwrap();
+    let restarted = DnsServer::start_durable(options()).await.unwrap();
+    let answer = tcp_query(
+        source(),
+        restarted.bind_addr(),
+        "www.google.com.",
+        RecordType::A,
+    )
+    .await;
+    assert_code(&answer, ResponseCode::NoError);
+    assert!(cname_targets(&answer).contains(&GOOGLE_TARGET.to_owned()));
+    assert!(addresses(&answer).contains(&v4(120)));
+    assert!(addresses_owned_by(&answer, GOOGLE_TARGET));
+    assert_eq!(restarted.status(), status);
+    assert_eq!(std::fs::read(&state_path).unwrap(), saved);
+    restarted.stop().await;
     upstream.stop().await;
 }

@@ -148,6 +148,17 @@ regional and YouTube SafeSearch, all 35 listener/SafeSearch integration tests
 passed, followed by strict crate all-target clippy on the integrated tree.
 This does not close per-client path identity or management delivery.
 
+Per-device SafeSearch is accepted through `103feb36` (source `cb98c595`).
+One shared exact-IP/longest-CIDR selection supplies both device identity and
+SafeSearch policy. An absent override inherits the global default; an explicit
+whole-policy override can enable or disable providers for that device without
+granting access or weakening household/target denials. Independent validation
+passed 40 integration tests, 16 filtered library tests and strict all-target
+clippy. Integrated listener/SafeSearch validation passed 42 tests, including a
+new real UDP/TCP durable-restart case: the persisted override remains effective
+when the external config changes, with unchanged state bytes and status.
+HTTP/UI management and broader per-client settings remain unfinished.
+
 The assembled current-contract upgrade candidate is `aa2126c2`, based on
 `705d99f2`; it includes the reviewed 0086 repair, evidence scripts and offline
 converter while preserving strict persistence cleanup and exact rewrites.

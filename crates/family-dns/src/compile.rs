@@ -148,8 +148,8 @@ pub fn compile(base: &Config, policy: &Policy) -> Result<Config, CompileError> {
         // Exact answer overrides are local operator settings. A controller
         // pull must never silently drop or replace them.
         rewrites: base.rewrites.clone(),
-        // SafeSearch is a global source-only operator setting. A controller
-        // pull must never silently turn it on or off.
+        // Global SafeSearch defaults and device overrides are operator settings.
+        // A controller pull must preserve both (devices are cloned below).
         safe_search: base.safe_search.clone(),
         default_device_profile: base.default_device_profile.clone(),
         devices: base.devices.clone(),
