@@ -16,8 +16,9 @@ use axum::routing::{get, post};
 use axum::{serve::Listener, Json, Router};
 use chrono::{DateTime, Utc};
 use family_dns::{
-    config_digest, Config, DnsServer, DurableOptions, ListFormatDto, ListFormatSpec,
-    ManagementClient, ManagementConfig, ManagementOptions, ManagementWorker, ServiceCatalogDto,
+    config_digest, management_dto, CacheSettingsDto, Config, DenySettingsDto, DnsServer,
+    DurableOptions, ListFormatDto, ListFormatSpec, ManagementClient, ManagementConfig,
+    ManagementConfigV2, ManagementOptions, ManagementWorker, RuntimeSettingsDto, ServiceCatalogDto,
     ServiceDomainDto, ServiceDto, SourceMetadataDto, SubscriptionRuntime, SubscriptionSettings,
     SubscriptionSourceDto, WorkerReadResponse, WorkerStatusBody,
 };
@@ -134,8 +135,11 @@ async fn tls_router(config: Arc<ServerConfig>, router: Router) -> (String, Guard
 struct ControlState {
     version: u64,
     config: Option<ManagementConfig>,
+    config_v2: Option<ManagementConfigV2>,
+    schema_version: i32,
     digest: String,
     pending: Vec<Value>,
+    pending_clear: Vec<Value>,
     reports: Vec<WorkerStatusBody>,
     reject_auth: bool,
     reject_digest: bool,
@@ -190,13 +194,28 @@ async fn read_handler(
         schema_version: if state.reject_schema {
             Some(99)
         } else if version > 0 {
-            Some(1)
+            Some(if state.schema_version == 0 {
+                1
+            } else {
+                state.schema_version
+            })
         } else {
             None
         },
         body_sha256: if version > 0 { Some(digest) } else { None },
-        config: if version > 0 { config } else { None },
+        config: if version > 0 && state.config_v2.is_none() {
+            config
+        } else {
+            None
+        },
+        config_v2: state.config_v2.clone(),
         pending_refreshes: pending
+            .into_iter()
+            .filter_map(|value| serde_json::from_value(value).ok())
+            .collect(),
+        pending_cache_clear: state
+            .pending_clear
+            .clone()
             .into_iter()
             .filter_map(|value| serde_json::from_value(value).ok())
             .collect(),
@@ -406,6 +425,21 @@ fn set_desired(control: &Control, version: u64, config: &ManagementConfig) {
     state.version = version;
     state.config = Some(config.clone());
     state.digest = config_digest(config);
+    state.reject_digest = false;
+    state.reject_schema = false;
+    state.reject_auth = false;
+    state.bad_command = false;
+}
+
+fn set_desired_v2(control: &Control, version: u64, config: &ManagementConfigV2) {
+    let mut state = control.0.lock().unwrap();
+    state.version = version;
+    state.schema_version = 2;
+    state.config_v2 = Some(config.clone());
+    state.config = None;
+    state.digest = management_dto::digest(
+        &management_dto::canonical_bytes_v2(config).expect("v2 config serializes"),
+    );
     state.reject_digest = false;
     state.reject_schema = false;
     state.reject_auth = false;
@@ -1943,4 +1977,143 @@ async fn active_cache_locator_removal_failure_is_reported() {
         .contains("locator removal failed"));
     assert!(h.runtime.status().1.last_error.unwrap().len() <= 200);
     h.stop().await;
+}
+
+/// v2 desired runtime settings are applied through the one durable bundle;
+/// the version gate and a failed desired read never poison last-known-good;
+/// a clear command executes against the live cache without a generation bump;
+/// and an offline restart keeps the applied settings and their original age.
+#[tokio::test]
+async fn v2_runtime_settings_apply_clear_and_survive_restart() {
+    let st = fixture("runtime-settings");
+    let (mgmt, ca, control, _mgmt_guard) = start_control().await;
+    fs::write(&st.config, dns_config(0, 2)).unwrap();
+    fs::write(
+        &st.options,
+        serde_json::to_vec(&json!({
+            "origin": mgmt,
+            "ca_pem_path": st.dir.join("ca.pem"),
+            "credential_file": st.credential,
+            "household_id": HOUSEHOLD,
+            "gateway_id": GATEWAY,
+            "poll_interval_secs": 3600,
+            "request_timeout_secs": 5,
+            "max_response_bytes": 32768
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        &st.credential,
+        format!("Bearer {GATEWAY}.{}\n", "a".repeat(43)),
+    )
+    .unwrap();
+    fs::write(st.dir.join("ca.pem"), ca.as_bytes()).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for file in [&st.options, &st.credential, &st.dir.join("ca.pem")] {
+            fs::set_permissions(file, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+
+    let settings = RuntimeSettingsDto {
+        cache: CacheSettingsDto {
+            enabled: true,
+            max_entries: 64,
+            positive_min_ttl_secs: Some(60),
+            positive_max_ttl_secs: Some(60),
+            negative_min_ttl_secs: None,
+            negative_max_ttl_secs: None,
+        },
+        deny: DenySettingsDto::Refused,
+    };
+    let desired = ManagementConfigV2 {
+        sources: Vec::new(),
+        catalog: None,
+        selected_services: Vec::new(),
+        runtime: settings,
+    };
+    set_desired_v2(&control, 7, &desired);
+    let options = ManagementOptions::load(&st.options).unwrap();
+    let client = Arc::new(ManagementClient::new(&options).unwrap());
+    let durable = || DurableOptions {
+        state_path: st.state.clone(),
+        worker_id: WORKER.to_owned(),
+        config_path: Some(st.config.clone()),
+        now: STAMP.parse().unwrap(),
+        hooks: None,
+    };
+    let server = Arc::new(DnsServer::start_durable(durable()).await.unwrap());
+    let policy_before = server.status();
+    let worker = ManagementWorker::new(options, client, None);
+    worker.sync_once(&server).await;
+    let applied = server
+        .management_state()
+        .expect("settings were not applied");
+    assert_eq!(applied.config_version, 7);
+    assert_eq!(applied.schema_version, 2);
+    assert!(applied.runtime.is_some());
+    assert_eq!(server.local_config().cache.max_entries, 64);
+    assert_eq!(server.local_config().cache.positive_min_ttl_secs, Some(60));
+    assert!(matches!(
+        server.local_config().deny,
+        family_dns::config::DenyConfig::Refused
+    ));
+    let policy_after = server.status();
+    assert_eq!(policy_after.policy_revision, policy_before.policy_revision);
+    assert_eq!(
+        policy_after.policy_published_at,
+        policy_before.policy_published_at
+    );
+    let generation = policy_after.bundle_generation;
+
+    // An unsupported schema fails honestly: no new apply, no LKG mutation.
+    control.0.lock().unwrap().schema_version = 99;
+    worker.sync_once(&server).await;
+    assert_eq!(server.management_state().unwrap(), applied);
+    assert_eq!(server.local_config().cache.max_entries, 64);
+    // A digest mismatch is likewise refused at read time.
+    control.0.lock().unwrap().schema_version = 2;
+    control.0.lock().unwrap().reject_digest = true;
+    worker.sync_once(&server).await;
+    assert_eq!(server.management_state().unwrap(), applied);
+    control.0.lock().unwrap().reject_digest = false;
+
+    // One delivered clear is executed once and reported truthfully. It never
+    // persists a receipt, so it must not bump the bundle generation.
+    control.0.lock().unwrap().pending_clear = vec![json!({
+        "clear_seq": 1,
+        "config_version": 7,
+        "expires_at": "2027-01-01T00:00:00Z"
+    })];
+    worker.sync_once(&server).await;
+    let all_reports = reports(&control);
+    let last = all_reports.last().unwrap();
+    assert_eq!(last.clear_ack.len(), 1);
+    assert_eq!(last.clear_ack[0].clear_seq, 1);
+    assert_eq!(last.clear_ack[0].config_version, 7);
+    assert_eq!(server.status().bundle_generation, generation);
+    assert_eq!(
+        server.management_state().unwrap().applied_at,
+        applied.applied_at
+    );
+    // The exact in-memory ack is replayed, not a second fabricated clear.
+    worker.sync_once(&server).await;
+    let all_reports = reports(&control);
+    assert_eq!(all_reports.last().unwrap().clear_ack.len(), 1);
+
+    // Offline restart from the single bundle keeps settings and original age.
+    server.stop_shared().await;
+    let restarted = DnsServer::start_durable(durable()).await.unwrap();
+    assert_eq!(restarted.local_config().cache.max_entries, 64);
+    assert_eq!(
+        restarted.management_state().unwrap().applied_at,
+        applied.applied_at
+    );
+    assert_eq!(
+        restarted.status().policy_published_at,
+        policy_before.policy_published_at
+    );
+    restarted.stop().await;
 }

@@ -456,8 +456,11 @@ impl DnsServer {
     ) -> Result<ReloadOutcome, ReloadError> {
         let _update = self.update.lock().unwrap_or_else(|p| p.into_inner());
         use ReloadError::*;
-        let config = Config::parse(candidate).map_err(|e| InvalidConfig(e.to_string()))?;
+        let mut config = Config::parse(candidate).map_err(|e| InvalidConfig(e.to_string()))?;
         let active = self.active_snapshot();
+        // A local reload supplies operator files, but applied management
+        // settings are authoritative and must survive it unchanged.
+        self.carry_applied_settings(&mut config, &active)?;
         self.check_candidate(&config, &active)?;
         let remote = |id: &str| match &self.subscriptions {
             Some(runtime) => runtime.last_good(id),
@@ -515,6 +518,23 @@ impl DnsServer {
                 }
             }
         }
+    }
+
+    /// Re-apply server-manageable runtime settings to a local reload candidate.
+    /// Only the supported cache/deny fields are touched; policy revision and
+    /// publication time come from the local candidate and are never freshened.
+    fn carry_applied_settings(
+        &self,
+        config: &mut Config,
+        active: &RuntimeSnapshot,
+    ) -> Result<(), ReloadError> {
+        if let Some(management) = &active.management {
+            if let Some(settings) = &management.runtime {
+                crate::management_worker::apply_runtime_settings(config, settings)
+                    .map_err(|error| ReloadError::InvalidConfig(error.to_string()))?;
+            }
+        }
+        Ok(())
     }
 
     /// Preserve the current applied management state through a local reload or
@@ -799,6 +819,30 @@ impl DnsServer {
         expected_generation: u64,
         now: DateTime<Utc>,
     ) -> Result<ReloadOutcome, ReloadError> {
+        self.commit_management_with_config(
+            None,
+            material,
+            filter,
+            management,
+            expected_generation,
+            now,
+        )
+    }
+
+    /// Commit desired runtime settings, material, receipts and management
+    /// state in ONE atomic bundle publish. `config` is a fully validated
+    /// candidate derived from the current config; when absent, the current
+    /// config is carried unchanged (receipt-only commits).
+    #[allow(clippy::too_many_arguments)]
+    pub fn commit_management_with_config(
+        &self,
+        config: Option<Config>,
+        material: Option<FilterMaterial>,
+        filter: Option<Arc<vantyr_network_filter::FilterSnapshot>>,
+        management: crate::management::ManagementState,
+        expected_generation: u64,
+        now: DateTime<Utc>,
+    ) -> Result<ReloadOutcome, ReloadError> {
         let _update = self.update.lock().unwrap_or_else(|p| p.into_inner());
         use ReloadError::*;
         let active = self.active_snapshot();
@@ -846,7 +890,7 @@ impl DnsServer {
             active.state.filter_generation
         };
         let bundle = Bundle {
-            config: active.config.clone(),
+            config: config.unwrap_or_else(|| active.config.clone()),
             policy: active.policy.clone(),
             filter: material.clone().or_else(|| active.filter_material.clone()),
             generation: None,

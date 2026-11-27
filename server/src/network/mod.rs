@@ -209,6 +209,10 @@ fn dns_management_routes() -> Router<Arc<AppState>> {
             post(dns_management_api::refresh),
         )
         .route(
+            "/network/households/{hid}/dns/cache/clear",
+            post(dns_management_api::cache_clear),
+        )
+        .route(
             "/network/households/{hid}/dns/status",
             get(dns_management_api::status_get),
         )

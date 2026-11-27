@@ -22,8 +22,8 @@ use crate::management::{
     ManagementClient, ManagementError, ManagementOptions, ManagementState, MAX_RECEIPTS,
 };
 use crate::management_dto::{
-    canonical_bytes, digest, AppliedStatusDto, DownloadState, ManagementConfig, RefreshAckDto,
-    SourceStatusDto, WorkerStatusBody,
+    canonical_bytes, digest, AppliedStatusDto, ClearAckDto, DesiredConfig, DownloadState,
+    ManagementConfig, RefreshAckDto, RuntimeSettingsDto, SourceStatusDto, WorkerStatusBody,
 };
 use crate::server::{DnsServer, ReloadError};
 use crate::subscription::SubscriptionRuntime;
@@ -43,6 +43,9 @@ pub struct ManagementWorker {
     /// Transient errors are observations, not durable commits: a failing poll
     /// must not churn the bundle generation or rewrite applied state.
     error: Mutex<Option<String>>,
+    /// In-memory cache-clear ack. Deliberately NOT persisted: persisting a
+    /// receipt would bump the bundle generation, which a clear must never do.
+    clear_ack: Mutex<Option<ClearAckDto>>,
 }
 
 impl ManagementWorker {
@@ -58,6 +61,7 @@ impl ManagementWorker {
             cancel: CancellationToken::new(),
             task: Mutex::new(None),
             error: Mutex::new(None),
+            clear_ack: Mutex::new(None),
         }
     }
 
@@ -119,10 +123,18 @@ impl ManagementWorker {
                 return;
             }
         };
-        let desired = match response.config.as_ref() {
-            Some(config) => config,
-            None => {
-                self.record_error(server, "desired config is absent").await;
+        let desired = match (
+            response.schema_version,
+            &response.config,
+            &response.config_v2,
+        ) {
+            (Some(1), Some(config), None) => DesiredConfig::V1(config.clone()),
+            (Some(2), None, Some(config)) => DesiredConfig::V2(config.clone()),
+            _ => {
+                // `verify_read` already rejected this; never apply a body whose
+                // shape disagrees with the declared schema.
+                self.record_error(server, "desired config shape is unsupported")
+                    .await;
                 return;
             }
         };
@@ -145,7 +157,7 @@ impl ManagementWorker {
                 return;
             }
             Ok(Admission::Apply) => match self
-                .apply_desired(server, response.config_version, &desired_digest, desired)
+                .apply_desired(server, response.config_version, &desired_digest, &desired)
                 .await
             {
                 Ok(()) => {}
@@ -155,10 +167,16 @@ impl ManagementWorker {
             },
         }
 
-        self.handle_manual_tokens(server, desired, &response.pending_refreshes)
+        self.handle_manual_tokens(server, &desired, &response.pending_refreshes)
             .await;
         let _ = self
-            .report_status(server, response.config_version, &desired_digest, desired)
+            .report_status(
+                server,
+                response.config_version,
+                &desired_digest,
+                &desired,
+                &response.pending_cache_clear,
+            )
             .await;
     }
 
@@ -167,7 +185,7 @@ impl ManagementWorker {
         server: &DnsServer,
         version: u64,
         digest_value: &str,
-        desired: &ManagementConfig,
+        desired: &DesiredConfig,
     ) -> Result<(), ManagementError> {
         for attempt in 0..MAX_RETRIES {
             // Capture the generation BEFORE reading settings or awaiting any
@@ -176,13 +194,17 @@ impl ManagementWorker {
             let basis = server.status().bundle_generation;
             let local = server.local_config();
             admit_version(server.management_state().as_ref(), version, digest_value)?;
-            let combined = merge_config(&local, desired)?;
+            let base = match desired {
+                DesiredConfig::V1(config) => config.clone(),
+                DesiredConfig::V2(config) => config.base(),
+            };
+            let combined = merge_config(&local, &base)?;
             combined
                 .validate("managed")
                 .map_err(|error| ManagementError::Integrity(error.to_string()))?;
 
             let managed = desired
-                .sources
+                .sources()
                 .iter()
                 .map(to_source_spec)
                 .collect::<Vec<_>>();
@@ -223,17 +245,37 @@ impl ManagementWorker {
                     crate::filter::empty_filter(),
                 ),
             };
+            // Persist settings and material in ONE atomic bundle publish.
+            // Only the explicitly supported runtime fields are overridden;
+            // policy revision/publication time and all local operator fields
+            // are carried verbatim from the current config.
+            let mut candidate = local.clone();
+            if let Some(settings) = desired.runtime() {
+                apply_runtime_settings(&mut candidate, settings)?;
+            }
             let state = ManagementState {
                 config_version: version,
                 digest: digest_value.to_owned(),
-                config: desired.clone(),
+                config: base,
                 filter_identity: material_identity(Some(&material)),
                 receipts: Vec::new(),
                 receipt_expiry: Default::default(),
+                schema_version: match desired {
+                    DesiredConfig::V1(_) => 1,
+                    DesiredConfig::V2(_) => 2,
+                },
+                runtime: desired.runtime().cloned(),
                 applied_at: Some(Utc::now()),
                 last_error: None,
             };
-            match server.commit_management(Some(material), Some(filter), state, basis, Utc::now()) {
+            match server.commit_management_with_config(
+                Some(candidate),
+                Some(material),
+                Some(filter),
+                state,
+                basis,
+                Utc::now(),
+            ) {
                 Ok(_) => {
                     // Activation is infallible and happens ONLY after the
                     // candidate is durable, under the same generation epoch.
@@ -254,7 +296,7 @@ impl ManagementWorker {
     async fn handle_manual_tokens(
         &self,
         server: &DnsServer,
-        desired: &ManagementConfig,
+        desired: &DesiredConfig,
         tokens: &[crate::management_dto::PendingRefreshView],
     ) {
         let Some(runtime) = &self.subscriptions else {
@@ -264,7 +306,7 @@ impl ManagementWorker {
             return;
         };
         let configured: BTreeSet<&str> = desired
-            .sources
+            .sources()
             .iter()
             .filter(|source| source.enabled)
             .map(|source| source.id.as_str())
@@ -353,7 +395,8 @@ impl ManagementWorker {
         server: &DnsServer,
         desired_version: u64,
         desired_digest: &str,
-        desired: &ManagementConfig,
+        desired: &DesiredConfig,
+        clear_tokens: &[crate::management_dto::PendingCacheClearView],
     ) -> Result<(), ManagementError> {
         let state = server.management_state();
         let status = server.status();
@@ -365,7 +408,7 @@ impl ManagementWorker {
             None => (Vec::new(), None),
         };
         let scoped_ids: BTreeSet<&str> = desired
-            .sources
+            .sources()
             .iter()
             .take(crate::management::MAX_RECEIPTS)
             .map(|source| source.id.as_str())
@@ -373,6 +416,35 @@ impl ManagementWorker {
         let applied_this_version = state
             .as_ref()
             .is_some_and(|applied| applied.config_version == desired_version);
+        // Execute at most one delivered clear per token, only against the
+        // currently applied config. This is a real clear of the live cache;
+        // it never persists a receipt or bumps a generation, and an exact ack
+        // replay is idempotent on the server. No entries count is invented.
+        let clear_ack = {
+            let mut ack = self.clear_ack.lock().unwrap();
+            let now = Utc::now();
+            for token in clear_tokens {
+                if !applied_this_version
+                    || token.config_version != desired_version
+                    || token.expires_at <= now
+                {
+                    continue;
+                }
+                if ack.as_ref().is_some_and(|accepted| {
+                    accepted.clear_seq == token.clear_seq
+                        && accepted.config_version == token.config_version
+                }) {
+                    continue;
+                }
+                server.clear_cache();
+                *ack = Some(ClearAckDto {
+                    clear_seq: token.clear_seq,
+                    config_version: token.config_version,
+                    cleared_at: Utc::now(),
+                });
+            }
+            ack.clone()
+        };
         let sources = all_sources
             .into_iter()
             .filter(|source| scoped_ids.contains(source.id.as_str()))
@@ -465,6 +537,7 @@ impl ManagementWorker {
                         .collect()
                 })
                 .unwrap_or_default(),
+            clear_ack: clear_ack.into_iter().collect(),
         };
         self.client.report(&body).await
     }
@@ -551,6 +624,38 @@ pub(crate) fn to_source_spec(
             license: source.metadata.license.clone(),
         },
     }
+}
+
+/// Overlay ONLY the server-manageable runtime fields onto a candidate config.
+/// Every local operator field (bind, upstream, trust, hosts file, bogus-NXDOMAIN
+/// IPs, device mapping and paths) is left untouched, and the result is fully
+/// revalidated before it can be persisted.
+pub(crate) fn apply_runtime_settings(
+    config: &mut Config,
+    settings: &RuntimeSettingsDto,
+) -> Result<(), ManagementError> {
+    config.cache.enabled = settings.cache.enabled;
+    config.cache.max_entries = settings.cache.max_entries;
+    config.cache.positive_min_ttl_secs = settings.cache.positive_min_ttl_secs;
+    config.cache.positive_max_ttl_secs = settings.cache.positive_max_ttl_secs;
+    config.cache.negative_min_ttl_secs = settings.cache.negative_min_ttl_secs;
+    config.cache.negative_max_ttl_secs = settings.cache.negative_max_ttl_secs;
+    config.deny = match &settings.deny {
+        crate::management_dto::DenySettingsDto::Nxdomain => crate::config::DenyConfig::Nxdomain,
+        crate::management_dto::DenySettingsDto::Refused => crate::config::DenyConfig::Refused,
+        crate::management_dto::DenySettingsDto::Sinkhole {
+            ipv4,
+            ipv6,
+            ttl_secs,
+        } => crate::config::DenyConfig::Sinkhole {
+            ipv4: ipv4.clone(),
+            ipv6: ipv6.clone(),
+            ttl: *ttl_secs,
+        },
+    };
+    config
+        .validate()
+        .map_err(|error| ManagementError::Integrity(error.to_string()))
 }
 
 /// Merge remote sources/catalog into the CURRENT local settings. Local paths,

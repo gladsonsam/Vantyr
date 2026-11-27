@@ -9,7 +9,7 @@ use serde_json::Value;
 use sqlx::{FromRow, PgConnection, PgPool};
 use uuid::Uuid;
 
-use super::dns_management_dto::PendingRefreshView;
+use super::dns_management_dto::{CacheClearView, PendingCacheClearView, PendingRefreshView};
 
 #[derive(Debug, FromRow)]
 pub struct ConfigRow {
@@ -770,4 +770,318 @@ pub async fn status_rows(pool: &PgPool, household_id: Uuid) -> sqlx::Result<Vec<
     .bind(household_id)
     .fetch_all(pool)
     .await
+}
+
+// ─── Cache-clear command (request / delivery / attempt / ack) ────────────────
+
+#[derive(Debug)]
+pub struct ClearOutcome {
+    pub clear_seq: i64,
+    pub config_version: i64,
+    pub expires_at: DateTime<Utc>,
+    pub created: bool,
+}
+
+/// One pending clear token per household. A new cycle after cooldown deletes
+/// all prior per-gateway deliveries (and their cascading acks) so repeated
+/// cycles are independent and an old token cannot be acked later.
+#[allow(clippy::too_many_arguments)]
+pub async fn request_clear_on_conn(
+    conn: &mut PgConnection,
+    household_id: Uuid,
+    actor: Uuid,
+    now: DateTime<Utc>,
+    config_version: i64,
+    cooldown_secs: i64,
+    ttl_secs: i64,
+) -> crate::error::ApiResult<ClearOutcome> {
+    let existing: Option<(i64, DateTime<Utc>, i64, DateTime<Utc>)> = sqlx::query_as(
+        r"
+        SELECT clear_seq, requested_at, config_version, expires_at
+        FROM network_dns_cache_clear_request WHERE household_id = $1
+        ",
+    )
+    .bind(household_id)
+    .fetch_optional(&mut *conn)
+    .await?;
+    let expires_at = DateTime::<Utc>::from_timestamp_micros(
+        (now + chrono::Duration::seconds(ttl_secs)).timestamp_micros(),
+    )
+    .ok_or_else(|| {
+        crate::error::ApiError::bad_request("clear expiry is outside the storage range")
+    })?;
+    match existing {
+        None => {
+            sqlx::query(
+                r"
+                INSERT INTO network_dns_cache_clear_request
+                    (household_id, clear_seq, config_version, requested_at, expires_at, requested_by)
+                VALUES ($1, 1, $2, $3, $4, $5)
+                ",
+            )
+            .bind(household_id)
+            .bind(config_version)
+            .bind(now)
+            .bind(expires_at)
+            .bind(actor)
+            .execute(&mut *conn)
+            .await?;
+            Ok(ClearOutcome {
+                clear_seq: 1,
+                config_version,
+                expires_at,
+                created: true,
+            })
+        }
+        Some((seq, requested_at, _, _))
+            if requested_at <= now - chrono::Duration::seconds(cooldown_secs) =>
+        {
+            let next = seq
+                .checked_add(1)
+                .ok_or_else(|| crate::error::ApiError::conflict("clear sequence is exhausted"))?;
+            sqlx::query("DELETE FROM network_dns_cache_clear_delivery WHERE household_id = $1")
+                .bind(household_id)
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query(
+                r"
+                UPDATE network_dns_cache_clear_request
+                SET clear_seq = $2, config_version = $3, requested_at = $4,
+                    expires_at = $5, requested_by = $6
+                WHERE household_id = $1
+                ",
+            )
+            .bind(household_id)
+            .bind(next)
+            .bind(config_version)
+            .bind(now)
+            .bind(expires_at)
+            .bind(actor)
+            .execute(conn)
+            .await?;
+            Ok(ClearOutcome {
+                clear_seq: next,
+                config_version,
+                expires_at,
+                created: true,
+            })
+        }
+        Some((seq, _, stored_version, stored_expiry)) => Ok(ClearOutcome {
+            clear_seq: seq,
+            config_version: stored_version,
+            expires_at: stored_expiry,
+            created: false,
+        }),
+    }
+}
+
+/// Mark delivery only for the exact current token, never for a stale one.
+pub async fn mark_clear_delivered_on_conn(
+    conn: &mut PgConnection,
+    household_id: Uuid,
+    gateway_id: Uuid,
+    now: DateTime<Utc>,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        r"
+        INSERT INTO network_dns_cache_clear_delivery
+            (household_id, gateway_id, kind, clear_seq, config_version, requested_at, delivered_at)
+        SELECT r.household_id, $2, 'dns', r.clear_seq, r.config_version, r.requested_at, $3
+        FROM network_dns_cache_clear_request r
+        WHERE r.household_id = $1 AND r.expires_at > $3
+        ON CONFLICT (household_id, gateway_id) DO NOTHING
+        ",
+    )
+    .bind(household_id)
+    .bind(gateway_id)
+    .bind(now)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// The one pending clear token visible to this gateway, only for a config
+/// version that was actually delivered to it, and only until ack/expiry.
+pub async fn pending_clear_on_conn(
+    conn: &mut PgConnection,
+    household_id: Uuid,
+    gateway_id: Uuid,
+    current_config_version: i64,
+    now: DateTime<Utc>,
+) -> sqlx::Result<Option<PendingCacheClearView>> {
+    let row: Option<(i64, i64, DateTime<Utc>)> = sqlx::query_as(
+        r"
+        SELECT d.clear_seq, d.config_version, r.expires_at
+        FROM network_dns_cache_clear_delivery d
+        JOIN network_dns_cache_clear_request r
+          ON r.household_id = d.household_id AND r.clear_seq = d.clear_seq
+         AND r.config_version = d.config_version
+        LEFT JOIN network_dns_cache_clear_ack a
+          ON a.household_id = d.household_id AND a.gateway_id = d.gateway_id
+        WHERE d.household_id = $1 AND d.gateway_id = $2
+          AND d.config_version = $3 AND r.expires_at > $4
+          AND a.gateway_id IS NULL
+        ",
+    )
+    .bind(household_id)
+    .bind(gateway_id)
+    .bind(current_config_version)
+    .bind(now)
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(
+        |(clear_seq, config_version, expires_at)| PendingCacheClearView {
+            clear_seq: clear_seq as u64,
+            config_version: config_version as u64,
+            expires_at,
+        },
+    ))
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ClearAckState {
+    pub clear_seq: i64,
+    pub config_version: i64,
+}
+
+pub async fn clear_ack_state_on_conn(
+    conn: &mut PgConnection,
+    household_id: Uuid,
+    gateway_id: Uuid,
+) -> sqlx::Result<Option<ClearAckState>> {
+    let row: Option<(i64, i64)> = sqlx::query_as(
+        r"
+        SELECT clear_seq, config_version FROM network_dns_cache_clear_ack
+        WHERE household_id = $1 AND gateway_id = $2
+        ",
+    )
+    .bind(household_id)
+    .bind(gateway_id)
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|(clear_seq, config_version)| ClearAckState {
+        clear_seq,
+        config_version,
+    }))
+}
+
+pub async fn clear_token_exists_on_conn(
+    conn: &mut PgConnection,
+    household_id: Uuid,
+    gateway_id: Uuid,
+    clear_seq: i64,
+    config_version: i64,
+) -> sqlx::Result<bool> {
+    sqlx::query_scalar::<_, bool>(
+        r"
+        SELECT EXISTS (
+            SELECT 1 FROM network_dns_cache_clear_delivery
+            WHERE household_id = $1 AND gateway_id = $2
+              AND clear_seq = $3 AND config_version = $4
+        )
+        ",
+    )
+    .bind(household_id)
+    .bind(gateway_id)
+    .bind(clear_seq)
+    .bind(config_version)
+    .fetch_one(conn)
+    .await
+}
+
+pub async fn insert_clear_ack_on_conn(
+    conn: &mut PgConnection,
+    household_id: Uuid,
+    gateway_id: Uuid,
+    clear_seq: i64,
+    config_version: i64,
+    attempted_at: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> sqlx::Result<bool> {
+    let result = sqlx::query(
+        r"
+        INSERT INTO network_dns_cache_clear_ack
+            (household_id, gateway_id, clear_seq, config_version, attempted_at, acked_at)
+        SELECT d.household_id, d.gateway_id, d.clear_seq, d.config_version, $5, $6
+        FROM network_dns_cache_clear_delivery d
+        WHERE d.household_id = $1 AND d.gateway_id = $2
+          AND d.clear_seq = $3 AND d.config_version = $4
+        ON CONFLICT (household_id, gateway_id) DO NOTHING
+        ",
+    )
+    .bind(household_id)
+    .bind(gateway_id)
+    .bind(clear_seq)
+    .bind(config_version)
+    .bind(attempted_at)
+    .bind(now)
+    .execute(conn)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+/// Truthful lifecycle view. Every timestamp is the original one: no refresh
+/// on restart and no fabricated entry count.
+pub async fn clear_states_on_conn(
+    conn: &mut PgConnection,
+    household_id: Uuid,
+) -> sqlx::Result<Vec<(Uuid, CacheClearView)>> {
+    let rows = sqlx::query_as::<
+        _,
+        (
+            Uuid,
+            i64,
+            i64,
+            DateTime<Utc>,
+            DateTime<Utc>,
+            Option<DateTime<Utc>>,
+            Option<DateTime<Utc>>,
+            Option<DateTime<Utc>>,
+        ),
+    >(
+        r"
+        SELECT d.gateway_id, d.clear_seq, d.config_version,
+               d.requested_at, r.expires_at, d.delivered_at,
+               a.attempted_at, a.acked_at
+        FROM network_dns_cache_clear_delivery d
+        JOIN network_dns_cache_clear_request r
+          ON r.household_id = d.household_id AND r.clear_seq = d.clear_seq
+         AND r.config_version = d.config_version
+        LEFT JOIN network_dns_cache_clear_ack a
+          ON a.household_id = d.household_id AND a.gateway_id = d.gateway_id
+        WHERE d.household_id = $1
+        ORDER BY d.gateway_id
+        ",
+    )
+    .bind(household_id)
+    .fetch_all(&mut *conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(
+                gateway_id,
+                clear_seq,
+                config_version,
+                requested_at,
+                expires_at,
+                delivered_at,
+                attempted_at,
+                acked_at,
+            )| {
+                (
+                    gateway_id,
+                    CacheClearView {
+                        clear_seq: clear_seq as u64,
+                        config_version: config_version as u64,
+                        requested_at,
+                        expires_at,
+                        delivered_at,
+                        attempted_at,
+                        acked_at,
+                    },
+                )
+            },
+        )
+        .collect())
 }

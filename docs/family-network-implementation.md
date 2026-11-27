@@ -28,8 +28,12 @@
   positive/negative TTL bounds, cache disable, coherent in-process clear,
   default-off system hosts lookup and A/AAAA response shaping are implemented.
   Cache capacity is eventual response-count eviction, not a hard instantaneous
-  or byte bound. Clear is not a barrier against in-flight repopulation. HTTP
-  settings delivery, serve-expired, DO/ECS and HTTPS/SVCB IPv6 hints remain open.
+  or byte bound. Clear is not a barrier against in-flight repopulation. An
+  additive schema-v2 management wire now delivers desired cache enable/size/TTL
+  and denial mode/TTL, applies them by one atomic bundle publish, and issues a
+  truthful cache-clear command with per-gateway delivery/ack; effect is checked
+  by real origin-hit counts. Serve-expired, DO/ECS and HTTPS/SVCB IPv6 hints
+  remain deliberately unsupported.
 - Shared policy core: independently accepted; 16 tests.
 - DNS immutable snapshots: independently accepted; no catalog lock across I/O.
 - Vantyr DNS executable and durable configuration/reload: independently accepted;

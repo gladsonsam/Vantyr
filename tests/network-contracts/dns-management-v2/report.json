@@ -1,0 +1,28 @@
+{
+  "audience": "vantyr-gateway-worker",
+  "command": "report_dns_status",
+  "household_id": "00000000-0000-0000-0000-000000000001",
+  "gateway_id": "00000000-0000-0000-0000-000000000002",
+  "kind": "dns",
+  "report_id": "00000000-0000-0000-0000-000000000003",
+  "config_version": 1,
+  "body_sha256": "4652ce3244e14658db02de0c05520507d0d92619a434a6a455a8309f5dbb6d37",
+  "reported_at": "2026-11-26T12:00:00Z",
+  "applied": {
+    "config_version": 1,
+    "generation": 5,
+    "filter_generation": 2,
+    "filter_identity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "applied_at": "2024-01-01T00:00:00Z",
+    "last_error": null
+  },
+  "sources": [],
+  "refresh_ack": [],
+  "clear_ack": [
+    {
+      "clear_seq": 1,
+      "config_version": 1,
+      "cleared_at": "2026-11-26T12:00:00Z"
+    }
+  ]
+}

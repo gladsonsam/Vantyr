@@ -31,7 +31,7 @@ use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -48,7 +48,8 @@ use family_dns::{
     SubscriptionSettings,
 };
 use hickory_server::proto::op::{Message, MessageType, OpCode, Query, ResponseCode};
-use hickory_server::proto::rr::{Name as DnsName, RecordType};
+use hickory_server::proto::rr::rdata::A as AData;
+use hickory_server::proto::rr::{Name as DnsName, RData, Record, RecordType};
 use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, KeyUsagePurpose};
 use reqwest::dns::{Addrs, Name as HttpName, Resolve, Resolving};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -75,6 +76,66 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 fn mapped_source() -> IpAddr {
     // The adult profile in dns_config() maps this source IP.
     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2))
+}
+
+/// A minimal authoritative UDP responder that counts every real query it
+/// answers. No host resolver, privileged port or live provider is involved.
+struct CountingUpstream {
+    addr: SocketAddr,
+    hits: Arc<AtomicUsize>,
+    task: JoinHandle<()>,
+}
+
+impl CountingUpstream {
+    async fn start() -> Self {
+        let socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+            .await
+            .unwrap();
+        let addr = socket.local_addr().unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&hits);
+        let task = tokio::spawn(async move {
+            let mut buffer = vec![0u8; 4096];
+            loop {
+                let (len, peer) = match socket.recv_from(&mut buffer).await {
+                    Ok(value) => value,
+                    Err(_) => break,
+                };
+                let request = match Message::from_vec(&buffer[..len]) {
+                    Ok(message) => message,
+                    Err(_) => continue,
+                };
+                counter.fetch_add(1, Ordering::SeqCst);
+                let mut answer =
+                    Message::new(request.metadata.id, MessageType::Response, OpCode::Query);
+                answer.metadata.recursion_desired = request.metadata.recursion_desired;
+                answer.metadata.checking_disabled = request.metadata.checking_disabled;
+                if let Some(query) = request.queries.first() {
+                    answer.add_query(query.clone());
+                    answer.add_answer(Record::from_rdata(
+                        query.name().clone(),
+                        60,
+                        RData::A(AData(Ipv4Addr::new(203, 0, 113, 7))),
+                    ));
+                }
+                answer.metadata.response_code = ResponseCode::NoError;
+                if let Ok(bytes) = answer.to_vec() {
+                    let _ = socket.send_to(&bytes, peer).await;
+                }
+            }
+        });
+        Self { addr, hits, task }
+    }
+
+    fn hits(&self) -> usize {
+        self.hits.load(Ordering::SeqCst)
+    }
+}
+
+impl Drop for CountingUpstream {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
 }
 
 // ─── Verified loopback TLS ──────────────────────────────────────────────────
@@ -430,6 +491,22 @@ async fn blocked(server: &DnsServer, name: &str, tcp: bool) -> bool {
     message.response_code == ResponseCode::NXDomain
 }
 
+/// A real forwarded answer from the counting origin (TEST-NET-3 address).
+async fn answered(server: &DnsServer, name: &str, tcp: bool) -> bool {
+    let message = if tcp {
+        tcp_query(server.bind_addr(), name).await
+    } else {
+        udp_query(server.bind_addr(), name).await
+    };
+    message.response_code == ResponseCode::NoError
+        && message.answers.iter().any(|record| {
+            matches!(
+                &record.data,
+                RData::A(AData(ip)) if *ip == Ipv4Addr::new(203, 0, 113, 7)
+            )
+        })
+}
+
 // ─── Worker fixture / fixture config ────────────────────────────────────────
 
 struct Fixture {
@@ -472,12 +549,22 @@ fn private(path: &std::path::Path) {
 
 /// Small, synthetic DNS fixture. No live provider and no production household
 /// data: all addresses are TEST-NET-2 and the policy is local to this run.
-fn dns_config(port: u16, revision: u64, published: DateTime<Utc>) -> Vec<u8> {
+fn dns_config(
+    port: u16,
+    revision: u64,
+    published: DateTime<Utc>,
+    upstream: Option<SocketAddr>,
+) -> Vec<u8> {
+    let upstreams = match upstream {
+        Some(addr) => vec![addr.to_string()],
+        None => Vec::new(),
+    };
     serde_json::to_vec(&json!({
         "household_id": "11111111-2222-3333-4444-555555555555",
         "policy_published_at": published,
         "policy_revision": revision,
         "bind": { "address": "127.0.0.1", "port": port },
+        "upstreams": upstreams,
         "deny": { "mode": "nxdomain" },
         "local_zones": { "block.test.": [
             { "type": "a", "name": "managed.block.test.", "ttl": 60, "addr": "192.0.2.20" },
@@ -609,8 +696,9 @@ async fn start_worker(
     mgmt_base: &str,
     mgmt_ca: &str,
     bearer: &str,
+    upstream: SocketAddr,
 ) -> (Arc<DnsServer>, Arc<ManagementWorker>) {
-    fs::write(&st.config, dns_config(0, 2, published)).unwrap();
+    fs::write(&st.config, dns_config(0, 2, published, Some(upstream))).unwrap();
     fs::write(&st.credential, format!("{bearer}\n")).unwrap();
     #[cfg(unix)]
     {
@@ -693,6 +781,9 @@ where
 #[sqlx::test]
 async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
     let st = fixture("flow");
+    // A genuine counting UDP DNS origin lets later cache tests verify effect
+    // by real upstream hits, not merely by reported settings fields.
+    let origin = CountingUpstream::start().await;
     let (base, ca_pem, _server_guard) = spawn_server(pool.clone()).await;
     let (list_base, list_ca, list_state, _list_guard) = start_list_server().await;
 
@@ -725,7 +816,15 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
     // production fetcher/compiler, and the background coordinator loop.
     let published = published_at();
     let (server, worker) = start_worker(
-        &st, hid, gid, published, &list_ca, &mgmt_base, &ca_pem, &bearer,
+        &st,
+        hid,
+        gid,
+        published,
+        &list_ca,
+        &mgmt_base,
+        &ca_pem,
+        &bearer,
+        origin.addr,
     )
     .await;
     worker.start(Arc::downgrade(&server));
@@ -855,6 +954,25 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
     );
 
     // Server-side receipt row and honest downloaded-vs-applied reporting.
+    // The worker reports in the same cycle that published the new answer, but
+    // the HTTP report is a later step than the DNS swap, so wait for it.
+    wait_until(30, "server records the first refresh ack", || {
+        let pool = &pool;
+        async move {
+            sqlx::query_as::<_, (i64, i64, DateTime<Utc>)>(
+                "SELECT refresh_seq, config_version, acked_at FROM network_dns_refresh_ack \
+                 WHERE household_id = $1 AND gateway_id = $2 AND source_id = 'remote-list'",
+            )
+            .bind(hid)
+            .bind(gid)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .is_some()
+        }
+    })
+    .await;
     let ack: (i64, i64, DateTime<Utc>) = sqlx::query_as(
         "SELECT refresh_seq, config_version, acked_at FROM network_dns_refresh_ack \
          WHERE household_id = $1 AND gateway_id = $2 AND source_id = 'remote-list'",
@@ -921,7 +1039,7 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
     // can only come from the persisted bundle, never from a live provider.
     worker.shutdown().await;
     server.stop_shared().await;
-    fs::write(&st.config, dns_config(0, 99, published)).unwrap();
+    fs::write(&st.config, dns_config(0, 99, published, Some(origin.addr))).unwrap();
     let offline = DnsServer::start_durable(DurableOptions {
         state_path: st.state.clone(),
         worker_id: WORKER_ID.to_owned(),
@@ -1062,6 +1180,23 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
         blocked(&online, "other.block.test.", true).await,
         "post-restart TCP answer"
     );
+    wait_until(30, "server records the post-restart refresh ack", || {
+        let pool = &pool;
+        async move {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT refresh_seq FROM network_dns_refresh_ack \
+                 WHERE household_id = $1 AND gateway_id = $2 AND source_id = 'remote-list'",
+            )
+            .bind(hid)
+            .bind(gid)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+                == Some(seq_ok as i64)
+        }
+    })
+    .await;
     let ack_after_fetch: (i64, i64) = sqlx::query_as(
         "SELECT refresh_seq, config_version FROM network_dns_refresh_ack \
          WHERE household_id = $1 AND gateway_id = $2 AND source_id = 'remote-list'",
@@ -1095,6 +1230,166 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
         },
     )
     .await;
+
+    // ── Phase 6: real desired runtime settings applied by the worker ─────────
+    // The v2 config carries ONLY the supported cache/deny fields; the policy
+    // revision, publication age and local operator fields stay untouched.
+    let runtime = json!({
+        "cache": {
+            "enabled": true,
+            "max_entries": 64,
+            "positive_min_ttl_secs": 60,
+            "positive_max_ttl_secs": 60,
+            "negative_min_ttl_secs": null,
+            "negative_max_ttl_secs": null
+        },
+        "deny": { "mode": "refused" }
+    });
+    let (status, body) = http
+        .patch(
+            &mgmt_path,
+            patch_with(
+                1,
+                vec![json!({"op":"set_runtime_settings","runtime":runtime})],
+            ),
+        )
+        .await;
+    assert_eq!(status, 200, "v2 settings PATCH failed: {body}");
+    assert_eq!(body["desired"]["schema_version"], 2);
+    let digest_v2 = body["desired"]["body_sha256"].as_str().unwrap().to_owned();
+    wait_until(30, "worker reports the applied v2 settings", || {
+        let online = &online;
+        let expected = digest_v2.clone();
+        async move {
+            online
+                .management_state()
+                .is_some_and(|state| state.config_version == 2 && state.digest == expected)
+        }
+    })
+    .await;
+    let applied_v2 = online.management_state().unwrap();
+    let status_v2 = online.status();
+    assert_eq!(
+        status_v2.policy_revision, install_status.policy_revision,
+        "settings changed the policy revision"
+    );
+    assert_eq!(
+        status_v2.policy_published_at, install_status.policy_published_at,
+        "settings freshened the policy publication time"
+    );
+    assert!(
+        applied_v2.runtime.is_some(),
+        "settings were not persisted in the bundle"
+    );
+    assert_eq!(applied_v2.runtime.as_ref().unwrap().cache.max_entries, 64);
+    // A NEW settings apply legitimately records a new applied time; what must
+    // never freshen is the policy publication age or a cached body's age.
+    assert!(applied_v2.applied_at >= state_after_fetch.applied_at);
+
+    // Effect, not just fields: two UDP and two TCP queries of a fresh name
+    // produce exactly ONE origin hit because the maintained cache answers the
+    // second query on each transport path.
+    let before_hits = origin.hits();
+    for tcp in [false, true] {
+        for _ in 0..2 {
+            assert!(answered(&online, "cached.origin.test.", tcp).await);
+        }
+    }
+    assert_eq!(
+        origin.hits() - before_hits,
+        1,
+        "cache did not collapse repeated forwarded queries"
+    );
+
+    // A cache clear targets the CURRENT cache only: no settings/policy change,
+    // no generation bump, no entries count, and a real new origin hit follows.
+    let generation_before_clear = online.status().bundle_generation;
+    let clear_path = format!("/api/network/households/{hid}/dns/cache/clear");
+    let (status, clear) = http
+        .post(&clear_path, json!({"expected_config_version": 2}))
+        .await;
+    assert_eq!(status, 200, "clear request failed: {clear}");
+    assert_eq!(clear["clear_seq"], 1);
+    assert!(clear.get("entries_count").is_none());
+    wait_until(30, "worker acknowledges the delivered clear", || {
+        let http = &http;
+        let status_path = status_path.clone();
+        async move {
+            let (code, body) = http.get(&status_path).await;
+            code == 200
+                && body["gateways"].as_array().is_some_and(|gateways| {
+                    gateways.iter().any(|gateway| {
+                        gateway["gateway_id"] == json!(gid.to_string())
+                            && gateway["cache_clear"]["acked_at"].is_string()
+                            && gateway["cache_clear"]["clear_seq"] == json!(1)
+                    })
+                })
+        }
+    })
+    .await;
+    let after_clear = online.status();
+    assert_eq!(
+        after_clear.bundle_generation, generation_before_clear,
+        "cache clear bumped the bundle generation"
+    );
+    assert_eq!(after_clear.policy_revision, install_status.policy_revision);
+    assert_eq!(
+        after_clear.policy_published_at,
+        install_status.policy_published_at
+    );
+    let state_after_clear = online.management_state().unwrap();
+    assert_eq!(state_after_clear.config_version, 2);
+    assert_eq!(state_after_clear.digest, digest_v2);
+    assert_eq!(state_after_clear.applied_at, applied_v2.applied_at);
+    let hits_before_query = origin.hits();
+    assert!(answered(&online, "cached.origin.test.", false).await);
+    assert_eq!(
+        origin.hits() - hits_before_query,
+        1,
+        "clear did not evict the cache"
+    );
+    assert!(answered(&online, "cached.origin.test.", true).await);
+    assert_eq!(
+        origin.hits(),
+        hits_before_query + 1,
+        "in-flight repopulation was not observed as a cache hit"
+    );
+
+    // Disabling the cache is an actual settings change, not a reported field:
+    // each query now reaches the origin.
+    let mut disabled = runtime.clone();
+    disabled["cache"]["enabled"] = json!(false);
+    let (status, body) = http
+        .patch(
+            &mgmt_path,
+            patch_with(
+                2,
+                vec![json!({"op":"set_runtime_settings","runtime":disabled})],
+            ),
+        )
+        .await;
+    assert_eq!(status, 200, "disable PATCH failed: {body}");
+    let digest_disabled = body["desired"]["body_sha256"].as_str().unwrap().to_owned();
+    wait_until(30, "worker applies the disabled cache", || {
+        let online = &online;
+        let expected = digest_disabled.clone();
+        async move {
+            online
+                .management_state()
+                .is_some_and(|state| state.config_version == 3 && state.digest == expected)
+        }
+    })
+    .await;
+    let hits_before_disabled = origin.hits();
+    for tcp in [false, true] {
+        assert!(answered(&online, "cached.origin.test.", tcp).await);
+        assert!(answered(&online, "cached.origin.test.", tcp).await);
+    }
+    assert_eq!(
+        origin.hits() - hits_before_disabled,
+        4,
+        "a disabled cache still answered from cache"
+    );
 
     worker2.shutdown().await;
     online.stop_shared().await;
