@@ -48,7 +48,6 @@ Pending Hermes slices are isolated from the integrated branch:
 | `497a541d` | Desired-only migration 0086 | Independently accepted in its bounded scope; two real-PG tests pass. Depends on unaccepted DNS contract upgrade; not integrated. |
 | `cca53f6b` | Explicit pre-0085 evidence snapshot/restore scripts | Independently accepted with real-schema PostgreSQL tests, including empty snapshot, corruption and rollback cases; combined upgrade E2E remains pending. |
 | `2e927fc7` | Explicit offline worker-bundle converter | Independently accepted in bounded scope: five focused tests pass and CLI compiles. Full upgrade E2E remains pending; not integrated. |
-| `cedc2148` | Hostname regex filtering | Blocked by test compilation, aggregate pattern budget and important-exception precedence; bounded correction in progress. |
 
 All runtime validation remains serialized by the shared Rust lock. No new
 frontend contract is accepted by these pending slices. Keep correspondence
@@ -72,6 +71,18 @@ presentation assertion failure; after a test-only canonical-IP correction, all
 34 tests in the remaining/rechecked targets passed, followed by strict crate
 all-target clippy. Tags, per-client upstreams, broader identity sources, HTTP
 and UI controls remain unfinished.
+
+Bounded hostname regex filtering is accepted and integrated through `02753b27`
+(source chain `cedc2148`, `68698662`, `075d8c41`, `f176720a`). Independent
+review verified deterministic important-domain-exception handling and ASCII
+IDN canonicalization; 25 focused compiler tests pass. Parent mechanical lint
+corrections passed strict compiler-crate all-target clippy and the build without
+default features. Thirteen real worker filter tests pass on the integrated
+tree, including UDP/TCP regex and exception enforcement, truthful rule evidence,
+household/unknown-device denies, IDNs and restart from unchanged persisted list
+bytes despite a modified source file. Aggregate rule/work/reservation budgets
+reject oversized candidates; reservation accounting is not a process RSS bound.
+Important regex exceptions and broader context modifiers remain unfinished.
 
 The assembled current-contract upgrade candidate is `aa2126c2`, based on
 `705d99f2`; it includes the reviewed 0086 repair, evidence scripts and offline

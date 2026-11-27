@@ -219,6 +219,64 @@ fn persisted_sha(disk: &[u8], list_id: &str) -> String {
 }
 
 #[tokio::test]
+async fn hostname_regex_rules_enforce_on_udp_tcp_and_durable_restart() {
+    let st = fixture("hostname-regex");
+    let rules = r"/^ads\.filter\.example$/
+/^except\.filter\.example$/
+@@/^except\.filter\.example$/
+/^important\.filter\.example$/$important
+@@||important.filter.example^
+/^ok\.filter\.example$/$important
+@@||ok.filter.example^$important
+/^xn--bcher-kva\.filter\.example$/
+@@/^baseline\.filter\.example$/
+";
+    st.write_lists(GOOD_HOSTS, rules);
+    fs::write(&st.config, st.config(2, None)).unwrap();
+    let server = DnsServer::start_durable(st.options(Utc::now()))
+        .await
+        .unwrap();
+    for tcp in [false, true] {
+        assert_denied(&query(&server, tcp, "ads.filter.example.", mapped()).await);
+        assert_denied(&query(&server, tcp, "important.filter.example.", mapped()).await);
+        assert_allowed(&query(&server, tcp, "except.filter.example.", mapped()).await);
+        assert_allowed(&query(&server, tcp, "ok.filter.example.", mapped()).await);
+        assert_denied(&query(&server, tcp, "xn--bcher-kva.filter.example.", mapped()).await);
+        assert_denied(&query(&server, tcp, "bücher.filter.example.", mapped()).await);
+        // Neither exception family can grant access against household policy
+        // or the restrictive unknown-device profile.
+        assert_denied(&query(&server, tcp, "baseline.filter.example.", mapped()).await);
+        assert_denied(&query(&server, tcp, "ok.filter.example.", unknown()).await);
+    }
+    let blocked = observation(&server, "ads.filter.example.");
+    assert!(blocked.filter_blocked);
+    assert_eq!(blocked.filter_source_id.as_deref(), Some("abp-local"));
+    assert_eq!(
+        blocked.filter_rule.as_deref(),
+        Some(r"/^ads\.filter\.example$/")
+    );
+    let generation = server.status().bundle_generation;
+    server.stop().await;
+
+    // Restart recompiles the accepted bytes, rather than adopting a changed
+    // source file or losing the regex rule's original evidence.
+    fs::write(&st.abp, "||unrelated.example^\n").unwrap();
+    let restarted = DnsServer::start_durable(st.options(Utc::now()))
+        .await
+        .unwrap();
+    assert_denied(&query(&restarted, true, "ads.filter.example.", mapped()).await);
+    assert_allowed(&query(&restarted, false, "except.filter.example.", mapped()).await);
+    assert_eq!(restarted.status().bundle_generation, generation);
+    assert_eq!(
+        observation(&restarted, "ads.filter.example.")
+            .filter_rule
+            .as_deref(),
+        Some(r"/^ads\.filter\.example$/")
+    );
+    restarted.stop().await;
+}
+
+#[tokio::test]
 async fn hosts_abp_exception_important_and_services_apply_on_udp_and_tcp() {
     let st = fixture("mixed");
     st.write_lists(GOOD_HOSTS, GOOD_ABP);
