@@ -8,7 +8,7 @@ import type { EventsPage, EventsQuery, Availability } from "@/features/network/r
  * The household activity list, loaded a page at a time by following each page's `nextCursor`.
  * Changing any filter changes the key, so the list restarts from the newest row.
  */
-export function useActivityEvents(query: Omit<EventsQuery, "cursor" | "offset">) {
+export function useActivityEvents(query: Omit<EventsQuery, "cursor">) {
   const runtime = useNetworkRuntime();
   return useInfiniteQuery({
     // The runtime's scope (source kind + household) is part of the key: an old household's rows,

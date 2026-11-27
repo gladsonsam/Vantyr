@@ -89,17 +89,17 @@ export const NOT_AVAILABLE_YET = "Not available on this server yet";
 const SOURCE_NAME: Record<EventSource, string> = { dns: "DNS", proxy: "Proxy", agent: "Agent" };
 
 export function sourceSupported(
-  capabilities: EventsCapabilities | undefined,
+  capabilities: EventsCapabilities,
   source: EventSource | "all" | undefined,
 ): boolean {
-  return !capabilities || !source || source === "all" || capabilities.sources.includes(source);
+  return !source || source === "all" || capabilities.sources.includes(source);
 }
 
 export function groupingSupported(
-  capabilities: EventsCapabilities | undefined,
+  capabilities: EventsCapabilities,
   grouping: EventsGrouping | undefined,
 ): boolean {
-  return !capabilities || !grouping || capabilities.grouping.includes(grouping);
+  return !grouping || capabilities.grouping.includes(grouping);
 }
 
 /** Shown instead of a list when the chosen source is unsupported: unsupported is not "no activity". */

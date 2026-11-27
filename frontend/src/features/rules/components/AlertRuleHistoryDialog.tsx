@@ -15,6 +15,7 @@ import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 import { fmtDateTime } from "@/lib/utils";
 import type { AlertRule } from "@/api/types";
 import type { AlertRuleHistoryRow } from "../hooks/useAlertRuleHistory";
+import { useAgentHref } from "@/features/devices/hooks/useAgentHref";
 import { ruleTitle } from "../lib/alertRuleSummary";
 
 /** Trigger history of one alert rule, with a screenshot preview for events that captured one. */
@@ -38,6 +39,7 @@ export function AlertRuleHistoryDialog({
   onClose: () => void;
 }) {
   const [previewEventId, setPreviewEventId] = useState<number | null>(null);
+  const agentHref = useAgentHref();
 
   return (
     <>
@@ -77,7 +79,18 @@ export function AlertRuleHistoryDialog({
               className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-xl border border-border/60 bg-muted/20"
             >
               {events.map((row) => (
-                <HistoryRow key={row.id} row={row} onScreenshot={setPreviewEventId} />
+                <HistoryRow
+                  key={row.id}
+                  row={row}
+                  activityHref={
+                    row.agent_id
+                      ? agentHref(row.agent_id, {
+                          search: `?tab=activity&at=${encodeURIComponent(row.created_at)}`,
+                        })
+                      : null
+                  }
+                  onScreenshot={setPreviewEventId}
+                />
               ))}
             </ul>
           ) : error ? null : (
@@ -106,9 +119,12 @@ function historySummary(count: number, unknown: boolean, truncated: boolean): st
 
 function HistoryRow({
   row,
+  activityHref,
   onScreenshot,
 }: {
   row: AlertRuleHistoryRow;
+  /** The device's Agent tab at this alert, once the device is known. */
+  activityHref: string | null;
   onScreenshot: (eventId: number) => void;
 }) {
   const when = fmtDateTime(row.created_at);
@@ -139,7 +155,7 @@ function HistoryRow({
             No screenshot
           </span>
         ) : null}
-        {row.agent_id && (
+        {activityHref && (
           <Button
             variant="ghost"
             size="sm"
@@ -147,7 +163,7 @@ function HistoryRow({
             render={
               <Link
                 aria-label={`Open ${row.agent_name || "agent"} activity at ${when}`}
-                to={`/agents/${row.agent_id}?tab=activity&at=${encodeURIComponent(row.created_at)}`}
+                to={activityHref}
               />
             }
           >

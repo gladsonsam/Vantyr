@@ -283,10 +283,6 @@ export function useOwnEnrollDevices(household: string) {
   return useQuery(networkQueries.ownDevices(household));
 }
 
-export function useOwnGrants(household: string, enabled = true) {
-  return useQuery({ ...networkQueries.ownGrants(household), enabled });
-}
-
 export function useOwnSessions(household: string, enabled = true) {
   return useQuery({ ...networkQueries.ownSessions(household), enabled });
 }

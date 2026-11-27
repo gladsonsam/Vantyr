@@ -1,11 +1,11 @@
 import { createContext, useContext } from "react";
 
-/**
- * Where the agent tools live in the address bar. Inside a device page that is
- * `/devices/<key>/agent`; anywhere else it falls back to the legacy `/agents/<id>`, which redirects.
- */
+/** Where the agent tools live in the address bar: `/devices/<key>/agent`. Set by the device's Agent tab. */
 export const AgentToolsPathContext = createContext<string | null>(null);
 
-export function useAgentToolsPath(agentId: string): string {
-  return useContext(AgentToolsPathContext) ?? `/agents/${agentId}`;
+/** The tools path; only valid inside the device's Agent tab. */
+export function useAgentToolsPath(): string {
+  const path = useContext(AgentToolsPathContext);
+  if (path === null) throw new Error("useAgentToolsPath must be used inside the device Agent tab");
+  return path;
 }

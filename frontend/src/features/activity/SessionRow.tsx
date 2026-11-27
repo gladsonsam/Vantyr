@@ -12,7 +12,7 @@ import {
 import { AppIcon } from "@/components/common/AppIcon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@vantyr/ui/components/tooltip";
 import { cn } from "@/lib/utils";
-import type { ActivityUrlStateV1 } from "./activityUrl";
+import type { ActivityUrlState } from "./activityUrl";
 import { appColor, IDLE_APP } from "./appColor";
 import { MergedActivityRowView } from "./MergedActivityRowView";
 import { type Session, formatDuration } from "./sessionAggregator";
@@ -32,7 +32,7 @@ interface SessionRowProps {
   onOpenScreenshot: (eventId: number) => void;
   onFilterApp: (exeName: string) => void;
   agentId?: string;
-  onActivityDeepLink?: (state: ActivityUrlStateV1) => void;
+  onActivityDeepLink?: (state: ActivityUrlState) => void;
   showUser?: boolean;
 }
 function MetaCount({

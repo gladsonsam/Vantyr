@@ -52,10 +52,12 @@ export function QueryLog({
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [result, setResult] = useState<ResultFilter>("all");
-  const [page, setPage] = useState(0);
+  // Pages are followed by cursor: cursors[i] opens page i + 1, so Previous just drops the last one.
+  const [cursors, setCursors] = useState<string[]>([]);
+  const page = cursors.length;
   const commitSearch = useDebouncedCommit<string>((value) => {
     setAppliedSearch(value);
-    setPage(0);
+    setCursors([]);
   });
   const query = useEventsQuery({
     deviceId,
@@ -63,7 +65,7 @@ export function QueryLog({
     search: appliedSearch.trim() || undefined,
     decision: result,
     limit: PAGE,
-    offset: page * PAGE,
+    cursor: cursors[cursors.length - 1],
   });
 
   const data = query.data?.state === "ready" ? query.data.data : null;
@@ -92,7 +94,7 @@ export function QueryLog({
               value={result}
               onChange={(next) => {
                 setResult(next as ResultFilter);
-                setPage(0);
+                setCursors([]);
               }}
               size="sm"
               trackColor="var(--muted)"
@@ -187,7 +189,7 @@ export function QueryLog({
                 variant="outline"
                 size="sm"
                 disabled={page === 0}
-                onClick={() => setPage((current) => Math.max(0, current - 1))}
+                onClick={() => setCursors((current) => current.slice(0, -1))}
               >
                 Previous
               </Button>
@@ -195,7 +197,11 @@ export function QueryLog({
                 variant="outline"
                 size="sm"
                 disabled={!data?.hasMore}
-                onClick={() => setPage((current) => current + 1)}
+                onClick={() =>
+                  setCursors((current) =>
+                    data?.nextCursor ? [...current, data.nextCursor] : current,
+                  )
+                }
               >
                 Next
               </Button>

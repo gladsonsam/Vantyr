@@ -95,7 +95,7 @@
   cursor: pointer;
   overflow-wrap: anywhere;
   color: var(--muted-foreground);
-  border-bottom: 1px solid var(--ui-border);
+  border-bottom: 1px solid var(--border);
 }
 .recall-search-group summary:focus-visible {
   outline: 2px solid var(--ring);
@@ -126,7 +126,7 @@
 }
 .recall-player-context {
   padding: 12px;
-  border-top: 1px solid var(--ui-border);
+  border-top: 1px solid var(--border);
 }
 .recall-context-about summary {
   min-height: 44px;

@@ -46,7 +46,7 @@ type AgentTabIcon = LucideIcon;
 
 /**
  * Every agent tool belongs to one of five groups. The groups only organise the tool switcher and
- * the sibling row; the URL stays `?tab=<TabKey>`, so old links keep working.
+ * the sibling row; the URL stays `?tab=<TabKey>`.
  */
 export type AgentSectionId = "activity" | "monitoring" | "device" | "control" | "settings";
 
@@ -82,9 +82,8 @@ export function agentSectionFromTabKey(tab: TabKey): AgentSectionId {
   return "activity";
 }
 
-/** Agent page tab from the `?tab=` query value; the legacy "screen" maps to "live". */
+/** Agent page tab from the `?tab=` query value. */
 export function agentTabFromParam(tab: string | null): TabKey {
-  if (tab === "screen") return "live";
   return isTabKey(tab) ? tab : "activity";
 }
 
@@ -93,7 +92,7 @@ interface AgentTabDefinition {
   label: string;
   /** One line shown only inside the tool switcher. */
   hint: string;
-  /** Extra words the switcher search matches (old names, synonyms). */
+  /** Extra words the switcher search matches (synonyms). */
   keywords: string[];
   icon: AgentTabIcon;
 }

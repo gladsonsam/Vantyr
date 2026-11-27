@@ -251,7 +251,7 @@ export function RecallScrubber({
             bottom: 4,
             height: 4,
             borderRadius: 2,
-            background: "var(--ui-border)",
+            background: "var(--border)",
             pointerEvents: "none",
           }}
         />
@@ -282,7 +282,7 @@ export function RecallScrubber({
               top: 0,
               bottom: 0,
               width: 1,
-              background: "var(--ui-border)",
+              background: "var(--border)",
               opacity: 0.9,
               pointerEvents: "none",
             }}

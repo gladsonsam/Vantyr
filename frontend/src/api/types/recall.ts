@@ -39,11 +39,9 @@ export interface ScreenFramesResponse {
   count: number;
   frames: ScreenFrame[];
   limit: number;
-  // This server always sends the paging fields; `loadFramePages` still tolerates a response
-  // without them (an older server) rather than claiming the history is complete.
-  has_more?: boolean;
-  complete?: boolean;
-  next_cursor?: string | null;
+  has_more: boolean;
+  complete: boolean;
+  next_cursor: string | null;
 }
 
 export interface ScreenFrameAtResponse {
@@ -114,9 +112,9 @@ export interface ScreenSearchResponse {
   scope: "range" | "retained";
   sort: "ranked" | "newest";
   limit: number;
-  has_more?: boolean;
-  complete?: boolean;
-  next_cursor?: string | null;
+  has_more: boolean;
+  complete: boolean;
+  next_cursor: string | null;
 }
 
 /** One derived activity segment (Phase 3 narrative). */

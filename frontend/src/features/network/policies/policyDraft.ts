@@ -3,7 +3,6 @@ import type {
   NetworkPolicyEffect,
   NetworkPolicyRule,
 } from "@/api/types/network";
-import type { PolicyRule, PolicySnapshot, Weekday } from "@/features/network/runtime/types";
 
 /**
  * Editor model for composing a new policy revision. It mirrors the server's schema checks
@@ -248,63 +247,6 @@ export function toDraft(state: EditorState, expectedRevision?: number): NetworkP
 
 export function draftSizeBytes(state: EditorState): number {
   return utf8Len(JSON.stringify(toDraft(state)));
-}
-
-// ── Starting point from the runtime view ────────────────────────────────────
-
-const DAY: Record<Weekday, number> = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6 };
-const minutes = (hhmm: string) => {
-  const [h, m] = hhmm.split(":").map(Number);
-  return (h ?? 0) * 60 + (m ?? 0);
-};
-
-function fromRuntimeRule(rule: PolicyRule, timezone: string): EditorRule {
-  return {
-    id: rule.id,
-    kind: rule.match.kind === "exact" ? "host_exact" : "domain_suffix",
-    value: rule.match.value,
-    effect: rule.effect,
-    reason: rule.reason,
-    schedule: rule.schedule
-      ? {
-          weekdays: rule.schedule.days.map((d) => DAY[d]),
-          start_minute: minutes(rule.schedule.from),
-          end_minute: minutes(rule.schedule.to),
-          timezone,
-        }
-      : null,
-  };
-}
-
-export interface SnapshotImport {
-  state: EditorState;
-  /** What could not come along because the server refuses it for now. */
-  skipped: { people: number; exceptions: number; baselineAllow: number };
-}
-
-/** Convert the runtime view to an editor start. Unsupported parts are dropped, and counted. */
-export function editorFromSnapshot(snapshot: PolicySnapshot): SnapshotImport {
-  const baselineAllow = snapshot.baseline.filter((r) => r.effect === "allow").length;
-  return {
-    state: {
-      baseline: snapshot.baseline
-        .filter((r) => r.effect === "deny")
-        .map((r) => fromRuntimeRule(r, snapshot.timezone)),
-      profiles: snapshot.deviceDefaults.map((scope) => ({
-        key: `p-${scope.scopeId}`,
-        profileId: scope.scopeId,
-        rules: scope.rules.map((r) => fromRuntimeRule(r, snapshot.timezone)),
-      })),
-      timezone: snapshot.timezone,
-      staleAfterMinutes: Math.max(1, Math.round(snapshot.staleAfterSeconds / 60)),
-      eventRetentionDays: 14,
-    },
-    skipped: {
-      people: snapshot.personRules.reduce((n, s) => n + s.rules.length, 0),
-      exceptions: snapshot.exceptions.length,
-      baselineAllow,
-    },
-  };
 }
 
 // ── Starting point from a stored revision ───────────────────────────────────

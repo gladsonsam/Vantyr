@@ -1,6 +1,7 @@
 import { Fragment, type Ref } from "react";
 import { ListPagination } from "@/components/common/ListPagination";
 import { fmtDayLabel, parseTimestamp } from "@/lib/utils";
+import { useAgentHref } from "@/features/devices/hooks/useAgentHref";
 import { AuditRowItem } from "./AuditRowItem";
 import type { AuditRow } from "./auditRows";
 
@@ -40,6 +41,7 @@ export function AuditList({
   stale,
   listRef,
 }: AuditListProps) {
+  const agentHref = useAgentHref();
   const days: { key: string; label: string; rows: AuditRow[] }[] = [];
   for (const row of rows) {
     const day = dayOf(row);
@@ -65,6 +67,7 @@ export function AuditList({
                 key={row.id}
                 row={row}
                 deviceName={nameOf(row.agent_id)}
+                deviceHref={row.agent_id ? agentHref(row.agent_id) : null}
                 showActor={showActor}
                 showDevice={showDevice}
               />

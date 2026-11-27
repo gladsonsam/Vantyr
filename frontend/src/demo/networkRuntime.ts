@@ -1,8 +1,6 @@
 import type {
   Availability,
   ConnectionCheck,
-  Decision,
-  DecisionQuery,
   DnsResponseMode,
   DnsSettingsPatch,
   DnsStats,
@@ -54,25 +52,6 @@ const rule = (
 ): PolicyRule => ({ id, effect, match, reason, schedule });
 const suffix = (value: string): DomainMatch => ({ kind: "suffix", value });
 const exact = (value: string): DomainMatch => ({ kind: "exact", value });
-
-function matches(match: DomainMatch, domain: string): boolean {
-  const d = domain.trim().toLowerCase().replace(/\.$/, "");
-  const v = match.value.toLowerCase();
-  return match.kind === "exact" ? d === v : d === v || d.endsWith(`.${v}`);
-}
-
-const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
-
-/** Demo only: uses the browser clock rather than the household timezone. */
-function inSchedule(schedule: PolicyRule["schedule"], at = new Date()): boolean {
-  if (!schedule) return true;
-  if (!schedule.days.includes(WEEKDAYS[at.getDay()])) return false;
-  const minutes = at.getHours() * 60 + at.getMinutes();
-  const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
-  const from = toMin(schedule.from);
-  const to = toMin(schedule.to);
-  return from <= to ? minutes >= from && minutes < to : minutes >= from || minutes < to;
-}
 
 function baseSnapshot(): PolicySnapshot {
   return {
@@ -135,73 +114,6 @@ function cloneSnapshot(s: PolicySnapshot): PolicySnapshot {
   return JSON.parse(JSON.stringify(s)) as PolicySnapshot;
 }
 
-/** Deny beats allow within a layer, so adding an allow can never quietly become "most permissive wins". */
-function pick(rules: PolicyRule[], domain: string): PolicyRule | null {
-  const hits = rules.filter((r) => matches(r.match, domain) && inSchedule(r.schedule));
-  return hits.find((r) => r.effect === "deny") ?? hits[0] ?? null;
-}
-
-function decide(snapshot: PolicySnapshot, q: DecisionQuery): Decision {
-  const base = {
-    revision: snapshot.revision,
-    identity: (q.personId ? "verified_person" : "unknown") as Decision["identity"],
-  };
-  const baselineDeny = snapshot.baseline.find(
-    (r) => r.effect === "deny" && matches(r.match, q.domain),
-  );
-  if (baselineDeny)
-    return {
-      ...base,
-      effect: "deny",
-      layer: "baseline",
-      rule: baselineDeny.id,
-      reason: baselineDeny.reason,
-    };
-
-  const exception = snapshot.exceptions.find(
-    (x) => new Date(x.expiresAt) > new Date() && matches(x.match, q.domain),
-  );
-  if (exception)
-    return {
-      ...base,
-      effect: exception.effect,
-      layer: "exception",
-      rule: exception.id,
-      reason: `${exception.reason} (approved by ${exception.approvedBy})`,
-    };
-
-  if (q.personId) {
-    const hit = pick(
-      snapshot.personRules.find((s) => s.scopeId === q.personId)?.rules ?? [],
-      q.domain,
-    );
-    if (hit)
-      return { ...base, effect: hit.effect, layer: "person", rule: hit.id, reason: hit.reason };
-  }
-  const device = pick(
-    snapshot.deviceDefaults.find((s) => s.scopeId === q.deviceId)?.rules ?? [],
-    q.domain,
-  );
-  if (device)
-    return {
-      ...base,
-      effect: device.effect,
-      layer: "device",
-      rule: device.id,
-      reason: device.reason,
-    };
-
-  return {
-    ...base,
-    effect: snapshot.defaultEffect,
-    layer: "household_default",
-    rule: null,
-    reason: q.personId
-      ? "No rule matched, so the household default applies."
-      : "Nobody is verified on this device, so only device defaults apply. None matched, so the household default applies.",
-  };
-}
-
 const DEVICE_IDS: Record<string, string> = {
   Desktop: "dev-desktop",
   Laptop: "dev-laptop",
@@ -219,7 +131,7 @@ const DEMO_PROXY_STORED_DAYS = 9;
 
 /** What a request really covers: never more than is stored, and never more than the retention allows. */
 function statsWindow(q: DnsStatsQuery, keepDays: number, storedDays = DEMO_STORED_DAYS) {
-  const requested = q.requestedRange ?? q.range;
+  const requested = q.range;
   const retainedDays = Math.max(1, Math.min(RANGE_DAYS[requested], storedDays, keepDays));
   const shortened = retainedDays < RANGE_DAYS[requested];
   const stepMinutes = RANGE_STEP_MINUTES[requested];
@@ -277,8 +189,6 @@ export function buildStats(q: DnsStatsQuery, keepDays: number): DnsStats {
       ),
     }));
   return {
-    total,
-    blocked,
     observations: total,
     blockedObservations: blocked,
     window,
@@ -343,8 +253,6 @@ function buildProxyStats(q: ProxyStatsQuery, inspectedShare: number, keepDays: n
           "ads2.example",
         ];
   return {
-    total,
-    blocked,
     observations: total,
     blockedObservations: blocked,
     window,
@@ -678,10 +586,6 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
       return ready(policyView());
     },
 
-    async explainDecision(q: DecisionQuery) {
-      return ready(decide(applied, q));
-    },
-
     async dns() {
       return ready<DnsView>({
         source: "demo",
@@ -730,10 +634,8 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
       });
     },
 
-    async updateDns(patch: DnsSettingsPatch, options?: DnsUpdateOptions) {
-      // Demo only: omitting the expected version means "the current one". The UI passes it explicitly.
-      const expected = options?.expectedSettingsVersion ?? dnsState.version;
-      if (expected !== dnsState.version) throw new RuntimeConflictError();
+    async updateDns(patch: DnsSettingsPatch, options: DnsUpdateOptions) {
+      if (options.expectedSettingsVersion !== dnsState.version) throw new RuntimeConflictError();
       if (patch.responseMode) dnsState.responseMode = patch.responseMode;
       if (patch.cache) Object.assign(dnsState.cache, patch.cache);
       if (patch.rateLimitPerSecond !== undefined) dnsState.rateLimit = patch.rateLimitPerSecond;
@@ -853,7 +755,7 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
     async events(q: EventsQuery) {
       const capabilities = DEMO_EVENT_CAPABILITIES;
       const stored = storedEvents().filter((e) => capabilities.sources.includes(e.source));
-      const decision = q.decision && q.decision !== "all" ? q.decision : q.effect;
+      const decision = q.decision && q.decision !== "all" ? q.decision : undefined;
       const needle = q.search?.trim().toLowerCase();
       const filtered = stored.filter(
         (e) =>
@@ -892,7 +794,7 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
         }
         rows = [...groups.values()];
       }
-      const start = q.cursor ? Number(q.cursor) || 0 : (q.offset ?? 0);
+      const start = q.cursor ? Number(q.cursor) || 0 : 0;
       const slice = rows.slice(start, start + q.limit);
       const hasMore = start + q.limit < rows.length;
       const oldestStoredAt = stored.length ? stored[stored.length - 1].at : null;

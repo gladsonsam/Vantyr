@@ -10,6 +10,8 @@ interface AuditRowItemProps {
   row: AuditRow;
   /** The device's name when the fleet knows it, else null. */
   deviceName: string | null;
+  /** The device's page, once the device is known. */
+  deviceHref: string | null;
   /** Show who did it; false when every record in the list has the same actor. */
   showActor: boolean;
   /** Show the device; false inside one device's own log. */
@@ -26,7 +28,13 @@ const TOGGLE_CLASS =
   "group/detail flex min-h-8 w-full items-start gap-1.5 rounded-md py-1 text-left text-[13px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 pointer-coarse:min-h-9";
 
 /** One recorded action (under its day heading): what, outcome, when; who, where from and which device; the detail behind one press. */
-export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRowItemProps) {
+export function AuditRowItem({
+  row,
+  deviceName,
+  deviceHref,
+  showActor,
+  showDevice,
+}: AuditRowItemProps) {
   const detailId = useId();
   const [open, setOpen] = useState(false);
   const action = formatAuditAction(row.action);
@@ -69,11 +77,11 @@ export function AuditRowItem({ row, deviceName, showActor, showDevice }: AuditRo
               </span>
             </Fragment>
           ))}
-          {deviceLabel && row.agent_id && (
+          {deviceLabel && deviceHref && (
             <>
               {who.length > 0 && <Dot />}
               <Link
-                to={`/agents/${encodeURIComponent(row.agent_id)}`}
+                to={deviceHref}
                 className="min-w-0 break-words rounded-sm underline-offset-2 outline-none -my-1.5 py-1.5 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
               >
                 {deviceLabel}

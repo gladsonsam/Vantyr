@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, setDashboardCsrfToken } from "@/api";
 import { clearSsoGuards, markSsoManual } from "@/features/auth/sso";
@@ -21,6 +21,8 @@ interface SessionState {
   user: DashboardSessionUser | null;
   csrfToken: string | null;
 }
+
+const SIGNED_OUT: SessionState = { authenticated: false, user: null, csrfToken: null };
 
 async function fetchSessionState(): Promise<SessionState> {
   try {
@@ -45,11 +47,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<DashboardSessionUser | null>(null);
   const queryClient = useQueryClient();
 
-  const applySessionState = useCallback((state: SessionState) => {
-    setUser(state.user);
-    setDashboardCsrfToken(state.csrfToken);
-    setAuthenticated(state.authenticated);
-  }, []);
+  // The one place server state is dropped: whenever the signed-in account ends or changes, the
+  // TanStack cache is cleared so no account ever sees another account's data.
+  const accountIdRef = useRef<string | null>(null);
+  const applySessionState = useCallback(
+    (state: SessionState) => {
+      const accountId = state.authenticated ? (state.user?.id ?? null) : null;
+      // Signing in from signed-out needs no clear: the cache was emptied when that session ended.
+      if (accountIdRef.current !== null && accountIdRef.current !== accountId) queryClient.clear();
+      accountIdRef.current = accountId;
+      setUser(state.user);
+      setDashboardCsrfToken(state.csrfToken);
+      setAuthenticated(state.authenticated);
+    },
+    [queryClient],
+  );
 
   const refresh = useCallback(async () => {
     applySessionState(await fetchSessionState());
@@ -76,17 +88,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // Recover gracefully when the server reports the session has expired (any 401
   // from the fetch layer reports it) — demote to signed-out so the login
   // screen shows and the WebSocket reconnect loop stops.
-  useEffect(
-    () =>
-      onSessionExpired(() => {
-        setAuthenticated(false);
-        setUser(null);
-        setDashboardCsrfToken(null);
-        // Drop cached server state so the next sign-in (possibly another user) starts clean.
-        queryClient.clear();
-      }),
-    [queryClient],
-  );
+  useEffect(() => onSessionExpired(() => applySessionState(SIGNED_OUT)), [applySessionState]);
 
   const completeLogin = useCallback(() => {
     clearSsoGuards();
@@ -105,10 +107,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // Explicit sign-out must land on the login screen — suppress the SSO
     // auto-hop for this tab until the next successful sign-in.
     markSsoManual();
-    setDashboardCsrfToken(null);
-    setAuthenticated(false);
-    queryClient.clear();
-  }, [queryClient]);
+    applySessionState(SIGNED_OUT);
+  }, [applySessionState]);
 
   const value = useMemo<SessionContextValue>(
     () => ({ authenticated, user, navUser: toNavUser(user), refresh, completeLogin, logout }),

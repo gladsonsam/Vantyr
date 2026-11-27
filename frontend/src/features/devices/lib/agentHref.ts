@@ -14,17 +14,14 @@ export function deviceHref(key: string, agentTools?: { search?: string }): strin
 }
 
 /**
- * Link for an agent's device page. With `agentTools` it opens the Agent tab, carrying `?tab=` and
- * the other tool params in `search`. Without rows (or for an agent they do not know) it falls back
- * to the legacy `/agents/<id>` route, which redirects to the same place.
+ * Link for an agent's device page, or null when no row belongs to that agent. With `agentTools` it
+ * opens the Agent tab, carrying `?tab=` and the other tool params in `search`.
  */
 export function deviceHrefForAgent(
   agentId: string,
-  rows: readonly DeviceRow[] | null | undefined,
+  rows: readonly DeviceRow[],
   agentTools?: { search?: string },
-): string {
-  const key = rows ? deviceKeyForAgent(agentId, rows) : null;
-  if (key) return deviceHref(key, agentTools);
-  const search = agentTools?.search ?? "";
-  return `/agents/${encodeURIComponent(agentId)}${search && !search.startsWith("?") ? `?${search}` : search}`;
+): string | null {
+  const key = deviceKeyForAgent(agentId, rows);
+  return key ? deviceHref(key, agentTools) : null;
 }

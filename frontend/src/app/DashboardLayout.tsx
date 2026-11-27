@@ -4,6 +4,7 @@ import { AppShell } from "@/app/shell/AppShell";
 import { agentTabFromParam } from "@/features/agent-detail/lib/agentTabNav";
 import { useNetworkAccess } from "@/features/network/access/useNetworkAccess";
 import { useDeviceRows } from "@/features/devices/hooks/useDeviceRows";
+import { deviceHrefForAgent } from "@/features/devices/lib/agentHref";
 import { connectedCount } from "@/features/devices/lib/deviceModel";
 import { useAgents } from "@/app/providers/useAgents";
 import { useNotifications } from "@/app/providers/useNotifications";
@@ -33,9 +34,7 @@ export function DashboardLayout() {
   const agentList = useMemo(() => Object.values(agents), [agents]);
 
   const returnTo: ReturnToState = { from: location.pathname + location.search };
-  const onAgentPage =
-    matchPath("/agents/:agentId", location.pathname) !== null ||
-    matchPath("/devices/:deviceKey/agent", location.pathname) !== null;
+  const onAgentPage = matchPath("/devices/:deviceKey/agent", location.pathname) !== null;
 
   // Browser tabs and history name the page. A page that draws its own header (a device) names itself.
   const pageTitle = header.hideTopBar ? "" : header.title;
@@ -72,7 +71,8 @@ export function DashboardLayout() {
         // Switching devices from an agent page keeps the open tab.
         onSelectAgent={(agentId) => {
           const tab = onAgentPage ? agentTabFromParam(searchParams.get("tab")) : "activity";
-          navigate(`/agents/${agentId}?tab=${tab}`);
+          const href = deviceHrefForAgent(agentId, deviceRows, { search: `?tab=${tab}` });
+          if (href) navigate(href);
         }}
       >
         <Outlet />

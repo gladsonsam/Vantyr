@@ -3,7 +3,7 @@ import { Bell, ExternalLink, Layout, Search, type LucideIcon } from "lucide-reac
 import { apiUrl } from "@/api";
 import { cn, fmtDateTimePrecise, parseTimestamp } from "@/lib/utils";
 import { alertChannelLabel } from "./alertChannels";
-import type { ActivityUrlStateV1 } from "./activityUrl";
+import type { ActivityUrlState } from "./activityUrl";
 import { isHttpUrl, type MergedActivityRow } from "./sessionTimeline";
 
 /** Left rule hue per row kind: windows info-blue, pages/URLs brand, alerts destructive. */
@@ -130,9 +130,9 @@ type RowProps = {
   row: MergedActivityRow;
   onOpenScreenshot: (eventId: number) => void;
   agentId?: string;
-  onActivityDeepLink?: (state: ActivityUrlStateV1) => void;
+  onActivityDeepLink?: (state: ActivityUrlState) => void;
 };
-type DeepLink = ((state: ActivityUrlStateV1) => void) | null;
+type DeepLink = ((state: ActivityUrlState) => void) | null;
 
 /** One row of a session's merged window / URL / alert stream. */
 export function MergedActivityRowView({
@@ -170,7 +170,7 @@ function WindowActivityRow({
         deepLink && title ? (
           <SearchAction
             label={`Search the timeline for “${title}”`}
-            onClick={() => deepLink({ v: 1, q: win.window_title })}
+            onClick={() => deepLink({ q: win.window_title })}
           />
         ) : null
       }
@@ -196,7 +196,7 @@ function PageActivityRow({
         deepLink && u.url.trim() ? (
           <SearchAction
             label="Search the timeline for this URL"
-            onClick={() => deepLink({ v: 1, q: u.url })}
+            onClick={() => deepLink({ q: u.url })}
           />
         ) : null
       }

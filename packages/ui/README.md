@@ -25,9 +25,8 @@ package, components import each other by the same `@vantyr/ui/...` path (what th
 
 ## Styling
 
-The package ships no CSS. Each app owns its theme tokens in `src/styles/ui.css` (the dashboard
-maps `--color-card` to `--ui-card` because legacy CSS owns `--card`; the agent does the same so the
-two stay interchangeable) and must:
+The package ships no CSS. Each app owns its theme tokens in `src/styles/ui.css` (the standard
+shadcn names, mapped with `@theme inline`) and must:
 
 - have an `@source` line pointing Tailwind at `packages/ui/src` (Tailwind v4 does not scan
   `node_modules`, where the workspace link lives);

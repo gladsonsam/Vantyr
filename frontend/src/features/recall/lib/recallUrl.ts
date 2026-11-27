@@ -13,14 +13,11 @@ import { parseSavedSearch, type SavedSearch } from "./recallRetrieval";
  * single URL shape serves both tabs.
  */
 
-/**
- * Agent-tools URL opening the Recall tab on `iso`. `base` is where the tools live (the device's
- * Agent tab); without it the legacy `/agents/<id>` route, which redirects there.
- */
-export function agentRecallHref(agentId: string, iso?: string | null, base?: string): string {
+/** Agent-tools URL opening the Recall tab on `iso`. `base` is where the tools live (the device's Agent tab). */
+export function agentRecallHref(iso: string | null | undefined, base: string): string {
   const qs = new URLSearchParams({ tab: "recall" });
   if (iso) qs.set("at", iso);
-  return `${base ?? `/agents/${agentId}`}?${qs.toString()}`;
+  return `${base}?${qs.toString()}`;
 }
 
 /** Standalone Recall page URL, pre-selecting an agent and optionally a moment. */

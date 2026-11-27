@@ -384,24 +384,21 @@ export function AppShell({
   );
   commandPages.push({ label: "Account settings", icon: UserCog, onSelect: onShowPreferences });
   // Inside a device the palette also lists that device's tools, using the tool switcher's names.
-  const openAgentId = matchPath("/agents/:agentId", pathname)?.params.agentId;
   const openDeviceKey = matchPath("/devices/:deviceKey/agent", pathname)?.params.deviceKey;
-  const openAgent = openAgentId ? agents.find((agent) => agent.id === openAgentId) : undefined;
-  // The tools live under the device's Agent tab; the legacy /agents/:id route redirects there.
-  const toolsPath = openDeviceKey ? `/devices/${openDeviceKey}/agent` : `/agents/${openAgentId}`;
-  const commandTools =
-    openAgentId || openDeviceKey
-      ? {
-          heading: `Tools · ${openAgent?.name?.trim() || (openDeviceKey ? title : "") || "this device"}`,
-          items: searchAgentTabs("").map((tab) => ({
-            id: tab,
-            ...AGENT_TAB_META[tab],
-            // scroll=activity brings the tool bar to the top, as the Agents list's Activity button does.
-            onSelect: () =>
-              navigate(`${toolsPath}?tab=${tab}${tab === "live" ? "" : "&scroll=activity"}`),
-          })),
-        }
-      : undefined;
+  // The tools live under the device's Agent tab.
+  const toolsPath = `/devices/${openDeviceKey}/agent`;
+  const commandTools = openDeviceKey
+    ? {
+        heading: `Tools · ${title || "this device"}`,
+        items: searchAgentTabs("").map((tab) => ({
+          id: tab,
+          ...AGENT_TAB_META[tab],
+          // scroll=activity brings the tool bar to the top, as the Agents list's Activity button does.
+          onSelect: () =>
+            navigate(`${toolsPath}?tab=${tab}${tab === "live" ? "" : "&scroll=activity"}`),
+        })),
+      }
+    : undefined;
   const [actionsSlot, setActionsSlot] = useState<HTMLDivElement | null>(null);
 
   const userLabel = currentUser

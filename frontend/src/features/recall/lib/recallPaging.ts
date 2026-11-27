@@ -2,7 +2,7 @@ import type { ScreenFrame, ScreenFramesResponse } from "@/api/types";
 
 export interface FrameLoadProgress {
   frames: ScreenFrame[];
-  complete: boolean | null;
+  complete: boolean;
 }
 
 /** Load metadata incrementally; cancellation prevents another page and stale UI updates. */
@@ -26,7 +26,7 @@ export async function loadFramePages(
     const frames = [...byId.values()].sort(
       (a, b) => Date.parse(a.captured_at) - Date.parse(b.captured_at) || a.id - b.id,
     );
-    onProgress({ frames, complete: next ? false : (page.complete ?? null) });
+    onProgress({ frames, complete: next ? false : page.complete });
     if (!next) return;
     cursors.add(next);
     cursor = next;

@@ -7,9 +7,6 @@ import { usePageHeader, type PageHeader } from "@/app/shell/usePageHeader";
 const OverviewPage = lazy(() =>
   import("@/features/fleet/OverviewPage").then((m) => ({ default: m.OverviewPage })),
 );
-const AgentRedirect = lazy(() =>
-  import("@/features/agent-detail/AgentRedirect").then((m) => ({ default: m.AgentRedirect })),
-);
 const AccountSettingsPage = lazy(() =>
   import("@/features/settings/AccountSettingsPage").then((m) => ({
     default: m.AccountSettingsPage,
@@ -141,8 +138,6 @@ export function AppRoutes() {
     <Routes>
       <Route element={<DashboardLayout />}>
         <Route index element={<OverviewPage />} />
-        {/* Legacy: the agent page lives in the device page now. */}
-        <Route path="/agents/:agentId/*" element={<AgentRedirect />} />
         <Route
           path="/account"
           element={

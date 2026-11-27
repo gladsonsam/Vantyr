@@ -19,6 +19,7 @@ import { ListPagination } from "@/components/common/ListPagination";
 import { RefreshButton } from "@/components/common/RefreshButton";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 import { fmtDateTime } from "@/lib/utils";
+import { useAgentHref } from "@/features/devices/hooks/useAgentHref";
 import { useGlobalEvents } from "./hooks/useGlobalEvents";
 import { FEED_LIMIT, type EventFilter, type UnifiedEvent } from "./lib/globalEvents";
 
@@ -168,6 +169,7 @@ function EventList({
   onPage: (page: number) => void;
   onScreenshot: (eventId: number) => void;
 }) {
+  const agentHref = useAgentHref();
   if (loading) return <Skeleton className="h-64 w-full rounded-xl" />;
   if (displayed.length === 0) {
     if (hidden) return null;
@@ -188,7 +190,14 @@ function EventList({
     <div className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
       <ul aria-label="Events, newest first">
         {displayed.map((r) => (
-          <EventRow key={r.id} event={r} onScreenshot={onScreenshot} />
+          <EventRow
+            key={r.id}
+            event={r}
+            activityHref={agentHref(r.agent_id, {
+              search: `?tab=activity&at=${encodeURIComponent(r.time)}`,
+            })}
+            onScreenshot={onScreenshot}
+          />
         ))}
       </ul>
       <ListPagination page={page} pages={pages} onPageChange={onPage} />
@@ -198,9 +207,12 @@ function EventList({
 
 function EventRow({
   event: r,
+  activityHref,
   onScreenshot,
 }: {
   event: UnifiedEvent;
+  /** The device's Agent tab at this event, once the device is known. */
+  activityHref: string | null;
   onScreenshot: (eventId: number) => void;
 }) {
   const { label, Icon, className } = TYPE_META[r.type];
@@ -247,20 +259,22 @@ function EventRow({
             No screenshot
           </span>
         ) : null}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="pointer-coarse:h-9"
-          nativeButton={false}
-          render={
-            <Link
-              aria-label={`Open ${r.agent_name || "agent"} activity at ${when}`}
-              to={`/agents/${r.agent_id}?tab=activity&at=${encodeURIComponent(r.time)}`}
-            />
-          }
-        >
-          Activity <ArrowRight />
-        </Button>
+        {activityHref && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="pointer-coarse:h-9"
+            nativeButton={false}
+            render={
+              <Link
+                aria-label={`Open ${r.agent_name || "agent"} activity at ${when}`}
+                to={activityHref}
+              />
+            }
+          >
+            Activity <ArrowRight />
+          </Button>
+        )}
       </div>
     </li>
   );

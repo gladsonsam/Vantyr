@@ -203,10 +203,10 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
     void topWindowsQuery.refetch();
   };
 
-  const toolsPath = useAgentToolsPath(agentId);
+  const toolsPath = useAgentToolsPath();
   const openInActivity = useCallback(
     (q: string) => {
-      const qs = applyActivityStateToSearchParams(new URLSearchParams(), { v: 1, q });
+      const qs = applyActivityStateToSearchParams(new URLSearchParams(), { q });
       navigate(`${toolsPath}?${qs.toString()}`);
     },
     [toolsPath, navigate],
@@ -214,8 +214,8 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
 
   // "What was actually on screen then?" — the question this table could never answer.
   const openInRecall = useCallback(
-    (iso: string) => navigate(agentRecallHref(agentId, iso, toolsPath)),
-    [agentId, toolsPath, navigate],
+    (iso: string) => navigate(agentRecallHref(iso, toolsPath)),
+    [toolsPath, navigate],
   );
 
   const columns = useMemo(

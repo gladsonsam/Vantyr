@@ -120,7 +120,7 @@ export function RecallFilmstrip({
             style={{
               flex: "0 0 auto",
               padding: 0,
-              border: `1px solid ${active ? "var(--success)" : "var(--ui-border)"}`,
+              border: `1px solid ${active ? "var(--success)" : "var(--border)"}`,
               opacity: active ? 1 : 0.7,
             }}
           >

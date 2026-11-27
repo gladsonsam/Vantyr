@@ -8,10 +8,11 @@ import { useAgents } from "@/app/providers/useAgents";
 import { useNotifications } from "@/app/providers/useNotifications";
 import { useSession } from "@/app/providers/useSession";
 import { useDevice } from "@/features/devices/deviceContext";
+import { useDeviceRows } from "@/features/devices/hooks/useDeviceRows";
+import { deviceHrefForAgent } from "@/features/devices/lib/agentHref";
 
 /**
- * `/devices/:deviceKey/agent?tab=…&at=…` — the agent tools inside the device page. The device
- * header stands in for the old agent header; the tool is still picked with `?tab=`.
+ * `/devices/:deviceKey/agent?tab=…&at=…` — the agent tools inside the device page. The tool is picked with `?tab=`.
  */
 export function AgentToolsRoute() {
   const device = useDevice();
@@ -20,23 +21,12 @@ export function AgentToolsRoute() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useSession();
+  const { rows } = useDeviceRows();
   const { agents, agentInfo, liveStatus, initialized, setSelectedAgentId, send } = useAgents();
   const { info, warning, error } = useNotifications();
 
   const activeTab = agentTabFromParam(searchParams.get("tab"));
   const isAdmin = user?.role === "admin";
-
-  useEffect(() => {
-    if (searchParams.get("tab") !== "screen") return;
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("tab", "live");
-        return next;
-      },
-      { replace: true },
-    );
-  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     setSelectedAgentId(agentId);
@@ -73,7 +63,10 @@ export function AgentToolsRoute() {
           });
         }}
         onBackToOverview={() => navigate("/")}
-        onSelectAgent={(nextAgentId) => navigate(`/agents/${nextAgentId}?tab=${activeTab}`)}
+        onSelectAgent={(nextAgentId) => {
+          const href = deviceHrefForAgent(nextAgentId, rows, { search: `?tab=${activeTab}` });
+          if (href) navigate(href);
+        }}
         // ISO timestamp for timeline highlight (from ?at=)
         highlightTimestamp={searchParams.get("at") ?? null}
         isAdmin={isAdmin}

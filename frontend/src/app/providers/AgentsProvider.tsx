@@ -75,8 +75,6 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       removeAgent(id);
       if (
-        location.pathname === `/agents/${id}` ||
-        location.pathname.startsWith(`/agents/${id}/`) ||
         location.pathname === `/devices/agent:${id}` ||
         location.pathname.startsWith(`/devices/agent:${id}/`)
       ) {

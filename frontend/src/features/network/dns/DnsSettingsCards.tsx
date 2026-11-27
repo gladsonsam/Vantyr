@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Database, FileText, Filter, List, ShieldCheck, type LucideIcon } from "lucide-react";
 import { SettingsSection } from "@/features/network/components/SettingsSection";
 import RubberSegment from "@/components/react-bits/RubberSegment";
@@ -361,35 +361,6 @@ export function LoggingCard({
           {logging.keepClientAddress ? "Yes" : "No"}
         </span>
       </SettingRow>
-    </Panel>
-  );
-}
-
-export function ListCard({
-  title,
-  rows,
-  note,
-}: {
-  title: string;
-  rows: { key: string; left: string; right: ReactNode }[];
-  note?: ReactNode;
-}) {
-  if (rows.length === 0) {
-    return (
-      <Panel title={title}>
-        {note ? <p className="px-5 py-3 text-[0.8125rem] text-muted-foreground">{note}</p> : null}
-        <p className="px-5 py-4 text-sm text-muted-foreground">Nothing listed.</p>
-      </Panel>
-    );
-  }
-  return (
-    <Panel title={title}>
-      {note ? <p className="px-5 py-3 text-[0.8125rem] text-muted-foreground">{note}</p> : null}
-      {rows.map((row) => (
-        <SettingRow key={row.key} label={row.left}>
-          <span className="text-right text-[0.8125rem] text-muted-foreground">{row.right}</span>
-        </SettingRow>
-      ))}
     </Panel>
   );
 }

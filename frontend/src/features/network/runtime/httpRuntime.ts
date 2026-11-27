@@ -111,7 +111,7 @@ function dedupe(events: NetworkEvent[]): NetworkEvent[] {
 }
 
 function toRequest(q: EventsQuery): DnsEventsRequest {
-  const decision = q.decision && q.decision !== "all" ? q.decision : q.effect;
+  const decision = q.decision && q.decision !== "all" ? q.decision : undefined;
   const cursor = q.cursor ? decodeCursor(q.cursor) : null;
   const search = q.search?.trim();
   const request: DnsEventsRequest = {
@@ -129,7 +129,6 @@ function toRequest(q: EventsQuery): DnsEventsRequest {
   } else {
     if (q.from) request.from = q.from;
     if (q.to) request.to = q.to;
-    if (q.offset) request.offset = q.offset;
   }
   return request;
 }
@@ -138,8 +137,6 @@ const RANGE_WINDOW = { "24h": "24h", "7d": "7d", "30d": "30d" } as const;
 
 export function mapDnsStats(res: DnsStatsResponse, requested: DnsStatsQuery["range"]): DnsStats {
   return {
-    total: res.total_queries,
-    blocked: res.blocked,
     observations: res.total_queries,
     blockedObservations: res.blocked,
     window: {
@@ -215,7 +212,7 @@ export function createHttpRuntime(householdId: string): NetworkRuntimeSource {
   }
 
   async function dnsStats(q: DnsStatsQuery): Promise<Availability<DnsStats>> {
-    const requested = q.requestedRange ?? q.range;
+    const requested = q.range;
     const request: DnsStatsRequest = { window: RANGE_WINDOW[requested] };
     if (q.deviceId) request.deviceId = q.deviceId;
     try {

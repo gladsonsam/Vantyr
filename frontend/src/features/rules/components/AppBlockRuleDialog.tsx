@@ -38,7 +38,7 @@ interface AppBlockRuleDialogProps {
   target: AppBlockRuleDialogTarget;
   groups: AgentGroup[];
   agents: Agent[];
-  /** Seeds the scope of a legacy single-agent rule. */
+  /** Seeds the scope of a rule that carries no scope rows. */
   contextAgentId: string;
   saving: boolean;
   /** Why the last save failed; shown here because the page behind the dialog is out of sight. */

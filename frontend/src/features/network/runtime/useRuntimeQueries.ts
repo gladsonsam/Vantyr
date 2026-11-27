@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { networkKeys } from "@/api/queries/network";
 import { useNetworkRuntime } from "./NetworkRuntimeSource";
 import type {
-  DecisionQuery,
   DnsSettingsPatch,
   DnsStatsQuery,
   EventsQuery,
@@ -51,11 +50,6 @@ export function useEditPolicyMutation() {
   });
 }
 
-export function useExplainDecisionMutation() {
-  const runtime = useNetworkRuntime();
-  return useMutation({ mutationFn: (query: DecisionQuery) => runtime.explainDecision(query) });
-}
-
 export function useDnsQuery() {
   const runtime = useNetworkRuntime();
   return useQuery({ queryKey: runtimeKey(runtime.scope, "dns"), queryFn: () => runtime.dns() });
@@ -94,11 +88,11 @@ export function useUpdateDnsMutation() {
   const runtime = useNetworkRuntime();
   const queryClient = useQueryClient();
   return useMutation({
-    // Pass `expectedSettingsVersion` for a compare-and-set write; a stale one rejects with RuntimeConflictError.
+    // Compare-and-set write: a stale `expectedSettingsVersion` rejects with RuntimeConflictError.
     mutationFn: ({
       expectedSettingsVersion,
       ...patch
-    }: DnsSettingsPatch & { expectedSettingsVersion?: number }) =>
+    }: DnsSettingsPatch & { expectedSettingsVersion: number }) =>
       runtime.updateDns(patch, { expectedSettingsVersion }),
     // Also on error: after a conflict the screen needs the newer settings.
     onSettled: () => queryClient.invalidateQueries({ queryKey: runtimeKey(runtime.scope, "dns") }),

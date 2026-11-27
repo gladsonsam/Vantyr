@@ -207,10 +207,17 @@ function statsFor(all: DnsEventRow[], q: DnsStatsRequest): DnsStatsResponse {
     { deviceId: q.deviceId, range: window === "1h" ? "24h" : window },
     KEEP_DAYS,
   );
-  const total = noDnsData ? 0 : window === "1h" ? Math.round(base.total / 24) : base.total;
+  const total = noDnsData
+    ? 0
+    : window === "1h"
+      ? Math.round(base.observations / 24)
+      : base.observations;
   const blocked = noDnsData
     ? 0
-    : Math.min(total, window === "1h" ? Math.round(base.blocked / 24) : base.blocked);
+    : Math.min(
+        total,
+        window === "1h" ? Math.round(base.blockedObservations / 24) : base.blockedObservations,
+      );
 
   const bucketSecs = BUCKET_SECS[window];
   // The final bucket includes the requested upper boundary.

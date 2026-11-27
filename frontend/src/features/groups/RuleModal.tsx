@@ -41,8 +41,6 @@ interface RuleModalProps {
   rule: AlertRule | null;
   /** Dialog title; defaults to "Edit alert rule" / "New alert rule". */
   heading?: string;
-  /** Kept for compatibility; layout is responsive and ignores it. */
-  isNarrow?: boolean;
   agentOptions: { label: string; value: string }[];
   groupOptions: { label: string; value: string }[];
   onSave: (data: GroupRuleValues) => Promise<void>;

@@ -86,8 +86,6 @@ function Section({
 interface SpecsTabProps {
   agentId: string;
   cachedInfo?: AgentInfo | null;
-  /** Kept for caller compatibility; uptime now lives in the page rail. */
-  agentOnline?: boolean;
 }
 
 export function SpecsTab({ agentId, cachedInfo }: SpecsTabProps) {

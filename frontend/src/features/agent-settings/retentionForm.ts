@@ -47,12 +47,6 @@ export function fieldToDays(s: string, mode: RetentionFieldMode = "global"): num
   throw new Error("Use 0 for unlimited, 1–36500 for a fixed window, or leave blank to inherit.");
 }
 
-/** Short label for read-only summaries. */
-export function fmtRetentionBrief(d: number | null | undefined): string {
-  if (d == null || d === 0) return "Unlimited";
-  return `${d} days`;
-}
-
 function fmtDays(d: number): string {
   return d === 1 ? "1 day" : `${d} days`;
 }

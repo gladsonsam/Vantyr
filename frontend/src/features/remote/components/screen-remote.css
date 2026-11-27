@@ -1,16 +1,3 @@
-/* Scoped legacy-token aliases (only consumed by the screen-remote rules below). */
-:where([class*="screen-remote"], [class*="remote-"]) {
-  --bg: var(--background);
-  --card: var(--ui-card);
-  --card-2: var(--muted);
-  --line: var(--ui-border);
-  --line-2: color-mix(in srgb, var(--foreground) 10%, transparent);
-  --tx: var(--foreground);
-  --tx-3: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
-  --gr: var(--primary);
-  --gr-soft: color-mix(in srgb, var(--primary) 12%, transparent);
-  --red: var(--destructive);
-}
 .screen-remote-panel {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -18,7 +5,7 @@
 .screen-remote-tools {
   padding: 8px 10px;
   background: var(--card);
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 .remote-primary-actions {
@@ -49,13 +36,13 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--tx-3);
+  background: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
 }
 .remote-session-mode.is-controlling {
-  color: var(--gr);
+  color: var(--primary);
 }
 .remote-session-mode.is-controlling .remote-session-dot {
-  background: var(--gr);
+  background: var(--primary);
 }
 .remote-input-hint {
   color: var(--muted-foreground);
@@ -71,10 +58,10 @@
   max-width: 100%;
   box-sizing: border-box;
   padding: 8px 10px;
-  border: 1px solid var(--line-2);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   border-radius: 10px;
-  color: var(--tx);
-  background: var(--card-2);
+  color: var(--foreground);
+  background: var(--muted);
   font: inherit;
 }
 .remote-primary-actions button {
@@ -116,7 +103,7 @@
   color: var(--muted-foreground);
 }
 .remote-quiet-tools button.is-active {
-  background: var(--card-2);
+  background: var(--muted);
 }
 /* Small screens keep the labelled grid: the groups dissolve into its cells. */
 @media (max-width: 1279px), (max-height: 480px) and (orientation: landscape) {
@@ -125,9 +112,9 @@
     display: contents;
   }
   .remote-quiet-tools button {
-    background: var(--card-2);
-    border-color: var(--line-2);
-    color: var(--tx);
+    background: var(--muted);
+    border-color: color-mix(in srgb, var(--foreground) 10%, transparent);
+    color: var(--foreground);
   }
   .remote-control-group button:not(:only-child) {
     border-radius: 10px;
@@ -148,23 +135,23 @@
   }
 }
 .remote-primary-actions .remote-control-button {
-  background: var(--gr);
-  border-color: var(--gr);
+  background: var(--primary);
+  border-color: var(--primary);
   color: var(--primary-foreground);
 }
 .remote-primary-actions .remote-control-button:disabled {
-  background: var(--card-2);
-  border-color: var(--line-2);
-  color: var(--tx-3);
+  background: var(--muted);
+  border-color: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
 }
 .remote-primary-actions .is-controlling {
-  background: var(--gr-soft, #20dd8f20);
-  border-color: var(--gr);
-  color: var(--gr);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border-color: var(--primary);
+  color: var(--primary);
 }
 .remote-primary-actions .is-active {
-  border-color: var(--gr);
-  color: var(--gr);
+  border-color: var(--primary);
+  color: var(--primary);
 }
 .screen-remote-tools button,
 .remote-tools-sheet button {
@@ -178,7 +165,7 @@
 }
 .screen-remote-tools :is(button, textarea):focus-visible,
 .remote-tools-sheet :is(button, select, textarea, input):focus-visible {
-  outline: 2px solid var(--gr);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 .remote-connection-note {
@@ -189,7 +176,7 @@
   color: var(--muted-foreground);
 }
 .remote-connection-note[role="alert"] {
-  color: var(--red);
+  color: var(--destructive);
 }
 .remote-keyboard-tray {
   padding-top: 10px;
@@ -214,7 +201,7 @@
   flex-basis: 100%;
   font-size: 11px;
   line-height: 1.5;
-  color: var(--tx-3);
+  color: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
 }
 .screen-remote-tools textarea,
 .remote-tools-sheet textarea {
@@ -279,8 +266,8 @@
   padding: 0;
   box-sizing: border-box;
   background: var(--card);
-  color: var(--tx);
-  border: 1px solid var(--line-2);
+  color: var(--foreground);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   border-radius: 14px;
   box-shadow: 0 12px 32px #0006;
   display: flex;
@@ -293,14 +280,14 @@
   align-items: center;
   gap: 12px;
   padding: 14px 16px 12px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 .remote-tools-eyebrow {
   font-size: 9px;
   letter-spacing: 0.14em;
   font-weight: 700;
-  color: var(--gr);
+  color: var(--primary);
 }
 .remote-tools-sheet h2 {
   font-size: 18px;
@@ -322,7 +309,7 @@
   min-height: 0;
 }
 .remote-tool-group {
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--border);
 }
 .remote-tool-group:last-child {
   border-bottom: 0;
@@ -343,7 +330,7 @@
   text-align: left;
 }
 .remote-tool-group-toggle[aria-expanded="true"] {
-  color: var(--gr);
+  color: var(--primary);
 }
 .remote-tool-group-toggle[aria-expanded="true"] svg {
   transform: rotate(180deg);
@@ -365,13 +352,13 @@
   gap: 6px;
   min-width: 0;
   font-size: 11px;
-  color: var(--tx-3);
+  color: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
 }
 .remote-tool-fields select {
   width: 100%;
   min-width: 0;
   font-size: 13px;
-  color: var(--tx);
+  color: var(--foreground);
 }
 .remote-tool-buttons {
   display: flex;
@@ -396,7 +383,7 @@
   margin: 0;
   font-size: 11px;
   line-height: 1.6;
-  color: var(--tx-3);
+  color: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
 }
 .remote-clipboard-panel {
   min-width: 0;
@@ -419,14 +406,14 @@
 .remote-clipboard-panel p {
   font-size: 11px;
   line-height: 1.5;
-  color: var(--tx-3);
+  color: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
 }
 .remote-clipboard-panel button {
   flex: 1 1 auto;
   font-size: 12px;
 }
 .remote-clipboard-panel [role="alert"] {
-  color: var(--red);
+  color: var(--destructive);
 }
 @media (min-width: 600px) {
   .remote-tools-backdrop {
@@ -522,7 +509,7 @@
     width: 124px;
     padding: 6px;
     border-top: 0;
-    border-left: 1px solid var(--line);
+    border-left: 1px solid var(--border);
     overflow-y: auto;
     overscroll-behavior: contain;
     max-height: calc(100dvh - 72px);
@@ -548,7 +535,7 @@
     max-height: 60dvh;
     padding: 10px;
     background: var(--card);
-    border: 1px solid var(--line-2);
+    border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
     border-radius: 12px;
     box-shadow: 0 12px 40px #0009;
   }
@@ -652,7 +639,7 @@
   transform: rotate(180deg);
 }
 .remote-fs-handle:focus-visible {
-  outline: 2px solid var(--gr);
+  outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
 @media (pointer: coarse) {
@@ -671,7 +658,7 @@
   max-height: calc(var(--remote-viewport-height, 100dvh) - 56px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  border: 1px solid var(--line-2);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   border-radius: 14px;
   box-shadow: 0 16px 48px #000a;
   box-sizing: border-box;
@@ -708,7 +695,7 @@
   transform: translateX(-50%);
   max-width: min(560px, calc(100% - 140px));
   padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--destructive) 55%, transparent);
   border-radius: 10px;
   background: #0b0f14ee;
   pointer-events: none;

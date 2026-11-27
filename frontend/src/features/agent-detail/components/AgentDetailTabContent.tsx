@@ -81,7 +81,7 @@ export function AgentDetailTabContent(props: AgentDetailTabContentProps) {
         </RecallView>
       );
     case "specs":
-      return <SpecsTab agentId={agent.id} cachedInfo={resolvedInfo} agentOnline={agent.online} />;
+      return <SpecsTab agentId={agent.id} cachedInfo={resolvedInfo} />;
     case "software":
       return (
         <SoftwareTab

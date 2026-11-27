@@ -85,12 +85,12 @@ export function OverviewPage() {
 
   // Opening a device shows its Overview; the quick actions open a tool in its Agent tab.
   const openAgent = (agentId: string, tab?: TabKey, scroll?: boolean) => {
-    if (!tab) {
-      navigate(deviceHrefForAgent(agentId, deviceRows));
-      return;
-    }
-    const q = scroll ? "&scroll=activity" : "";
-    navigate(deviceHrefForAgent(agentId, deviceRows, { search: `?tab=${tab}${q}` }));
+    const href = tab
+      ? deviceHrefForAgent(agentId, deviceRows, {
+          search: `?tab=${tab}${scroll ? "&scroll=activity" : ""}`,
+        })
+      : deviceHrefForAgent(agentId, deviceRows);
+    if (href) navigate(href);
   };
 
   return (

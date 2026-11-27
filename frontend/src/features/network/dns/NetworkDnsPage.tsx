@@ -1,4 +1,3 @@
-import { resolveSupported } from "./dnsSupport";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { LoadFailedCard } from "@/components/common/LoadFailedCard";
 import { useNetworkHousehold } from "@/features/network/access/networkScope";
@@ -22,7 +21,7 @@ import { DnsSettingsEditContext, useDnsSettingsEditState } from "./dnsSettingsEd
 function ReadyDnsSections({ dns }: { dns: DnsView }) {
   const edit = useDnsSettingsEditState(dns.settingsVersion);
   const demo = dns.source === "demo";
-  const supported = resolveSupported(dns);
+  const supported = dns.supportedSettings;
   return (
     <DnsSettingsEditContext.Provider value={edit}>
       <div className="space-y-3">

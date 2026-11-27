@@ -1,5 +1,4 @@
 import React from "react";
-import { ServerOff, Loader2 } from "lucide-react";
 import {
   Empty,
   EmptyContent,
@@ -33,26 +32,5 @@ export function EmptyState({
       </EmptyHeader>
       {action ? <EmptyContent>{action}</EmptyContent> : null}
     </Empty>
-  );
-}
-
-export function NoAgentsState({ primaryAction }: { primaryAction?: React.ReactNode }) {
-  return (
-    <EmptyState
-      title="No agents connected"
-      description="Use Enroll agent to pair your first device."
-      action={primaryAction}
-      icon={<ServerOff className="size-5 text-muted-foreground" />}
-    />
-  );
-}
-
-export function LoadingAgentsState() {
-  return (
-    <EmptyState
-      title="Loading agents…"
-      description="Waiting for the server to send the initial agent list."
-      icon={<Loader2 className="size-5 animate-spin text-muted-foreground" />}
-    />
   );
 }

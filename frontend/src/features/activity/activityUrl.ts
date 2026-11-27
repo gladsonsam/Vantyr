@@ -1,5 +1,4 @@
-export type ActivityUrlStateV1 = {
-  v: 1;
+export type ActivityUrlState = {
   q?: string;
   alerts?: boolean;
   app?: string | null;
@@ -25,18 +24,18 @@ function base64UrlToUtf8(b64url: string): string {
   return new TextDecoder().decode(bytes);
 }
 
-export function encodeActivityState(state: ActivityUrlStateV1): string {
+export function encodeActivityState(state: ActivityUrlState): string {
   return utf8ToBase64Url(JSON.stringify(state));
 }
 
-function decodeActivityState(raw: string | null): ActivityUrlStateV1 | null {
+function decodeActivityState(raw: string | null): ActivityUrlState | null {
   if (!raw) return null;
   const s = raw.trim();
   if (!s) return null;
   try {
     const json = base64UrlToUtf8(s);
-    const v = JSON.parse(json) as ActivityUrlStateV1;
-    if (!v || v.v !== 1) return null;
+    const v = JSON.parse(json) as ActivityUrlState;
+    if (!v || typeof v !== "object") return null;
     return v;
   } catch {
     return null;
@@ -45,7 +44,7 @@ function decodeActivityState(raw: string | null): ActivityUrlStateV1 | null {
 
 export function applyActivityStateToSearchParams(
   prev: URLSearchParams,
-  state: ActivityUrlStateV1 | null,
+  state: ActivityUrlState | null,
 ): URLSearchParams {
   const next = new URLSearchParams(prev);
 
@@ -64,6 +63,6 @@ export function applyActivityStateToSearchParams(
 
 export function readActivityStateFromSearchParams(
   params: URLSearchParams,
-): ActivityUrlStateV1 | null {
+): ActivityUrlState | null {
   return decodeActivityState(params.get("activity"));
 }

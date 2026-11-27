@@ -305,16 +305,9 @@ function useRecallSearchModel({
           url_host: snapshot.opts.url_host,
           context: snapshot.opts.context,
         });
-        if (
-          res.filters &&
-          JSON.stringify(parseRecallFilters(res.filters)) !== JSON.stringify(expected)
-        )
+        if (JSON.stringify(parseRecallFilters(res.filters)) !== JSON.stringify(expected))
           throw new Error(
             "The server returned different context filters. Clear filters and search again.",
-          );
-        if (contextFiltersActive(expected) && !res.filters)
-          throw new Error(
-            "This server does not support the selected context filters. Clear filters to use OCR search.",
           );
         const continuation = res.next_cursor ?? null;
         if (res.has_more && !continuation)
@@ -334,7 +327,7 @@ function useRecallSearchModel({
             : previous,
         );
         setCursor(continuation);
-        setComplete(continuation ? false : (res.complete ?? null));
+        setComplete(continuation ? false : res.complete);
       })
       .catch((e) => {
         if (valid()) setError(errorText(e));
@@ -582,7 +575,7 @@ function SearchHit({
           aspectRatio: "16 / 9",
           objectFit: "cover",
           borderRadius: 6,
-          border: "1px solid var(--ui-border)",
+          border: "1px solid var(--border)",
         }}
       />
       <span className="flex min-w-0 flex-col gap-[3px]">

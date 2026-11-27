@@ -1,11 +1,11 @@
-import { useCallback, useMemo, useState, type SetStateAction } from "react";
-import { useAgentToolsPath } from "@/features/agent-detail/agentToolsPath";
+import { useCallback, useContext, useMemo, useState, type SetStateAction } from "react";
+import { AgentToolsPathContext } from "@/features/agent-detail/agentToolsPath";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { resolveDateRangeToDayBounds, type ActivityDateValue } from "./activityDateRange";
 import {
   applyActivityStateToSearchParams,
   readActivityStateFromSearchParams,
-  type ActivityUrlStateV1,
+  type ActivityUrlState,
 } from "./activityUrl";
 
 export type ActivityFilters = ReturnType<typeof useActivityFilters>;
@@ -33,13 +33,12 @@ function valuesFromUrl(params: URLSearchParams): FilterValues {
         : null,
   };
 }
-function urlState(values: FilterValues): ActivityUrlStateV1 | null {
+function urlState(values: FilterValues): ActivityUrlState | null {
   const bounds = resolveDateRangeToDayBounds(values.jumpRangeValue);
   const app = values.appFilterExe?.trim() || null;
   if (!values.searchQuery.trim() && !values.alertsOnly && !app && !bounds) return null;
   // Preserve the draft's whitespace while typing a multiword search.
   return {
-    v: 1,
     q: values.searchQuery || undefined,
     alerts: values.alertsOnly || undefined,
     app,
@@ -62,7 +61,7 @@ function updateValue<K extends keyof FilterValues>(
 /** The URL owns device filters, so navigation never needs an effect to copy them into state. */
 export function useActivityFilters(agentId: string | undefined) {
   const navigate = useNavigate();
-  const toolsPath = useAgentToolsPath(agentId ?? "");
+  const toolsPath = useContext(AgentToolsPathContext);
   const [searchParams, setSearchParams] = useSearchParams();
   const [local, setLocal] = useState(EMPTY_FILTERS);
   const fromUrl = useMemo(() => valuesFromUrl(searchParams), [searchParams]);
@@ -111,8 +110,8 @@ export function useActivityFilters(agentId: string | undefined) {
     else setLocal(EMPTY_FILTERS);
   }, [agentId, setSearchParams]);
   const deepLinkToActivity = useCallback(
-    (patch: ActivityUrlStateV1) => {
-      if (!agentId) return;
+    (patch: ActivityUrlState) => {
+      if (!agentId || !toolsPath) return;
       navigate(
         `${toolsPath}?${applyActivityStateToSearchParams(new URLSearchParams(), patch).toString()}`,
       );

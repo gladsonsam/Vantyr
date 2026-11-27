@@ -129,22 +129,6 @@ export interface PolicyView {
   proposal: PolicySnapshot | null;
 }
 
-export interface DecisionQuery {
-  deviceId: string;
-  /** `null` is a first-class answer: nobody verified is using the device. */
-  personId: string | null;
-  domain: string;
-}
-
-export interface Decision {
-  effect: Effect;
-  layer: "baseline" | "exception" | "person" | "device" | "household_default";
-  rule: string | null;
-  reason: string;
-  revision: number;
-  identity: "verified_person" | "unknown";
-}
-
 export type PolicyEdit =
   | {
       kind: "add_rule";
@@ -193,8 +177,7 @@ export interface DnsSettingsStatus {
 
 /**
  * Which DNS runtime settings the server actually supports. The first real slice may support only the
- * cache; a control whose flag is `false` shows "Not available yet" instead of a working control. When
- * omitted, every setting is treated as supported (the demo).
+ * cache; a control whose flag is `false` shows "Not available yet" instead of a working control.
  */
 export interface DnsSupportedSettings {
   cache: boolean;
@@ -206,9 +189,9 @@ export interface DnsSupportedSettings {
 }
 
 export interface DnsView {
-  supportedSettings?: DnsSupportedSettings;
+  supportedSettings: DnsSupportedSettings;
   /** Where these settings came from. Only the demo supplies them today; the real source is unavailable. */
-  source?: "demo" | "server";
+  source: "demo" | "server";
   /** Counter for DNS runtime settings only. It is not the policy revision. Used for compare-and-set. */
   settingsVersion: number;
   settingsStatus: DnsSettingsStatus;
@@ -334,7 +317,7 @@ export type EventSource = "dns" | "proxy" | "agent";
  */
 export type IdentityEvidence = "verified" | "asserted" | "weak" | "unknown" | "observed";
 
-/** DNS-only detail of one observation. Absent on proxy/agent events and in the demo's older fixtures. */
+/** DNS-only detail of one observation. Absent on proxy/agent events. */
 export interface DnsEventDetail {
   /** When the server stored the observation (the event's `at` is when the worker observed it). */
   receivedAt: string;
@@ -390,16 +373,13 @@ export interface EventsQuery {
   search?: string;
   source?: EventSource | "all";
   decision?: Effect | "all";
-  /** Older spelling of `decision` for a single effect. */
-  effect?: Effect;
   /** ISO timestamps, inclusive. */
   from?: string;
   to?: string;
   /** "raw" is one row per observation; "by_host" collapses repeats of a host per device and decision. */
   grouping?: EventsGrouping;
+  /** Opaque `nextCursor` of the previous page; omit for the first page. */
   cursor?: string;
-  /** Skips this many rows. Ignored when `cursor` is set. */
-  offset?: number;
   limit: number;
 }
 
@@ -418,11 +398,8 @@ export interface EventsRetention {
 export interface EventsCapabilities {
   sources: EventSource[];
   grouping: EventsGrouping[];
-  /**
-   * Whether the "Unrecognised devices" filter works. The real server cannot filter on "no device", so
-   * it reports `false`; when omitted it is treated as supported.
-   */
-  unrecognisedFilter?: boolean;
+  /** Whether the "Unrecognised devices" filter works. The real server cannot filter on "no device". */
+  unrecognisedFilter: boolean;
 }
 
 export interface EventsPage {
@@ -452,8 +429,6 @@ export interface DnsStatsQuery {
   /** Only this device's queries; omit for the whole household. */
   deviceId?: string;
   range: StatsRange;
-  /** Same meaning as `range`; wins when both are set. */
-  requestedRange?: StatsRange;
 }
 
 export type ProxyStatsQuery = DnsStatsQuery;
@@ -496,13 +471,11 @@ export interface DnsSeriesPoint {
 
 /** Counts of DNS queries answered, bucketed over time. These are domain decisions, not page visits. */
 export interface DnsStats {
-  total: number;
-  blocked: number;
-  /** Same figures as `total`/`blocked`, named for what they are: observations, not visits. */
+  /** Queries observed in the window: observations, not visits. */
   observations: number;
   blockedObservations: number;
   window: StatsWindow;
-  /** Oldest first; evenly spaced buckets across the requested range. Sums to `total` on the real source. */
+  /** Oldest first; evenly spaced buckets across the requested range. Sums to `observations` on the real source. */
   series: DnsSeriesPoint[];
   topDomains: DomainCount[];
   topBlocked: DomainCount[];
@@ -526,8 +499,6 @@ export interface DnsStats {
 
 /** Counts of proxy requests decided, bucketed over time. Hosts only: never full URLs or page contents. */
 export interface ProxyStats {
-  total: number;
-  blocked: number;
   observations: number;
   blockedObservations: number;
   window: StatsWindow;
@@ -564,9 +535,9 @@ export interface DnsSettingsPatch {
   retentionDays?: number;
 }
 
-/** Pass as `expectedSettingsVersion` so a stale write is rejected rather than overwriting someone else. */
+/** The settings version the edit was based on: a stale write is rejected rather than overwriting someone else. */
 export interface DnsUpdateOptions {
-  expectedSettingsVersion?: number;
+  expectedSettingsVersion: number;
 }
 
 export interface DnsCacheClearResult {

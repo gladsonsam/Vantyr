@@ -48,7 +48,7 @@ export function defaultAppBlockForm(): AppBlockForm {
   };
 }
 
-/** Form values for an existing rule; `contextAgentId` seeds the scope of a legacy single-agent rule. */
+/** Form values for an existing rule; `contextAgentId` seeds the scope of a rule that carries no scope rows (the agent-filtered list). */
 export function appBlockRuleToForm(r: AppBlockRule, contextAgentId: string): AppBlockForm {
   const scopes =
     r.scopes && r.scopes.length > 0

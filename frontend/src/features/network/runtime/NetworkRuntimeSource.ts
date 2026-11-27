@@ -2,8 +2,6 @@ import { createContext, useContext } from "react";
 import type {
   Availability,
   ConnectionCheck,
-  Decision,
-  DecisionQuery,
   DnsCacheClearResult,
   DnsStats,
   DnsSettingsPatch,
@@ -40,11 +38,10 @@ export interface NetworkRuntimeSource {
   policy(): Promise<Availability<PolicyView>>;
   /** Saves a proposal. Saving is never enforcement: gateways must acknowledge a revision first. */
   editPolicy(edit: PolicyEdit): Promise<Availability<PolicyView>>;
-  explainDecision(query: DecisionQuery): Promise<Availability<Decision>>;
   dns(): Promise<Availability<DnsView>>;
   dnsStats(query: DnsStatsQuery): Promise<Availability<DnsStats>>;
   /** Changes DNS settings. Like policy, a saved change is not proof a gateway is enforcing it. */
-  updateDns(patch: DnsSettingsPatch, options?: DnsUpdateOptions): Promise<Availability<DnsView>>;
+  updateDns(patch: DnsSettingsPatch, options: DnsUpdateOptions): Promise<Availability<DnsView>>;
   /** Drops cached answers. Does not change the settings version. */
   clearDnsCache(): Promise<Availability<DnsCacheClearResult>>;
   proxy(): Promise<Availability<ProxyView>>;
@@ -78,7 +75,6 @@ export const unavailableRuntime: NetworkRuntimeSource = {
   overview: unavailable,
   policy: unavailable,
   editPolicy: unavailable,
-  explainDecision: unavailable,
   dns: unavailable,
   dnsStats: unavailable,
   updateDns: unavailable,
