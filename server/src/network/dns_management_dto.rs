@@ -255,12 +255,12 @@ pub enum PatchOperation {
     SelectServices {
         ids: Vec<String>,
     },
-    /// Replace the supported runtime settings; upgrades the desired config to
-    /// schema v2. Never touches operator-local fields.
+    /// Replace the supported runtime settings in the current config.
+    /// Never touches operator-local fields.
     SetRuntimeSettings {
         runtime: RuntimeSettingsDto,
     },
-    /// Drop the runtime object and return the desired config to schema v1.
+    /// Restore the current runtime defaults, retaining the runtime object.
     ResetRuntimeSettings {},
 }
 
@@ -401,7 +401,7 @@ pub struct WorkerStatusBody {
     pub sources: Vec<SourceStatusDto>,
     #[serde(default)]
     pub refresh_ack: Vec<RefreshAckDto>,
-    /// Additive v2: empty (and omitted on the wire) for a v1-only report.
+    /// Empty (and omitted on the wire) when no clear acknowledgement is due.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub clear_ack: Vec<ClearAckDto>,
 }

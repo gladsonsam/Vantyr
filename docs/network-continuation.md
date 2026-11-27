@@ -41,17 +41,17 @@ capability rows. Operator configuration, HTTP delivery, frontend controls,
 recovery and real query behavior each need evidence before household cutover.
 Proxy authority remains unaccepted and its diagnostic work is deferred.
 
-Pending Hermes slices are isolated from the integrated branch:
+Reviewed upgrade components now included in accepted `910515ef`:
 
 | Source checkpoint | Scope | Evidence / remaining gate |
 |---|---|---|
-| `497a541d` | Desired-only migration 0086 | Independently accepted in its bounded scope; two real-PG tests pass. Depends on unaccepted DNS contract upgrade; not integrated. |
-| `cca53f6b` | Explicit pre-0085 evidence snapshot/restore scripts | Independently accepted with real-schema PostgreSQL tests, including empty snapshot, corruption and rollback cases; combined upgrade E2E remains pending. |
-| `2e927fc7` | Explicit offline worker-bundle converter | Independently accepted in bounded scope: five focused tests pass and CLI compiles. Full upgrade E2E remains pending; not integrated. |
+| `497a541d` | Desired-only migration 0086 | Two focused real-PG tests and the combined upgrade E2E pass. |
+| `cca53f6b` | Explicit pre-0085 evidence snapshot/restore scripts | Real-schema PostgreSQL tests, including empty snapshot, corruption and rollback cases, plus combined upgrade E2E pass. |
+| `2e927fc7` | Explicit offline worker-bundle converter | Five focused tests and combined upgrade E2E pass; CLI compiles. |
 
-All runtime validation remains serialized by the shared Rust lock. No new
-frontend contract is accepted by these pending slices. Keep correspondence
-batched around actionable findings and exact accepted contracts.
+All runtime validation remains serialized by the shared Rust lock. Frontend
+acceptance extends only to the [settings/cache-clear contract](network-dns-ui-contract.md).
+Keep correspondence batched around actionable findings and accepted contracts.
 
 Exact-domain A/AAAA/CNAME operator rewrites are accepted and integrated through
 `8dfc813e` (source chain `ea06e556` through `57a8c06b`). Independent review and
@@ -159,11 +159,21 @@ new real UDP/TCP durable-restart case: the persisted override remains effective
 when the external config changes, with unchanged state bytes and status.
 HTTP/UI management and broader per-client settings remain unfinished.
 
-The assembled current-contract upgrade candidate is `aa2126c2`, based on
-`705d99f2`; it includes the reviewed 0086 repair, evidence scripts and offline
-converter while preserving strict persistence cleanup and exact rewrites.
-It is not integrated or accepted: combined server/worker settings, cache-clear
-lifecycle and upgrade/restart validation are still required.
+The current-contract upgrade is accepted and integrated through `910515ef`,
+assembled on `5a420e0d`. Independent combined-tree validation passed 28 server
+DNS-management tests, 70 worker/listener/SafeSearch tests and five converter
+tests. The full upgrade regression actually ran: genuine migration checksums,
+offline evidence restoration, strict old-shape rejection, converter/private
+backup, real worker apply/report, repeat-poll idempotence, preserved original
+audit and delivery evidence, durable restart and CAS all passed. Status is a
+current row per gateway; preservation is checked before live reports replace it.
+The stale cache-clear acknowledgement regression also passed. Integrated
+family-dns and network-runtime all-target strict clippy passed afterward.
+The HTTP settings/cache-clear contract is accepted for frontend wiring;
+operator-local transports, device controls, rewrites and SafeSearch have no
+management fields yet. UI and household cutover remain unvalidated. Existing
+installations must follow the explicit stopped-writer offline upgrade procedure
+in `server/scripts/README.offline0085.md`; no runtime fallback exists.
 
 ## Hermes resumption checkpoint (2026-11-27)
 
