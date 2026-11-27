@@ -2,6 +2,17 @@
 
 ## Current priority and candidate boundaries
 
+Dependency policy: prefer actively maintained crates for DNS transports,
+cryptography, parsing, matching and other standard behavior. Keep Vantyr-owned
+code focused on policy, authorization, persistence and thin integration layers.
+Evaluate maintained library coverage before writing a replacement subsystem;
+do not translate or vendor another implementation merely to recreate behavior
+already supplied by a suitable Rust crate. Minimize long-term custom code and
+duplicate dependency stacks, rather than maximizing dependency count. Preserve
+focused behavior tests across dependency updates so an upgrade can be reviewed
+without rebuilding confidence manually. Dependency updates still require
+periodic review and validation; they do not eliminate operational maintenance.
+
 DNS replacement readiness takes priority over proxy work. Required DNS breadth
 includes filtering syntax/modifiers, rewrites, per-client controls, SafeSearch,
 and encrypted client and upstream transports. Partial slices do not close those
