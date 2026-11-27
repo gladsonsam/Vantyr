@@ -1,11 +1,14 @@
 //! Real UDP tests for the global SafeSearch opt-in slice.
 //!
-//! Both providers use the hostnames named by their official support documents:
+//! Providers use only the hostnames named by their official support documents:
 //! the checked-in `www.<supported Google domain>` catalog (including
-//! www.google.com.au and www.google.co.nz) -> forcesafesearch.google.com and
-//! www.bing.com / edgeservices.bing.com -> strict.bing.com. No provider IP is
-//! configured: the worker follows the CNAME through its configured upstream
-//! with the maintained Hickory resolver and returns usable A/AAAA glue.
+//! www.google.com.au and www.google.co.nz) -> forcesafesearch.google.com,
+//! www.bing.com / edgeservices.bing.com -> strict.bing.com, and the five exact
+//! YouTube aliases -> restrict.youtube.com (strict) or
+//! restrictmoderate.youtube.com (moderate). The document's do-not-CNAME names
+//! are never rewritten. No provider IP is configured: the worker follows the
+//! CNAME through its configured upstream with the maintained Hickory resolver
+//! and returns usable A/AAAA glue.
 //!
 //! Every upstream here is a second in-process Vantyr server with authoritative
 //! local zones for the target names. No test sends traffic to a public
@@ -25,12 +28,26 @@ const HOUSEHOLD: &str = "11111111-2222-3333-4444-555555555555";
 const DEVICE: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const GOOGLE_TARGET: &str = "forcesafesearch.google.com.";
 const BING_TARGET: &str = "strict.bing.com.";
+const YOUTUBE_STRICT_TARGET: &str = "restrict.youtube.com.";
+const YOUTUBE_MODERATE_TARGET: &str = "restrictmoderate.youtube.com.";
 
 const GOOGLE_ONLY: &str = r#"{"enabled":true,"google":true,"bing":false}"#;
 const BING_ONLY: &str = r#"{"enabled":true,"google":false,"bing":true}"#;
 const BOTH: &str = r#"{"enabled":true,"google":true,"bing":true}"#;
 const DISABLED_BUT_REQUESTED: &str = r#"{"enabled":false,"google":true,"bing":true}"#;
+const YOUTUBE_STRICT: &str = r#"{"enabled":true,"google":false,"bing":false,"youtube":"strict"}"#;
+const YOUTUBE_MODERATE: &str =
+    r#"{"enabled":true,"google":false,"bing":false,"youtube":"moderate"}"#;
+const YOUTUBE_OFF: &str = r#"{"enabled":true,"google":false,"bing":false,"youtube":"off"}"#;
 
+/// The five exact aliases named by the YouTube DNS instruction.
+const YOUTUBE_ALIASES: &[&str] = &[
+    "www.youtube.com.",
+    "m.youtube.com.",
+    "youtubei.googleapis.com.",
+    "youtube.googleapis.com.",
+    "www.youtube-nocookie.com.",
+];
 fn source() -> IpAddr {
     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2))
 }
@@ -74,6 +91,44 @@ fn upstream_config(port: u16) -> String {
     ],
     "unrelated.test.": [
       {{ "type": "a", "name": "unrelated.test.", "ttl": 30, "addr": "192.0.2.50" }}
+    ],
+    "restrict.youtube.com.": [
+      {{ "type": "a", "name": "restrict.youtube.com.", "ttl": 60, "addr": "192.0.2.140" }},
+      {{ "type": "aaaa", "name": "restrict.youtube.com.", "ttl": 60, "addr": "2001:db8::140" }}
+    ],
+    "restrictmoderate.youtube.com.": [
+      {{ "type": "a", "name": "restrictmoderate.youtube.com.", "ttl": 60, "addr": "192.0.2.150" }},
+      {{ "type": "aaaa", "name": "restrictmoderate.youtube.com.", "ttl": 60, "addr": "2001:db8::150" }}
+    ],
+    "www.youtube.com.": [
+      {{ "type": "a", "name": "www.youtube.com.", "ttl": 30, "addr": "192.0.2.60" }}
+    ],
+    "m.youtube.com.": [
+      {{ "type": "a", "name": "m.youtube.com.", "ttl": 30, "addr": "192.0.2.61" }}
+    ],
+    "youtubei.googleapis.com.": [
+      {{ "type": "a", "name": "youtubei.googleapis.com.", "ttl": 30, "addr": "192.0.2.62" }}
+    ],
+    "youtube.googleapis.com.": [
+      {{ "type": "a", "name": "youtube.googleapis.com.", "ttl": 30, "addr": "192.0.2.63" }}
+    ],
+    "www.youtube-nocookie.com.": [
+      {{ "type": "a", "name": "www.youtube-nocookie.com.", "ttl": 30, "addr": "192.0.2.64" }}
+    ],
+    "youtube.com.": [
+      {{ "type": "a", "name": "youtube.com.", "ttl": 30, "addr": "192.0.2.65" }}
+    ],
+    "s.ytimg.com.": [
+      {{ "type": "a", "name": "s.ytimg.com.", "ttl": 30, "addr": "192.0.2.66" }}
+    ],
+    "youtu.be.": [
+      {{ "type": "a", "name": "youtu.be.", "ttl": 30, "addr": "192.0.2.67" }}
+    ],
+    "googleapis.com.": [
+      {{ "type": "a", "name": "googleapis.com.", "ttl": 30, "addr": "192.0.2.68" }}
+    ],
+    "youtubeeducation.com.": [
+      {{ "type": "a", "name": "youtubeeducation.com.", "ttl": 30, "addr": "192.0.2.69" }}
     ]
   }},
   "profiles": {{
@@ -82,6 +137,12 @@ fn upstream_config(port: u16) -> String {
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.com.au" }}, "reason": "upstream google au" }},
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.co.nz" }}, "reason": "upstream google nz" }},
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "bing.com" }}, "reason": "upstream bing" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "youtube.com" }}, "reason": "upstream youtube" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "googleapis.com" }}, "reason": "upstream googleapis" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "youtube-nocookie.com" }}, "reason": "upstream nocookie" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "ytimg.com" }}, "reason": "upstream ytimg" }},
+      {{ "effect": "allow", "match": {{ "type": "exact", "value": "youtu.be" }}, "reason": "upstream youtu.be" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "youtubeeducation.com" }}, "reason": "upstream youtubeeducation" }},
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "test" }}, "reason": "upstream test" }}
     ],
     "restricted": [
@@ -115,6 +176,12 @@ fn worker_config(upstream: SocketAddr, safe_search: &str, extra_rules: &str) -> 
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.com.au" }}, "reason": "google au" }},
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.co.nz" }}, "reason": "google nz" }},
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "bing.com" }}, "reason": "bing" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "youtube.com" }}, "reason": "youtube" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "googleapis.com" }}, "reason": "googleapis" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "youtube-nocookie.com" }}, "reason": "nocookie" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "ytimg.com" }}, "reason": "ytimg" }},
+      {{ "effect": "allow", "match": {{ "type": "exact", "value": "youtu.be" }}, "reason": "youtu.be" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "youtubeeducation.com" }}, "reason": "youtubeeducation" }},
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "test" }}, "reason": "test" }}
     ],
     "restricted": [
@@ -375,4 +442,205 @@ async fn upstream_failure_never_releases_an_unfollowed_cname() {
     assert!(addresses(&answer).is_empty());
 
     worker.stop().await;
+}
+
+#[tokio::test]
+async fn youtube_strict_aliases_are_rewritten_and_resolved_through_upstream() {
+    let (worker, upstream) = start_worker(YOUTUBE_STRICT, "").await;
+    let addr = worker.bind_addr();
+    let v6: IpAddr = "2001:db8::140".parse().unwrap();
+
+    for name in YOUTUBE_ALIASES {
+        let a = udp_query(source(), addr, name, RecordType::A).await;
+        assert_code(&a, ResponseCode::NoError);
+        assert!(
+            cname_targets(&a).contains(&YOUTUBE_STRICT_TARGET.to_owned()),
+            "missing strict CNAME for {name}: {:?}",
+            a.answers
+        );
+        assert!(
+            addresses(&a).contains(&v4(140)),
+            "no usable A glue for {name}: {:?}",
+            a.answers
+        );
+        assert!(addresses_owned_by(&a, YOUTUBE_STRICT_TARGET));
+
+        let aaaa = udp_query(source(), addr, name, RecordType::AAAA).await;
+        assert_code(&aaaa, ResponseCode::NoError);
+        assert!(
+            addresses(&aaaa).contains(&v6),
+            "no usable AAAA glue for {name}: {:?}",
+            aaaa.answers
+        );
+        assert!(addresses_owned_by(&aaaa, YOUTUBE_STRICT_TARGET));
+    }
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+#[tokio::test]
+async fn youtube_moderate_aliases_are_rewritten_and_resolved_through_upstream() {
+    let (worker, upstream) = start_worker(YOUTUBE_MODERATE, "").await;
+    let addr = worker.bind_addr();
+    let v6: IpAddr = "2001:db8::150".parse().unwrap();
+
+    for name in YOUTUBE_ALIASES {
+        let a = udp_query(source(), addr, name, RecordType::A).await;
+        assert_code(&a, ResponseCode::NoError);
+        assert!(
+            cname_targets(&a).contains(&YOUTUBE_MODERATE_TARGET.to_owned()),
+            "missing moderate CNAME for {name}: {:?}",
+            a.answers
+        );
+        assert!(
+            addresses(&a).contains(&v4(150)),
+            "no usable A glue for {name}: {:?}",
+            a.answers
+        );
+        assert!(addresses_owned_by(&a, YOUTUBE_MODERATE_TARGET));
+
+        let aaaa = udp_query(source(), addr, name, RecordType::AAAA).await;
+        assert_code(&aaaa, ResponseCode::NoError);
+        assert!(
+            addresses(&aaaa).contains(&v6),
+            "no usable AAAA glue for {name}: {:?}",
+            aaaa.answers
+        );
+        assert!(addresses_owned_by(&aaaa, YOUTUBE_MODERATE_TARGET));
+    }
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+#[tokio::test]
+async fn youtube_off_leaves_aliases_on_the_normal_path() {
+    let (worker, upstream) = start_worker(YOUTUBE_OFF, "").await;
+    let addr = worker.bind_addr();
+
+    for (name, expected) in [
+        ("www.youtube.com.", v4(60)),
+        ("m.youtube.com.", v4(61)),
+        ("youtubei.googleapis.com.", v4(62)),
+        ("youtube.googleapis.com.", v4(63)),
+        ("www.youtube-nocookie.com.", v4(64)),
+    ] {
+        let answer = udp_query(source(), addr, name, RecordType::A).await;
+        assert_code(&answer, ResponseCode::NoError);
+        assert!(
+            cname_targets(&answer).is_empty(),
+            "{name} rewritten while YouTube mode is off"
+        );
+        assert!(
+            addresses(&answer).contains(&expected),
+            "{name} did not keep its normal answer: {:?}",
+            answer.answers
+        );
+    }
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+#[tokio::test]
+async fn youtube_do_not_cname_domains_are_never_rewritten() {
+    let (worker, upstream) = start_worker(YOUTUBE_STRICT, "").await;
+    let addr = worker.bind_addr();
+
+    for (name, expected) in [
+        ("youtube.com.", v4(65)),
+        ("s.ytimg.com.", v4(66)),
+        ("youtu.be.", v4(67)),
+        ("googleapis.com.", v4(68)),
+        ("youtubeeducation.com.", v4(69)),
+    ] {
+        let answer = udp_query(source(), addr, name, RecordType::A).await;
+        assert_code(&answer, ResponseCode::NoError);
+        assert!(
+            cname_targets(&answer).is_empty(),
+            "do-not-CNAME name {name} was rewritten"
+        );
+        assert!(
+            addresses(&answer).contains(&expected),
+            "do-not-CNAME name {name} changed: {:?}",
+            answer.answers
+        );
+    }
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+#[tokio::test]
+async fn youtube_canonical_targets_are_not_rewritten() {
+    let (worker, upstream) = start_worker(YOUTUBE_STRICT, "").await;
+    let addr = worker.bind_addr();
+
+    for (name, expected) in [
+        (YOUTUBE_STRICT_TARGET, v4(140)),
+        (YOUTUBE_MODERATE_TARGET, v4(150)),
+    ] {
+        let answer = udp_query(source(), addr, name, RecordType::A).await;
+        assert_code(&answer, ResponseCode::NoError);
+        assert!(
+            cname_targets(&answer).is_empty(),
+            "canonical target {name} was rewritten"
+        );
+        assert!(addresses(&answer).contains(&expected));
+    }
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+#[tokio::test]
+async fn youtube_question_deny_precedes_rewrite() {
+    let deny = r#"{ "effect": "deny", "match": {"type": "exact", "value": "www.youtube.com"}, "reason": "question deny" },"#;
+    let (worker, upstream) = start_worker(YOUTUBE_STRICT, deny).await;
+    let addr = worker.bind_addr();
+
+    let answer = udp_query(source(), addr, "www.youtube.com.", RecordType::A).await;
+    assert_code(&answer, ResponseCode::NXDomain);
+    assert!(cname_targets(&answer).is_empty());
+    assert!(addresses(&answer).is_empty());
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+#[tokio::test]
+async fn youtube_canonical_target_deny_blocks_the_rewritten_answer() {
+    let deny = r#"{ "effect": "deny", "match": {"type": "exact", "value": "restrict.youtube.com"}, "reason": "target deny" },"#;
+    let (worker, upstream) = start_worker(YOUTUBE_STRICT, deny).await;
+    let addr = worker.bind_addr();
+
+    let answer = udp_query(source(), addr, "www.youtube.com.", RecordType::A).await;
+    assert_code(&answer, ResponseCode::NXDomain);
+    assert!(cname_targets(&answer).is_empty());
+    assert!(addresses(&answer).is_empty());
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+#[test]
+fn malformed_youtube_mode_is_rejected() {
+    let upstream: SocketAddr = "127.0.0.1:5353".parse().unwrap();
+    for bad in [
+        r#"{"enabled":true,"youtube":"bogus"}"#,
+        r#"{"enabled":true,"youtube":true}"#,
+        r#"{"enabled":true,"youtube":"strict","unknown":1}"#,
+    ] {
+        assert!(
+            Config::parse(worker_config(upstream, bad, "").as_bytes()).is_err(),
+            "malformed YouTube mode accepted: {bad}"
+        );
+    }
+    for good in [YOUTUBE_OFF, YOUTUBE_MODERATE, YOUTUBE_STRICT] {
+        assert!(
+            Config::parse(worker_config(upstream, good, "").as_bytes()).is_ok(),
+            "valid YouTube mode rejected: {good}"
+        );
+    }
 }

@@ -1031,6 +1031,25 @@ impl CacheConfig {
     }
 }
 
+/// YouTube Restricted Mode selection for network-level SafeSearch rewrites.
+///
+/// Taken from "Control YouTube content available to users"
+/// <https://support.google.com/a/answer/6214622>, verified 2026-11-27. This is
+/// one current operator setting with three states; there is no schema version
+/// or legacy reader. `Off` is the default, so a config that does not mention
+/// YouTube keeps every YouTube query on the normal path.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum YouTubeSafeSearch {
+    /// No YouTube rewrite. This is the default.
+    #[default]
+    Off,
+    /// CNAME the five documented aliases to `restrictmoderate.youtube.com`.
+    Moderate,
+    /// CNAME the five documented aliases to `restrict.youtube.com`.
+    Strict,
+}
+
 /// Global operator opt-in for provider-backed SafeSearch DNS rewrites.
 ///
 /// Nothing is rewritten unless `enabled` is true and the matching provider
@@ -1050,6 +1069,11 @@ pub struct SafeSearchConfig {
     /// Apply the documented Bing mapping to `strict.bing.com`.
     #[serde(default)]
     pub bing: bool,
+    /// Apply the documented YouTube Restricted Mode mapping to the five exact
+    /// aliases. Requires the master switch and a non-`Off` mode; independent
+    /// of the Google and Bing switches.
+    #[serde(default)]
+    pub youtube: YouTubeSafeSearch,
 }
 
 /// Complete, validated worker configuration. Deserialized values are kept
@@ -2173,14 +2197,17 @@ mod tests {
                 enabled: false,
                 google: false,
                 bing: false,
+                youtube: YouTubeSafeSearch::Off,
             }
         );
 
-        let json = with_safe_search(r#"{"enabled":true,"google":true,"bing":false}"#);
+        let json =
+            with_safe_search(r#"{"enabled":true,"google":true,"bing":false,"youtube":"strict"}"#);
         let config = Config::parse(json.as_bytes()).unwrap();
         assert!(config.safe_search.enabled);
         assert!(config.safe_search.google);
         assert!(!config.safe_search.bing);
+        assert_eq!(config.safe_search.youtube, YouTubeSafeSearch::Strict);
         let bytes = serde_json::to_vec(&config).unwrap();
         let again = Config::parse(&bytes).unwrap();
         assert_eq!(again.safe_search, config.safe_search);
@@ -2193,6 +2220,9 @@ mod tests {
             r#"{"enabled":true,"nope":true}"#,
             r#"{"enabled":"yes"}"#,
             r#"{"google":1}"#,
+            r#"{"youtube":"bogus"}"#,
+            r#"{"youtube":true}"#,
+            r#"{"youtube":"strict","nope":1}"#,
         ] {
             assert!(
                 Config::parse(with_safe_search(bad).as_bytes()).is_err(),

@@ -281,6 +281,7 @@ mod tests {
             enabled: true,
             google: true,
             bing: false,
+            youtube: crate::config::YouTubeSafeSearch::Off,
         };
         let compiled = compile(&base, &sample_policy()).unwrap();
         assert_eq!(compiled.safe_search, base.safe_search);
