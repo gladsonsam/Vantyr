@@ -84,6 +84,16 @@ bytes despite a modified source file. Aggregate rule/work/reservation budgets
 reject oversized candidates; reservation accounting is not a process RSS bound.
 Important regex exceptions and broader context modifiers remain unfinished.
 
+The typed list-rewrite compiler is accepted through `f1708d75` (source
+`14763786` plus lint correction and `2b84304a`). Forty-two compiler tests,
+strict compiler-crate all-target clippy and the build without default features
+pass. It retains all distinct A/AAAA values, validates CNAME conflicts, matches
+domain suffixes on label boundaries, preserves per-record provenance and
+distinguishes matched-empty/NODATA from no matching owner. Aggregate rewrite
+counts include duplicates and are bounded across all sources. This is compiler
+acceptance only: response integration and real DNS/restart evidence are pending;
+no rewrite capability row is closed by the compiler alone.
+
 The first global SafeSearch operator slice is accepted through `8c45f8cd`
 (source `45965f8e` plus test corrections): eight real loopback integration tests,
 six library tests and strict crate all-target clippy pass. Supported names are
