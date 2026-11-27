@@ -459,7 +459,7 @@ async fn fresh_durable_start_with_invalid_custody_writes_no_state_and_releases_p
     let (plain_port, dot_port) = two_free_ports();
     fs::write(
         &st.config,
-        &config(
+        config(
             plain_port,
             dot_spec(
                 dot_port,
@@ -589,7 +589,7 @@ async fn valid_durable_dot_start_and_restart_serve_the_persisted_listener() {
     // Restart still succeeds: the persisted bundle supplies the listener config.
     fs::write(
         &st.config,
-        &config(
+        config(
             plain_port,
             dot_spec(
                 dot_port,
