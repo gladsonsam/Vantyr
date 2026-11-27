@@ -5,9 +5,11 @@
 //! <https://support.google.com/websearch/answer/186669> states, for a managed
 //! network, "Set the DNS entry for www.google.com (and any other Google country
 //! or region domains that your users may use) to be a CNAME for
-//! forcesafesearch.google.com." The IP printed in its hosts-file example is
-//! explicitly an example to be discovered by pinging the VIP, so no address is
-//! stored here.
+//! forcesafesearch.google.com." The allowed owners are the checked-in
+//! `www.<supported Google domain>` catalog in `safe_search_catalog`, derived
+//! from <https://www.google.com/supported_domains> on 2026-11-27. The IP printed
+//! in the hosts-file example is explicitly an example to be discovered by
+//! pinging the VIP, so no address is stored here.
 //!
 //! Microsoft, "Blocking explicit content with SafeSearch":
 //! <https://support.microsoft.com/en-us/topic/blocking-adult-content-with-safesearch-or-blocking-chat-946059ed-992b-46a0-944a-28e8fb8f1814>
@@ -31,13 +33,8 @@ pub(crate) const GOOGLE_TARGET: &str = "forcesafesearch.google.com.";
 /// Official Bing strict SafeSearch hostname (not an address).
 pub(crate) const BING_TARGET: &str = "strict.bing.com.";
 
-/// Only domains named in the two official documents are selected.
-const GOOGLE_DOMAINS: &[&str] = &[
-    "www.google.com.",
-    // The Google document gives this region domain as its example of an
-    // additional country/region domain to include.
-    "www.google.co.uk.",
-];
+/// Only exact owners from the checked-in official catalog are selected.
+const GOOGLE_DOMAINS: &[&str] = crate::safe_search_catalog::GOOGLE_SEARCH_DOMAINS;
 const BING_DOMAINS: &[&str] = &[
     "www.bing.com.",
     // The Microsoft document names this domain for the Edge sidebar.
@@ -128,6 +125,57 @@ mod tests {
         );
         assert!(target_for(&bing, &name("www.google.com."), RecordType::A).is_none());
         assert!(target_for(&bing, &name("www.bing.com."), RecordType::TXT).is_none());
+    }
+
+    #[test]
+    fn google_regional_domains_from_the_catalog_are_selected() {
+        let google = SafeSearchConfig {
+            enabled: true,
+            google: true,
+            bing: false,
+        };
+        for owner in [
+            "www.google.com.",
+            "www.google.com.au.",
+            "www.google.co.nz.",
+            "www.google.co.uk.",
+            "www.google.com.br.",
+        ] {
+            for qtype in [
+                RecordType::A,
+                RecordType::AAAA,
+                RecordType::CNAME,
+                RecordType::ANY,
+            ] {
+                assert_eq!(
+                    target_for(&google, &name(owner), qtype),
+                    Some(GOOGLE_TARGET),
+                    "catalog owner {owner} not selected for {qtype:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn non_catalog_google_lookalikes_are_not_selected() {
+        let google = SafeSearchConfig {
+            enabled: true,
+            google: true,
+            bing: false,
+        };
+        for owner in [
+            "google.com.",
+            "mail.google.com.",
+            "www.google.com.au.invalid.",
+            "www.notgoogle.com.",
+            "www.google.example.",
+            "www.google.",
+        ] {
+            assert!(
+                target_for(&google, &name(owner), RecordType::A).is_none(),
+                "non-catalog name {owner} was selected"
+            );
+        }
     }
 
     #[test]

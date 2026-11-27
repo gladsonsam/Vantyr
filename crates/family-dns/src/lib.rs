@@ -38,6 +38,7 @@ pub mod observe;
 pub mod policy;
 pub mod runtime;
 pub(crate) mod safe_search;
+pub(crate) mod safe_search_catalog;
 pub mod server;
 pub mod subscription;
 pub mod upstream;

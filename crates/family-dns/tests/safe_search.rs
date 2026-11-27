@@ -1,7 +1,8 @@
 //! Real UDP tests for the global SafeSearch opt-in slice.
 //!
 //! Both providers use the hostnames named by their official support documents:
-//! www.google.com -> forcesafesearch.google.com and
+//! the checked-in `www.<supported Google domain>` catalog (including
+//! www.google.com.au and www.google.co.nz) -> forcesafesearch.google.com and
 //! www.bing.com / edgeservices.bing.com -> strict.bing.com. No provider IP is
 //! configured: the worker follows the CNAME through its configured upstream
 //! with the maintained Hickory resolver and returns usable A/AAAA glue.
@@ -59,6 +60,15 @@ fn upstream_config(port: u16) -> String {
     "www.google.com.": [
       {{ "type": "a", "name": "www.google.com.", "ttl": 30, "addr": "192.0.2.10" }}
     ],
+    "www.google.com.au.": [
+      {{ "type": "a", "name": "www.google.com.au.", "ttl": 30, "addr": "192.0.2.30" }}
+    ],
+    "www.google.co.nz.": [
+      {{ "type": "a", "name": "www.google.co.nz.", "ttl": 30, "addr": "192.0.2.31" }}
+    ],
+    "mail.google.com.": [
+      {{ "type": "a", "name": "mail.google.com.", "ttl": 30, "addr": "192.0.2.32" }}
+    ],
     "www.bing.com.": [
       {{ "type": "a", "name": "www.bing.com.", "ttl": 30, "addr": "192.0.2.20" }}
     ],
@@ -69,6 +79,8 @@ fn upstream_config(port: u16) -> String {
   "profiles": {{
     "adult": [
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.com" }}, "reason": "upstream google" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.com.au" }}, "reason": "upstream google au" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.co.nz" }}, "reason": "upstream google nz" }},
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "bing.com" }}, "reason": "upstream bing" }},
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "test" }}, "reason": "upstream test" }}
     ],
@@ -100,11 +112,15 @@ fn worker_config(upstream: SocketAddr, safe_search: &str, extra_rules: &str) -> 
     "adult": [
       {extra_rules}
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.com" }}, "reason": "google" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.com.au" }}, "reason": "google au" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.co.nz" }}, "reason": "google nz" }},
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "bing.com" }}, "reason": "bing" }},
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "test" }}, "reason": "test" }}
     ],
     "restricted": [
       {{ "effect": "deny", "match": {{ "type": "suffix", "value": "google.com" }}, "reason": "restricted google" }},
+      {{ "effect": "deny", "match": {{ "type": "suffix", "value": "google.com.au" }}, "reason": "restricted google au" }},
+      {{ "effect": "deny", "match": {{ "type": "suffix", "value": "google.co.nz" }}, "reason": "restricted google nz" }},
       {{ "effect": "deny", "match": {{ "type": "suffix", "value": "bing.com" }}, "reason": "restricted bing" }},
       {{ "effect": "deny", "match": {{ "type": "suffix", "value": "test" }}, "reason": "restricted test" }}
     ]
@@ -175,6 +191,59 @@ async fn google_selected_domain_is_rewritten_and_resolved_through_upstream() {
 }
 
 #[tokio::test]
+async fn google_regional_domains_are_rewritten_and_resolved_through_upstream() {
+    let (worker, upstream) = start_worker(GOOGLE_ONLY, "").await;
+    let addr = worker.bind_addr();
+    let v6: IpAddr = "2001:db8::120".parse().unwrap();
+
+    for name in ["www.google.com.au.", "www.google.co.nz."] {
+        let a = udp_query(source(), addr, name, RecordType::A).await;
+        assert_code(&a, ResponseCode::NoError);
+        assert!(
+            cname_targets(&a).contains(&GOOGLE_TARGET.to_owned()),
+            "missing official Google CNAME for {name}: {:?}",
+            a.answers
+        );
+        assert!(
+            addresses(&a).contains(&v4(120)),
+            "no usable A glue for {name}"
+        );
+        assert!(addresses_owned_by(&a, GOOGLE_TARGET));
+
+        let aaaa = udp_query(source(), addr, name, RecordType::AAAA).await;
+        assert_code(&aaaa, ResponseCode::NoError);
+        assert!(
+            addresses(&aaaa).contains(&v6),
+            "no usable AAAA glue for {name}: {:?}",
+            aaaa.answers
+        );
+        assert!(addresses_owned_by(&aaaa, GOOGLE_TARGET));
+    }
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+#[tokio::test]
+async fn non_catalog_google_owner_is_not_rewritten() {
+    let (worker, upstream) = start_worker(BOTH, "").await;
+    let addr = worker.bind_addr();
+
+    // `mail.google.com` matches the fixture's `google.com` suffix allow rule,
+    // but it is not one of the exact `www.` catalog owners.
+    let answer = udp_query(source(), addr, "mail.google.com.", RecordType::A).await;
+    assert_code(&answer, ResponseCode::NoError);
+    assert!(
+        cname_targets(&answer).is_empty(),
+        "a non-catalog google owner was rewritten"
+    );
+    assert!(addresses(&answer).contains(&v4(32)));
+
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+#[tokio::test]
 async fn bing_selected_domains_are_rewritten_and_resolved_through_upstream() {
     let (worker, upstream) = start_worker(BING_ONLY, "").await;
     let addr = worker.bind_addr();
@@ -220,18 +289,18 @@ async fn disabled_opt_in_leaves_selected_domains_on_the_normal_path() {
     let (worker, upstream) = start_worker(DISABLED_BUT_REQUESTED, "").await;
     let addr = worker.bind_addr();
 
-    for name in ["www.google.com.", "www.bing.com."] {
+    for (name, expected) in [
+        ("www.google.com.", v4(10)),
+        ("www.google.com.au.", v4(30)),
+        ("www.google.co.nz.", v4(31)),
+        ("www.bing.com.", v4(20)),
+    ] {
         let answer = udp_query(source(), addr, name, RecordType::A).await;
         assert_code(&answer, ResponseCode::NoError);
         assert!(
             cname_targets(&answer).is_empty(),
             "{name} rewritten while disabled"
         );
-        let expected = if name.starts_with("www.google") {
-            v4(10)
-        } else {
-            v4(20)
-        };
         assert!(addresses(&answer).contains(&expected));
     }
 
