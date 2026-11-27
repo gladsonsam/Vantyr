@@ -199,7 +199,9 @@ First-report policy re-push is supported by source inspection but lacks focused
 integration coverage. The removed query's orphan SQLx cache entry remains for
 later verified cleanup.
 
-DNS settings and proxy authority candidates remain unaccepted. The first Hermes
+At the initial resumption, DNS settings and proxy authority were unaccepted.
+DNS settings have since passed the combined acceptance gate above; proxy
+authority remains unaccepted. The first Hermes
 proxy confirmation ran zero tests: offline dependency resolution lacked locked
 `anyhow 1.0.105`. A fresh bounded confirmation permits dependency downloads while
 retaining `--locked`, offline SQLx metadata and the global Rust validation lock.

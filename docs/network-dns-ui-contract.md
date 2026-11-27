@@ -66,3 +66,13 @@ Real server/worker regressions: `server/src/network/dns_management_e2e_tests.rs`
 including full upgrade, settings/reset/clear flow and failed-apply/new-clear
 regression. Frontend still requires typecheck/lint, source review and honest
 real-HTTP validation; no frontend tests or browser runs are authorized here.
+
+Frontend implementation through `dde41e93` on `feat/network-ui-hermes` is
+source-reviewed within the DNS settings/cache-clear slice. Typecheck, lint and
+format checks passed as reported by its owner; no real-server or browser pass
+is claimed. The POST token drives polling even before gateway delivery exists;
+expiry schedules a final status fetch, and one acknowledgement does not imply
+that every gateway has cleared. Draft/editor state remounts on source/household
+changes. Remaining limits: a page reload forgets the browser's pending token,
+expiry uses the client clock, and live tokens poll every five seconds until
+expiry. Existing per-gateway evidence remains authoritative after reload.
