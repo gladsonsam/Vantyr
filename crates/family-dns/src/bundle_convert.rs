@@ -403,7 +403,6 @@ pub fn apply_file(path: &Path) -> Result<Converted, ConvertError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
     use serde_json::json;
 
     const HOUSEHOLD: &str = "11111111-1111-4111-8111-111111111111";

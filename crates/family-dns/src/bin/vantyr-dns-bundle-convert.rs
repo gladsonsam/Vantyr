@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use vantyr_dns::bundle_convert::{apply_file, check_file};
+use family_dns::bundle_convert::{apply_file, check_file};
 
 fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);
