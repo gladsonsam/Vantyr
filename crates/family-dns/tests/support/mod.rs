@@ -16,9 +16,23 @@ use tokio::net::{TcpSocket, UdpSocket};
 pub const HOUSEHOLD: &str = "11111111-2222-3333-4444-555555555555";
 pub const MAPPED_DEVICE: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
+/// Default device entry, kept verbatim so existing `.replace()` based tests
+/// keep matching the same source-IP literal.
+pub const DEFAULT_DEVICES: &str = r#"[{
+    "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "label": "Mapped test device",
+    "default_profile": "adult",
+    "source_ips": ["127.0.0.2"]
+  }]"#;
+
 /// Configuration used by the socket tests. `extra` is appended verbatim so a
 /// test can add upstreams or change the denial mode without touching policy.
 pub fn test_config(port: u16, extra: &str) -> String {
+    test_config_with_devices(port, DEFAULT_DEVICES, extra)
+}
+
+/// Same template, with an explicit device array for source-range tests.
+pub fn test_config_with_devices(port: u16, devices: &str, extra: &str) -> String {
     format!(
         r#"{{
   "household_id": "{HOUSEHOLD}",
@@ -47,12 +61,7 @@ pub fn test_config(port: u16, extra: &str) -> String {
     ]
   }},
   "default_device_profile": "restricted",
-  "devices": [{{
-    "id": "{MAPPED_DEVICE}",
-    "label": "Mapped test device",
-    "default_profile": "adult",
-    "source_ips": ["127.0.0.2"]
-  }}]
+  "devices": {devices}
   {extra}
 }}"#
     )

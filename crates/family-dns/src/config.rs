@@ -19,6 +19,7 @@ use family_policy::{
     Capability, Device, DeviceId, DeviceKind, Effect, HouseholdId, Policy, Rule, RuleMatcher,
     Schedule,
 };
+use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use serde::{Deserialize, Serialize};
 use vantyr_network_subscriptions::config::{
     Limits as SubscriptionLimits, QueryPolicy, SourceMetadata, SubscriptionConfig,
@@ -34,6 +35,11 @@ pub const MAX_RECORDS_PER_ZONE: usize = 512;
 pub const MAX_REWRITES: usize = MAX_RECORDS_PER_ZONE;
 pub const MAX_DEVICES: usize = 256;
 pub const MAX_SOURCE_IPS_PER_DEVICE: usize = 16;
+/// Bounded CIDR source ranges per device, and across the whole config. These
+/// mirror the exact-IP caps so an operator cannot grow the match set without a
+/// size-bound config edit.
+pub const MAX_SOURCE_RANGES_PER_DEVICE: usize = 16;
+pub const MAX_SOURCE_RANGES: usize = 256;
 pub const MAX_PROFILES: usize = 64;
 pub const MAX_RULES_PER_PROFILE: usize = 512;
 pub const MAX_LABEL_LEN: usize = 128;
@@ -496,8 +502,9 @@ impl EncryptedUpstreamSpec {
     }
 }
 
-/// A device is selected by an explicitly configured source IP. IPs are weak
-/// association only: they never identify a person or a current session.
+/// A device is selected by explicitly configured source IPs or CIDR source
+/// ranges. Both are weak association only: they never identify a person or a
+/// current session, and no owner or current-user inference is performed.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeviceConfig {
@@ -511,6 +518,64 @@ pub struct DeviceConfig {
     pub default_profile: String,
     #[serde(default)]
     pub source_ips: Vec<String>,
+    /// Operator-configured CIDR ranges. Kept as validated strings in the one
+    /// current config so a bundle round-trip reproduces them exactly.
+    #[serde(default)]
+    pub source_ranges: Vec<String>,
+}
+
+/// Parse one operator CIDR into a canonical, family-checked range. IPv4-mapped
+/// IPv6 networks are folded to IPv4 exactly like exact source IPs are, with a
+/// 96-bit prefix shift so `::ffff:192.0.2.0/120` is the same range as
+/// `192.0.2.0/24`. Native IPv6 and deprecated compatible addresses are never
+/// reinterpreted as IPv4; a mapped network whose prefix is shorter than 96
+/// spans outside the mapped block and is rejected as a family mismatch.
+fn parsed_range(raw: &str) -> Result<IpNet> {
+    let (addr, prefix) = raw.split_once('/').ok_or_else(|| {
+        anyhow::anyhow!("source range '{raw}' must be an IP CIDR with a prefix length")
+    })?;
+    let ip = IpAddr::from_str(addr)
+        .map_err(|_| anyhow::anyhow!("source range '{raw}' has a non-IP network address"))?;
+    let prefix = prefix
+        .parse::<u8>()
+        .map_err(|_| anyhow::anyhow!("source range '{raw}' has an invalid prefix length"))?;
+    let range = match ip {
+        IpAddr::V4(v4) => {
+            if prefix > 32 {
+                bail!("source range '{raw}' has an IPv4 prefix longer than 32");
+            }
+            IpNet::V4(
+                Ipv4Net::new(v4, prefix)
+                    .map_err(|_| anyhow::anyhow!("invalid source range '{raw}'"))?,
+            )
+        }
+        IpAddr::V6(v6) => {
+            if prefix > 128 {
+                bail!("source range '{raw}' has an IPv6 prefix longer than 128");
+            }
+            if let IpAddr::V4(mapped) = normalize_ip(IpAddr::V6(v6)) {
+                if prefix < 96 {
+                    bail!("source range '{raw}' maps to IPv4 but its prefix is shorter than 96");
+                }
+                IpNet::V4(
+                    Ipv4Net::new(mapped, prefix - 96)
+                        .map_err(|_| anyhow::anyhow!("invalid source range '{raw}'"))?,
+                )
+            } else {
+                IpNet::V6(
+                    Ipv6Net::new(v6, prefix)
+                        .map_err(|_| anyhow::anyhow!("invalid source range '{raw}'"))?,
+                )
+            }
+        }
+    };
+    // `ipnet` keeps operator-supplied host bits in its address, so truncate to
+    // the network before it is used as a duplicate/conflict key. Matching is
+    // unaffected either way (`contains` masks), but the key must be canonical.
+    Ok(match range {
+        IpNet::V4(net) => IpNet::V4(net.trunc()),
+        IpNet::V6(net) => IpNet::V6(net.trunc()),
+    })
 }
 
 /// Which maintained parser owns an operator-supplied list. Not
@@ -1266,6 +1331,11 @@ impl Config {
         }
         let mut device_ids = BTreeSet::new();
         let mut claimed_ips = BTreeSet::new();
+        // Canonical range string -> owning device id. Equal-prefix overlaps are
+        // necessarily the same canonical network, so rejecting a second owner
+        // removes any ambiguous assignment before a query can select it.
+        let mut claimed_ranges: BTreeMap<String, String> = BTreeMap::new();
+        let mut total_ranges = 0usize;
         for device in &self.devices {
             let id = DeviceId::from_str(&device.id)
                 .map_err(|_| anyhow::anyhow!("device id '{}' is not a UUID", device.id))?;
@@ -1277,6 +1347,23 @@ impl Config {
                     "device {} exceeds {MAX_SOURCE_IPS_PER_DEVICE} source IPs",
                     device.id
                 );
+            }
+            if device.source_ranges.len() > MAX_SOURCE_RANGES_PER_DEVICE {
+                bail!(
+                    "device {} exceeds {MAX_SOURCE_RANGES_PER_DEVICE} source ranges",
+                    device.id
+                );
+            }
+            total_ranges += device.source_ranges.len();
+            for raw in &device.source_ranges {
+                let range = parsed_range(raw)?;
+                if let Some(owner) = claimed_ranges.get(&range.to_string()) {
+                    if owner != &device.id {
+                        bail!("source range {range} is assigned to more than one device");
+                    }
+                } else {
+                    claimed_ranges.insert(range.to_string(), device.id.clone());
+                }
             }
             if let Some(label) = &device.label {
                 if label.len() > MAX_LABEL_LEN {
@@ -1296,6 +1383,9 @@ impl Config {
                     bail!("source IP {ip} is assigned to more than one device");
                 }
             }
+        }
+        if total_ranges > MAX_SOURCE_RANGES {
+            bail!("at most {MAX_SOURCE_RANGES} source ranges are allowed");
         }
 
         if let DenyConfig::Sinkhole { ipv4, ipv6, ttl } = &self.deny {
@@ -1362,30 +1452,61 @@ impl Config {
         }
     }
 
-    /// Resolve a source IP to a configured device. Unknown sources get an
-    /// explicitly restrictive default device; no owner or current-user
+    /// Build the device value for one validated device entry. Both the exact
+    /// and the range path use the same construction, so `shared`, kind and
+    /// profile behave identically however the source was matched.
+    fn device_value(&self, configured: &DeviceConfig) -> Device {
+        Device {
+            id: DeviceId::from_str(&configured.id).expect("device id validated"),
+            household_id: HouseholdId::from_str(&self.household_id)
+                .expect("household id validated"),
+            label: configured
+                .label
+                .clone()
+                .unwrap_or_else(|| configured.id.clone()),
+            kind: configured.kind.clone(),
+            shared: configured.shared,
+            default_profile: configured.default_profile.clone(),
+            capabilities: [Capability::DomainFiltering].into_iter().collect(),
+        }
+    }
+
+    /// Resolve a source IP to a configured device. Exact IPs are checked
+    /// first; otherwise the most specific matching CIDR wins. Unknown sources
+    /// get an explicitly restrictive default device; no owner or current-user
     /// inference is performed anywhere in this path.
     pub fn device_for(&self, source: IpAddr) -> (Option<DeviceId>, Device) {
         let source = normalize_ip(source);
+        // Exact mapping is authoritative even when a narrower range would
+        // select another device.
         for configured in &self.devices {
             for raw in &configured.source_ips {
                 if parsed_ip(raw, "source IP").ok() == Some(source) {
-                    let device = Device {
-                        id: DeviceId::from_str(&configured.id).expect("device id validated"),
-                        household_id: HouseholdId::from_str(&self.household_id)
-                            .expect("household id validated"),
-                        label: configured
-                            .label
-                            .clone()
-                            .unwrap_or_else(|| configured.id.clone()),
-                        kind: configured.kind.clone(),
-                        shared: configured.shared,
-                        default_profile: configured.default_profile.clone(),
-                        capabilities: [Capability::DomainFiltering].into_iter().collect(),
-                    };
+                    let device = self.device_value(configured);
                     return (Some(device.id), device);
                 }
             }
+        }
+        // Longest-prefix CIDR match. Validation rejects equal-prefix ranges
+        // owned by different devices, so a tie can only repeat the same device.
+        let mut best: Option<(&DeviceConfig, u8)> = None;
+        for configured in &self.devices {
+            for raw in &configured.source_ranges {
+                let Some(range) = parsed_range(raw).ok() else {
+                    continue;
+                };
+                if !range.contains(&source) {
+                    continue;
+                }
+                let prefix = range.prefix_len();
+                if best.is_none_or(|(_, best_prefix)| prefix > best_prefix) {
+                    best = Some((configured, prefix));
+                }
+            }
+        }
+        if let Some((configured, _)) = best {
+            let device = self.device_value(configured);
+            return (Some(device.id), device);
         }
         (
             None,
@@ -1609,6 +1730,174 @@ mod tests {
             normalize_ip("::127.0.0.1".parse().unwrap()),
             IpAddr::V6(_)
         ));
+    }
+
+    fn range_config(devices: &str) -> String {
+        format!(
+            r#"{{
+            "household_id": "11111111-2222-3333-4444-555555555555",
+            "policy_revision": 4,
+            "bind": {{ "address": "127.0.0.1", "port": 15353 }},
+            "upstreams": ["127.0.0.1:5353"],
+            "profiles": {{ "restricted": [], "adult": [] }},
+            "default_device_profile": "restricted",
+            "devices": {devices}
+        }}"#
+        )
+    }
+
+    const RANGE_DEVICES: &str = r#"[
+        {"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","shared":false,"source_ips":["127.0.0.20"],"source_ranges":["127.0.0.0/24"]},
+        {"id":"bbbbbbbb-cccc-dddd-eeee-ffffffffffff","default_profile":"restricted","source_ranges":["127.0.0.16/28"]}
+    ]"#;
+
+    #[test]
+    fn source_ranges_use_exact_priority_then_longest_prefix() {
+        let config = Config::parse(range_config(RANGE_DEVICES).as_bytes()).unwrap();
+
+        // The /28 is more specific than the /24, but the exact IP on the
+        // broader device wins outright.
+        let (exact_id, exact) = config.device_for("127.0.0.20".parse().unwrap());
+        assert_eq!(
+            exact_id.unwrap().to_string(),
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        );
+        assert_eq!(exact.default_profile, "adult");
+        assert!(!exact.shared, "shared must survive the exact path");
+
+        let (specific_id, specific) = config.device_for("127.0.0.21".parse().unwrap());
+        assert_eq!(
+            specific_id.unwrap().to_string(),
+            "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+        );
+        assert_eq!(specific.default_profile, "restricted");
+
+        let (broad_id, broad) = config.device_for("127.0.0.40".parse().unwrap());
+        assert_eq!(
+            broad_id.unwrap().to_string(),
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        );
+        assert_eq!(broad.default_profile, "adult");
+        assert!(!broad.shared, "shared must survive the range path");
+
+        // Mapped sources are canonicalised exactly as exact IPs already are.
+        let (mapped_id, mapped) = config.device_for("::ffff:127.0.0.21".parse().unwrap());
+        assert_eq!(
+            mapped_id.unwrap().to_string(),
+            "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+        );
+        assert_eq!(mapped.default_profile, "restricted");
+
+        // Outside every range: the restrictive unknown default, never a
+        // person inference and never a claim that an unknown client is shared.
+        let (unknown_id, unknown) = config.device_for("127.0.1.21".parse().unwrap());
+        assert!(unknown_id.is_none());
+        assert_eq!(unknown.default_profile, "restricted");
+        assert!(!unknown.shared);
+    }
+
+    #[test]
+    fn mapped_range_is_the_same_range_as_its_ipv4_form() {
+        let devices = RANGE_DEVICES.replace("\"127.0.0.0/24\"", "\"::ffff:127.0.0.0/120\"");
+        let config = Config::parse(range_config(&devices).as_bytes()).unwrap();
+        let (id, _) = config.device_for("127.0.0.40".parse().unwrap());
+        assert_eq!(
+            id.unwrap().to_string(),
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        );
+    }
+
+    #[test]
+    fn native_ipv6_ranges_are_not_folded_to_ipv4() {
+        let devices = r#"[{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","source_ranges":["2001:db8::/32"]}]"#;
+        let config = Config::parse(range_config(devices).as_bytes()).unwrap();
+        let (id, _) = config.device_for("2001:db8::5".parse().unwrap());
+        assert_eq!(
+            id.unwrap().to_string(),
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        );
+        // Deprecated compatible addresses stay native IPv6, as with exact IPs.
+        let (unknown_id, _) = config.device_for("::127.0.0.5".parse().unwrap());
+        assert!(unknown_id.is_none());
+        let (ipv4_id, _) = config.device_for("127.0.0.5".parse().unwrap());
+        assert!(ipv4_id.is_none());
+    }
+
+    #[test]
+    fn invalid_and_conflicting_source_ranges_are_rejected() {
+        for bad in [
+            "\"127.0.0.0\"",
+            "\"127.0.0.0/33\"",
+            "\"2001:db8::/129\"",
+            "\"::ffff:192.0.2.0/64\"",
+            "\"not-a-network/24\"",
+        ] {
+            let devices = RANGE_DEVICES.replace("\"127.0.0.0/24\"", bad);
+            assert!(
+                Config::parse(range_config(&devices).as_bytes()).is_err(),
+                "expected rejection for {bad}"
+            );
+        }
+
+        // Two devices claiming the same canonical range, whether spelled as
+        // IPv4 or as IPv4-mapped IPv6, is an ambiguous equal-prefix conflict.
+        let equal = RANGE_DEVICES.replace(
+            "\"source_ranges\":[\"127.0.0.16/28\"]",
+            "\"source_ranges\":[\"127.0.0.16/28\",\"127.0.0.0/24\"]",
+        );
+        assert!(Config::parse(range_config(&equal).as_bytes()).is_err());
+        let mapped_equal = RANGE_DEVICES.replace(
+            "\"source_ranges\":[\"127.0.0.16/28\"]",
+            "\"source_ranges\":[\"::ffff:127.0.0.0/120\"]",
+        );
+        assert!(Config::parse(range_config(&mapped_equal).as_bytes()).is_err());
+        // Host bits are truncated before the key is compared, so a sloppy
+        // spelling cannot slip past the same canonical range.
+        let host_bits = RANGE_DEVICES.replace(
+            "\"source_ranges\":[\"127.0.0.16/28\"]",
+            "\"source_ranges\":[\"127.0.0.5/24\"]",
+        );
+        assert!(Config::parse(range_config(&host_bits).as_bytes()).is_err());
+
+        let too_many: Vec<String> = (0..MAX_SOURCE_RANGES_PER_DEVICE + 1)
+            .map(|i| format!("\"10.0.{i}.0/24\""))
+            .collect();
+        let per_device = format!(
+            r#"[{{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","source_ranges":[{}]}}]"#,
+            too_many.join(",")
+        );
+        assert!(Config::parse(range_config(&per_device).as_bytes()).is_err());
+
+        // The whole-config cap is independent of the per-device cap.
+        let mut many_devices = String::from("[");
+        for device in 0..(MAX_SOURCE_RANGES / MAX_SOURCE_RANGES_PER_DEVICE + 1) {
+            if device > 0 {
+                many_devices.push(',');
+            }
+            let ranges: Vec<String> = (0..MAX_SOURCE_RANGES_PER_DEVICE)
+                .map(|range| format!("\"10.{device}.{range}.0/24\""))
+                .collect();
+            many_devices.push_str(&format!(
+                r#"{{"id":"{device:08x}-0000-4000-8000-000000000000","default_profile":"restricted","source_ranges":[{}]}}"#,
+                ranges.join(",")
+            ));
+        }
+        many_devices.push(']');
+        assert!(Config::parse(range_config(&many_devices).as_bytes()).is_err());
+    }
+
+    #[test]
+    fn source_ranges_survive_a_config_round_trip_and_revalidation() {
+        let config = Config::parse(range_config(RANGE_DEVICES).as_bytes()).unwrap();
+        let bytes = serde_json::to_vec(&config).unwrap();
+        let reloaded = Config::parse(&bytes).unwrap();
+        assert_eq!(reloaded.devices, config.devices);
+        let (id, device) = reloaded.device_for("::ffff:127.0.0.21".parse().unwrap());
+        assert_eq!(
+            id.unwrap().to_string(),
+            "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+        );
+        assert_eq!(device.default_profile, "restricted");
     }
 
     #[test]

@@ -33,6 +33,9 @@ hickory-server   = { version = "=0.26.4", features = ["resolver"] }
 # Maintained DoT/DoH upstream transports. `webpki-roots` is mandatory: without
 # a root source Hickory's client config is empty and every verification fails.
 hickory-resolver = { version = "=0.26.4", default-features = false, features = ["tokio", "serde", "tls-aws-lc-rs", "https-aws-lc-rs", "webpki-roots"] }
+# Maintained range type for operator-configured CIDR source ranges. Already
+# pinned in the shared workspace lock by the DNS stack; no new version.
+ipnet            = "=2.12.2"
 rustls           = { version = "=0.23.46", default-features = false, features = ["std", "aws_lc_rs", "tls12"] }
 pem              = "=4.0.0"
 webpki-roots     = "=1.0.12"

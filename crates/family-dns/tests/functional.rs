@@ -4,7 +4,7 @@
 
 mod support;
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
@@ -358,6 +358,161 @@ async fn ipv4_mapped_bind_and_source_share_the_ipv4_device_profile() {
         server.observations().iter().all(|o| o.device_id.is_some()),
         "mapped sources must not silently fall back to the unknown profile"
     );
+    server.stop().await;
+}
+
+const RANGE_DEVICES: &str = r#"[
+  {"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","label":"range adult","default_profile":"adult","shared":false,"source_ips":["127.0.0.20"],"source_ranges":["127.0.0.0/24"]},
+  {"id":"bbbbbbbb-cccc-dddd-eeee-ffffffffffff","label":"range restricted","default_profile":"restricted","source_ranges":["127.0.0.16/28"]}
+]"#;
+
+fn v4(octet: u8) -> IpAddr {
+    IpAddr::V4(Ipv4Addr::new(127, 0, 0, octet))
+}
+
+fn mapped_v4(octet: u8) -> IpAddr {
+    IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x7f00, octet as u16))
+}
+
+fn mapped_outside() -> IpAddr {
+    // ::ffff:127.0.1.21, outside 127.0.0.0/24.
+    IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x7f01, 0x0015))
+}
+
+#[tokio::test]
+async fn cidr_sources_select_profiles_over_udp_and_tcp() {
+    let config = Config::parse(test_config_with_devices(0, RANGE_DEVICES, "").as_bytes()).unwrap();
+    let server = DnsServer::start(config).await.unwrap();
+    let addr = server.bind_addr();
+
+    for tcp in [false, true] {
+        // The /28 is more specific than the /24, so this client is restricted.
+        let specific = query(v4(21), addr, "www.lab.example.", RecordType::A, tcp).await;
+        assert_code(&specific, ResponseCode::NXDomain);
+        assert_flags(&specific);
+        assert!(addresses(&specific).is_empty());
+
+        // Outside the /28 but inside the /24: the adult profile.
+        let broad = query(v4(40), addr, "www.lab.example.", RecordType::A, tcp).await;
+        assert_code(&broad, ResponseCode::NoError);
+        assert_flags(&broad);
+        assert_eq!(addresses(&broad).len(), 2);
+
+        // An exact IP on the broad device outranks the narrower range.
+        let exact = query(v4(20), addr, "www.lab.example.", RecordType::A, tcp).await;
+        assert_code(&exact, ResponseCode::NoError);
+        assert_eq!(addresses(&exact).len(), 2);
+
+        // No matching IP or range keeps the restrictive unknown default.
+        let fallback = query(
+            IpAddr::V4(Ipv4Addr::new(127, 0, 1, 21)),
+            addr,
+            "www.lab.example.",
+            RecordType::A,
+            tcp,
+        )
+        .await;
+        assert_code(&fallback, ResponseCode::NXDomain);
+        assert!(addresses(&fallback).is_empty());
+    }
+
+    let observations = server.observations();
+    for source in [v4(21), v4(40), v4(20)] {
+        let ids: Vec<_> = observations
+            .iter()
+            .filter(|o| o.source_ip == source)
+            .map(|o| o.device_id.as_ref().map(ToString::to_string))
+            .collect();
+        assert!(!ids.is_empty(), "no observation for {source}");
+        let expected = if source == v4(21) {
+            Some("bbbbbbbb-cccc-dddd-eeee-ffffffffffff")
+        } else {
+            Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        };
+        assert!(
+            ids.iter().all(|id| id.as_deref() == expected),
+            "wrong device for {source}: {ids:?}"
+        );
+    }
+    let fallback = observations
+        .iter()
+        .find(|o| o.source_ip == IpAddr::V4(Ipv4Addr::new(127, 0, 1, 21)))
+        .expect("fallback source must be observed");
+    assert!(fallback.device_id.is_none());
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn mapped_range_and_mapped_source_share_the_ipv4_profile() {
+    // A mapped CIDR is the same range as its plain IPv4 spelling, matching the
+    // existing exact-IP canonicalisation in both directions.
+    let devices = r#"[
+      {"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","source_ranges":["::ffff:127.0.0.0/120"]}
+    ]"#;
+    let config = Config::parse(test_config_with_devices(0, devices, "").as_bytes()).unwrap();
+    let server = DnsServer::start(config).await.unwrap();
+    let addr = server.bind_addr();
+
+    let native_dest = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), addr.port());
+    let mapped_dest = SocketAddr::new(mapped_v4(1), addr.port());
+    for (source, dest) in [(v4(40), native_dest), (mapped_v4(40), mapped_dest)] {
+        let udp = udp_query(source, dest, "www.lab.example.", RecordType::A).await;
+        assert_code(&udp, ResponseCode::NoError);
+        assert_flags(&udp);
+        let tcp = tcp_query(source, dest, "www.lab.example.", RecordType::A).await;
+        assert_code(&tcp, ResponseCode::NoError);
+        assert_eq!(addresses(&tcp).len(), 2);
+    }
+
+    let outside = udp_query(
+        mapped_outside(),
+        mapped_dest,
+        "www.lab.example.",
+        RecordType::A,
+    )
+    .await;
+    assert_code(&outside, ResponseCode::NXDomain);
+    assert!(server.observations().iter().all(|o| o.source_ip == v4(40)
+        || o.source_ip == mapped_v4(40)
+        || o.source_ip == mapped_outside()));
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn reload_applies_source_ranges_on_one_immutable_snapshot() {
+    let broad_only = r#"[
+      {"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","source_ranges":["127.0.0.0/24"]}
+    ]"#;
+    let server = DnsServer::start(
+        Config::parse(test_config_with_devices(0, broad_only, "").as_bytes()).unwrap(),
+    )
+    .await
+    .unwrap();
+    let addr = server.bind_addr();
+    let before = udp_query(v4(40), addr, "www.lab.example.", RecordType::A).await;
+    assert_code(&before, ResponseCode::NoError);
+
+    let with_narrow = r#"[
+      {"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","default_profile":"adult","source_ranges":["127.0.0.0/24"]},
+      {"id":"bbbbbbbb-cccc-dddd-eeee-ffffffffffff","default_profile":"restricted","source_ranges":["127.0.0.32/28"]}
+    ]"#;
+    let candidate = test_config_with_devices(0, with_narrow, "")
+        .replace("\"policy_revision\": 7", "\"policy_revision\": 8");
+    let outcome = server.reload(candidate.as_bytes(), Utc::now()).unwrap();
+    assert_eq!(outcome.revision, 8);
+    assert_eq!(outcome.generation, 8);
+    assert_eq!(server.status().bundle_generation, 8);
+
+    for tcp in [false, true] {
+        let denied = query(v4(40), addr, "www.lab.example.", RecordType::A, tcp).await;
+        assert_code(&denied, ResponseCode::NXDomain);
+        let allowed = query(v4(20), addr, "www.lab.example.", RecordType::A, tcp).await;
+        assert_code(&allowed, ResponseCode::NoError);
+    }
+    assert!(server
+        .observations()
+        .iter()
+        .any(|o| o.source_ip == v4(40) && !o.allow && o.policy_revision == 8));
     server.stop().await;
 }
 

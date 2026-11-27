@@ -269,6 +269,16 @@ mod tests {
     }
 
     #[test]
+    fn compiled_config_keeps_operator_source_ranges() {
+        let mut base = base();
+        base.devices[0].source_ranges = vec!["127.0.0.0/24".into()];
+        let compiled = compile(&base, &sample_policy()).unwrap();
+        assert_eq!(compiled.devices, base.devices);
+        let (id, _) = compiled.device_for("127.0.0.40".parse().unwrap());
+        assert_eq!(id.unwrap().to_string(), DEVICE);
+    }
+
+    #[test]
     fn unverifiable_grants_and_category_rules_are_rejected_not_ignored() {
         let base = base();
         let mut policy = sample_policy();
