@@ -1275,7 +1275,7 @@ mod tests {
     #[test]
     fn shared_report_fixture_parses_with_unknown_cache_state() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tests/network-contracts/dns-events-v1/report.json"
+            "../../../tests/network-contracts/dns-events/report.json"
         ))
         .unwrap();
         let batch: EventBatchBody = serde_json::from_value(fixture.clone()).unwrap();

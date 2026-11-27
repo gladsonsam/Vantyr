@@ -2,6 +2,13 @@
 
 ## Current contract rule
 
+Implementation uses disposable, bounded agent jobs. Each completed job returns
+its exact source basis, commit, owned paths, contracts, validation and remaining
+risks; subsequent fixes, reviews and follow-on work go to fresh agents instead
+of repeatedly extending old contexts. Coding may proceed in parallel, while all
+Rust build/test/check/clippy runs share
+`flock /var/tmp/vantyr-rust-validation-gladson.lock` for the whole command.
+
 This is a pre-release application. Maintain one current schema and API contract,
 not parallel legacy/current DTOs, version dispatch or compatibility fallbacks.
 Use explicit database/state migrations where conversion is needed, then remove

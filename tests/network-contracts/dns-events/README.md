@@ -1,4 +1,4 @@
-# DNS events v1 wire fixture
+# Current DNS events wire fixture
 
 Synthetic, non-secret fixture binding the server's strict request parser and
 validator to the worker's strict reporter/DTO mirror. `report.json` is checked

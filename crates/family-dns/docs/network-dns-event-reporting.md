@@ -40,7 +40,7 @@ The event channel is a bounded in-memory FIFO with a declared loss strategy: whe
 
 - **Capable:** opt-in, privacy-minimal worker observation of UDP/TCP DNS decisions; bounded, deduplicated, replay-safe HTTP delivery; honest stats counts for received observations.
 - **Not capable / not claimed:** durable event spool, proxy/agent observations, verified-person attribution, enforcement/canary/coverage signal, upstream identity, resolver cache hit/miss, policy management or UI.
-- **Accepted additive gate:** migration `0084` replaces `network_dns_events_cache_bounded` to admit `unknown`; the server DTO allowlist and the shared wire fixture (`tests/network-contracts/dns-events-v1/report.json`) were extended with matching tests. `0081` was never rewritten.
+- **Accepted additive gate:** migration `0084` replaces `network_dns_events_cache_bounded` to admit `unknown`; the server DTO allowlist and the shared wire fixture (`tests/network-contracts/dns-events/report.json`) were extended with matching tests. `0081` was never rewritten.
 - **CLI seam (implemented):** `--dns-events <FILE>` is additive and default-off. The binary loads `EventOptions`, builds `EventClient` + `EventQueue`, threads the queue into the real `serve` via `start_with_events` (in-memory) or `start_durable_with_events` (durable, canonical `Arc`), starts `EventWorker` and awaits `shutdown()` before `stop_shared()`. No credential is accepted on the command line.
 
 ## Verification

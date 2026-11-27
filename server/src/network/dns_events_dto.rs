@@ -428,7 +428,7 @@ mod tests {
     #[test]
     fn shared_report_fixture_admits_unknown_cache_state() {
         let raw: EventBatchBody = serde_json::from_str(include_str!(
-            "../../../tests/network-contracts/dns-events-v1/report.json"
+            "../../../tests/network-contracts/dns-events/report.json"
         ))
         .unwrap();
         let now = DateTime::parse_from_rfc3339("2026-11-27T00:00:00Z")
