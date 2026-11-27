@@ -24,6 +24,7 @@
 //!   `hickory_server::proto::rr::{Name, Record, RecordSet, RrKey, RData, RecordType}`
 
 pub mod bundle;
+pub mod bundle_convert;
 pub mod compile;
 pub mod config;
 pub mod controller;

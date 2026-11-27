@@ -480,6 +480,14 @@ fn open_snapshot(path: &Path) -> Result<File, LkgError> {
 /// rename. A failure before the rename drops the temp file and leaves the
 /// previous snapshot untouched. The parent-directory fsync after the rename is
 /// best effort; its error is ignored because the rename already committed.
+/// One-shot, owner-private (mode 0600) atomic replacement in the file's own
+/// directory. Reusable by explicit offline tools that must not install a
+/// runtime compatibility reader: the caller owns all validation, backup and
+/// policy decisions around this write.
+pub fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), LkgError> {
+    write_snapshot_atomic(path, bytes, WriteHooks::default())
+}
+
 fn write_snapshot_atomic(path: &Path, bytes: &[u8], hooks: WriteHooks) -> Result<(), LkgError> {
     let parent = path
         .parent()

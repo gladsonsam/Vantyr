@@ -9,6 +9,10 @@ publish = false
 name = "vantyr-dns"
 path = "src/bin/vantyr-dns.rs"
 
+[[bin]]
+name = "vantyr-dns-bundle-convert"
+path = "src/bin/vantyr-dns-bundle-convert.rs"
+
 [dependencies]
 family-policy          = { path = "../family-policy" }
 vantyr-network-runtime = { path = "../network-runtime" }
