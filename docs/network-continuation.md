@@ -109,6 +109,14 @@ encrypted server transports, HTTP/UI and household deployment remain open.
 Independent dependency review found active upstream work for the newly direct
 `x509-parser 0.18.1`; formal security-support evidence remains incomplete.
 
+Google regional SafeSearch is accepted through `0f10b1d9` (source `b96c3583`).
+The catalog matches all 187 exact www owners from Google's official supported
+domains list retrieved 2026-11-27, including AU/NZ, with no wildcard or lookalike
+matching. Independent review verified the live-source comparison; ten loopback
+integration tests, nine library tests and strict clippy pass. This supersedes
+the earlier four-domain limitation above. The catalog is a reviewed snapshot,
+not a live feed. Bing is unchanged; YouTube, per-client and HTTP/UI remain open.
+
 The assembled current-contract upgrade candidate is `aa2126c2`, based on
 `705d99f2`; it includes the reviewed 0086 repair, evidence scripts and offline
 converter while preserving strict persistence cleanup and exact rewrites.
