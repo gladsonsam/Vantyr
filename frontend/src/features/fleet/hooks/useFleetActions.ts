@@ -14,13 +14,13 @@ export function useFleetActions() {
   const isViewer = user?.role === "viewer";
 
   const wake = useCallback(
-    async (agentIds: string[]) => {
+    async (agentIds: string[], opts?: { broadcast?: string; port?: number }) => {
       if (isViewer) {
         error("Not permitted", "Viewers cannot wake agents. Ask an operator or administrator.");
         return;
       }
       if (agentIds.length === 0) return;
-      const results = await Promise.allSettled(agentIds.map((id) => api.wakeAgent(id)));
+      const results = await Promise.allSettled(agentIds.map((id) => api.wakeAgent(id, opts)));
       let ok = 0;
       const errors: string[] = [];
       results.forEach((r, i) => {
@@ -31,8 +31,8 @@ export function useFleetActions() {
       const fail = results.length - ok;
       if (fail === 0) {
         info(
-          `Wake on LAN sent to ${ok} machine(s)`,
-          "Magic packets use the MAC from each agent’s last stored system info.",
+          `Wake packets sent for ${ok} machine(s)`,
+          "Awakening is unconfirmed. Wait for the agents to come online.",
         );
       } else if (ok === 0) {
         error(
@@ -44,7 +44,7 @@ export function useFleetActions() {
         );
       } else {
         warning(
-          `Wake sent to ${ok}; ${fail} failed`,
+          `Packets sent for ${ok}; ${fail} failed (awakening unconfirmed)`,
           errors
             .slice(0, 2)
             .map((s) => String(s).replace(/^Error: /, ""))

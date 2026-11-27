@@ -304,6 +304,22 @@ pub async fn agent_wake(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
+    // Reject invalid destinations before consuming the send throttle.
+    if let Some(broadcast) = q
+        .broadcast
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if broadcast.parse::<std::net::Ipv4Addr>().is_err() {
+            return Err(ApiError::bad_request("Broadcast must be an IPv4 address."));
+        }
+    }
+    if q.port == Some(0) {
+        return Err(ApiError::bad_request(
+            "UDP port must be between 1 and 65535.",
+        ));
+    }
     let ip = audit_ip(&headers, addr);
     if let Err(retry_secs) = s
         .throttles
@@ -384,6 +400,8 @@ pub async fn agent_wake(
 
     Ok(Json(serde_json::json!({
         "ok": true,
+        "packet_sent": true,
+        "awakening_confirmed": false,
         "mac": mac_str,
         "broadcast": broadcast,
         "port": port,
