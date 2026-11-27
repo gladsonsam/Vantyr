@@ -1,5 +1,15 @@
 # Vantyr Network — backend implementation checklist
 
+## Current contract rule
+
+This is a pre-release application. Maintain one current schema and API contract,
+not parallel legacy/current DTOs, version dispatch or compatibility fallbacks.
+Use explicit database/state migrations where conversion is needed, then remove
+the old reader. This supersedes earlier compatibility requirements in historical
+notes below. Policy revisions, CAS configuration versions, generations and audit
+history remain current product behavior, not legacy protocol support. Broad
+cleanup is in progress; this rule does not claim it is already complete.
+
 ## Current delivery status
 
 - Durable DNS events/statistics server foundation: `53424752` (source
