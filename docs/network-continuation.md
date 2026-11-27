@@ -23,6 +23,17 @@ current dependency fails this check, record the gap and evaluate a maintained
 replacement before expanding reliance on it. No project can guarantee future
 updates; keep adapters and regression tests suitable for dependency replacement.
 
+Initial upstream activity check (2026-11-27): the GitHub repositories for
+Hickory DNS, rustls, the maintained adblock engine, regex and ipnet are neither
+archived nor disabled. Their latest default-branch commits were dated
+November 26, November 26, November 24, November 18 and September 6 respectively.
+The crates.io APIs also show recent publication of the pinned Hickory 0.26.4,
+adblock 0.13.6, regex 1.13.2 and ipnet 2.12.2; rustls has continuing stable and
+development release activity. Sources: each upstream repository's GitHub API
+and `https://crates.io/api/v1/crates/<crate>`. This is activity/publication
+evidence only, not a completed security-support or transitive-dependency audit;
+no dependency versions were changed by the check.
+
 DNS replacement readiness takes priority over proxy work. Required DNS breadth
 includes filtering syntax/modifiers, rewrites, per-client controls, SafeSearch,
 and encrypted client and upstream transports. Partial slices do not close those
