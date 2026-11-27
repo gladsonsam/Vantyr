@@ -1,5 +1,29 @@
 # Network continuation — environment handoff
 
+## Hermes resumption checkpoint (2026-11-27)
+
+The prepared continuation branch started clean at `a722484b`. All six remote
+checkpoints below were fetched and matched the handoff. The requested OpenCode
+`opencode-go/hy4-flash-free` model with `variant: high` is available.
+
+Policy report gate source `f30f0e04` passed a fresh independent static review
+and is integrated as `81acec87`. Its six-file scope removes the historical
+module-report bypass without changing the wire contract. The earlier 11 real-PG
+module tests remain the runtime evidence; no new Hermes test pass is claimed.
+First-report policy re-push is supported by source inspection but lacks focused
+integration coverage. The removed query's orphan SQLx cache entry remains for
+later verified cleanup.
+
+DNS settings and proxy authority candidates remain unaccepted. The first Hermes
+proxy confirmation ran zero tests: offline dependency resolution lacked locked
+`anyhow 1.0.105`. A fresh bounded confirmation permits dependency downloads while
+retaining `--locked`, offline SQLx metadata and the global Rust validation lock.
+This is not evidence that the positive HTTP fixture fix works.
+
+The frontend partner now works on Hermes in `feat/network-ui-hermes`, starting
+at `415431a3`. The old frontend environment remains frozen. New DNS settings and
+proxy controls remain demo-only until exact accepted contracts are supplied.
+
 ## Stop state
 
 The user requested that the current small agent jobs finish, then work stop for
