@@ -15,13 +15,22 @@ Pending Hermes slices are isolated from the integrated branch:
 |---|---|---|
 | `497a541d` | Desired-only migration 0086 | Independently accepted in its bounded scope; two real-PG tests pass. Depends on unaccepted DNS contract upgrade; not integrated. |
 | `149d769b` | Explicit pre-0085 evidence snapshot/restore scripts | Implementation only; DB execution and independent review pending. |
-| `2e927fc7` | Explicit offline worker-bundle converter | CLI import corrected after independent static review; focused test rerun pending. |
-| `36f46347` | Exact-domain A/AAAA/CNAME operator rewrites | Prior run compiled: 133 passed, one new evaluation-log assertion failed. Assertion corrected; remaining-target validation pending. No HTTP/UI or broader rewrite acceptance. |
+| `2e927fc7` | Explicit offline worker-bundle converter | Independently accepted in bounded scope: five focused tests pass and CLI compiles. Full upgrade E2E remains pending; not integrated. |
 | `cedc2148` | Hostname regex filtering | Blocked by test compilation, aggregate pattern budget and important-exception precedence; bounded correction in progress. |
 
 All runtime validation remains serialized by the shared Rust lock. No new
 frontend contract is accepted by these pending slices. Keep correspondence
 batched around actionable findings and exact accepted contracts.
+
+Exact-domain A/AAAA/CNAME operator rewrites are accepted and integrated through
+`8dfc813e` (source chain `ea06e556` through `57a8c06b`). Independent review and
+tests cover denial-before-rewrite, canonical-target denial, UDP/TCP answers,
+reload and restart persistence. The first crate run recorded 133 passes and one
+new evaluation-log assertion failure; after test-only corrections, the four
+remaining/rechecked targets passed 31 tests. The final equivalent `matches!`
+selection passed strict crate all-target clippy. This is scoped cumulative
+evidence, not a single final whole-workspace pass. Filter-text rewrites,
+wildcards, suppression forms, broader RR types, HTTP and UI remain unfinished.
 
 ## Hermes resumption checkpoint (2026-11-27)
 
