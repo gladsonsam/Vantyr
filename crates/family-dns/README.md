@@ -217,9 +217,12 @@ fallback, and DoQ/H3 or DNSCrypt **upstreams** are not part of this slice.
 
 ## Explicit DNS-over-QUIC server listener
 
-This listener is an unaccepted candidate: eight focused tests passed, while
-shutdown/restart tests exposed asynchronous UDP-port release. The lifecycle
-gate must be resolved before deployment or runtime acceptance.
+This operator listener and its explicit shutdown-release gate passed independent
+review: ten DoQ tests, 26 related listener/upstream tests and strict all-target
+clippy. The gate resolves the asynchronous UDP-port release found in the first
+candidate. Same-process restart must use `stop_and_wait(timeout)` and handle its
+error; ordinary `stop`/`stop_shared` only join tasks. Household deployment is
+not validated by these tests.
 
 A top-level `doq_listener` is an optional, default-off server listener on its
 own UDP port:

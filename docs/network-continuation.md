@@ -401,10 +401,11 @@ evidence replay, assignment freshness, TLS and private option custody. No UI
 wrappers are accepted for these APIs. Established opaque CONNECT tunnels are
 not retroactively closed by credential revocation.
 
-### DoQ listener shutdown lifecycle candidate
+### Accepted DoQ listener and shutdown lifecycle
 
-The DoQ listener checkpoint `bdb07dea` is an unaccepted candidate with
-intermittent shutdown/restart failures. A bounded repair adds a production
+The DoQ listener is accepted through `e6f7654c` (source `bdb07dea` +
+`84d75c85`). The first checkpoint exposed asynchronous port release; its
+bounded repair adds a production
 `DnsServer::stop_and_wait(timeout)` that joins the listener task and then
 proves the exact OS-assigned DoQ UDP port is free by rebinding it and dropping
 the probe immediately; `stop`/`stop_shared` keep their task-join semantics and
@@ -413,8 +414,16 @@ registration moves the socket into a private endpoint with no close/wait handle,
 so this is an observed-release gate with an explicit bounded deadline, not a
 port reservation. Ten focused DoQ listener tests pass, including no-client
 shutdown, used connections, transport coexistence and a real same-port durable
-restart. This candidate is still pending review: no acceptance, integration,
-push or deployment is claimed.
+restart. Independent review passed all 36 DoQ/DoT/DoH/encrypted-upstream tests
+and strict family-dns all-target clippy. TLS 1.3, ALPN `doq`, disabled early
+data, source-only device mapping and shared protected custody are preserved.
+HTTP/3, DNSCrypt, certificate rotation, HTTP/UI and household cutover remain
+open. Combined validation with the newer list-rewrite runtime passed all
+29 DoQ/filter-runtime tests in `/var/tmp/vantyr-current-runtime-target`.
+The first shared-cache compile exposed an obsolete dependency API despite the
+correct source exports; the dedicated build compiled the current source and
+passed without product changes. Keep that target specific to this runtime line
+to avoid sharing incompatible workspace artifacts across candidate branches.
 
 ## Frontend continuation
 
