@@ -68,8 +68,8 @@ fn upstream_config(port: u16) -> String {
   }},
   "profiles": {{
     "adult": [
-      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google" }}, "reason": "upstream google" }},
-      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "bing" }}, "reason": "upstream bing" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.com" }}, "reason": "upstream google" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "bing.com" }}, "reason": "upstream bing" }},
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "test" }}, "reason": "upstream test" }}
     ],
     "restricted": [
@@ -99,13 +99,13 @@ fn worker_config(upstream: SocketAddr, safe_search: &str, extra_rules: &str) -> 
   "profiles": {{
     "adult": [
       {extra_rules}
-      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google" }}, "reason": "google" }},
-      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "bing" }}, "reason": "bing" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.com" }}, "reason": "google" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "bing.com" }}, "reason": "bing" }},
       {{ "effect": "allow", "match": {{ "type": "suffix", "value": "test" }}, "reason": "test" }}
     ],
     "restricted": [
-      {{ "effect": "deny", "match": {{ "type": "suffix", "value": "google" }}, "reason": "restricted google" }},
-      {{ "effect": "deny", "match": {{ "type": "suffix", "value": "bing" }}, "reason": "restricted bing" }},
+      {{ "effect": "deny", "match": {{ "type": "suffix", "value": "google.com" }}, "reason": "restricted google" }},
+      {{ "effect": "deny", "match": {{ "type": "suffix", "value": "bing.com" }}, "reason": "restricted bing" }},
       {{ "effect": "deny", "match": {{ "type": "suffix", "value": "test" }}, "reason": "restricted test" }}
     ]
   }},
@@ -153,13 +153,21 @@ async fn google_selected_domain_is_rewritten_and_resolved_through_upstream() {
         "missing official Google CNAME: {:?}",
         a.answers
     );
-    assert!(addresses(&a).contains(&v4(120)), "no usable A glue: {:?}", a.answers);
+    assert!(
+        addresses(&a).contains(&v4(120)),
+        "no usable A glue: {:?}",
+        a.answers
+    );
     assert!(addresses_owned_by(&a, GOOGLE_TARGET));
 
     let aaaa = udp_query(source(), addr, "www.google.com.", RecordType::AAAA).await;
     assert_code(&aaaa, ResponseCode::NoError);
     let v6: IpAddr = "2001:db8::120".parse().unwrap();
-    assert!(addresses(&aaaa).contains(&v6), "no usable AAAA glue: {:?}", aaaa.answers);
+    assert!(
+        addresses(&aaaa).contains(&v6),
+        "no usable AAAA glue: {:?}",
+        aaaa.answers
+    );
     assert!(addresses_owned_by(&aaaa, GOOGLE_TARGET));
 
     worker.stop().await;
@@ -179,7 +187,10 @@ async fn bing_selected_domains_are_rewritten_and_resolved_through_upstream() {
             "missing official Bing CNAME for {name}: {:?}",
             a.answers
         );
-        assert!(addresses(&a).contains(&v4(220)), "no usable A glue for {name}");
+        assert!(
+            addresses(&a).contains(&v4(220)),
+            "no usable A glue for {name}"
+        );
         assert!(addresses_owned_by(&a, BING_TARGET));
     }
 
@@ -194,7 +205,10 @@ async fn unrelated_domain_is_unchanged() {
 
     let answer = udp_query(source(), addr, "unrelated.test.", RecordType::A).await;
     assert_code(&answer, ResponseCode::NoError);
-    assert!(cname_targets(&answer).is_empty(), "unrelated name was rewritten");
+    assert!(
+        cname_targets(&answer).is_empty(),
+        "unrelated name was rewritten"
+    );
     assert!(addresses(&answer).contains(&v4(50)));
 
     worker.stop().await;
@@ -209,8 +223,15 @@ async fn disabled_opt_in_leaves_selected_domains_on_the_normal_path() {
     for name in ["www.google.com.", "www.bing.com."] {
         let answer = udp_query(source(), addr, name, RecordType::A).await;
         assert_code(&answer, ResponseCode::NoError);
-        assert!(cname_targets(&answer).is_empty(), "{name} rewritten while disabled");
-        let expected = if name.starts_with("www.google") { v4(10) } else { v4(20) };
+        assert!(
+            cname_targets(&answer).is_empty(),
+            "{name} rewritten while disabled"
+        );
+        let expected = if name.starts_with("www.google") {
+            v4(10)
+        } else {
+            v4(20)
+        };
         assert!(addresses(&answer).contains(&expected));
     }
 
@@ -255,7 +276,10 @@ async fn canonical_target_query_is_not_rewritten() {
 
     let answer = udp_query(source(), addr, GOOGLE_TARGET, RecordType::A).await;
     assert_code(&answer, ResponseCode::NoError);
-    assert!(cname_targets(&answer).is_empty(), "canonical target was rewritten");
+    assert!(
+        cname_targets(&answer).is_empty(),
+        "canonical target was rewritten"
+    );
     assert!(addresses(&answer).contains(&v4(120)));
 
     worker.stop().await;
@@ -267,9 +291,18 @@ async fn upstream_failure_never_releases_an_unfollowed_cname() {
     let (worker, upstream) = start_worker(GOOGLE_ONLY, "").await;
     upstream.stop().await;
 
-    let answer = udp_query(source(), worker.bind_addr(), "www.google.com.", RecordType::A).await;
+    let answer = udp_query(
+        source(),
+        worker.bind_addr(),
+        "www.google.com.",
+        RecordType::A,
+    )
+    .await;
     assert_code(&answer, ResponseCode::ServFail);
-    assert!(cname_targets(&answer).is_empty(), "a bare CNAME escaped on failure");
+    assert!(
+        cname_targets(&answer).is_empty(),
+        "a bare CNAME escaped on failure"
+    );
     assert!(addresses(&answer).is_empty());
 
     worker.stop().await;
