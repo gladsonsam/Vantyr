@@ -2142,7 +2142,19 @@ async fn full_upgrade_0085_0086_preserves_evidence_and_applies_once(pool: PgPool
         after["desired_policy"], before["desired_policy"],
         "assignment was reset"
     );
-    assert_eq!(after["audit"], before["audit"], "audit evidence was reset");
+    // Credential issuance and real worker reads/reports append audit events.
+    // Every pre-upgrade row must retain its identity and full contents.
+    let original_audit = before["audit"].as_array().unwrap();
+    let current_audit = after["audit"].as_array().unwrap();
+    assert!(!original_audit.is_empty(), "missing seeded audit evidence");
+    for original in original_audit {
+        let matching: Vec<_> = current_audit
+            .iter()
+            .filter(|row| row["id"] == original["id"])
+            .collect();
+        assert_eq!(matching.len(), 1, "original audit identity was lost");
+        assert_eq!(matching[0], original, "original audit row was changed");
+    }
     let old: (String, i64, i64) = sqlx::query_as(
         "SELECT body_sha256, generation, filter_generation FROM network_dns_status \
          WHERE household_id = $1 AND gateway_id = $2 AND config_version = $3",
