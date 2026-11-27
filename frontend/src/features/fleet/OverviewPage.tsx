@@ -1,3 +1,4 @@
+import { WakeDialog } from "@/components/common/WakeDialog";
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -32,6 +33,7 @@ export function OverviewPage() {
   const { agents, liveStatus, agentInfo, agentInfoReceivedAtMs, initialized, refresh } =
     useAgents();
   const fleetActions = useFleetActions();
+  const [wakeIds, setWakeIds] = useState<string[]>([]);
   const { rows: deviceRows } = useDeviceRows();
   // Devices that connect without an agent share the grid with the agent devices.
   const agentless = deviceRows.filter((row) => row.origin === "household" && row.agentId === null);
@@ -140,7 +142,7 @@ export function OverviewPage() {
         onSelectAgent={openAgent}
         onOpenScreen={(agentId) => openAgent(agentId, "live")}
         onRefresh={refresh}
-        onBatchWake={(ids) => void fleetActions.wake(ids)}
+        onBatchWake={setWakeIds}
         onBulkScript={() => {}}
         onBulkAddToGroup={isAdmin ? () => {} : undefined}
         onBatchLock={fleetActions.lock}
@@ -156,6 +158,7 @@ export function OverviewPage() {
             : undefined
         }
       />
+      <WakeDialog open={wakeIds.length > 0} onOpenChange={(open) => { if (!open) setWakeIds([]); }} onSend={(opts) => fleetActions.wake(wakeIds, opts)} />
       <AddAgentModal visible={addAgentOpen} onDismiss={() => setAddAgentOpen(false)} />
     </>
   );

@@ -1,3 +1,4 @@
+import { WakeDialog } from "@/components/common/WakeDialog";
 import { notifyAgentRemoved } from "@/api/agentEvents";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -138,6 +139,8 @@ export function AgentDetailPage({
     return resolvedInfo.uptime_secs + Math.max(0, Math.floor((nowMs - receivedAt) / 1000));
   }, [agent.online, infoUpdatedTsSecs, nowMs, resolvedInfo?.uptime_secs]);
 
+  const [wakeOpen, setWakeOpen] = useState(false);
+
   const runAgentAction = useCallback(
     (action: AgentAction) => {
       // Backend: wake + all WS control commands are operator+ only.
@@ -150,17 +153,7 @@ export function AgentDetailPage({
           onNotifyInfo("Already online", "No need to wake it.");
           return;
         }
-        setPendingAction("wake-lan");
-        void api
-          .wakeAgent(agent.id)
-          .then((result) =>
-            onNotifyInfo(
-              "Wake on LAN sent",
-              `Magic packet sent to ${result.mac} (${result.broadcast}:${result.port}).`,
-            ),
-          )
-          .catch((error) => onNotifyError("Wake on LAN failed", String(error)))
-          .finally(() => setPendingAction(null));
+        setWakeOpen(true);
         return;
       }
 
@@ -391,6 +384,15 @@ export function AgentDetailPage({
           </div>
         </div>
 
+        <WakeDialog open={wakeOpen} onOpenChange={setWakeOpen} onSend={async (opts) => {
+          setPendingAction("wake-lan");
+          try {
+            const result = await api.wakeAgent(agent.id, opts);
+            onNotifyInfo("Wake packet sent", `Sent to ${result.mac} (${result.broadcast}:${result.port}). Awakening is unconfirmed; wait for the agent to come online.`);
+          } catch (error) {
+            onNotifyError("Wake on LAN failed", String(error));
+          } finally { setPendingAction(null); }
+        }} />
         <AgentActionDialogs
           agentName={agent.name}
           confirmAction={confirmAction}
