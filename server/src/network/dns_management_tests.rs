@@ -2,6 +2,7 @@
 //! a fresh migrated database, the real router behind session/CSRF middleware
 //! and the top-level cookie-free worker router. No mocks and no mock auth.
 
+use std::borrow::Cow;
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -9,7 +10,8 @@ use axum::middleware::from_fn_with_state;
 use axum::Router;
 use chrono::{Duration as ChronoDuration, Utc};
 use serde_json::{json, Value};
-use sqlx::PgPool;
+use sqlx::migrate::Migrator;
+use sqlx::{PgPool, Row};
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
@@ -1752,4 +1754,411 @@ async fn cache_clear_delivery_ack_cooldown_and_per_gateway_isolation_are_truthfu
     )
     .await;
     assert_eq!(status, 200);
+}
+
+// ─── Migration 0086: single-contract desired-version repair ──────────────────
+//
+// 0085 rewrote a schema-1 body/digest without changing config_version, so a
+// worker that applied the old digest at that version refuses the new digest at
+// the SAME version. 0086 must bump only the desired version. These tests seed
+// the post-0085 shape with a two-step migrator (the pattern in
+// `test_support::recall`), then verify the repair and its atomic overflow gate.
+
+const DNS_REPAIR_MIGRATION: i64 = 86;
+
+/// One current-contract body as 0085 would leave it (schema_version already
+/// dropped), and a distinct body used only to drive CAS after the repair.
+const REPAIR_BODY: &str = r#"{"sources":[],"catalog":[],"selected_services":[],"runtime":{"cache":{"enabled":true,"max_entries":4096,"positive_min_ttl_secs":null,"positive_max_ttl_secs":null,"negative_min_ttl_secs":null,"negative_max_ttl_secs":null},"deny":{"mode":"nxdomain"}}}"#;
+const NEXT_BODY: &str = r#"{"sources":[],"catalog":[],"selected_services":[],"runtime":{"cache":{"enabled":false,"max_entries":4096,"positive_min_ttl_secs":null,"positive_max_ttl_secs":null,"negative_min_ttl_secs":null,"negative_max_ttl_secs":null},"deny":{"mode":"nxdomain"}}}"#;
+
+/// Migrate up to (but not including) 0086 and return the full migrator so the
+/// caller can apply the repair after seeding. Requires `migrations = false`.
+async fn migrate_before_dns_repair(pool: &PgPool) -> Migrator {
+    let all = sqlx::migrate!("./migrations");
+    let before = Migrator {
+        migrations: Cow::Owned(
+            all.iter()
+                .filter(|m| m.version < DNS_REPAIR_MIGRATION)
+                .cloned()
+                .collect(),
+        ),
+        ..Migrator::DEFAULT
+    };
+    before.run(pool).await.unwrap();
+    all
+}
+
+/// Seed a coherent post-0085 household: desired `version` with current digest
+/// D, but delivery/gateway/status pins carrying the OLD digest D_old. Refresh,
+/// cache-clear, policy and audit evidence is seeded too, so the repair can be
+/// proven not to rewrite any of it. Returns (household, gateway, actor).
+async fn seed_post_0085(pool: &PgPool, name: &str, version: i64) -> (Uuid, Uuid, Uuid) {
+    let actor_name = format!("{name}-actor");
+    let actor = insert_user(pool, &actor_name, "admin").await;
+    let hid: Uuid =
+        sqlx::query_scalar("INSERT INTO network_households (name) VALUES ($1) RETURNING id")
+            .bind(name)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let gid: Uuid = sqlx::query_scalar(
+        "INSERT INTO network_gateways (household_id, kind, label) VALUES ($1, 'dns', $2) RETURNING id",
+    )
+    .bind(hid)
+    .bind(format!("{name}-dns"))
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let secret_hash = digest(format!("secret-{name}").as_bytes());
+    let cid: Uuid = sqlx::query_scalar(
+        "INSERT INTO network_gateway_credentials \
+         (household_id, gateway_id, kind, audience, allowed_commands, secret_hash, expires_at) \
+         VALUES ($1, $2, 'dns', 'vantyr-gateway-worker', \
+                 ARRAY['heartbeat','read_dns_management','report_dns_status']::text[], \
+                 $3, NOW() + INTERVAL '1 hour') RETURNING id",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(secret_hash.as_str())
+    .fetch_one(pool)
+    .await
+    .unwrap();
+
+    let d = digest(REPAIR_BODY.as_bytes());
+    let d_old = digest(b"pre-0085-digest");
+    let report_id = Uuid::new_v4();
+
+    sqlx::query(
+        "INSERT INTO network_dns_management_config \
+         (household_id, config_version, body, body_sha256, created_at, updated_at, updated_by) \
+         VALUES ($1, $2, $3, $4, '2026-01-01T00:00:00+00', '2026-01-01T00:00:00+00', $5)",
+    )
+    .bind(hid)
+    .bind(version)
+    .bind(REPAIR_BODY.as_bytes())
+    .bind(d.as_str())
+    .bind(actor)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO network_dns_delivery \
+         (household_id, gateway_id, kind, config_version, body_sha256, delivered_at) \
+         VALUES ($1, $2, 'dns', $3, $4, '2026-01-02T00:00:00+00')",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(version)
+    .bind(d_old.as_str())
+    .execute(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO network_dns_gateway_state \
+         (household_id, gateway_id, kind, delivered_version, delivered_sha256, \
+          reported_version, reported_sha256, reported_at, updated_at) \
+         VALUES ($1, $2, 'dns', $3, $4, $3, $4, \
+                 '2026-01-03T00:00:00+00', '2026-01-03T00:00:00+00')",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(version)
+    .bind(d_old.as_str())
+    .execute(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO network_dns_status \
+         (household_id, gateway_id, credential_id, report_id, config_version, body_sha256, \
+          reported_at, received_at, applied_version, applied_at, generation, \
+          filter_generation, filter_identity, sources) \
+         VALUES ($1, $2, $3, $4, $5, $6, \
+                 '2026-01-04T00:00:00+00', '2026-01-04T00:01:00+00', $5, \
+                 '2026-01-04T00:02:00+00', 4, 2, 'id-2', '[]'::jsonb)",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(cid)
+    .bind(report_id)
+    .bind(version)
+    .bind(d_old.as_str())
+    .execute(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO network_dns_refresh_request \
+         (household_id, source_id, refresh_seq, config_version, requested_at, expires_at, requested_by) \
+         VALUES ($1, 'src1', 1, $2, '2026-01-05T00:00:00+00', '2026-01-06T00:00:00+00', $3)",
+    )
+    .bind(hid)
+    .bind(version)
+    .bind(actor)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_dns_refresh_delivery \
+         (household_id, gateway_id, source_id, refresh_seq, config_version, delivered_at) \
+         VALUES ($1, $2, 'src1', 1, $3, '2026-01-05T01:00:00+00')",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(version)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_dns_refresh_ack \
+         (household_id, gateway_id, source_id, refresh_seq, config_version, acked_at) \
+         VALUES ($1, $2, 'src1', 1, $3, '2026-01-05T02:00:00+00')",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(version)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO network_dns_cache_clear_request \
+         (household_id, clear_seq, config_version, requested_at, expires_at, requested_by) \
+         VALUES ($1, 1, $2, '2026-01-07T00:00:00+00', '2026-01-08T00:00:00+00', $3)",
+    )
+    .bind(hid)
+    .bind(version)
+    .bind(actor)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_dns_cache_clear_delivery \
+         (household_id, gateway_id, kind, clear_seq, config_version, requested_at, delivered_at) \
+         VALUES ($1, $2, 'dns', 1, $3, '2026-01-07T00:00:00+00', '2026-01-07T01:00:00+00')",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(version)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_dns_cache_clear_ack \
+         (household_id, gateway_id, clear_seq, config_version, attempted_at, acked_at) \
+         VALUES ($1, $2, 1, $3, '2026-01-07T02:00:00+00', '2026-01-07T03:00:00+00')",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(version)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let policy_body = b"policy-body";
+    let policy_digest = digest(policy_body);
+    sqlx::query(
+        "INSERT INTO network_policies \
+         (household_id, revision, schema_version, body, body_sha256, source_kind, published_at, published_by) \
+         VALUES ($1, 1, 1, $2, $3, 'publish', '2026-01-09T00:00:00+00', $4)",
+    )
+    .bind(hid)
+    .bind(policy_body.as_slice())
+    .bind(policy_digest.as_str())
+    .bind(actor)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_gateway_desired_policy \
+         (household_id, gateway_id, kind, revision, assigned_at, assigned_by) \
+         VALUES ($1, $2, 'dns', 1, '2026-01-09T00:00:00+00', $3)",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(actor)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_audit (household_id, actor, action, detail, ts) \
+         VALUES ($1, 'repair-test', 'dns.management.save', '{}'::jsonb, '2026-01-10T00:00:00+00')",
+    )
+    .bind(hid)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    (hid, gid, actor)
+}
+
+/// Whole-row JSON fingerprint of every evidence table the repair must not
+/// touch, scoped to one household and ordered for stable comparison.
+async fn evidence_snapshot(pool: &PgPool, hid: Uuid) -> Value {
+    sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT jsonb_build_object(
+            'delivery', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.gateway_id, t.config_version), '[]'::jsonb) FROM network_dns_delivery t WHERE t.household_id = $1),
+            'gateway_state', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.gateway_id), '[]'::jsonb) FROM network_dns_gateway_state t WHERE t.household_id = $1),
+            'status', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.gateway_id), '[]'::jsonb) FROM network_dns_status t WHERE t.household_id = $1),
+            'refresh_request', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.source_id), '[]'::jsonb) FROM network_dns_refresh_request t WHERE t.household_id = $1),
+            'refresh_delivery', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.gateway_id, t.source_id), '[]'::jsonb) FROM network_dns_refresh_delivery t WHERE t.household_id = $1),
+            'refresh_ack', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.gateway_id, t.source_id), '[]'::jsonb) FROM network_dns_refresh_ack t WHERE t.household_id = $1),
+            'cache_clear_request', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.clear_seq), '[]'::jsonb) FROM network_dns_cache_clear_request t WHERE t.household_id = $1),
+            'cache_clear_delivery', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.gateway_id), '[]'::jsonb) FROM network_dns_cache_clear_delivery t WHERE t.household_id = $1),
+            'cache_clear_ack', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.gateway_id), '[]'::jsonb) FROM network_dns_cache_clear_ack t WHERE t.household_id = $1),
+            'policies', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.revision), '[]'::jsonb) FROM network_policies t WHERE t.household_id = $1),
+            'desired_policy', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.gateway_id), '[]'::jsonb) FROM network_gateway_desired_policy t WHERE t.household_id = $1),
+            'audit', (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.id), '[]'::jsonb) FROM network_audit t WHERE t.household_id = $1)
+        )
+        "#,
+    )
+    .bind(hid)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrations = false)]
+async fn dns_repair_0086_bumps_desired_version_only_and_preserves_all_evidence(pool: PgPool) {
+    let desired_v: i64 = 7;
+    let all = migrate_before_dns_repair(&pool).await;
+    let (hid, gid, actor) = seed_post_0085(&pool, "repair", desired_v).await;
+    let d = digest(REPAIR_BODY.as_bytes());
+    let before = evidence_snapshot(&pool, hid).await;
+
+    all.run(&pool)
+        .await
+        .expect("0086 must apply once on a post-0085 database");
+
+    // Desired version is bumped by exactly one. The canonical bytes, digest
+    // and all timestamps/actors written by 0085 stay untouched.
+    let row = sqlx::query(
+        "SELECT config_version, body, body_sha256, created_at, updated_at, updated_by \
+         FROM network_dns_management_config WHERE household_id = $1",
+    )
+    .bind(hid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let version: i64 = row.try_get("config_version").unwrap();
+    let body: Vec<u8> = row.try_get("body").unwrap();
+    let digest_col: String = row.try_get("body_sha256").unwrap();
+    let created_at: chrono::DateTime<Utc> = row.try_get("created_at").unwrap();
+    let updated_at: chrono::DateTime<Utc> = row.try_get("updated_at").unwrap();
+    let updated_by: Option<Uuid> = row.try_get("updated_by").unwrap();
+    assert_eq!(version, desired_v + 1);
+    assert_eq!(body, REPAIR_BODY.as_bytes());
+    assert_eq!(digest_col, d);
+    assert_eq!(created_at.to_rfc3339(), "2026-01-01T00:00:00+00:00");
+    assert_eq!(updated_at.to_rfc3339(), "2026-01-01T00:00:00+00:00");
+    assert_eq!(updated_by, Some(actor));
+
+    // The bump is desired only: no delivery pin was advanced or fabricated.
+    let delivered: i64 = sqlx::query_scalar(
+        "SELECT delivered_version FROM network_dns_gateway_state \
+         WHERE household_id = $1 AND gateway_id = $2",
+    )
+    .bind(hid)
+    .bind(gid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(delivered, desired_v);
+
+    // No delivery, report, generation, refresh, cache-clear, policy or audit
+    // evidence was rewritten by the repair.
+    assert_eq!(evidence_snapshot(&pool, hid).await, before);
+
+    // Stale CAS conflicts: the pre-repair version AND the repaired version are
+    // both refused. One version above the repaired version is admitted.
+    let next_body = NEXT_BODY.as_bytes();
+    let next_digest = digest(next_body);
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        let stale_old = super::dns_management_db::upsert_desired_on_conn(
+            &mut conn,
+            hid,
+            desired_v,
+            next_body,
+            &next_digest,
+            Utc::now(),
+            actor,
+        )
+        .await
+        .unwrap();
+        assert!(!stale_old, "pre-repair version must be a stale CAS base");
+        let stale_repaired = super::dns_management_db::upsert_desired_on_conn(
+            &mut conn,
+            hid,
+            desired_v + 1,
+            next_body,
+            &next_digest,
+            Utc::now(),
+            actor,
+        )
+        .await
+        .unwrap();
+        assert!(
+            !stale_repaired,
+            "the repaired version is already current, not a writable CAS base"
+        );
+        let admitted = super::dns_management_db::upsert_desired_on_conn(
+            &mut conn,
+            hid,
+            desired_v + 2,
+            next_body,
+            &next_digest,
+            Utc::now(),
+            actor,
+        )
+        .await
+        .unwrap();
+        assert!(
+            admitted,
+            "one version above the repaired version must be admitted"
+        );
+    }
+    let after_cas: i64 = sqlx::query_scalar(
+        "SELECT config_version FROM network_dns_management_config WHERE household_id = $1",
+    )
+    .bind(hid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(after_cas, desired_v + 2);
+}
+
+#[sqlx::test(migrations = false)]
+async fn dns_repair_0086_overflow_fails_atomically(pool: PgPool) {
+    let all = migrate_before_dns_repair(&pool).await;
+    let max_version = 9_223_372_036_854_775_807i64;
+    let (normal_hid, _, _) = seed_post_0085(&pool, "normal", 7).await;
+    let (overflow_hid, _, _) = seed_post_0085(&pool, "overflow", max_version).await;
+    let before_normal = evidence_snapshot(&pool, normal_hid).await;
+    let before_overflow = evidence_snapshot(&pool, overflow_hid).await;
+
+    let err = all.run(&pool).await.unwrap_err();
+    assert!(format!("{err}").contains("overflow"), "{err}");
+
+    // The checked overflow aborts the single migration transaction: neither
+    // the MAX row nor the normal row (possibly bumped first) is advanced.
+    for hid in [normal_hid, overflow_hid] {
+        let version: i64 = sqlx::query_scalar(
+            "SELECT config_version FROM network_dns_management_config WHERE household_id = $1",
+        )
+        .bind(hid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let expected = if hid == overflow_hid { max_version } else { 7 };
+        assert_eq!(version, expected, "household {hid} was not rolled back");
+    }
+    assert_eq!(evidence_snapshot(&pool, normal_hid).await, before_normal);
+    assert_eq!(
+        evidence_snapshot(&pool, overflow_hid).await,
+        before_overflow
+    );
 }
