@@ -84,6 +84,17 @@ bytes despite a modified source file. Aggregate rule/work/reservation budgets
 reject oversized candidates; reservation accounting is not a process RSS bound.
 Important regex exceptions and broader context modifiers remain unfinished.
 
+The first global SafeSearch operator slice is accepted through `8c45f8cd`
+(source `45965f8e` plus test corrections): eight real loopback integration tests,
+six library tests and strict crate all-target clippy pass. Supported names are
+only `www.google.com`, `www.google.co.uk`, `www.bing.com` and
+`edgeservices.bing.com`; provider targets are resolved through the existing
+Hickory resolver with question and target denials preserved. This does not
+cover `www.google.com.au`, other Google region domains, YouTube restricted mode,
+per-client overrides or HTTP/UI settings. Those remain required unfinished work.
+After integration with hostname regex and CIDR selection, the parent reran the
+13 worker filter tests and eight SafeSearch integration tests: all 21 passed.
+
 The assembled current-contract upgrade candidate is `aa2126c2`, based on
 `705d99f2`; it includes the reviewed 0086 repair, evidence scripts and offline
 converter while preserving strict persistence cleanup and exact rewrites.
