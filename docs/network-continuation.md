@@ -13,6 +13,16 @@ focused behavior tests across dependency updates so an upgrade can be reviewed
 without rebuilding confidence manually. Dependency updates still require
 periodic review and validation; they do not eliminate operational maintenance.
 
+Active maintenance is an adoption requirement, including for existing core
+dependencies when revisited. Verify upstream repository status, meaningful
+development/release activity, maintainer responsiveness, security support and
+maintenance of critical transitive dependencies. Popularity, a recent initial
+release or an old stable version alone is insufficient evidence. Do not adopt
+archived, abandoned or unsupported crates for required runtime behavior. If a
+current dependency fails this check, record the gap and evaluate a maintained
+replacement before expanding reliance on it. No project can guarantee future
+updates; keep adapters and regression tests suitable for dependency replacement.
+
 DNS replacement readiness takes priority over proxy work. Required DNS breadth
 includes filtering syntax/modifiers, rewrites, per-client controls, SafeSearch,
 and encrypted client and upstream transports. Partial slices do not close those
