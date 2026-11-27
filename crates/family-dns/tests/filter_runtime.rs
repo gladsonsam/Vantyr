@@ -1000,7 +1000,7 @@ async fn household_blocks_and_list_exceptions_do_not_grant_rewrites() {
         alias.denied_alias_target.as_deref(),
         Some("denied-target.filter.example")
     );
-    server.stop().await;
+    server.stop_shared().await;
 }
 
 #[tokio::test]
@@ -1157,7 +1157,7 @@ async fn list_dnsrewrite_answers_pass_bogus_and_ipv6_shaping() {
     .await;
     assert_allowed(&stripped);
     assert!(addresses(&stripped).is_empty(), "AAAA must be stripped");
-    server.stop().await;
+    server.stop_shared().await;
 }
 
 #[tokio::test]
