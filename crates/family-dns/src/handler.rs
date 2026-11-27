@@ -15,6 +15,12 @@
 //! no claim that every possible DNS alias form is protected. TSIG-signed
 //! queries are likewise not guaranteed: the capture path does not validate
 //! keys, and signatures are not preserved when an allowed answer is rebuilt.
+//!
+//! Immutable list `$dnsrewrite` selections are another answer source in this
+//! same snapshot. They are gated by the one policy/filter decision, applied
+//! after SafeSearch and operator exact rewrites, and shaped from the accepted
+//! typed compiler contract. A list CNAME is returned as an alias for the client
+//! to resolve with a follow-up query; no glue is synthesized here.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
@@ -32,6 +38,7 @@ use hickory_server::server::{Request, RequestHandler, ResponseHandler, ResponseI
 use hickory_server::zone_handler::{MessageResponse, MessageResponseBuilder};
 use tracing::{debug, warn};
 use uuid::Uuid;
+use vantyr_network_filter::{DnsRewrite, DnsRewriteRecords, DnsRewriteValue, FilterOutcome};
 
 use crate::config::{DenyConfig, RecordSpec};
 use crate::events::{protocol_label, query_type_label, EventQueue, FinalDecision, FlagsDto};
@@ -41,6 +48,9 @@ use crate::runtime::{RuntimeSnapshot, SnapshotHandle};
 /// Bounded TTL for the synthetic CNAME. Upstream A/AAAA records keep their own
 /// TTLs from the maintained resolver.
 const SAFE_SEARCH_CNAME_TTL: u32 = 60;
+/// Fixed TTL for records synthesized from an immutable list rewrite. Unlike an
+/// operator exact rewrite, a list rule carries no operator TTL field.
+const LIST_REWRITE_TTL: u32 = 60;
 /// A single SafeSearch answer may not grow beyond this many records. A CNAME
 /// plus an unbounded upstream alias chain is refused rather than released.
 const MAX_SAFE_SEARCH_ANSWERS: usize = 16;
@@ -130,17 +140,38 @@ impl FilteringHandler {
         matched_owner.then_some(selected)
     }
 
-    /// Build a complete response for an exact rewrite without consulting the
-    /// catalog or an upstream. Metadata is derived from the request, so the
-    /// transaction id and RD/CD flags match every other response path. The
-    /// answer is still passed through alias, bogus-IP and IPv6 shaping below.
-    fn rewritten_message(request: &Request, qname: &Name, records: &[&RecordSpec]) -> Message {
+    /// Assemble one NoError response from typed records. Metadata comes from
+    /// the request, so the transaction id and RD/CD flags match every other
+    /// path, and the answer owner is always the ORIGINAL question name: a list
+    /// rewrite may match a parent owner, but the client asked about `qname`.
+    /// Both rewrite sources share this helper; every answer is still passed
+    /// through alias, bogus-IP and IPv6 shaping below.
+    fn records_message(
+        request: &Request,
+        qname: &Name,
+        records: impl IntoIterator<Item = (u32, RData)>,
+    ) -> Message {
         let mut metadata = Metadata::response_from_request(&request.metadata);
         metadata.response_code = ResponseCode::NoError;
         let mut message = Message::new(metadata.id, MessageType::Response, OpCode::Query);
         message.metadata = metadata;
-        for record in records {
-            let (ttl, rdata) = match record {
+        for (ttl, rdata) in records {
+            message
+                .answers
+                .push(Record::from_rdata(qname.clone(), ttl, rdata));
+        }
+        message
+    }
+
+    /// Build a complete response for an operator exact rewrite without
+    /// consulting the catalog or an upstream. Operator records carry their own
+    /// validated TTL and a matched owner with no record of the query type is
+    /// already an intentional empty answer set (NODATA).
+    fn rewritten_message(request: &Request, qname: &Name, records: &[&RecordSpec]) -> Message {
+        Self::records_message(
+            request,
+            qname,
+            records.iter().map(|record| match record {
                 RecordSpec::A { ttl, addr, .. } => (
                     *ttl,
                     RData::A(AData::from(
@@ -159,12 +190,36 @@ impl FilteringHandler {
                         Name::from_str(target).expect("validated rewrite CNAME target"),
                     )),
                 ),
-            };
-            message
-                .answers
-                .push(Record::from_rdata(qname.clone(), ttl, rdata));
-        }
-        message
+            }),
+        )
+    }
+
+    /// Build a response from one shaped immutable list record set. Every
+    /// distinct value keeps a fixed TTL of 60; a CNAME target is made fully
+    /// qualified with Hickory's maintained name parser and is returned as an
+    /// alias only, with no glue lookup or claim of a followed chain.
+    fn list_rewrite_message(request: &Request, qname: &Name, records: &[DnsRewrite]) -> Message {
+        Self::records_message(
+            request,
+            qname,
+            records.iter().map(|record| {
+                let rdata = match &record.value {
+                    DnsRewriteValue::A(ip) => RData::A(AData::from(*ip)),
+                    DnsRewriteValue::Aaaa(ip) => RData::AAAA(AaaaData::from(*ip)),
+                    DnsRewriteValue::Cname(target) => {
+                        let fqdn = if target.ends_with('.') {
+                            target.clone()
+                        } else {
+                            format!("{target}.")
+                        };
+                        RData::CNAME(CnameData(
+                            Name::from_str(&fqdn).expect("validated dnsrewrite CNAME target"),
+                        ))
+                    }
+                };
+                (LIST_REWRITE_TTL, rdata)
+            }),
+        )
     }
 
     /// Build a complete SafeSearch answer from the official CNAME target. The
@@ -509,6 +564,16 @@ impl RequestHandler for FilteringHandler {
             qtype,
         )
         .map(|target| Name::from_str(target).expect("validated SafeSearch target"));
+        // Immutable list rewrites are the last answer source. The one decision
+        // above must have found NoMatch: a household/unknown-device deny, an
+        // important or ordinary block and a list-layer exception have all
+        // already won, and an exception never becomes a household allow. The
+        // selection comes from the compiled snapshot, never a source re-read.
+        let list_rewrite = if matches!(&decision.filter_outcome, Some(FilterOutcome::NoMatch)) {
+            snapshot.filter.select_dns_rewrite(&qname)
+        } else {
+            None
+        };
         let (message, catalog_info) = if let Some(target) = safe_target.as_ref() {
             // SafeSearch wins over a plain exact rewrite on the same selected
             // owner: an enabled opt-in must always produce resolved glue, not
@@ -525,10 +590,50 @@ impl RequestHandler for FilteringHandler {
                 }
             }
         } else if let Some(records) = Self::rewrite_records(&snapshot, &qname, qtype) {
+            // An operator owner wins over a list owner even when it has no
+            // record for this query type: that is an intentional NODATA.
             (
                 Self::rewritten_message(request, &qname, &records),
                 error_response(request, ResponseCode::NoError),
             )
+        } else if let Some(selection) = list_rewrite {
+            match selection.records_for(qtype) {
+                DnsRewriteRecords::Matched(records) => {
+                    debug!(
+                        %qname,
+                        owner = %selection.owner,
+                        count = records.len(),
+                        "immutable list dnsrewrite answer"
+                    );
+                    // Raw provenance stays a truthful local debug trace. It is
+                    // not a block and is never written into block-only
+                    // observation or wire fields.
+                    for record in &records {
+                        debug!(
+                            %qname,
+                            owner = %selection.owner,
+                            source = %record.evidence.source_id,
+                            line = record.line,
+                            rule = record.evidence.rule.as_deref().unwrap_or("none"),
+                            "list dnsrewrite record provenance"
+                        );
+                    }
+                    (
+                        Self::list_rewrite_message(request, &qname, &records),
+                        error_response(request, ResponseCode::NoError),
+                    )
+                }
+                // The owner matched but has no record of this type. Return an
+                // explicit NoError empty answer set; never fall through to the
+                // catalog or upstream for an owner the list claimed.
+                DnsRewriteRecords::MatchedEmpty => {
+                    debug!(%qname, owner = %selection.owner, "immutable list dnsrewrite NODATA");
+                    (
+                        Self::records_message(request, &qname, std::iter::empty::<(u32, RData)>()),
+                        error_response(request, ResponseCode::NoError),
+                    )
+                }
+            }
         } else {
             let capture = CaptureHandler::default();
             let catalog_info = snapshot

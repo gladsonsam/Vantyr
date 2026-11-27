@@ -5,16 +5,17 @@
 mod support;
 
 use std::fs;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use family_dns::{
-    prepare_filter_material, Config, DecisionObservation, DnsServer, DurableOptions, ReloadError,
-    WriteHooks,
+    prepare_filter_material, Config, DecisionObservation, DnsEventDto, DnsServer, DurableOptions,
+    EventQueue, ReloadError, WriteHooks,
 };
 use hickory_server::proto::op::{Message, ResponseCode};
 use hickory_server::proto::rr::RecordType;
@@ -100,6 +101,19 @@ impl Fixture {
         published: Option<&str>,
         sources: String,
     ) -> String {
+        self.config_with_options(revision, published, sources, "")
+    }
+
+    /// `extras` is appended verbatim (comma-prefixed) after `devices` so a
+    /// rewrite test can add operator rewrites, SafeSearch or cache settings
+    /// without disturbing the shared policy/list template.
+    fn config_with_options(
+        &self,
+        revision: u64,
+        published: Option<&str>,
+        sources: String,
+        extras: &str,
+    ) -> String {
         let published = published
             .map(|at| format!("\"policy_published_at\": \"{at}\","))
             .unwrap_or_default();
@@ -124,7 +138,13 @@ impl Fixture {
     {{ "type": "a", "name": "target.filter.example.", "ttl": 60, "addr": "192.0.2.60" }},
     {{ "type": "a", "name": "baseline.filter.example.", "ttl": 60, "addr": "192.0.2.61" }},
     {{ "type": "cname", "name": "cname.filter.example.", "ttl": 60, "target": "blocked.filter.example." }},
-    {{ "type": "cname", "name": "alias2.filter.example.", "ttl": 60, "target": "target.filter.example." }}
+    {{ "type": "cname", "name": "alias2.filter.example.", "ttl": 60, "target": "target.filter.example." }},
+    {{ "type": "a", "name": "listed.filter.example.", "ttl": 120, "addr": "192.0.2.71" }},
+    {{ "type": "a", "name": "cname-only.filter.example.", "ttl": 120, "addr": "192.0.2.72" }},
+    {{ "type": "a", "name": "safe-target.filter.example.", "ttl": 120, "addr": "192.0.2.75" }},
+    {{ "type": "a", "name": "www.suffix.filter.example.", "ttl": 120, "addr": "192.0.2.76" }},
+    {{ "type": "a", "name": "notsuffix.filter.example.", "ttl": 120, "addr": "192.0.2.77" }},
+    {{ "type": "aaaa", "name": "op-a-only.filter.example.", "ttl": 120, "addr": "2001:db8::74" }}
   ]}},
   "baseline": [
     {{ "effect": "deny", "match": {{ "type": "exact", "value": "baseline.filter.example" }}, "reason": "safety baseline" }}
@@ -132,7 +152,8 @@ impl Fixture {
   "profiles": {{
     "adult": [
       {{ "effect": "deny", "match": {{ "type": "exact", "value": "never.filter.example" }}, "reason": "adult never" }},
-      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "filter.example" }}, "reason": "adult filter" }}
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "filter.example" }}, "reason": "adult filter" }},
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.com" }}, "reason": "adult google" }}
     ],
     "restricted": [
       {{ "effect": "deny", "match": {{ "type": "suffix", "value": "example" }}, "reason": "restricted" }}
@@ -143,7 +164,7 @@ impl Fixture {
     "id": "{MAPPED_DEVICE}",
     "default_profile": "adult",
     "source_ips": ["127.0.0.2"]
-  }}],
+  }}]{extras},
   "filter": {{
     "sources": {sources},
     "catalog": {{
@@ -182,7 +203,16 @@ const GOOD_HOSTS: &str = "blocked.filter.example\ntarget.filter.example\n";
 const GOOD_ABP: &str = "||ads.filter.example^\n||important.filter.example^$important\n||except.filter.example^\n@@||except.filter.example^\n||baseline.filter.example^\n@@||baseline.filter.example^\n||ok.filter.example^\n@@||ok.filter.example^\n";
 
 async fn query(server: &DnsServer, tcp: bool, name: &str, source: IpAddr) -> Message {
-    let qtype = RecordType::A;
+    query_type(server, tcp, name, RecordType::A, source).await
+}
+
+async fn query_type(
+    server: &DnsServer,
+    tcp: bool,
+    name: &str,
+    qtype: RecordType,
+    source: IpAddr,
+) -> Message {
     if tcp {
         tcp_query(source, server.bind_addr(), name, qtype).await
     } else {
@@ -207,6 +237,25 @@ fn observation(server: &DnsServer, name: &str) -> DecisionObservation {
         .rev()
         .find(|entry| entry.name == name)
         .unwrap_or_else(|| panic!("no observation for {name}"))
+}
+
+// Final events are distinct from the synchronous policy evaluation log.
+// Wait for the actual emitted query event, including answer shaping/alias denial.
+async fn final_event(queue: &EventQueue, name: &str) -> DnsEventDto {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Some(event) = queue
+                .drain(64)
+                .into_iter()
+                .find(|event| event.name == name.trim_end_matches('.'))
+            {
+                return event;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("final query event was not emitted")
 }
 
 fn persisted_sha(disk: &[u8], list_id: &str) -> String {
@@ -753,4 +802,426 @@ fn old_configs_without_filter_remain_valid() {
     assert_eq!(config.filter.sources.len(), 0);
     assert!(config.filter.catalog.is_none());
     assert!(config.filter.selected_services.is_empty());
+}
+
+#[tokio::test]
+async fn list_dnsrewrite_record_sets_shape_udp_tcp_ttl_and_owner() {
+    let st = fixture("rewrite-shaping");
+    const RULES: &str = "\
+||listed.filter.example^$dnsrewrite=192.0.2.70
+||multi.filter.example^$dnsrewrite=192.0.2.2
+||multi.filter.example^$dnsrewrite=192.0.2.3
+||multi.filter.example^$dnsrewrite=2001:db8::2
+||multi.filter.example^$dnsrewrite=2001:db8::3
+||cname-only.filter.example^$dnsrewrite=NOERROR;CNAME;safe-target.filter.example
+||suffix.filter.example^$dnsrewrite=192.0.2.80
+||xn--bcher-kva.filter.example^$dnsrewrite=192.0.2.81
+";
+    st.write_lists(GOOD_HOSTS, RULES);
+    fs::write(&st.config, st.config(2, None)).unwrap();
+    let server = DnsServer::start_durable(st.options(Utc::now()))
+        .await
+        .unwrap();
+
+    for tcp in [false, true] {
+        let answer = query(&server, tcp, "listed.filter.example.", mapped()).await;
+        assert_allowed(&answer);
+        assert_eq!(
+            addresses(&answer),
+            vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 70))]
+        );
+        assert!(answer.answers.iter().all(|record| record.ttl == 60));
+        assert_eq!(
+            answer.answers[0].name.to_string().to_ascii_lowercase(),
+            "listed.filter.example."
+        );
+    }
+
+    // Every distinct value survives: A keeps both A records, AAAA keeps both
+    // AAAA records, ANY keeps all four, all with the fixed list TTL.
+    let multi_a = query(&server, false, "multi.filter.example.", mapped()).await;
+    assert_allowed(&multi_a);
+    assert_eq!(
+        addresses(&multi_a),
+        vec![
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2)),
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 3)),
+        ]
+    );
+    let multi_aaaa = query_type(
+        &server,
+        true,
+        "multi.filter.example.",
+        RecordType::AAAA,
+        mapped(),
+    )
+    .await;
+    assert_allowed(&multi_aaaa);
+    assert_eq!(
+        addresses(&multi_aaaa),
+        vec![
+            IpAddr::V6(Ipv6Addr::from_str("2001:db8::2").unwrap()),
+            IpAddr::V6(Ipv6Addr::from_str("2001:db8::3").unwrap()),
+        ]
+    );
+    let multi_any = query_type(
+        &server,
+        false,
+        "multi.filter.example.",
+        RecordType::ANY,
+        mapped(),
+    )
+    .await;
+    assert_allowed(&multi_any);
+    assert_eq!(multi_any.answers.len(), 4);
+    assert!(multi_any.answers.iter().all(|record| record.ttl == 60));
+
+    let alias = query_type(
+        &server,
+        true,
+        "cname-only.filter.example.",
+        RecordType::CNAME,
+        mapped(),
+    )
+    .await;
+    assert_allowed(&alias);
+    assert_eq!(
+        cname_targets(&alias),
+        vec!["safe-target.filter.example.".to_owned()]
+    );
+    assert!(alias.answers.iter().all(|record| record.ttl == 60));
+    // MatchedEmpty is NODATA for the claimed owner, not a catalog fallback
+    // even though the local zone has an A record at this exact name.
+    let nodata = query(&server, false, "cname-only.filter.example.", mapped()).await;
+    assert_allowed(&nodata);
+    assert!(
+        nodata.answers.is_empty(),
+        "matched-empty rewrite must not fall through"
+    );
+
+    // A subdomain inherits the owner's set but the answer is still owned by
+    // the original question; lookalikes and IDN variants are not confused.
+    let sub = query(&server, false, "www.suffix.filter.example.", mapped()).await;
+    assert_eq!(
+        addresses(&sub),
+        vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 80))]
+    );
+    assert_eq!(
+        sub.answers[0].name.to_string().to_ascii_lowercase(),
+        "www.suffix.filter.example."
+    );
+    let lookalike = query(&server, false, "notsuffix.filter.example.", mapped()).await;
+    assert_eq!(
+        addresses(&lookalike),
+        vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 77))]
+    );
+    for idn in ["bücher.filter.example.", "xn--bcher-kva.filter.example."] {
+        let answer = query(&server, false, idn, mapped()).await;
+        assert_eq!(
+            addresses(&answer),
+            vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 81))],
+            "{idn}"
+        );
+    }
+    // The restrictive household policy denies an unknown source before any
+    // rewrite is considered.
+    assert_denied(&query(&server, false, "multi.filter.example.", unknown()).await);
+
+    let observed = observation(&server, "listed.filter.example.");
+    assert!(observed.allow);
+    assert!(!observed.filter_blocked);
+    assert!(observed.filter_rule.is_none());
+    assert!(observed.filter_note.is_none());
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn household_blocks_and_list_exceptions_do_not_grant_rewrites() {
+    let st = fixture("rewrite-precedence");
+    const RULES: &str = "\
+||blocked.filter.example^$dnsrewrite=192.0.2.90
+||baseline.filter.example^$dnsrewrite=192.0.2.91
+||never.filter.example^$dnsrewrite=192.0.2.92
+||list-except.filter.example^$dnsrewrite=192.0.2.93
+@@||list-except.filter.example^
+||denied-target.filter.example^
+||canonical-alias.filter.example^$dnsrewrite=NOERROR;CNAME;denied-target.filter.example
+";
+    let extras = r#",
+  "rewrites": [
+    {"type":"a","name":"list-except.filter.example.","ttl":45,"addr":"192.0.2.96"}
+  ]"#;
+    st.write_lists(GOOD_HOSTS, RULES);
+    fs::write(
+        &st.config,
+        st.config_with_options(2, None, st.sources(), extras),
+    )
+    .unwrap();
+    let events = Arc::new(EventQueue::new(64));
+    let server = DnsServer::start_durable_with_events(st.options(Utc::now()), None, events.clone())
+        .await
+        .unwrap();
+
+    // A hosts block, the safety baseline and an exact household deny all win
+    // over a rewrite on the same owner. None is misreported as a rewrite.
+    assert_denied(&query(&server, false, "blocked.filter.example.", mapped()).await);
+    assert!(observation(&server, "blocked.filter.example.").filter_blocked);
+    assert_denied(&query(&server, false, "baseline.filter.example.", mapped()).await);
+    assert_denied(&query(&server, false, "never.filter.example.", mapped()).await);
+
+    // An ordinary list exception suppresses the list rewrite but not the
+    // operator's exact rewrite of that same owner.
+    let operator = query(&server, false, "list-except.filter.example.", mapped()).await;
+    assert_allowed(&operator);
+    assert_eq!(
+        addresses(&operator),
+        vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 96))]
+    );
+    assert!(operator.answers.iter().all(|record| record.ttl == 45));
+    let observed = observation(&server, "list-except.filter.example.");
+    assert!(observed.allow);
+    assert!(!observed.filter_blocked);
+
+    // A list CNAME pointing at a blocked target is still denied through the
+    // same alias inspection used by every other answer path.
+    assert_denied(
+        &query_type(
+            &server,
+            true,
+            "canonical-alias.filter.example.",
+            RecordType::CNAME,
+            mapped(),
+        )
+        .await,
+    );
+    let alias = final_event(&events, "canonical-alias.filter.example.").await;
+    assert!(!alias.allow);
+    assert_eq!(
+        alias.denied_alias_target.as_deref(),
+        Some("denied-target.filter.example")
+    );
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn operator_rewrite_owner_wins_including_nodata() {
+    let st = fixture("rewrite-operator");
+    const RULES: &str = "\
+||op-a-only.filter.example^$dnsrewrite=192.0.2.99
+||op-exact.filter.example^$dnsrewrite=192.0.2.98
+";
+    let extras = r#",
+  "rewrites": [
+    {"type":"a","name":"op-a-only.filter.example.","ttl":45,"addr":"192.0.2.94"},
+    {"type":"a","name":"op-exact.filter.example.","ttl":45,"addr":"192.0.2.97"}
+  ]"#;
+    st.write_lists(GOOD_HOSTS, RULES);
+    fs::write(
+        &st.config,
+        st.config_with_options(2, None, st.sources(), extras),
+    )
+    .unwrap();
+    let server = DnsServer::start_durable(st.options(Utc::now()))
+        .await
+        .unwrap();
+
+    // The operator owner wins over the list value on both UDP and TCP.
+    for tcp in [false, true] {
+        let answer = query(&server, tcp, "op-exact.filter.example.", mapped()).await;
+        assert_allowed(&answer);
+        assert_eq!(
+            addresses(&answer),
+            vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 97))]
+        );
+        assert!(answer.answers.iter().all(|record| record.ttl == 45));
+    }
+    // A matched operator owner with no AAAA record is NODATA, even though the
+    // local zone and the list both have data for this name.
+    let nodata = query_type(
+        &server,
+        false,
+        "op-a-only.filter.example.",
+        RecordType::AAAA,
+        mapped(),
+    )
+    .await;
+    assert_allowed(&nodata);
+    assert!(nodata.answers.is_empty());
+    let a = query(&server, false, "op-a-only.filter.example.", mapped()).await;
+    assert_eq!(
+        addresses(&a),
+        vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 94))]
+    );
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn safesearch_wins_over_operator_and_list_rewrite() {
+    let st = fixture("rewrite-safesearch");
+    let upstream_config = format!(
+        r#"{{
+  "household_id": "{HOUSEHOLD}",
+  "policy_revision": 3,
+  "bind": {{ "address": "127.0.0.1", "port": 0 }},
+  "local_zones": {{ "forcesafesearch.google.com.": [
+    {{ "type": "a", "name": "forcesafesearch.google.com.", "ttl": 60, "addr": "192.0.2.120" }}
+  ]}},
+  "profiles": {{
+    "adult": [
+      {{ "effect": "allow", "match": {{ "type": "suffix", "value": "google.com" }}, "reason": "upstream google" }}
+    ],
+    "restricted": [
+      {{ "effect": "deny", "match": {{ "type": "suffix", "value": "google.com" }}, "reason": "restricted google" }}
+    ]
+  }},
+  "default_device_profile": "restricted",
+  "devices": [{{
+    "id": "{MAPPED_DEVICE}",
+    "default_profile": "adult",
+    "source_ips": ["127.0.0.1"]
+  }}]
+}}"#
+    );
+    let upstream = DnsServer::start(Config::parse(upstream_config.as_bytes()).unwrap())
+        .await
+        .unwrap();
+    let extras = format!(
+        r#",
+  "upstreams": ["{}"],
+  "safe_search": {{"enabled":true,"google":true}},
+  "rewrites": [
+    {{"type":"a","name":"www.google.com.","ttl":45,"addr":"192.0.2.97"}}
+  ]"#,
+        upstream.bind_addr()
+    );
+    st.write_lists(GOOD_HOSTS, "||www.google.com^$dnsrewrite=192.0.2.98\n");
+    fs::write(
+        &st.config,
+        st.config_with_options(2, None, st.sources(), &extras),
+    )
+    .unwrap();
+    let worker = DnsServer::start_durable(st.options(Utc::now()))
+        .await
+        .unwrap();
+
+    let answer = query(&worker, false, "www.google.com.", mapped()).await;
+    assert_allowed(&answer);
+    assert_eq!(
+        cname_targets(&answer),
+        vec!["forcesafesearch.google.com.".to_owned()]
+    );
+    let resolved = addresses(&answer);
+    assert!(resolved.contains(&IpAddr::V4(Ipv4Addr::new(192, 0, 2, 120))));
+    assert!(!resolved.contains(&IpAddr::V4(Ipv4Addr::new(192, 0, 2, 97))));
+    assert!(!resolved.contains(&IpAddr::V4(Ipv4Addr::new(192, 0, 2, 98))));
+    worker.stop().await;
+    upstream.stop().await;
+}
+
+#[tokio::test]
+async fn list_dnsrewrite_answers_pass_bogus_and_ipv6_shaping() {
+    let st = fixture("rewrite-shaping-settings");
+    const RULES: &str = "\
+||bogus.filter.example^$dnsrewrite=192.0.2.70
+||v6.filter.example^$dnsrewrite=2001:db8::70
+";
+    let extras = r#",
+  "cache": {
+    "bogus_nxdomain_ips": ["192.0.2.70"],
+    "disable_ipv6": true
+  }"#;
+    st.write_lists(GOOD_HOSTS, RULES);
+    fs::write(
+        &st.config,
+        st.config_with_options(2, None, st.sources(), extras),
+    )
+    .unwrap();
+    let events = Arc::new(EventQueue::new(64));
+    let server = DnsServer::start_durable_with_events(st.options(Utc::now()), None, events.clone())
+        .await
+        .unwrap();
+
+    assert_denied(&query(&server, false, "bogus.filter.example.", mapped()).await);
+    let bogus = final_event(&events, "bogus.filter.example.").await;
+    assert!(!bogus.allow);
+    assert_eq!(bogus.reason_code, "bogus_answer_ip");
+    assert!(!bogus.filter_blocked, "a shaped answer is not a list block");
+
+    let stripped = query_type(
+        &server,
+        true,
+        "v6.filter.example.",
+        RecordType::AAAA,
+        mapped(),
+    )
+    .await;
+    assert_allowed(&stripped);
+    assert!(addresses(&stripped).is_empty(), "AAAA must be stripped");
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn list_dnsrewrite_survives_reload_and_restart_from_persisted_bytes() {
+    let st = fixture("rewrite-durable");
+    const RULES: &str = "\
+||stable.filter.example^$dnsrewrite=192.0.2.70
+||cname-stable.filter.example^$dnsrewrite=NOERROR;CNAME;safe-target.filter.example
+";
+    st.write_lists(GOOD_HOSTS, RULES);
+    fs::write(&st.config, st.config(2, Some(STAMP))).unwrap();
+    let now = STAMP.parse::<DateTime<Utc>>().unwrap();
+    let first = DnsServer::start_durable(st.options(now)).await.unwrap();
+    let initial = first.status();
+    let original_sha = persisted_sha(&st.disk(), "abp-local");
+    assert_eq!(
+        addresses(&query(&first, false, "stable.filter.example.", mapped()).await),
+        vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 70))]
+    );
+
+    // Re-applying identical bytes at a new policy revision keeps the same
+    // filter identity and generation, and the compiled answer is unchanged.
+    fs::write(&st.abp, RULES).unwrap();
+    first
+        .reload(st.config(3, Some(STAMP)).as_bytes(), now)
+        .unwrap();
+    let reloaded = first.status();
+    assert_eq!(reloaded.filter_identity, initial.filter_identity);
+    assert_eq!(reloaded.filter_generation, initial.filter_generation);
+    assert_eq!(persisted_sha(&st.disk(), "abp-local"), original_sha);
+    assert_eq!(
+        addresses(&query(&first, true, "stable.filter.example.", mapped()).await),
+        vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 70))]
+    );
+    first.stop().await;
+
+    // Restart uses the exact persisted list bytes even after the source file
+    // and the on-disk config are changed while the worker is down.
+    fs::write(&st.abp, "||unrelated.example^\n").unwrap();
+    let vanished = st.dir.join("vanished.txt");
+    fs::write(
+        &st.config,
+        st.config_with_sources(99, Some(STAMP), st.sources_with_paths(&st.hosts, &vanished)),
+    )
+    .unwrap();
+    let restarted = DnsServer::start_durable(st.options(now)).await.unwrap();
+    assert_eq!(restarted.status(), reloaded);
+    assert_eq!(persisted_sha(&st.disk(), "abp-local"), original_sha);
+    assert_eq!(
+        addresses(&query(&restarted, false, "stable.filter.example.", mapped()).await),
+        vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 70))]
+    );
+    let alias = query_type(
+        &restarted,
+        true,
+        "cname-stable.filter.example.",
+        RecordType::CNAME,
+        mapped(),
+    )
+    .await;
+    assert_allowed(&alias);
+    assert_eq!(
+        cname_targets(&alias),
+        vec!["safe-target.filter.example.".to_owned()]
+    );
+    restarted.stop().await;
 }

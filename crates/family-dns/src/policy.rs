@@ -34,6 +34,11 @@ pub struct DecisionView {
     pub filter_source_kind: Option<String>,
     pub filter_rule: Option<String>,
     pub filter_note: Option<String>,
+    /// The one list-layer verdict from the evaluation above. Kept so the query
+    /// handler can gate immutable list rewrites on `NoMatch` without evaluating
+    /// the filter twice. It is never emitted on the wire, treated as a household
+    /// grant, or reported as a block.
+    pub(crate) filter_outcome: Option<FilterOutcome>,
 }
 
 /// Immutable, locked-once policy state. No mutex is held while a query is in
@@ -150,23 +155,24 @@ impl PolicyEvaluator {
         // Household policy is authoritative. A list exception is a list-layer
         // signal only: it can never grant an allow against a policy deny, so
         // lists are consulted exclusively for names policy already allowed.
-        if allow {
-            if let Some(filter) = filter {
-                if let FilterOutcome::Block { evidence } = filter.evaluate(qname, qtype) {
-                    allow = false;
-                    filter_blocked = true;
-                    filter_source_id = Some(evidence.source_id);
-                    filter_source_kind = Some(
-                        match evidence.source_kind {
-                            SourceKind::List => "list",
-                            SourceKind::Service => "service",
-                        }
-                        .to_owned(),
-                    );
-                    filter_rule = evidence.rule;
-                    filter_note = Some(evidence.note.to_owned());
+        let filter_outcome = if allow {
+            filter.map(|snapshot| snapshot.evaluate(qname, qtype))
+        } else {
+            None
+        };
+        if let Some(FilterOutcome::Block { evidence }) = &filter_outcome {
+            allow = false;
+            filter_blocked = true;
+            filter_source_id = Some(evidence.source_id.clone());
+            filter_source_kind = Some(
+                match evidence.source_kind {
+                    SourceKind::List => "list",
+                    SourceKind::Service => "service",
                 }
-            }
+                .to_owned(),
+            );
+            filter_rule = evidence.rule.clone();
+            filter_note = Some(evidence.note.to_owned());
         }
         self.observe.push(DecisionObservation {
             at: now,
@@ -198,6 +204,7 @@ impl PolicyEvaluator {
             filter_source_kind,
             filter_rule,
             filter_note,
+            filter_outcome,
         }
     }
 
