@@ -1,0 +1,35 @@
+{
+  "audience": "vantyr-gateway-worker",
+  "command": "report_dns_events",
+  "household_id": "00000000-0000-0000-0000-000000000001",
+  "gateway_id": "00000000-0000-0000-0000-000000000002",
+  "kind": "dns",
+  "batch_id": "00000000-0000-0000-0000-000000000003",
+  "events": [
+    {
+      "event_id": "00000000-0000-0000-0000-000000000004",
+      "observed_at": "2026-11-26T12:00:00Z",
+      "device_id": "00000000-0000-0000-0000-000000000005",
+      "name": "example.test",
+      "query_type": "A",
+      "protocol": "udp",
+      "allow": true,
+      "reason_code": "device_profile_allow",
+      "policy_revision": 7,
+      "applied_rule": "adult-1",
+      "upstream": null,
+      "cache_state": "unknown",
+      "flags": {
+        "rd": true,
+        "cd": false,
+        "ra": false,
+        "ad": false
+      },
+      "filter_blocked": false,
+      "filter_source_id": null,
+      "filter_source_kind": null,
+      "denied_alias_target": null,
+      "correlation_id": null
+    }
+  ]
+}

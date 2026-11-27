@@ -27,12 +27,12 @@ One observation per query, captured by a drop-guard in the query handler after t
 - `device_id`: only when the local config maps the source IP to a device **and** the server confirms an inventory assignment for that UUID in this household. Unmapped sources stay `null`; no UUID is fabricated.
 - `reason_code`, `applied_rule`, `filter_*`: the policy/filter engine's actual conclusion. Alias denial carries `denied_alias_target` and the alias decision's reason/revision.
 - `upstream`: always absent. The maintained resolver does not expose the answering upstream; inventing one would be dishonest.
-- `cache_state`: always `"bypass"`, meaning **the decision layer consulted no resolver cache**. It is not a claim about the downstream resolver cache. No hit/miss is fabricated.
+- `cache_state`: always `"unknown"` (migration `0084`). The maintained resolver's cache use is unobservable from the decision layer; claiming `bypass` on a cached answer would be false. No hit/miss is fabricated and `upstream` stays null.
 - `policy_revision`: the revision actually evaluated.
 
 ## Durability contract (explicit, no fake guarantee)
 
-The event channel is a bounded in-memory FIFO with a declared loss strategy: when full it drops the **incoming** event and increments `lost_queue`; the oldest retained observations survive. Counters: `emitted`, `lost_queue`, `invalid`, `sent`, `acked`, `rejected`, `dropped_retry`, `restored_on_shutdown`, exposed through `EventQueue::metrics()` as bounded diagnostics (no PII). No per-query churn is written into the one durable policy bundle. A process restart resets the queue and its identifiers; there is no spool and no ordered-delivery guarantee across restarts. Do not present these figures as coverage, enforcement or a durable audit log.
+The event channel is a bounded in-memory FIFO with a declared loss strategy: when full it drops the **incoming** event and increments `lost_queue`; the oldest retained observations survive. Counters: `emitted`, `lost_queue`, `invalid`, `sent`, `acked`, `rejected`, `dropped_retry`, `restored_on_shutdown`, exposed through `EventQueue::metrics()` as bounded diagnostics (no PII). No per-query churn is written into the one durable policy bundle. A process restart resets the queue and its identifiers; there is no spool and no ordered-delivery guarantee across restarts. Without a spool the exact count of events lost before a restart is unknowable and is never reconstructed or guessed. `EventWorker::metrics()` is a production-facing status surface (used by the CLI's final status line and periodic `tracing` status logs); it reports this process's counters only and marks `prior_run_losses_unknown = true`. Do not present these figures as coverage, enforcement or a durable audit log.
 
 `event_id` is generated at query time; `batch_id` at batch creation. Both stay stable across retries of the same batch, so an exact replay is deduplicated by the server's `(household_id, event_id)` unique key and receipts. A successful ack removes exactly the drained batch; a permanent rejection or exhausted retry is counted and dropped, never silently retried forever. Cancellation restores unacknowledged work to the front of the queue and joins the task.
 
@@ -40,8 +40,8 @@ The event channel is a bounded in-memory FIFO with a declared loss strategy: whe
 
 - **Capable:** opt-in, privacy-minimal worker observation of UDP/TCP DNS decisions; bounded, deduplicated, replay-safe HTTP delivery; honest stats counts for received observations.
 - **Not capable / not claimed:** durable event spool, proxy/agent observations, verified-person attribution, enforcement/canary/coverage signal, upstream identity, resolver cache hit/miss, policy management or UI.
-- **Proposed (parent-owned, additive):** add an explicit `unknown` variant to the server's `cache_state` allowlist and DB CHECK, with server tests, so the worker can state ambiguity instead of `bypass`. No server schema or validation is changed in this slice.
-- **Parent-owned seam:** the `vantyr-dns` CLI must opt in explicitly. Add `--dns-events <FILE>`, require durable mode, load `EventOptions`, build `EventClient` + `EventQueue`, start `DnsServer::start_with_events(...)` (or a durable variant), `EventWorker::start()`, and `worker.shutdown().await` before `server.stop_shared()`. No credential is accepted on the command line.
+- **Accepted additive gate:** migration `0084` replaces `network_dns_events_cache_bounded` to admit `unknown`; the server DTO allowlist and the shared wire fixture (`tests/network-contracts/dns-events-v1/report.json`) were extended with matching tests. `0081` was never rewritten.
+- **CLI seam (implemented):** `--dns-events <FILE>` is additive and default-off. The binary loads `EventOptions`, builds `EventClient` + `EventQueue`, threads the queue into the real `serve` via `start_with_events` (in-memory) or `start_durable_with_events` (durable, canonical `Arc`), starts `EventWorker` and awaits `shutdown()` before `stop_shared()`. No credential is accepted on the command line.
 
 ## Verification
 

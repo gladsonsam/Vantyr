@@ -186,9 +186,10 @@ pub enum InvalidEvent {
 impl FinalDecision {
     /// Convert to the strict wire DTO after local validation. `upstream` is
     /// always absent: the maintained resolver does not expose the answering
-    /// upstream, so inventing one would be dishonest. `cache_state = "bypass"`
-    /// states that the decision layer consulted no resolver cache; it is not a
-    /// claim about what the downstream resolver cache did.
+    /// upstream, so inventing one would be dishonest. `cache_state = "unknown"`
+    /// states that this layer cannot observe whether the maintained resolver
+    /// cache served the query; claiming `bypass` on a cached answer would be
+    /// false. No hit/miss is inferred.
     pub fn into_event(self) -> Result<DnsEventDto, InvalidEvent> {
         let name = self.name.trim().trim_end_matches('.').to_ascii_lowercase();
         if name.is_empty() || name.len() > MAX_NAME_LEN || !clean_name(&name) {
@@ -250,7 +251,7 @@ impl FinalDecision {
             policy_revision: self.policy_revision,
             applied_rule,
             upstream: None,
-            cache_state: "bypass".to_owned(),
+            cache_state: "unknown".to_owned(),
             flags: Some(self.flags),
             filter_blocked: self.filter_blocked,
             filter_source_id: bounded_id(self.filter_source_id),
@@ -336,6 +337,7 @@ pub fn query_type_label(qtype: hickory_server::proto::rr::RecordType) -> Option<
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct EventMetrics {
     pub emitted: u64,
+    pub queued: usize,
     pub lost_queue: u64,
     pub invalid: u64,
     pub sent: u64,
@@ -441,9 +443,21 @@ impl EventQueue {
         self.dropped_retry.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn len(&self) -> usize {
+        self.entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn metrics(&self) -> EventMetrics {
         EventMetrics {
             emitted: self.emitted.load(Ordering::Relaxed),
+            queued: self.len(),
             lost_queue: self.lost.load(Ordering::Relaxed),
             invalid: self.invalid.load(Ordering::Relaxed),
             sent: self.sent.load(Ordering::Relaxed),
@@ -795,7 +809,10 @@ impl EventClient {
             ));
         }
         if ack.event_count != batch.events.len()
+            || ack.inserted > ack.event_count
+            || ack.duplicates > ack.event_count
             || ack.inserted + ack.duplicates != batch.events.len()
+            || (ack.replayed && ack.inserted != 0)
         {
             return Err(EventError::Integrity(
                 "acknowledgement counts disagree with the batch".into(),
@@ -861,19 +878,46 @@ impl EventWorker {
         Arc::clone(&self.queue)
     }
 
+    /// Truthful operator-facing status. These are counters for THIS process
+    /// only: the queue is volatile, so losses from a previous run are unknown
+    /// and are never guessed or carried forward as a fake guarantee.
+    pub fn metrics(&self) -> EventMetrics {
+        self.queue.metrics()
+    }
+
     pub fn start(self: &Arc<Self>) {
         if self.task.lock().unwrap().is_some() {
             return;
         }
         let cancel = self.cancel.clone();
         let worker = Arc::clone(self);
+        tracing::info!(
+            command = EVENT_COMMAND,
+            "DNS event reporting enabled; queue is volatile, prior-run losses are unknown"
+        );
         let task = tokio::spawn(async move {
             let mut timer = tokio::time::interval(worker.flush_interval);
             timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => break,
-                    _ = timer.tick() => worker.flush_once().await,
+                    _ = timer.tick() => {
+                        let m = worker.metrics();
+                        tracing::info!(
+                            emitted = m.emitted,
+                            queued = m.queued,
+                            lost_queue = m.lost_queue,
+                            invalid = m.invalid,
+                            sent = m.sent,
+                            acked = m.acked,
+                            rejected = m.rejected,
+                            dropped_retry = m.dropped_retry,
+                            restored_on_shutdown = m.restored_on_shutdown,
+                            prior_run_losses_unknown = true,
+                            "DNS event reporter status"
+                        );
+                        worker.flush_once().await;
+                    }
                 }
             }
         });
@@ -888,12 +932,26 @@ impl EventWorker {
         if let Some(task) = task {
             let _ = task.await;
         }
+        let m = self.metrics();
+        tracing::info!(
+            emitted = m.emitted,
+            queued = m.queued,
+            lost_queue = m.lost_queue,
+            invalid = m.invalid,
+            sent = m.sent,
+            acked = m.acked,
+            rejected = m.rejected,
+            dropped_retry = m.dropped_retry,
+            restored_on_shutdown = m.restored_on_shutdown,
+            prior_run_losses_unknown = true,
+            "DNS event reporter stopped; volatile queue discarded"
+        );
     }
 
     /// One drain -> send -> acknowledge cycle. A full success removes exactly
     /// the drained batch; a permanent rejection or exhausted retry is counted
     /// and dropped. DNS queries are never touched by this path.
-    pub async fn flush_once(&self) {
+    async fn flush_once(&self) {
         let events = self.queue.drain(self.max_batch);
         if events.is_empty() {
             return;
@@ -922,7 +980,25 @@ impl EventWorker {
                         outcome = Some(false);
                         break;
                     }
-                    Err(EventError::HttpStatus(code)) if (400..500).contains(&code) => {
+                    // 429 and 5xx (including 503) are transient and get the
+                    // one bounded retry; all other 4xx are terminal.
+                    Err(EventError::HttpStatus(code)) if code == 429 || code >= 500 => {
+                        if attempt + 1 >= MAX_ATTEMPTS {
+                            break;
+                        }
+                        tokio::select! {
+                            _ = self.cancel.cancelled() => {
+                                self.queue.reinstate(batch.clone());
+                                return;
+                            }
+                            _ = tokio::time::sleep(delay) => {}
+                        }
+                        delay = delay
+                            .checked_mul(2)
+                            .unwrap_or(self.max_backoff)
+                            .min(self.max_backoff);
+                    }
+                    Err(EventError::HttpStatus(_)) => {
                         outcome = Some(false);
                         break;
                     }
@@ -952,7 +1028,9 @@ impl EventWorker {
                 Some(true) => self.queue.note_sent(batch.len() as u64),
                 Some(false) => self.queue.note_rejected(),
                 None => {
-                    self.queue.reinstate(batch.clone());
+                    // One retry was spent; the batch is truly dropped and the
+                    // counter says so. It is not left in the queue under a
+                    // different label.
                     self.queue.note_dropped();
                 }
             }
@@ -985,7 +1063,7 @@ mod tests {
             policy_revision: Some(1),
             applied_rule: None,
             upstream: None,
-            cache_state: "bypass".to_owned(),
+            cache_state: "unknown".to_owned(),
             flags: Some(FlagsDto {
                 rd: true,
                 cd: false,
@@ -1051,7 +1129,7 @@ mod tests {
         };
         let good = base.clone().into_event().unwrap();
         assert_eq!(good.name, "example.com");
-        assert_eq!(good.cache_state, "bypass");
+        assert_eq!(good.cache_state, "unknown");
         assert!(good.upstream.is_none());
         assert!(base.clone().into_event().is_ok());
         assert_eq!(
@@ -1084,6 +1162,28 @@ mod tests {
     }
 
     #[test]
+    fn shared_report_fixture_parses_with_unknown_cache_state() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/network-contracts/dns-events-v1/report.json"
+        ))
+        .unwrap();
+        let batch: EventBatchBody = serde_json::from_value(fixture.clone()).unwrap();
+        assert_eq!(batch.events[0].cache_state, "unknown");
+        assert_eq!(batch.events[0].upstream, None);
+        // The worker omits None optionals; compare after dropping explicit
+        // nulls from the shared fixture so the wire shapes stay bound.
+        let mut expected = fixture;
+        if let Some(events) = expected.get_mut("events").and_then(|v| v.as_array_mut()) {
+            for event in events {
+                if let Some(object) = event.as_object_mut() {
+                    object.retain(|_, value| !value.is_null());
+                }
+            }
+        }
+        assert_eq!(serde_json::to_value(&batch).unwrap(), expected);
+    }
+
+    #[test]
     fn wire_dto_rejects_unknown_fields() {
         let raw = serde_json::json!({
             "event_id": Uuid::from_u128(1).to_string(),
@@ -1094,7 +1194,7 @@ mod tests {
             "protocol": "udp",
             "allow": true,
             "reason_code": "policy",
-            "cache_state": "bypass",
+            "cache_state": "unknown",
             "filter_blocked": false,
             "surprise": 1
         });

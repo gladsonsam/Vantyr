@@ -40,7 +40,7 @@ const QUERY_TYPES: &[&str] = &[
 const PROTOCOLS: &[&str] = &[
     "udp", "tcp", "dot", "doh", "doq", "dnscrypt", "h3", "unknown",
 ];
-const CACHE_STATES: &[&str] = &["hit", "miss", "stale", "bypass"];
+const CACHE_STATES: &[&str] = &["hit", "miss", "stale", "bypass", "unknown"];
 const SECRET_MARKERS: &[&str] = &[
     "password",
     "passwd",
@@ -423,6 +423,23 @@ mod tests {
         ] {
             assert!(normalize_domain(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn shared_report_fixture_admits_unknown_cache_state() {
+        let raw: EventBatchBody = serde_json::from_str(include_str!(
+            "../../../tests/network-contracts/dns-events-v1/report.json"
+        ))
+        .unwrap();
+        let now = DateTime::parse_from_rfc3339("2026-11-27T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let (events, digest) = validate_batch(&raw, now).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].cache_state, "unknown");
+        assert_eq!(events[0].upstream, None);
+        assert_eq!(digest.len(), 64);
+        assert!(digest.bytes().all(|byte| byte.is_ascii_hexdigit()));
     }
 
     #[test]

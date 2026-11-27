@@ -215,7 +215,7 @@ impl DnsServer {
     /// authoritative: an existing state file is loaded and validated before a
     /// listener exists, and the config file is never used as a newer policy.
     pub async fn start_durable(options: DurableOptions) -> Result<Self> {
-        Self::start_durable_inner(options, None)
+        Self::start_durable_inner(options, None, None)
             .await
             .map(|(server, _)| server)
     }
@@ -228,9 +228,43 @@ impl DnsServer {
         options: DurableOptions,
         subscriptions: Option<Arc<SubscriptionRuntime>>,
     ) -> Result<Arc<Self>> {
-        let (server, bootstrap_errors) = Self::start_durable_inner(options, subscriptions).await?;
+        let (server, bootstrap_errors) =
+            Self::start_durable_inner(options, subscriptions, None).await?;
         // Rehydrate managed fetchers from the applied bundle BEFORE the
         // coordinator polls. No network: a cache fault quarantines only.
+        if let (Some(runtime), Some(management)) =
+            (server.subscriptions.clone(), server.management_state())
+        {
+            let specs: Vec<_> = management
+                .config
+                .sources
+                .iter()
+                .map(crate::management_worker::to_source_spec)
+                .collect();
+            runtime.rehydrate_managed(&specs);
+        }
+        let shared = Arc::new(server);
+        if let Some(runtime) = &shared.subscriptions {
+            runtime.initialize(&shared.status());
+            if !bootstrap_errors.is_empty() {
+                runtime.record_error(bootstrap_errors.join("; "));
+            }
+            runtime.start(Arc::downgrade(&shared));
+        }
+        Ok(shared)
+    }
+
+    /// Durable start with an opt-in event queue threaded into the REAL
+    /// listener. This is the production entry point used by `--dns-events`.
+    /// It keeps the same single canonical `Arc` as the subscription path: the
+    /// event worker holds only queue/client handles and never owns the socket.
+    pub async fn start_durable_with_events(
+        options: DurableOptions,
+        subscriptions: Option<Arc<SubscriptionRuntime>>,
+        events: Arc<EventQueue>,
+    ) -> Result<Arc<Self>> {
+        let (server, bootstrap_errors) =
+            Self::start_durable_inner(options, subscriptions, Some(events)).await?;
         if let (Some(runtime), Some(management)) =
             (server.subscriptions.clone(), server.management_state())
         {
@@ -256,6 +290,7 @@ impl DnsServer {
     async fn start_durable_inner(
         options: DurableOptions,
         subscriptions: Option<Arc<SubscriptionRuntime>>,
+        events: Option<Arc<EventQueue>>,
     ) -> Result<(Self, Vec<String>)> {
         let validator = BundleValidator;
         let mut bootstrap_errors: Vec<String> = Vec::new();
@@ -357,7 +392,7 @@ impl DnsServer {
             observations,
             Some(store),
             None,
-            None,
+            events,
         )
         .await?;
         server.subscriptions = subscriptions;

@@ -33,8 +33,8 @@ use axum::serve::{Listener, ListenerExt};
 use axum::Router;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use family_dns::{
-    Config, DnsServer, EventBatchBody, EventClient, EventOptions, EventQueue, EventWorker,
-    EVENT_COMMAND, EVENT_KIND, MAX_EVENTS_PER_BATCH,
+    Config, DnsServer, DurableOptions, EventBatchBody, EventClient, EventOptions, EventQueue,
+    EventWorker, EVENT_COMMAND, EVENT_KIND, MAX_EVENTS_PER_BATCH,
 };
 use hickory_server::proto::op::{Message, MessageType, OpCode, Query, ResponseCode};
 use hickory_server::proto::rr::{Name as DnsName, RecordType};
@@ -382,6 +382,8 @@ async fn tcp_query(server: SocketAddr, name: &str, source: IpAddr) -> Message {
 
 struct Fixture {
     dir: PathBuf,
+    config: PathBuf,
+    state: PathBuf,
     options: PathBuf,
     credential: PathBuf,
     ca: PathBuf,
@@ -401,6 +403,8 @@ fn fixture(name: &str) -> Fixture {
     ));
     fs::create_dir_all(&dir).unwrap();
     Fixture {
+        config: dir.join("dns.json"),
+        state: dir.join("state.json"),
         options: dir.join("options.json"),
         credential: dir.join("credential"),
         ca: dir.join("ca.pem"),
@@ -636,7 +640,7 @@ async fn real_server_and_worker_dns_events_flow(pool: PgPool) {
         assert_eq!(item["person_label"], Value::Null);
         assert_eq!(item["evidence"], "network_observation");
         assert_eq!(
-            item["cache_state"], "bypass",
+            item["cache_state"], "unknown",
             "no fabricated cache hit/miss"
         );
         assert_eq!(item["upstream"], Value::Null, "no fabricated upstream");
@@ -736,8 +740,142 @@ async fn real_server_and_worker_dns_events_flow(pool: PgPool) {
         "replay double-counted"
     );
 
+    // Stop the reporter while real queries are in flight. The DNS path never
+    // awaits reporting, so every query still completes and shutdown joins.
+    let addr = server.bind_addr();
+    let queries = tokio::spawn(async move {
+        for _ in 0..24 {
+            let message = udp_query(addr, "allow.test.", mapped_source()).await;
+            assert_ne!(message.response_code, ResponseCode::NXDomain);
+        }
+    });
     worker.shutdown().await;
+    tokio::time::timeout(Duration::from_secs(10), queries)
+        .await
+        .expect("queries hung during reporter shutdown")
+        .unwrap();
     server.stop().await;
+}
+
+// ─── Durable restart through the real constructor ───────────────────────────
+
+#[sqlx::test]
+async fn real_durable_worker_restart_preserves_policy_age_and_filter_state(pool: PgPool) {
+    let st = fixture("durable");
+    let (base, ca_pem, _guard) = spawn_server(pool.clone()).await;
+    let user = insert_user(&pool, "events-durable").await;
+    let (token, csrf) = session_for(&pool, user, "durable").await;
+    let http = Http::new(base.clone(), &ca_pem, token, csrf);
+    let hid = bootstrap_as(&http, "Durable household").await;
+    let gid = create_gateway(&http, hid).await;
+    let bearer = issue_cred(&http, hid, gid, vec![EVENT_COMMAND]).await;
+    grant_events(&http, hid, user).await;
+    create_mapped_device(&pool, hid).await;
+    write_inputs(&st, &base, &ca_pem, &bearer, hid, gid);
+
+    let published = Utc::now() - ChronoDuration::hours(1);
+    fs::write(&st.config, dns_config(hid, published)).unwrap();
+    let durable = |now: DateTime<Utc>| DurableOptions {
+        state_path: st.state.clone(),
+        worker_id: "dns-events-e2e-durable".to_owned(),
+        config_path: Some(st.config.clone()),
+        now,
+        hooks: None,
+    };
+
+    // First run: real durable constructor, real reporter loop, no flush call.
+    let (queue, client, options) = worker_parts(&st);
+    let server = DnsServer::start_durable_with_events(durable(published), None, Arc::clone(&queue))
+        .await
+        .unwrap();
+    let worker = Arc::new(EventWorker::new(&options, queue, client));
+    worker.start();
+    assert_ne!(
+        udp_query(server.bind_addr(), "allow.test.", mapped_source())
+            .await
+            .response_code,
+        ResponseCode::NXDomain
+    );
+    wait_until(30, "first durable observation", || async {
+        let (_, body) = http
+            .get(&format!(
+                "/api/network/households/{hid}/dns/stats?window=24h"
+            ))
+            .await;
+        body["total_queries"].as_u64() == Some(1)
+    })
+    .await;
+    let before = server.status();
+    assert_eq!(
+        before.policy_published_at.timestamp_micros(),
+        published.timestamp_micros(),
+        "policy age must not be freshened by the event reporter"
+    );
+    assert!(
+        server.management_state().is_none(),
+        "no management was configured"
+    );
+    // Stats become visible on the server before the reporter observes its ack;
+    // wait for the operator counter instead of asserting a racing instant.
+    wait_until(15, "reporter acknowledgement", || async {
+        worker.metrics().acked >= 1
+    })
+    .await;
+    worker.shutdown().await;
+    server.stop_shared().await;
+
+    // Restart from the SAME bundle with a different wall clock: the persisted
+    // policy age, counters and filter identity survive; only the volatile
+    // event queue and its counters start fresh (prior losses stay unknown).
+    let (queue2, client2, options2) = worker_parts(&st);
+    let restarted =
+        DnsServer::start_durable_with_events(durable(Utc::now()), None, Arc::clone(&queue2))
+            .await
+            .unwrap();
+    let after = restarted.status();
+    assert_eq!(after.policy_revision, before.policy_revision);
+    assert_eq!(
+        after.policy_published_at.timestamp_micros(),
+        before.policy_published_at.timestamp_micros()
+    );
+    assert_eq!(after.bundle_generation, before.bundle_generation);
+    assert_eq!(after.filter_generation, before.filter_generation);
+    assert_eq!(after.filter_identity, before.filter_identity);
+    assert!(restarted.management_state().is_none());
+
+    let worker2 = Arc::new(EventWorker::new(&options2, queue2, client2));
+    assert_eq!(
+        worker2.metrics().emitted,
+        0,
+        "restarted counters must be honest"
+    );
+    worker2.start();
+    assert_ne!(
+        udp_query(restarted.bind_addr(), "allow.test.", mapped_source())
+            .await
+            .response_code,
+        ResponseCode::NXDomain
+    );
+    wait_until(30, "post-restart observation", || async {
+        let (_, body) = http
+            .get(&format!(
+                "/api/network/households/{hid}/dns/stats?window=24h"
+            ))
+            .await;
+        body["total_queries"].as_u64() == Some(2)
+    })
+    .await;
+    let (_, rows) = http
+        .get(&format!(
+            "/api/network/households/{hid}/dns/events?domain=allow.test&limit=10"
+        ))
+        .await;
+    for item in rows["rows"].as_array().unwrap() {
+        assert_eq!(item["cache_state"], "unknown");
+        assert_eq!(item["upstream"], Value::Null);
+    }
+    worker2.shutdown().await;
+    restarted.stop_shared().await;
 }
 
 // ─── Fail-closed negative cases ──────────────────────────────────────────────
@@ -793,10 +931,15 @@ async fn event_worker_fails_closed_on_outage_auth_denial_and_shutdown(pool: PgPo
     let event = synthetic_event("blocked.test.");
     queue.push(event.clone());
 
-    // One attempt, exactly one retry, then a counted drop. No infinite loop.
-    worker.flush_once().await;
-    assert_eq!(queue.metrics().dropped_retry, 1);
-    assert_eq!(queue.metrics().sent, 0);
+    // The REAL loop (no direct flush shortcut): one attempt, exactly one
+    // retry, then a counted drop visible through operator metrics.
+    worker.start();
+    wait_until(15, "one bounded retry then counted drop", || async {
+        worker.metrics().dropped_retry >= 1
+    })
+    .await;
+    assert_eq!(worker.metrics().sent, 0);
+    worker.shutdown().await;
 
     // Now point at the real server with a credential that LACKS the command:
     // a permanent 401/403 is counted as rejected, never retried or fabricated.
@@ -810,9 +953,13 @@ async fn event_worker_fails_closed_on_outage_auth_denial_and_shutdown(pool: PgPo
         Arc::clone(&auth_client),
     ));
     auth_queue.push(event);
-    auth_worker.flush_once().await;
-    assert_eq!(auth_queue.metrics().rejected, 1);
-    assert_eq!(auth_queue.metrics().sent, 0);
+    auth_worker.start();
+    wait_until(15, "scoped auth denial", || async {
+        auth_worker.metrics().rejected >= 1
+    })
+    .await;
+    assert_eq!(auth_worker.metrics().sent, 0);
+    auth_worker.shutdown().await;
     let (_, stats) = http
         .get(&format!(
             "/api/network/households/{hid}/dns/stats?window=24h"
@@ -842,5 +989,6 @@ async fn event_worker_fails_closed_on_outage_auth_denial_and_shutdown(pool: PgPo
     shutdown_worker.start();
     shutdown_worker.shutdown().await;
     // Join returned; no detached task or socket survives shutdown.
-    assert_eq!(shutdown_worker.queue().metrics().sent, 0);
+    assert_eq!(shutdown_worker.metrics().sent, 0);
+    assert_eq!(shutdown_worker.metrics().queued, 0);
 }

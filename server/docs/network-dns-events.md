@@ -70,7 +70,7 @@ Response fields include the frontend integration shape: `event_id`, `time`/`obse
 
 ## Gaps (explicit)
 
-- The `family-dns` worker now has an opt-in producer for this route and a real server↔worker E2E test; see `crates/family-dns/docs/network-dns-event-reporting.md` and `server/src/network/dns_events_worker_e2e_tests.rs`. CLI wiring and an explicit `cache_state: "unknown"` schema variant remain separate additive gates owned by the parent; until then the worker reports `bypass` (the decision layer consulted no resolver cache) and never fabricates a hit/miss or upstream identity.
+- The `family-dns` worker now has an opt-in producer for this route and a real server↔worker E2E test; see `crates/family-dns/docs/network-dns-event-reporting.md` and `server/src/network/dns_events_worker_e2e_tests.rs`. CLI wiring is `--dns-events <FILE>` (default off), and migration `0084` adds the explicit `cache_state: "unknown"` value. The worker never fabricates a hit/miss or upstream identity.
 - No proxy or agent observation ingestion, no inspected/traffic-count synthesis, no `by_host` grouping, no verified-person attribution, no canary/coverage signal, no policy management/history change and no UI work.
 - Read/ingest semantics are DNS-observation-only; the 30-day maximum age is a storage bound, not a coverage promise.
 

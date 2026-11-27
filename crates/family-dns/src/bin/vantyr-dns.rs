@@ -8,9 +8,9 @@ use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use family_dns::{
     read_bounded, sync_once, BundleStore, BundleValidator, Config, ControllerClient,
-    ControllerOptions, ControllerPoller, DnsServer, DurableOptions, ManagementClient,
-    ManagementOptions, ManagementWorker, ReloadOutcome, SubscriptionRuntime, SubscriptionSettings,
-    SyncCapability, MAX_FILTER_BUNDLE_BYTES,
+    ControllerOptions, ControllerPoller, DnsServer, DurableOptions, EventClient, EventOptions,
+    EventQueue, EventWorker, ManagementClient, ManagementOptions, ManagementWorker, ReloadOutcome,
+    SubscriptionRuntime, SubscriptionSettings, SyncCapability, MAX_FILTER_BUNDLE_BYTES,
 };
 
 const USAGE: &str = "\
@@ -35,6 +35,8 @@ Usage:
                                              (durable mode required; no fetch without it)
   vantyr-dns ... --dns-management <FILE>    opt in to private DNS management
                                              (durable mode required; default OFF)
+  vantyr-dns ... --dns-events <FILE>        opt in to worker DNS event reporting
+                                              (private 0600 options + bearer; default OFF)
   vantyr-dns --help                          show this help
   vantyr-dns --version                       show the version
 
@@ -54,6 +56,7 @@ struct Args {
     controller: Option<PathBuf>,
     subscriptions: Option<PathBuf>,
     dns_management: Option<PathBuf>,
+    dns_events: Option<PathBuf>,
     poll: bool,
     check_only: bool,
     state_status: bool,
@@ -76,7 +79,7 @@ fn parse_args() -> Result<Args> {
             "--state-status" => args.state_status = true,
             "--poll" => args.poll = true,
             "--config" | "--state" | "--worker" | "--controller" | "--subscriptions"
-            | "--dns-management" => {
+            | "--dns-management" | "--dns-events" => {
                 let value = iter
                     .next()
                     .ok_or_else(|| anyhow!("{arg} needs a value\n{USAGE}"))?;
@@ -86,6 +89,7 @@ fn parse_args() -> Result<Args> {
                     "--controller" => args.controller = Some(PathBuf::from(value)),
                     "--subscriptions" => args.subscriptions = Some(PathBuf::from(value)),
                     "--dns-management" => args.dns_management = Some(PathBuf::from(value)),
+                    "--dns-events" => args.dns_events = Some(PathBuf::from(value)),
                     _ => args.worker = Some(value),
                 }
             }
@@ -224,40 +228,57 @@ async fn run() -> Result<()> {
         None => None,
     };
 
+    // Event reporting is opt-in and private. No bearer is accepted on the
+    // command line; the options and credential files must be owner-private.
+    let dns_events_state = match &args.dns_events {
+        Some(path) => {
+            let options = EventOptions::load(path)?;
+            let queue = Arc::new(EventQueue::new(options.queue_capacity()));
+            let client = Arc::new(EventClient::new(&options)?);
+            Some((options, queue, client))
+        }
+        None => None,
+    };
+
     // The subscription startup path returns the ONE canonical Arc: the
     // integrator task must observe the same allocation for its whole life.
     let server: Arc<DnsServer> = match (&args.state, &args.worker) {
-        (Some(state), Some(worker)) => match subscription_runtime {
-            Some(runtime) => {
-                DnsServer::start_durable_with_subscriptions(
-                    DurableOptions {
-                        state_path: state.clone(),
-                        worker_id: worker.clone(),
-                        config_path: args.config.clone(),
-                        now: Utc::now(),
-                        hooks: None,
-                    },
-                    Some(runtime),
-                )
-                .await?
+        (Some(state), Some(worker)) => {
+            let durable = DurableOptions {
+                state_path: state.clone(),
+                worker_id: worker.clone(),
+                config_path: args.config.clone(),
+                now: Utc::now(),
+                hooks: None,
+            };
+            let queue = dns_events_state
+                .as_ref()
+                .map(|(_, queue, _)| Arc::clone(queue));
+            match (subscription_runtime, queue) {
+                (Some(runtime), Some(queue)) => {
+                    DnsServer::start_durable_with_events(durable, Some(runtime), queue).await?
+                }
+                (Some(runtime), None) => {
+                    DnsServer::start_durable_with_subscriptions(durable, Some(runtime)).await?
+                }
+                (None, Some(queue)) => {
+                    DnsServer::start_durable_with_events(durable, None, queue).await?
+                }
+                (None, None) => Arc::new(DnsServer::start_durable(durable).await?),
             }
-            None => Arc::new(
-                DnsServer::start_durable(DurableOptions {
-                    state_path: state.clone(),
-                    worker_id: worker.clone(),
-                    config_path: args.config.clone(),
-                    now: Utc::now(),
-                    hooks: None,
-                })
-                .await?,
-            ),
-        },
+        }
         (None, None) => {
             let path = args
                 .config
                 .as_ref()
                 .ok_or_else(|| anyhow!("a configuration file is required\n{USAGE}"))?;
-            Arc::new(DnsServer::start(Config::load(path)?).await?)
+            let config = Config::load(path)?;
+            match &dns_events_state {
+                Some((_, queue, _)) => {
+                    Arc::new(DnsServer::start_with_events(config, Arc::clone(queue)).await?)
+                }
+                None => Arc::new(DnsServer::start(config).await?),
+            }
         }
         _ => bail!("--state and --worker must be supplied together\n{USAGE}"),
     };
@@ -308,6 +329,14 @@ async fn run() -> Result<()> {
         None => None,
     };
 
+    // The event worker is a side channel: it never owns the listener Arc and
+    // its loop is cancellable and joined on shutdown.
+    let event_worker = dns_events_state.map(|(options, queue, client)| {
+        let worker = Arc::new(EventWorker::new(&options, queue, client));
+        worker.start();
+        worker
+    });
+
     #[cfg(unix)]
     {
         let mut hup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
@@ -342,6 +371,22 @@ async fn run() -> Result<()> {
     }
     if let Some(poller) = poller.take() {
         poller.stop().await;
+    }
+    if let Some(worker) = event_worker {
+        worker.shutdown().await;
+        let m = worker.metrics();
+        eprintln!(
+            "Vantyr DNS: event reporter final status — emitted {}, queued {}, lost_queue {}, invalid {}, sent {}, acked {}, rejected {}, dropped_retry {}, restored {} (prior-run losses unknown: volatile queue)",
+            m.emitted,
+            m.queued,
+            m.lost_queue,
+            m.invalid,
+            m.sent,
+            m.acked,
+            m.rejected,
+            m.dropped_retry,
+            m.restored_on_shutdown
+        );
     }
     eprintln!("Vantyr DNS: shutting down");
     // Join the integrator before consuming the listener; an in-flight download
