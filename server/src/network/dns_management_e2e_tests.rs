@@ -1616,7 +1616,7 @@ fn upgrade_prior_bundle(published: DateTime<Utc>, d_old: &str) -> Vec<u8> {
     let envelope = json!({
         "schema": 1u32,
         "household_id": household,
-        "worker_id": "upgrade-e2e-worker",
+        "worker_id": WORKER_ID,
         "highwater": generation,
         "policy": {
             "config": serde_json::to_value(&config).unwrap(),
@@ -1878,9 +1878,19 @@ async fn full_upgrade_0085_0086_preserves_evidence_and_applies_once(pool: PgPool
         hooks: None,
     })
     .await;
+    let rejection = match rejected {
+        Err(error) => error.to_string(),
+        Ok(server) => {
+            server.stop().await;
+            panic!("strict worker accepted a prior-shape bundle");
+        }
+    };
     assert!(
-        rejected.is_err(),
-        "strict worker accepted a prior-shape bundle"
+        rejection.starts_with("malformed snapshot:")
+            && (rejection.contains("missing field `runtime`")
+                || rejection.contains("unknown field `schema_version`")
+                || rejection.contains("unknown field `runtime`")),
+        "expected strict prior-shape rejection, got: {rejection}"
     );
     assert_eq!(
         fs::read(&st.state).unwrap(),
