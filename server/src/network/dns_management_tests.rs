@@ -1773,15 +1773,17 @@ const NEXT_BODY: &str = r#"{"sources":[],"catalog":[],"selected_services":[],"ru
 
 /// Migrate up to (but not including) 0086 and return the full migrator so the
 /// caller can apply the repair after seeding. Requires `migrations = false`.
-async fn migrate_before_dns_repair(pool: &PgPool) -> Migrator {
+pub(super) async fn migrate_before_dns_repair(pool: &PgPool) -> Migrator {
+    migrate_before_version(pool, DNS_REPAIR_MIGRATION).await
+}
+
+/// Apply every migration strictly below `cutoff` and return the full migrator,
+/// so the caller can resume it after seeding an intermediate shape. Requires
+/// `migrations = false` on the test.
+pub(super) async fn migrate_before_version(pool: &PgPool, cutoff: i64) -> Migrator {
     let all = sqlx::migrate!("./migrations");
     let before = Migrator {
-        migrations: Cow::Owned(
-            all.iter()
-                .filter(|m| m.version < DNS_REPAIR_MIGRATION)
-                .cloned()
-                .collect(),
-        ),
+        migrations: Cow::Owned(all.iter().filter(|m| m.version < cutoff).cloned().collect()),
         ..Migrator::DEFAULT
     };
     before.run(pool).await.unwrap();
@@ -1996,7 +1998,7 @@ async fn seed_post_0085(pool: &PgPool, name: &str, version: i64) -> (Uuid, Uuid,
 
 /// Whole-row JSON fingerprint of every evidence table the repair must not
 /// touch, scoped to one household and ordered for stable comparison.
-async fn evidence_snapshot(pool: &PgPool, hid: Uuid) -> Value {
+pub(super) async fn evidence_snapshot(pool: &PgPool, hid: Uuid) -> Value {
     sqlx::query_scalar::<_, Value>(
         r#"
         SELECT jsonb_build_object(

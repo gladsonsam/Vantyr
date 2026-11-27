@@ -35,6 +35,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use super::dns_management_dto::digest;
 use axum::extract::State;
 use axum::middleware::from_fn_with_state;
 use axum::response::{IntoResponse, Response};
@@ -43,7 +44,7 @@ use axum::serve::{Listener, ListenerExt};
 use axum::Router;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use family_dns::{
-    config_digest, single_source_config, DnsServer, DurableOptions, FormatValidator,
+    config_digest, single_source_config, Config, DnsServer, DurableOptions, FormatValidator,
     ManagementClient, ManagementConfig, ManagementOptions, ManagementWorker, SubscriptionRuntime,
     SubscriptionSettings,
 };
@@ -1555,7 +1556,9 @@ async fn stale_clear_ack_is_not_resent_after_new_cycle_and_failed_apply(pool: Pg
         "reported LKG applied_at changed",
     );
     assert!(
-        applied["last_error"].as_str().is_some_and(|e| !e.is_empty()),
+        applied["last_error"]
+            .as_str()
+            .is_some_and(|e| !e.is_empty()),
         "failed-apply error was not visible in the accepted status"
     );
     // The new cycle carries no ack: the retired seq-1 ack was never resent.
@@ -1573,4 +1576,653 @@ async fn stale_clear_ack_is_not_resent_after_new_cycle_and_failed_apply(pool: Pg
     *list_state.fail.lock().unwrap() = false;
     worker.shutdown().await;
     server.stop_shared().await;
+}
+
+// ─── Full pre-0085 -> 0085 -> 0086 upgrade E2E ───────────────────────────────
+//
+// A real pre-migration database holds an applied prior-shape bundle at version
+// V with the old three-field digest. The operator evidence scripts are fed as
+// their exact SQL text (only the psql meta-command line is removed), and 0085
+// plus 0086 run through the real SQLx migrator so the ledger checksums are
+// genuine. After the offline converter runs, the real server/worker deliver and
+// apply V+1 once, and a durable restart recovers the current bundle.
+
+const UPGRADE_PRIOR_BODY: &str = r#"{"sources":[],"catalog":null,"selected_services":[]}"#;
+/// Byte-exact result of 0085 appending its default runtime to the prior body.
+const UPGRADE_CURRENT_BODY: &str = r#"{"sources":[],"catalog":null,"selected_services":[],"runtime":{"cache":{"enabled":true,"max_entries":4096,"positive_min_ttl_secs":null,"positive_max_ttl_secs":null,"negative_min_ttl_secs":null,"negative_max_ttl_secs":null},"deny":{"mode":"nxdomain"}}}"#;
+const UPGRADE_NEXT_BODY: &str = r#"{"sources":[],"catalog":null,"selected_services":[],"runtime":{"cache":{"enabled":false,"max_entries":4096,"positive_min_ttl_secs":null,"positive_max_ttl_secs":null,"negative_min_ttl_secs":null,"negative_max_ttl_secs":null},"deny":{"mode":"nxdomain"}}}"#;
+const UPGRADE_VERSION: i64 = 7;
+const UPGRADE_POLICY_REVISION: u64 = 4;
+
+/// Strip ONLY the psql meta-command; every SQL statement stays byte-exact.
+fn upgrade_sql(script: &str) -> String {
+    script
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("\\set "))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A synthetic prior-shape applied bundle built from the exact production
+/// config/policy types. Counters, private-file shape and the old three-field
+/// digest are coherent; no real household or host bundle is copied.
+fn upgrade_prior_bundle(published: DateTime<Utc>, d_old: &str) -> Vec<u8> {
+    let raw = dns_config(0, UPGRADE_POLICY_REVISION, published, None);
+    let config = Config::parse(&raw).unwrap();
+    let policy_value = serde_json::to_value(&config.policy_at(published)).unwrap();
+    let revision = policy_value["revision"].as_u64().unwrap();
+    let household = config.household_id.clone();
+    let generation = 12u64;
+    let envelope = json!({
+        "schema": 1u32,
+        "household_id": household,
+        "worker_id": "upgrade-e2e-worker",
+        "highwater": generation,
+        "policy": {
+            "config": serde_json::to_value(&config).unwrap(),
+            "policy": policy_value,
+            "filter": Value::Null,
+            "generation": generation,
+            "policy_highwater": revision,
+            "filter_generation": 0u64,
+            "management": {
+                "config_version": UPGRADE_VERSION as u64,
+                "digest": d_old,
+                "config": {
+                    "sources": [],
+                    "catalog": Value::Null,
+                    "selected_services": []
+                },
+                "filter_identity": "upgrade-e2e",
+                "receipts": [],
+                "receipt_expiry": {},
+                "schema_version": 1,
+                "applied_at": published,
+                "last_error": Value::Null
+            }
+        },
+        "saved_at": published
+    });
+    serde_json::to_vec(&envelope).unwrap()
+}
+
+/// Seed a coherent pre-0085 household: desired V with the old three-field body
+/// and digest, plus delivery/status/pins and policy/refresh/clear/audit ledger
+/// evidence that neither 0085/0086 nor the worker may reset.
+async fn seed_upgrade_db(pool: &PgPool, name: &str, d_old: &str) -> (Uuid, Uuid, Uuid) {
+    let actor = insert_user(pool, &format!("{name}-actor"), "admin").await;
+    let hid: Uuid =
+        sqlx::query_scalar("INSERT INTO network_households (name) VALUES ($1) RETURNING id")
+            .bind(name)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let gid: Uuid = sqlx::query_scalar(
+        "INSERT INTO network_gateways (household_id, kind, label) VALUES ($1, 'dns', $2) RETURNING id",
+    )
+    .bind(hid)
+    .bind(format!("{name}-dns"))
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let secret_hash = digest(format!("secret-{name}").as_bytes());
+    let cid: Uuid = sqlx::query_scalar(
+        "INSERT INTO network_gateway_credentials \
+         (household_id, gateway_id, kind, audience, allowed_commands, secret_hash, expires_at) \
+         VALUES ($1, $2, 'dns', 'vantyr-gateway-worker', \
+                 ARRAY['heartbeat','read_dns_management','report_dns_status']::text[], \
+                 $3, NOW() + INTERVAL '1 hour') RETURNING id",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(secret_hash.as_str())
+    .fetch_one(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO network_dns_management_config \
+         (household_id, config_version, schema_version, body, body_sha256, \
+          created_at, updated_at, updated_by) \
+         VALUES ($1, $2, 1, $3, $4, '2026-01-01T00:00:00+00', '2026-01-01T00:00:00+00', $5)",
+    )
+    .bind(hid)
+    .bind(UPGRADE_VERSION)
+    .bind(UPGRADE_PRIOR_BODY.as_bytes())
+    .bind(d_old)
+    .bind(actor)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_dns_delivery \
+         (household_id, gateway_id, kind, config_version, body_sha256, delivered_at) \
+         VALUES ($1, $2, 'dns', $3, $4, '2026-01-02T00:00:00+00')",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(UPGRADE_VERSION)
+    .bind(d_old)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_dns_gateway_state \
+         (household_id, gateway_id, kind, delivered_version, delivered_sha256, \
+          reported_version, reported_sha256, reported_at, updated_at) \
+         VALUES ($1, $2, 'dns', $3, $4, $3, $4, \
+                 '2026-01-03T00:00:00+00', '2026-01-03T00:00:00+00')",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(UPGRADE_VERSION)
+    .bind(d_old)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_dns_status \
+         (household_id, gateway_id, credential_id, report_id, config_version, body_sha256, \
+          reported_at, received_at, applied_version, applied_at, generation, \
+          filter_generation, filter_identity, sources) \
+         VALUES ($1, $2, $3, $4, $5, $6, \
+                 '2026-01-04T00:00:00+00', '2026-01-04T00:01:00+00', $5, \
+                 '2026-01-04T00:02:00+00', 4, 2, 'id-2', '[]'::jsonb)",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(cid)
+    .bind(Uuid::new_v4())
+    .bind(UPGRADE_VERSION)
+    .bind(d_old)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO network_dns_refresh_request \
+         (household_id, source_id, refresh_seq, config_version, requested_at, expires_at, requested_by) \
+         VALUES ($1, 'src1', 1, $2, '2026-01-05T00:00:00+00', '2026-01-06T00:00:00+00', $3)",
+    )
+    .bind(hid)
+    .bind(UPGRADE_VERSION)
+    .bind(actor)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_dns_refresh_delivery \
+         (household_id, gateway_id, source_id, refresh_seq, config_version, delivered_at) \
+         VALUES ($1, $2, 'src1', 1, $3, '2026-01-05T01:00:00+00')",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(UPGRADE_VERSION)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_dns_refresh_ack \
+         (household_id, gateway_id, source_id, refresh_seq, config_version, acked_at) \
+         VALUES ($1, $2, 'src1', 1, $3, '2026-01-05T02:00:00+00')",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(UPGRADE_VERSION)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO network_dns_cache_clear_request \
+         (household_id, clear_seq, config_version, requested_at, expires_at, requested_by) \
+         VALUES ($1, 1, $2, '2026-01-07T00:00:00+00', '2026-01-08T00:00:00+00', $3)",
+    )
+    .bind(hid)
+    .bind(UPGRADE_VERSION)
+    .bind(actor)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_dns_cache_clear_delivery \
+         (household_id, gateway_id, kind, clear_seq, config_version, requested_at, delivered_at) \
+         VALUES ($1, $2, 'dns', 1, $3, '2026-01-07T00:00:00+00', '2026-01-07T01:00:00+00')",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(UPGRADE_VERSION)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_dns_cache_clear_ack \
+         (household_id, gateway_id, clear_seq, config_version, attempted_at, acked_at) \
+         VALUES ($1, $2, 1, $3, '2026-01-07T02:00:00+00', '2026-01-07T03:00:00+00')",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(UPGRADE_VERSION)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let policy_body = b"upgrade-policy-body";
+    let policy_digest = digest(policy_body);
+    sqlx::query(
+        "INSERT INTO network_policies \
+         (household_id, revision, schema_version, body, body_sha256, source_kind, published_at, published_by) \
+         VALUES ($1, 1, 1, $2, $3, 'publish', '2026-01-09T00:00:00+00', $4)",
+    )
+    .bind(hid)
+    .bind(policy_body.as_slice())
+    .bind(policy_digest.as_str())
+    .bind(actor)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_gateway_desired_policy \
+         (household_id, gateway_id, kind, revision, assigned_at, assigned_by) \
+         VALUES ($1, $2, 'dns', 1, '2026-01-09T00:00:00+00', $3)",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(actor)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO network_audit (household_id, actor, action, detail, ts) \
+         VALUES ($1, 'upgrade-test', 'dns.management.save', '{}'::jsonb, '2026-01-10T00:00:00+00')",
+    )
+    .bind(hid)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    (hid, gid, actor)
+}
+
+#[sqlx::test(migrations = false)]
+async fn full_upgrade_0085_0086_preserves_evidence_and_applies_once(pool: PgPool) {
+    // Two-step migrator: everything below 0085, with genuine SQLx checksums.
+    let all = super::dns_management_tests::migrate_before_version(&pool, 85).await;
+    let d_old = digest(UPGRADE_PRIOR_BODY.as_bytes());
+    let d_new = digest(UPGRADE_CURRENT_BODY.as_bytes());
+    let (hid, gid, actor) = seed_upgrade_db(&pool, "upgrade", &d_old).await;
+    let published = published_at();
+
+    // Synthetic prior-shape applied bundle on disk, owner-private.
+    let st = fixture("upgrade");
+    let prior_bytes = upgrade_prior_bundle(published, &d_old);
+    fs::write(
+        &st.config,
+        dns_config(0, UPGRADE_POLICY_REVISION, published, None),
+    )
+    .unwrap();
+    fs::write(&st.state, &prior_bytes).unwrap();
+    #[cfg(unix)]
+    {
+        private(&st.config);
+        private(&st.state);
+    }
+
+    // The strict current worker refuses the old bundle and leaves the bytes
+    // untouched: no runtime legacy reader or on-load repair exists.
+    let rejected = DnsServer::start_durable(DurableOptions {
+        state_path: st.state.clone(),
+        worker_id: WORKER_ID.to_owned(),
+        config_path: Some(st.config.clone()),
+        now: published,
+        hooks: None,
+    })
+    .await;
+    assert!(
+        rejected.is_err(),
+        "strict worker accepted a prior-shape bundle"
+    );
+    assert_eq!(
+        fs::read(&st.state).unwrap(),
+        prior_bytes,
+        "rejecting the old bundle mutated it on disk"
+    );
+
+    // Explicit operator evidence snapshot, then the real 0085 + 0086 migrations.
+    let snapshot_sql = upgrade_sql(include_str!(
+        "../../scripts/offline0085_evidence_snapshot.sql"
+    ));
+    // Audited: the SQL is the checked-in operator script with only a psql
+    // meta-command removed; no runtime or user input is interpolated.
+    sqlx::raw_sql(sqlx::AssertSqlSafe(snapshot_sql))
+        .execute(&pool)
+        .await
+        .expect("offline evidence snapshot must succeed before 0085");
+    let snap: Vec<(String, String, String, i64)> = sqlx::query_as(
+        "SELECT kind, original_digest, converted_digest, config_version \
+         FROM operator_offline0085_dns_evidence_snapshot \
+         WHERE household_id = $1 ORDER BY kind",
+    )
+    .bind(hid)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(!snap.is_empty(), "snapshot captured no evidence");
+    for (kind, original, converted, version) in &snap {
+        assert_eq!(original, &d_old, "{kind} original digest was not preserved");
+        assert_eq!(converted, &d_new, "{kind} converted digest was miscomputed");
+        assert_eq!(*version, UPGRADE_VERSION, "{kind} snapshot version");
+    }
+
+    all.run(&pool)
+        .await
+        .expect("0085 + 0086 must apply with genuine ledger checksums");
+    let desired: (i64, Vec<u8>, String) = sqlx::query_as(
+        "SELECT config_version, body, body_sha256 \
+         FROM network_dns_management_config WHERE household_id = $1",
+    )
+    .bind(hid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(desired.0, UPGRADE_VERSION + 1, "0086 did not bump V to V+1");
+    assert_eq!(
+        desired.1,
+        UPGRADE_CURRENT_BODY.as_bytes(),
+        "0085 body changed"
+    );
+    assert_eq!(desired.2, d_new, "0085 converted digest changed");
+
+    // Restore the original evidence at V, after verifying V+1/Dnew.
+    let restore_sql = upgrade_sql(include_str!(
+        "../../scripts/offline0085_evidence_restore.sql"
+    ));
+    // Audited: the SQL is the checked-in operator script with only a psql
+    // meta-command removed; no runtime or user input is interpolated.
+    sqlx::raw_sql(sqlx::AssertSqlSafe(restore_sql))
+        .execute(&pool)
+        .await
+        .expect("offline evidence restore must succeed after 0085 + 0086");
+    for (table, column) in [
+        ("network_dns_delivery", "body_sha256"),
+        ("network_dns_gateway_state", "delivered_sha256"),
+        ("network_dns_gateway_state", "reported_sha256"),
+        ("network_dns_status", "body_sha256"),
+    ] {
+        // Audited: table/column come from the fixed local list below, never
+        // from input; only identifiers are interpolated.
+        let restored: String = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT {column} FROM {table} WHERE household_id = $1 AND gateway_id = $2 LIMIT 1"
+        )))
+        .bind(hid)
+        .bind(gid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(restored, d_old, "{table}.{column} was not restored to V");
+    }
+    let delivered_version: i64 = sqlx::query_scalar(
+        "SELECT delivered_version FROM network_dns_gateway_state \
+         WHERE household_id = $1 AND gateway_id = $2",
+    )
+    .bind(hid)
+    .bind(gid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(delivered_version, UPGRADE_VERSION, "pins were advanced");
+    let before = super::dns_management_tests::evidence_snapshot(&pool, hid).await;
+
+    // Offline converter: check is read-only; apply keeps an exact private backup.
+    let backup = st.state.with_extension("bak");
+    family_dns::bundle_convert::check_file(&st.state)
+        .expect("prior bundle must be convertible in a dry run");
+    assert_eq!(
+        fs::read(&st.state).unwrap(),
+        prior_bytes,
+        "check_file mutated source"
+    );
+    assert!(!backup.exists(), "check_file created a backup");
+    let converted =
+        family_dns::bundle_convert::apply_file(&st.state).expect("prior bundle must apply offline");
+    assert_eq!(converted.source_schema, 1);
+    assert_eq!(converted.source_config_version, UPGRADE_VERSION as u64);
+    assert_eq!(
+        fs::read(&backup).unwrap(),
+        prior_bytes,
+        "backup is not byte-exact"
+    );
+    let converted_bytes = fs::read(&st.state).unwrap();
+    assert_ne!(
+        converted_bytes, prior_bytes,
+        "apply_file did not convert the bundle"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for path in [&st.state, &backup] {
+            assert_eq!(
+                fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                0o600,
+                "converted bundle or backup is not private"
+            );
+        }
+    }
+    assert!(
+        family_dns::bundle_convert::check_file(&st.state).is_err(),
+        "conversion is not one-shot"
+    );
+
+    // Real server + worker over the real router/PG and verified loopback TLS.
+    let (base, ca_pem, _server_guard) = spawn_server(pool.clone()).await;
+    let origin = CountingUpstream::start().await;
+    let user = insert_user(&pool, "upgrade-admin", "admin").await;
+    // The household was seeded directly below 0085, so it has no bootstrap
+    // grant. Give this admin the same explicit network_admin grant bootstrap
+    // would have created; no platform role implies it.
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        super::db::insert_grant_on_conn(
+            &mut conn,
+            hid,
+            user,
+            super::authz::NetworkGrant::Admin,
+            user,
+        )
+        .await
+        .unwrap();
+    }
+    let (token, csrf) = session_for(&pool, user, "admin").await;
+    let http = Http::new(base.clone(), &ca_pem, token, csrf);
+    let bearer = issue_cred(&http, hid, gid).await;
+    let (server, worker) = start_worker(
+        &st,
+        hid,
+        gid,
+        published,
+        "unused-list-ca",
+        &base,
+        &ca_pem,
+        &bearer,
+        origin.addr,
+    )
+    .await;
+    worker.start(Arc::downgrade(&server));
+    wait_until(30, "worker applies the repaired V+1", || async {
+        server.management_state().is_some_and(|state| {
+            state.config_version == (UPGRADE_VERSION + 1) as u64 && state.digest == d_new
+        })
+    })
+    .await;
+    let applied = server.management_state().unwrap();
+    assert!(
+        applied.applied_at.is_some(),
+        "no applied_at on the repaired bundle"
+    );
+
+    // Truthful worker status ack, delivered/reported/applied all at V+1/Dnew.
+    let status_path = format!("/api/network/households/{hid}/dns/status");
+    let expected = (UPGRADE_VERSION + 1) as u64;
+    let d_new_json = json!(d_new);
+    wait_until(30, "server records the repaired apply", || {
+        let http = &http;
+        let status_path = status_path.clone();
+        let d_new_json = d_new_json.clone();
+        async move {
+            let (code, view) = http.get(&status_path).await;
+            code == 200
+                && view["gateways"].as_array().is_some_and(|gateways| {
+                    gateways.iter().any(|gateway| {
+                        gateway["gateway_id"] == json!(gid.to_string())
+                            && gateway["delivered_version"] == json!(expected)
+                            && gateway["reported_version"] == json!(expected)
+                            && gateway["status"]["config_version"] == json!(expected)
+                            && gateway["status"]["applied"]["config_version"] == json!(expected)
+                            && gateway["status"]["applied"]["body_sha256"] == d_new_json
+                    })
+                })
+        }
+    })
+    .await;
+    let deliveries: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM network_dns_delivery \
+         WHERE household_id = $1 AND gateway_id = $2 AND config_version = $3",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(UPGRADE_VERSION + 1)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(deliveries, 1, "V+1 was delivered more than once");
+
+    // Next poll is idempotent: no re-apply, no new delivery, no generation bump.
+    let status_before = server.status();
+    tokio::time::sleep(Duration::from_secs(12)).await;
+    assert_eq!(
+        server.management_state().unwrap(),
+        applied,
+        "poll re-applied V+1"
+    );
+    assert_eq!(
+        server.status(),
+        status_before,
+        "poll bumped the bundle generation"
+    );
+    let deliveries_after: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM network_dns_delivery \
+         WHERE household_id = $1 AND gateway_id = $2 AND config_version = $3",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(UPGRADE_VERSION + 1)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(deliveries_after, 1, "next poll created a second delivery");
+
+    // Policy revision/history/CAS space and audit were never reset; the old V
+    // status row still carries its original digest and generation counters.
+    let after = super::dns_management_tests::evidence_snapshot(&pool, hid).await;
+    assert_eq!(
+        after["policies"], before["policies"],
+        "policy history was reset"
+    );
+    assert_eq!(
+        after["desired_policy"], before["desired_policy"],
+        "assignment was reset"
+    );
+    assert_eq!(after["audit"], before["audit"], "audit evidence was reset");
+    let old: (String, i64, i64) = sqlx::query_as(
+        "SELECT body_sha256, generation, filter_generation FROM network_dns_status \
+         WHERE household_id = $1 AND gateway_id = $2 AND config_version = $3",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(UPGRADE_VERSION)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(old.0, d_old, "old V status digest was rewritten");
+    assert_eq!(old.1, 4, "old V bundle generation was reset");
+    assert_eq!(old.2, 2, "old V filter generation was reset");
+
+    // Durable restart from the single converted bundle, with a stale external
+    // config file, recovers the exact applied state and status.
+    worker.shutdown().await;
+    server.stop_shared().await;
+    fs::write(&st.config, dns_config(0, 99, published, None)).unwrap();
+    let recovered = DnsServer::start_durable(DurableOptions {
+        state_path: st.state.clone(),
+        worker_id: WORKER_ID.to_owned(),
+        config_path: Some(st.config.clone()),
+        now: Utc::now(),
+        hooks: None,
+    })
+    .await
+    .expect("converted bundle must recover after restart");
+    assert_eq!(
+        recovered.management_state().unwrap(),
+        applied,
+        "restart lost V+1"
+    );
+    assert_eq!(recovered.status(), status_before, "restart changed status");
+
+    // CAS semantics survive the upgrade: V and V+1 are stale, V+2 is admitted.
+    let next_digest = digest(UPGRADE_NEXT_BODY.as_bytes());
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        assert!(
+            !super::dns_management_db::upsert_desired_on_conn(
+                &mut conn,
+                hid,
+                UPGRADE_VERSION,
+                UPGRADE_NEXT_BODY.as_bytes(),
+                &next_digest,
+                Utc::now(),
+                actor,
+            )
+            .await
+            .unwrap(),
+            "pre-upgrade V is still a writable CAS base"
+        );
+        assert!(
+            !super::dns_management_db::upsert_desired_on_conn(
+                &mut conn,
+                hid,
+                UPGRADE_VERSION + 1,
+                UPGRADE_NEXT_BODY.as_bytes(),
+                &next_digest,
+                Utc::now(),
+                actor,
+            )
+            .await
+            .unwrap(),
+            "current V+1 is a writable CAS base"
+        );
+        assert!(
+            super::dns_management_db::upsert_desired_on_conn(
+                &mut conn,
+                hid,
+                UPGRADE_VERSION + 2,
+                UPGRADE_NEXT_BODY.as_bytes(),
+                &next_digest,
+                Utc::now(),
+                actor,
+            )
+            .await
+            .unwrap(),
+            "one version above V+1 must be admitted"
+        );
+    }
+    let after_cas: i64 = sqlx::query_scalar(
+        "SELECT config_version FROM network_dns_management_config WHERE household_id = $1",
+    )
+    .bind(hid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(after_cas, UPGRADE_VERSION + 2);
+
+    recovered.stop().await;
 }
