@@ -260,6 +260,20 @@ impl ProxyServer {
         Self::start_with_upstream_tls(config, resolver, inspection, None, Some(auth)).await
     }
 
+    /// Convenience opt-in seam for the system resolver. Callers that do not
+    /// need to inject a resolver avoid taking a direct dependency on Rama just
+    /// to name its type; the ordinary `start()` path is unchanged.
+    pub async fn start_with_session_auth_system(
+        config: Config,
+        credentials: Arc<CredentialStore>,
+        evidence: Arc<dyn SessionEvidenceVerifier>,
+        assignments: Vec<Assignment>,
+    ) -> Result<Self> {
+        let resolver = rama::dns::client::HickoryDnsResolver::try_new_system()
+            .map_err(|error| anyhow::anyhow!("Hickory resolver init failed: {error}"))?;
+        Self::start_with_session_auth(config, resolver, credentials, evidence, assignments).await
+    }
+
     /// Test-only injection seam: an in-memory inspection signer and explicit
     /// upstream trust anchors for real loopback TLS tests. The binary and the
     /// normal `start`/`start_with` paths never reach this; production always

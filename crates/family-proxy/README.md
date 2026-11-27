@@ -111,11 +111,34 @@ wires a `CredentialStore` plus a typed `SessionEvidenceVerifier`:
   Replay state lives with the receipt until it is safely expired/revoked and
   past retention; a full bound fails closed with `evidence_bound_exceeded`.
   Bootstrap and central credentials share the bounded failure/cooldown tracker.
-- No server authority is implemented or claimed: `LocalEvidenceVerifier` is an
-  in-memory authority for tests; `NoEvidenceVerifier` is the default-off
+- The foundation itself implements no server authority: `LocalEvidenceVerifier`
+  is an in-memory authority for tests; `NoEvidenceVerifier` is the default-off
   verifier. See [the proxy credential contract](../../../docs/proxy-session-credentials.md)
-  for the server seam, status/ack semantics and the live-CONNECT revocation
-  limitation. Zero new dependencies; no lock-file change.
+  for the accepted wire contract and the live-CONNECT revocation limitation.
+  Zero new dependencies were introduced by the foundation.
+
+## Opt-in server-backed authority (explicit `--server-auth`)
+
+`server_authority::RemoteCredentialStore` pulls a hash-only credential set from
+the real server over a gateway Bearer scoped with the explicit
+`introspect_proxy` command and `kind = proxy`; `HttpEvidenceVerifier` implements
+the accepted verifier seam against the server's scoped introspection route. A
+bounded TTL (1..=60 s, default 5) makes a stale or unreachable authority deny
+every new request; there is no bootstrap fallback. The CLI only reaches this
+path with `--server-auth` plus `VANTYR_PROXY_INTROSPECTION_URL`,
+`VANTYR_PROXY_WORKER_TOKEN`, `VANTYR_PROXY_GATEWAY_ID` and optional
+`VANTYR_PROXY_SYNC_TTL_SECS`. Production requires an `https://` base URL.
+
+These are two current, explicit operator choices — bootstrap mode (`start()`)
+and server-backed mode (`--server-auth`) — not a v1/v2 wire contract or a
+fallback authority path. A server-backed worker never falls back to bootstrap
+credentials when the authority is stale or unreachable.
+
+Revocation reaches new requests within one sync TTL (plus network latency).
+An established opaque CONNECT is a raw tunnel and is **not** retroactively
+closed; it ends on idle timeout, normal close, restart or an out-of-band
+termination. See [the integration design](../../../docs/proxy-management-integration.md)
+for exact routes, DTOs, grants and limits.
 
 ## Out of scope / known limits
 

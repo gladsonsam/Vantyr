@@ -61,6 +61,11 @@ mod policy_api;
 mod policy_db;
 mod policy_dto;
 mod policy_service;
+mod proxy_api;
+mod proxy_auth;
+mod proxy_db;
+mod proxy_dto;
+mod proxy_service;
 mod read_api;
 mod read_db;
 mod read_dto;
@@ -81,6 +86,10 @@ mod mutation_tests;
 #[cfg(test)]
 mod policy_tests;
 #[cfg(test)]
+mod proxy_e2e_tests;
+#[cfg(test)]
+mod proxy_tests;
+#[cfg(test)]
 mod read_tests;
 #[cfg(test)]
 mod tests;
@@ -91,6 +100,7 @@ mod tests;
 pub use enroll_retention::{prune_enrollment_attempts, prune_enrollment_records};
 pub use gateway_api::worker_routes;
 pub use gateway_retention::prune_gateway_reports;
+pub use proxy_api::worker_routes as proxy_worker_routes;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -183,6 +193,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         )
         .merge(enroll_routes())
         .merge(policy_routes())
+        .merge(proxy_api::routes())
         .merge(dns_management_routes())
 }
 

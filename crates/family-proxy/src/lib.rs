@@ -24,6 +24,7 @@ pub mod credentials;
 pub mod egress;
 pub mod inspection;
 pub mod server;
+pub mod server_authority;
 pub mod session_evidence;
 pub mod timeout_body;
 
@@ -33,13 +34,14 @@ pub use config::{
     RuleSpec, DEFAULT_BIND_ADDRESS, DEFAULT_BIND_PORT, MAX_CONFIG_BYTES,
 };
 pub use credentials::{
-    CredentialFailure, CredentialScope, CredentialStore, HouseholdKind, PresentedCredential,
-    Secret, VerifiedCredential, COMMAND_PROXY_CONNECT, COMMAND_PROXY_HTTP,
+    AuthoritativeCredential, CredentialFailure, CredentialScope, CredentialStore, HouseholdKind,
+    PresentedCredential, Secret, VerifiedCredential, COMMAND_PROXY_CONNECT, COMMAND_PROXY_HTTP,
     PROXY_CREDENTIAL_AUDIENCE,
 };
 pub use egress::{classify_ip, DenyReason, DestinationPolicy, EgressConnector, EgressPolicy};
 pub use inspection::{CompiledException, InspectionConfig, InspectionException, InspectionRuntime};
 pub use server::ProxyServer;
+pub use server_authority::{HttpEvidenceVerifier, RemoteCredentialStore};
 pub use session_evidence::{
     EvidenceExpectation, EvidenceFailure, LocalEvidenceVerifier, NoEvidenceVerifier,
     SessionEvidence, SessionEvidenceVerifier, VerifiedIdentity, SESSION_EVIDENCE_AUDIENCE,

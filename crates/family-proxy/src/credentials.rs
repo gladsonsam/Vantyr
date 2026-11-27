@@ -229,6 +229,22 @@ pub struct VerifiedCredential {
     pub command: String,
 }
 
+/// A hash-only credential record from an authoritative server sync. No
+/// plaintext secret is present; the digest is the same shape the worker stores.
+#[derive(Clone, Debug, Deserialize)]
+pub struct AuthoritativeCredential {
+    pub id: Uuid,
+    pub household_id: Uuid,
+    pub device_id: Uuid,
+    pub secret_hash: String,
+    pub binding_generation: u64,
+    pub household_kind: HouseholdKind,
+    pub scopes: Vec<String>,
+    pub issued_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub revoked_at: Option<DateTime<Utc>>,
+}
+
 /// Scope required from the caller at verification time. Identity is never
 /// inferred from a source address, device label or arbitrary request header.
 #[derive(Clone, Debug)]
@@ -242,6 +258,10 @@ pub struct CredentialScope<'a> {
 #[derive(Clone)]
 pub struct CredentialStore {
     records: Arc<Mutex<BTreeMap<Uuid, CredentialRecord>>>,
+    /// Optional fail-closed gate used by the server-backed authority. When the
+    /// authoritative cache is stale, every verification is denied. Local test
+    /// and bootstrap-only stores leave this unset and keep their behaviour.
+    freshness: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
 }
 
 impl Default for CredentialStore {
@@ -267,7 +287,15 @@ impl CredentialStore {
     pub fn new() -> Self {
         Self {
             records: Arc::new(Mutex::new(BTreeMap::new())),
+            freshness: None,
         }
+    }
+
+    /// Attach a fail-closed freshness gate. A stale authoritative cache denies
+    /// every verification instead of falling back to an unauthenticated claim.
+    pub fn with_freshness_gate(mut self, gate: Arc<dyn Fn() -> bool + Send + Sync>) -> Self {
+        self.freshness = Some(gate);
+        self
     }
 
     /// Issue a fresh centrally scoped credential. This is the local authority
@@ -331,6 +359,9 @@ impl CredentialStore {
         scope: &CredentialScope<'_>,
         now: DateTime<Utc>,
     ) -> Result<VerifiedCredential, CredentialFailure> {
+        if self.freshness.as_ref().is_some_and(|gate| !gate()) {
+            return Err(CredentialFailure::Unknown);
+        }
         let computed = hash_secret(presented.secret().as_bytes());
         let records = self.records.lock().expect("credential store lock");
         // A dummy 64-hex digest keeps the comparison real for unknown ids.
@@ -413,6 +444,56 @@ impl CredentialStore {
         } else {
             false
         }
+    }
+
+    /// Replace the whole hash-only cache with an authoritative set from the
+    /// server. Revoked rows are carried so the worker can drop them; no
+    /// plaintext secret is ever transported or stored here. Unknown commands
+    /// are rejected rather than cached, so a tampered sync response cannot
+    /// widen a credential's scope.
+    pub fn load_authoritative(
+        &self,
+        records: Vec<AuthoritativeCredential>,
+    ) -> Result<usize, CredentialFailure> {
+        if records.len() > MAX_CREDENTIALS {
+            return Err(CredentialFailure::BoundExceeded);
+        }
+        let mut next: BTreeMap<Uuid, CredentialRecord> = BTreeMap::new();
+        for record in records {
+            let mut commands = BTreeSet::new();
+            for command in &record.scopes {
+                if !PROXY_COMMAND_ALLOWLIST.contains(&command.as_str()) {
+                    return Err(CredentialFailure::CommandNotAllowed);
+                }
+                commands.insert(command.clone());
+            }
+            if commands.is_empty() {
+                return Err(CredentialFailure::CommandNotAllowed);
+            }
+            if record.secret_hash.len() != DIGEST_CHARS
+                || !record.secret_hash.bytes().all(|b| b.is_ascii_hexdigit())
+            {
+                return Err(CredentialFailure::Malformed);
+            }
+            next.insert(
+                record.id,
+                CredentialRecord {
+                    household_id: record.household_id,
+                    device_id: record.device_id,
+                    generation: record.binding_generation,
+                    household_kind: record.household_kind,
+                    audience: PROXY_CREDENTIAL_AUDIENCE.to_owned(),
+                    commands,
+                    secret_hash: record.secret_hash.to_ascii_lowercase(),
+                    issued_at: record.issued_at,
+                    expires_at: record.expires_at,
+                    revoked_at: record.revoked_at,
+                },
+            );
+        }
+        let count = next.len();
+        *self.records.lock().expect("credential store lock") = next;
+        Ok(count)
     }
 
     /// Reclaim expired and revoked records once their audit retention has

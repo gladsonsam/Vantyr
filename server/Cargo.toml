@@ -99,6 +99,9 @@ p256 = "0.14.0"
 web-push-native = "0.5.0"
 
 [dev-dependencies]
+# Test-only: real proxy worker driven against the real server authority in the
+# proxy E2E test. Path-only edge; no version/checksum change (see design doc).
+family-proxy   = { path = "../crates/family-proxy" }
 # Test-only: real-server / real-worker Stage B integration test. Every version
 # below is already pinned in the shared workspace Cargo.lock; no registry
 # version or checksum changes. Production server behaviour is untouched.

@@ -29,12 +29,16 @@ pub const COMMAND_READ_POLICY: &str = "read_policy";
 pub const COMMAND_READ_DNS_MANAGEMENT: &str = "read_dns_management";
 /// Explicit, opt-in scope to report DNS download/applied observations.
 pub const COMMAND_REPORT_DNS_STATUS: &str = "report_dns_status";
-/// The complete command allowlist, mirrored by the migration 0079 CHECK.
+/// Explicit, opt-in scope for a PROXY worker to pull hash-only credential
+/// state and introspect single-use session evidence. Never implicit.
+pub const COMMAND_INTROSPECT_PROXY: &str = "introspect_proxy";
+/// The complete command allowlist, mirrored by the migration 0083 CHECK.
 pub const GATEWAY_COMMAND_ALLOWLIST: &[&str] = &[
     COMMAND_HEARTBEAT,
     COMMAND_READ_POLICY,
     COMMAND_READ_DNS_MANAGEMENT,
     COMMAND_REPORT_DNS_STATUS,
+    COMMAND_INTROSPECT_PROXY,
 ];
 /// Matches the credential `cardinality(allowed_commands) BETWEEN 1 AND 8` CHECK.
 pub const MAX_COMMANDS: usize = 8;

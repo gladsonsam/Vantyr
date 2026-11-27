@@ -113,6 +113,7 @@ pub fn router(state: Arc<AppState>, cfg: &ServerConfig) -> anyhow::Result<Router
         // Bearer-authenticated gateway worker heartbeat: outside /api, so no
         // dashboard cookie or CSRF layer applies to it.
         .merge(crate::network::worker_routes())
+        .merge(crate::network::proxy_worker_routes())
         .merge(protected)
         // SPA fallback: any path that isn't an API/WS route or a real file under `static_dir`
         // serves `index.html`, so client-side routes (`/agents/:id`, `/logs`, `/rules`,
