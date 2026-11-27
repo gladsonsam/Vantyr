@@ -21,11 +21,10 @@ use super::dns_management_dto as dto;
 use super::{authz, db as network_db, gateway_auth, gateway_db, gateway_dto, gateway_service};
 use dto::{
     AppliedView, CacheClearBody, CacheClearResult, DeliveryView, DesiredView, ManagementConfig,
-    ManagementConfigV2, ManagementView, PatchBody, PatchResult, RefreshResult, ReportedStatusView,
-    RuntimeSettingsDto, SourceStatusDto, StatusView, SupportedView, WorkerReadBody,
-    WorkerReadResponse, WorkerStatusBody, CACHE_CLEAR_COOLDOWN_SECS, CACHE_CLEAR_TTL_SECS,
-    CONFIG_SCHEMA_VERSION, CONFIG_SCHEMA_VERSION_V2, DELIVERY_HISTORY, MAX_CONFIG_BYTES,
-    REFRESH_COOLDOWN_SECS, REFRESH_TTL_SECS,
+    ManagementView, PatchBody, PatchResult, RefreshResult, ReportedStatusView, RuntimeSettingsDto,
+    SourceStatusDto, StatusView, SupportedView, WorkerReadBody, WorkerReadResponse,
+    WorkerStatusBody, CACHE_CLEAR_COOLDOWN_SECS, CACHE_CLEAR_TTL_SECS, DELIVERY_HISTORY,
+    MAX_CONFIG_BYTES, REFRESH_COOLDOWN_SECS, REFRESH_TTL_SECS,
 };
 
 fn worker_auth_error() -> ApiError {
@@ -35,63 +34,17 @@ fn worker_auth_error() -> ApiError {
     )
 }
 
-/// One stored desired config. v1 is never coerced into v2 on read; the v2
-/// upgrade is an explicit PATCH operation with a real version/digest bump.
-#[derive(Clone)]
-enum StoredConfig {
-    V1(ManagementConfig),
-    V2(ManagementConfigV2),
+/// There is exactly one stored desired shape. An old body without `runtime`
+/// fails strict parsing here rather than being silently upgraded on read.
+fn config_from_row(row: &db::ConfigRow) -> ApiResult<ManagementConfig> {
+    serde_json::from_slice(&row.body).map_err(|e| ApiError::Internal(e.into()))
 }
 
-impl StoredConfig {
-    fn schema_version(&self) -> i32 {
-        match self {
-            Self::V1(_) => CONFIG_SCHEMA_VERSION,
-            Self::V2(_) => CONFIG_SCHEMA_VERSION_V2,
-        }
-    }
-    fn sources(&self) -> &[dto::SubscriptionSourceDto] {
-        match self {
-            Self::V1(config) => &config.sources,
-            Self::V2(config) => &config.sources,
-        }
-    }
-    fn as_v2(&self) -> ManagementConfigV2 {
-        match self {
-            Self::V1(config) => ManagementConfigV2 {
-                sources: config.sources.clone(),
-                catalog: config.catalog.clone(),
-                selected_services: config.selected_services.clone(),
-                runtime: RuntimeSettingsDto::default(),
-            },
-            Self::V2(config) => config.clone(),
-        }
-    }
-}
-
-fn config_from_row(row: &db::ConfigRow) -> ApiResult<StoredConfig> {
-    match row.schema_version {
-        CONFIG_SCHEMA_VERSION => serde_json::from_slice(&row.body)
-            .map(StoredConfig::V1)
-            .map_err(|e| ApiError::Internal(e.into())),
-        CONFIG_SCHEMA_VERSION_V2 => serde_json::from_slice(&row.body)
-            .map(StoredConfig::V2)
-            .map_err(|e| ApiError::Internal(e.into())),
-        _ => Err(ApiError::not_found("unsupported stored management schema")),
-    }
-}
-
-fn desired_view(row: &db::ConfigRow, config: &StoredConfig) -> DesiredView {
-    let (v1, v2) = match config {
-        StoredConfig::V1(config) => (Some(config.clone()), None),
-        StoredConfig::V2(config) => (None, Some(config.clone())),
-    };
+fn desired_view(row: &db::ConfigRow, config: ManagementConfig) -> DesiredView {
     DesiredView {
         config_version: row.config_version as u64,
-        schema_version: config.schema_version(),
         body_sha256: row.body_sha256.clone(),
-        config: v1,
-        config_v2: v2,
+        config,
         created_at: row.created_at,
         updated_at: row.updated_at,
         updated_by: row.updated_by,
@@ -119,7 +72,7 @@ pub async fn get_view(pool: &PgPool, household_id: Uuid) -> ApiResult<Management
     let desired = match db::get_desired(pool, household_id).await? {
         Some(row) => {
             let config = config_from_row(&row)?;
-            Some(desired_view(&row, &config))
+            Some(desired_view(&row, config))
         }
         None => None,
     };
@@ -160,14 +113,10 @@ pub async fn patch(
         ));
     }
 
-    let current_config = match &current {
+    let mut config = match &current {
         Some(row) => config_from_row(row)?,
-        None => StoredConfig::V1(ManagementConfig::default()),
+        None => ManagementConfig::default(),
     };
-    let mut schema_version = current_config.schema_version();
-    // Work on the v2 superset so an explicit runtime op can upgrade in one
-    // atomic CAS. A v1 batch without a runtime op serializes back to v1 bytes.
-    let mut config = current_config.as_v2();
 
     for operation in body.operations {
         match operation {
@@ -223,25 +172,17 @@ pub async fn patch(
             dto::PatchOperation::SetRuntimeSettings { runtime } => {
                 dto::validate_runtime_settings(&runtime)?;
                 config.runtime = runtime;
-                schema_version = CONFIG_SCHEMA_VERSION_V2;
             }
             dto::PatchOperation::ResetRuntimeSettings {} => {
+                // Reset to the ONE current default runtime, not to an older shape.
                 config.runtime = RuntimeSettingsDto::default();
-                schema_version = CONFIG_SCHEMA_VERSION;
             }
         }
     }
 
-    let bytes = if schema_version == CONFIG_SCHEMA_VERSION {
-        let mut base = config.base();
-        dto::canonicalize(&mut base);
-        dto::validate_config(&base)?;
-        dto::canonical_bytes(&base)?
-    } else {
-        dto::canonicalize_v2(&mut config);
-        dto::validate_config_v2(&config)?;
-        dto::canonical_bytes_v2(&config)?
-    };
+    dto::canonicalize(&mut config);
+    dto::validate_config(&config)?;
+    let bytes = dto::canonical_bytes(&config)?;
     if bytes.len() > MAX_CONFIG_BYTES {
         return Err(ApiError::bad_request(
             "canonical management config exceeds 16 KiB",
@@ -266,7 +207,6 @@ pub async fn patch(
     if !db::upsert_desired_on_conn(
         &mut tx,
         household_id,
-        schema_version,
         new_version as i64,
         &bytes,
         &checksum,
@@ -321,7 +261,7 @@ pub async fn request_refresh(
         .ok_or_else(|| ApiError::not_found("no desired DNS configuration saved"))?;
     let config = config_from_row(&row)?;
     let source = config
-        .sources()
+        .sources
         .iter()
         .find(|s| s.id == source_id)
         .ok_or_else(|| ApiError::not_found("source id not found in desired config"))?;
@@ -429,23 +369,14 @@ pub async fn worker_read(
     )
     .await?;
 
-    let (config_version, schema_version, body_sha256, config, config_v2) =
+    let (config_version, body_sha256, config) =
         match db::desired_on_conn(&mut tx, worker.household_id).await? {
-            Some(row) => {
-                let parsed = config_from_row(&row)?;
-                let (v1, v2) = match &parsed {
-                    StoredConfig::V1(config) => (Some(config.clone()), None),
-                    StoredConfig::V2(config) => (None, Some(config.clone())),
-                };
-                (
-                    row.config_version as u64,
-                    Some(row.schema_version),
-                    Some(row.body_sha256.clone()),
-                    v1,
-                    v2,
-                )
-            }
-            None => (0, None, None, None, None),
+            Some(row) => (
+                row.config_version as u64,
+                Some(row.body_sha256.clone()),
+                Some(config_from_row(&row)?),
+            ),
+            None => (0, None, None),
         };
 
     if config_version > 0 {
@@ -537,10 +468,8 @@ pub async fn worker_read(
         gateway_id: worker.gateway_id,
         kind: "dns",
         config_version,
-        schema_version,
         body_sha256,
         config,
-        config_v2,
         pending_refreshes,
         pending_cache_clear: pending_clear,
         server_time: now,

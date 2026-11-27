@@ -13,7 +13,6 @@ use super::dns_management_dto::{CacheClearView, PendingCacheClearView, PendingRe
 
 #[derive(Debug, FromRow)]
 pub struct ConfigRow {
-    pub schema_version: i32,
     pub config_version: i64,
     pub body: Vec<u8>,
     pub body_sha256: String,
@@ -77,7 +76,7 @@ pub async fn desired_on_conn(
 ) -> sqlx::Result<Option<ConfigRow>> {
     sqlx::query_as::<_, ConfigRow>(
         r"
-        SELECT schema_version, config_version, body, body_sha256,
+        SELECT config_version, body, body_sha256,
                created_at, updated_at, updated_by
         FROM network_dns_management_config
         WHERE household_id = $1
@@ -99,7 +98,6 @@ pub async fn get_desired(pool: &PgPool, household_id: Uuid) -> sqlx::Result<Opti
 pub async fn upsert_desired_on_conn(
     conn: &mut PgConnection,
     household_id: Uuid,
-    schema_version: i32,
     config_version: i64,
     body: &[u8],
     body_sha256: &str,
@@ -109,21 +107,19 @@ pub async fn upsert_desired_on_conn(
     let result = sqlx::query(
         r"
         INSERT INTO network_dns_management_config
-            (household_id, schema_version, config_version, body, body_sha256,
+            (household_id, config_version, body, body_sha256,
              created_at, updated_at, updated_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $5, $6)
         ON CONFLICT (household_id) DO UPDATE SET
-            schema_version = EXCLUDED.schema_version,
             config_version = EXCLUDED.config_version,
             body = EXCLUDED.body,
             body_sha256 = EXCLUDED.body_sha256,
             updated_at = EXCLUDED.updated_at,
             updated_by = EXCLUDED.updated_by
-        WHERE network_dns_management_config.config_version = $3 - 1
+        WHERE network_dns_management_config.config_version = $2 - 1
         ",
     )
     .bind(household_id)
-    .bind(schema_version)
     .bind(config_version)
     .bind(body)
     .bind(body_sha256)

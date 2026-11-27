@@ -1,19 +1,14 @@
-//! Worker-side mirror of the Stage A DNS-management wire contract.
+//! Worker-side mirror of the ONE current DNS-management wire contract.
 //!
 //! Field order mirrors the server DTOs exactly because the server-owned
 //! `body_sha256` is a digest of canonical serde bytes. Unknown fields are
-//! rejected so a newer server cannot silently change the shape.
+//! rejected; there is no version dispatch, legacy reader or fallback shape.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-pub const CONFIG_SCHEMA_VERSION: i32 = 1;
-/// Additive v2: v1 fields plus explicitly supported runtime settings. Old v1
-/// workers reject the `config_v2` envelope field honestly; this worker accepts
-/// both versions and never coerces a v1 body into v2 bytes.
-pub const CONFIG_SCHEMA_VERSION_V2: i32 = 2;
 pub const MAX_RESPONSE_BYTES: usize = 32 * 1024;
 pub const MAX_CACHE_ENTRIES: u64 = 65_536;
 pub const MAX_TTL_SECS: u32 = 86_400;
@@ -88,17 +83,6 @@ pub struct ServiceCatalogDto {
     pub services: Vec<ServiceDto>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ManagementConfig {
-    #[serde(default)]
-    pub sources: Vec<SubscriptionSourceDto>,
-    #[serde(default)]
-    pub catalog: Option<ServiceCatalogDto>,
-    #[serde(default)]
-    pub selected_services: Vec<String>,
-}
-
 /// Bounded cache controls mirrored from the server DTO and mapped onto the
 /// accepted local `CacheConfig` only for these fields.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -156,56 +140,18 @@ pub struct RuntimeSettingsDto {
     pub deny: DenySettingsDto,
 }
 
-/// v2 desired config: same v1 field order plus one `runtime` object.
+/// The ONLY desired config shape. `runtime` is required: an older body that
+/// omits it fails strict parsing instead of being silently upgraded.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ManagementConfigV2 {
+pub struct ManagementConfig {
     #[serde(default)]
     pub sources: Vec<SubscriptionSourceDto>,
     #[serde(default)]
     pub catalog: Option<ServiceCatalogDto>,
     #[serde(default)]
     pub selected_services: Vec<String>,
-    #[serde(default)]
     pub runtime: RuntimeSettingsDto,
-}
-
-impl ManagementConfigV2 {
-    pub fn base(&self) -> ManagementConfig {
-        ManagementConfig {
-            sources: self.sources.clone(),
-            catalog: self.catalog.clone(),
-            selected_services: self.selected_services.clone(),
-        }
-    }
-}
-
-/// One desired config value, selected strictly by `schema_version`.
-#[derive(Clone, Debug)]
-pub enum DesiredConfig {
-    V1(ManagementConfig),
-    V2(ManagementConfigV2),
-}
-
-impl DesiredConfig {
-    pub fn sources(&self) -> &[SubscriptionSourceDto] {
-        match self {
-            Self::V1(config) => &config.sources,
-            Self::V2(config) => &config.sources,
-        }
-    }
-    pub fn runtime(&self) -> Option<&RuntimeSettingsDto> {
-        match self {
-            Self::V1(_) => None,
-            Self::V2(config) => Some(&config.runtime),
-        }
-    }
-    pub fn digest(&self) -> String {
-        match self {
-            Self::V1(config) => digest(&canonical_bytes(config).expect("config serializes")),
-            Self::V2(config) => digest(&canonical_bytes_v2(config).expect("config serializes")),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -344,15 +290,11 @@ pub struct WorkerReadResponse {
     pub gateway_id: Uuid,
     pub kind: String,
     pub config_version: u64,
-    pub schema_version: Option<i32>,
     pub body_sha256: Option<String>,
     pub config: Option<ManagementConfig>,
-    /// Additive v2 config; omitted on a v1 read.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub config_v2: Option<ManagementConfigV2>,
     #[serde(default)]
     pub pending_refreshes: Vec<PendingRefreshView>,
-    /// Additive v2 cache-clear command.
+    /// Current cache-clear command.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_cache_clear: Vec<PendingCacheClearView>,
     pub server_time: DateTime<Utc>,
@@ -376,18 +318,13 @@ pub struct WorkerStatusBody {
     pub sources: Vec<SourceStatusDto>,
     #[serde(default)]
     pub refresh_ack: Vec<RefreshAckDto>,
-    /// Additive v2; empty and omitted for a v1-only report.
+    /// Current cache-clear acknowledgements; omitted when none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub clear_ack: Vec<ClearAckDto>,
 }
 
 /// Canonical bytes and digest, matching the server's ordered struct layout.
 pub fn canonical_bytes(config: &ManagementConfig) -> Result<Vec<u8>, serde_json::Error> {
-    serde_json::to_vec(config)
-}
-
-/// Canonical v2 bytes, matching the server's ordered struct layout exactly.
-pub fn canonical_bytes_v2(config: &ManagementConfigV2) -> Result<Vec<u8>, serde_json::Error> {
     serde_json::to_vec(config)
 }
 
@@ -410,42 +347,42 @@ mod tests {
     use super::*;
     use serde_json::{json, Value};
 
-    const READ: &str = include_str!("../../../tests/network-contracts/dns-management-v1/read.json");
+    const READ: &str = include_str!("../../../tests/network-contracts/dns-management/read.json");
     const REPORT: &str =
-        include_str!("../../../tests/network-contracts/dns-management-v1/report.json");
+        include_str!("../../../tests/network-contracts/dns-management/report.json");
 
     #[test]
     fn shared_read_fixture_parses_verifies_digest_and_roundtrips() {
         let expected: Value = serde_json::from_str(READ).unwrap();
         let response: WorkerReadResponse = serde_json::from_value(expected.clone()).unwrap();
         assert_eq!(response.config_version, 1);
-        assert_eq!(
-            response.pending_refreshes[0].expires_at,
-            DateTime::parse_from_rfc3339("2026-11-26T12:10:00Z")
-                .unwrap()
-                .with_timezone(&Utc)
-        );
+        assert!(response.config.as_ref().unwrap().runtime.cache.enabled);
+        assert_eq!(response.pending_cache_clear.len(), 1);
         let config = response.config.as_ref().unwrap();
         assert_eq!(
             digest(&canonical_bytes(config).unwrap()),
             response.body_sha256.as_deref().unwrap()
         );
-        assert_eq!(serde_json::to_value(&response).unwrap(), expected);
+        assert_eq!(
+            response.body_sha256.as_deref().unwrap(),
+            "4652ce3244e14658db02de0c05520507d0d92619a434a6a455a8309f5dbb6d37"
+        );
+        assert_eq!(serde_json::to_value(response).unwrap(), expected);
     }
 
     #[test]
     fn shared_report_fixture_parses_and_roundtrips() {
         let expected: Value = serde_json::from_str(REPORT).unwrap();
         let report: WorkerStatusBody = serde_json::from_value(expected.clone()).unwrap();
-        assert_eq!(report.refresh_ack.len(), 1);
+        assert_eq!(report.clear_ack.len(), 1);
         assert_eq!(report.applied.as_ref().unwrap().generation, 5);
-        assert_eq!(serde_json::to_value(&report).unwrap(), expected);
+        assert_eq!(serde_json::to_value(report).unwrap(), expected);
     }
 
     #[test]
     fn strict_schema_rejects_missing_expiry_and_unknown_fields() {
         let mut value: Value = serde_json::from_str(READ).unwrap();
-        value["pending_refreshes"][0]
+        value["pending_cache_clear"][0]
             .as_object_mut()
             .unwrap()
             .remove("expires_at");
@@ -456,63 +393,20 @@ mod tests {
         assert!(serde_json::from_value::<WorkerStatusBody>(value).is_err());
     }
 
-    /// Same bytes and expected SHA as the Stage A canonical fixture.
     #[test]
-    fn golden_fixture_matches_stage_a_digest() {
-        let raw = r#"{"sources":[{"id":"a_list","url":"https://raw.githubusercontent.com/o/r/main/hosts.txt","format":"hosts","enabled":true,"interval_secs":3600,"max_stale_secs":null,"metadata":{"title":"List","publisher":"Publisher","license":"MIT"}},{"id":"z_list","url":"https://raw.githubusercontent.com/o/r/main/hosts.txt","format":"abp","enabled":true,"interval_secs":null,"max_stale_secs":null,"metadata":{"title":"List","publisher":"Publisher","license":"MIT"}}],"catalog":{"version":"operator-2026-11","services":[{"id":"a_service","label":"Service","version":"1","domains":[{"type":"suffix","value":"example.test"}],"source":null,"evidence":null,"license":"operator-declared"},{"id":"z_service","label":"Service","version":"1","domains":[{"type":"suffix","value":"example.test"}],"source":null,"evidence":null,"license":"operator-declared"}]},"selected_services":["a_service","z_service"]}"#;
-        let config: ManagementConfig = serde_json::from_str(raw).unwrap();
-        assert_eq!(
-            digest(&canonical_bytes(&config).unwrap()),
-            "820a75626ccf71e9a30529b381dc7dd2dd5abc9209446c850b129acc2a2ea93e"
-        );
-    }
+    fn unknown_old_shape_is_rejected_without_a_fallback() {
+        let current: Value = serde_json::from_str(READ).unwrap();
+        let mut old = current["config"].clone();
+        old.as_object_mut().unwrap().remove("runtime");
+        assert!(serde_json::from_value::<ManagementConfig>(old).is_err());
 
-    const READ_V2: &str =
-        include_str!("../../../tests/network-contracts/dns-management-v2/read.json");
-    const REPORT_V2: &str =
-        include_str!("../../../tests/network-contracts/dns-management-v2/report.json");
+        let mut versioned = current.clone();
+        versioned["schema_version"] = json!(1);
+        assert!(serde_json::from_value::<WorkerReadResponse>(versioned).is_err());
 
-    #[test]
-    fn shared_v2_read_fixture_parses_verifies_digest_and_roundtrips() {
-        let expected: Value = serde_json::from_str(READ_V2).unwrap();
-        let response: WorkerReadResponse = serde_json::from_value(expected.clone()).unwrap();
-        assert_eq!(response.schema_version, Some(CONFIG_SCHEMA_VERSION_V2));
-        assert!(response.config.is_none());
-        let config = response.config_v2.as_ref().unwrap();
-        assert_eq!(
-            digest(&canonical_bytes_v2(config).unwrap()),
-            response.body_sha256.as_deref().unwrap()
-        );
-        assert_eq!(response.pending_cache_clear.len(), 1);
-        assert_eq!(serde_json::to_value(response).unwrap(), expected);
-    }
-
-    #[test]
-    fn shared_v2_report_fixture_parses_and_roundtrips() {
-        let expected: Value = serde_json::from_str(REPORT_V2).unwrap();
-        let report: WorkerStatusBody = serde_json::from_value(expected.clone()).unwrap();
-        assert_eq!(report.clear_ack.len(), 1);
-        assert_eq!(serde_json::to_value(report).unwrap(), expected);
-    }
-
-    #[test]
-    fn v1_parser_rejects_v2_body_and_v2_fields_are_unsupported() {
-        let v2: Value = serde_json::from_str(READ_V2).unwrap();
-        // A frozen v1 worker's strict parser cannot accept the additive body;
-        // the read verifier then fails honestly without mutating last-known-good.
-        assert!(serde_json::from_value::<ManagementConfig>(v2["config_v2"].clone()).is_err());
-        let mut bad = v2["config_v2"].clone();
-        bad["runtime"]["cache"]["serve_expired"] = json!(true);
-        assert!(serde_json::from_value::<ManagementConfigV2>(bad).is_err());
-    }
-
-    #[test]
-    fn v2_golden_digest_matches_server_fixture() {
-        let v2: Value = serde_json::from_str(READ_V2).unwrap();
-        let config: ManagementConfigV2 = serde_json::from_value(v2["config_v2"].clone()).unwrap();
-        assert_eq!(
-            digest(&canonical_bytes_v2(&config).unwrap()),
-            "4652ce3244e14658db02de0c05520507d0d92619a434a6a455a8309f5dbb6d37"
-        );
+        // An unsupported runtime hint is not silently ignored either.
+        let mut unsupported = current["config"].clone();
+        unsupported["runtime"]["cache"]["serve_expired"] = json!(true);
+        assert!(serde_json::from_value::<ManagementConfig>(unsupported).is_err());
     }
 }

@@ -528,11 +528,11 @@ impl DnsServer {
         config: &mut Config,
         active: &RuntimeSnapshot,
     ) -> Result<(), ReloadError> {
-        if let Some(management) = &active.management {
-            if let Some(settings) = &management.runtime {
-                crate::management_worker::apply_runtime_settings(config, settings)
-                    .map_err(|error| ReloadError::InvalidConfig(error.to_string()))?;
-            }
+        // The applied settings live in the single current config itself, so a
+        // local reload copies exactly those validated cache/deny fields.
+        if active.management.is_some() {
+            config.cache = active.config.cache.clone();
+            config.deny = active.config.deny.clone();
         }
         Ok(())
     }

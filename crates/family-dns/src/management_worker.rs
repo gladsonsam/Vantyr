@@ -22,8 +22,8 @@ use crate::management::{
     ManagementClient, ManagementError, ManagementOptions, ManagementState, MAX_RECEIPTS,
 };
 use crate::management_dto::{
-    canonical_bytes, digest, AppliedStatusDto, ClearAckDto, DesiredConfig, DownloadState,
-    ManagementConfig, RefreshAckDto, RuntimeSettingsDto, SourceStatusDto, WorkerStatusBody,
+    canonical_bytes, digest, AppliedStatusDto, ClearAckDto, DownloadState, ManagementConfig,
+    RefreshAckDto, RuntimeSettingsDto, SourceStatusDto, WorkerStatusBody,
 };
 use crate::server::{DnsServer, ReloadError};
 use crate::subscription::SubscriptionRuntime;
@@ -123,20 +123,11 @@ impl ManagementWorker {
                 return;
             }
         };
-        let desired = match (
-            response.schema_version,
-            &response.config,
-            &response.config_v2,
-        ) {
-            (Some(1), Some(config), None) => DesiredConfig::V1(config.clone()),
-            (Some(2), None, Some(config)) => DesiredConfig::V2(config.clone()),
-            _ => {
-                // `verify_read` already rejected this; never apply a body whose
-                // shape disagrees with the declared schema.
-                self.record_error(server, "desired config shape is unsupported")
-                    .await;
-                return;
-            }
+        let Some(desired) = response.config.clone() else {
+            // `verify_read` already rejected an incomplete or unknown shape.
+            self.record_error(server, "desired config shape is unsupported")
+                .await;
+            return;
         };
 
         let applied = server.management_state();
@@ -185,7 +176,7 @@ impl ManagementWorker {
         server: &DnsServer,
         version: u64,
         digest_value: &str,
-        desired: &DesiredConfig,
+        desired: &ManagementConfig,
     ) -> Result<(), ManagementError> {
         for attempt in 0..MAX_RETRIES {
             // Capture the generation BEFORE reading settings or awaiting any
@@ -194,17 +185,13 @@ impl ManagementWorker {
             let basis = server.status().bundle_generation;
             let local = server.local_config();
             admit_version(server.management_state().as_ref(), version, digest_value)?;
-            let base = match desired {
-                DesiredConfig::V1(config) => config.clone(),
-                DesiredConfig::V2(config) => config.base(),
-            };
-            let combined = merge_config(&local, &base)?;
+            let combined = merge_config(&local, desired)?;
             combined
                 .validate("managed")
                 .map_err(|error| ManagementError::Integrity(error.to_string()))?;
 
             let managed = desired
-                .sources()
+                .sources
                 .iter()
                 .map(to_source_spec)
                 .collect::<Vec<_>>();
@@ -250,21 +237,14 @@ impl ManagementWorker {
             // policy revision/publication time and all local operator fields
             // are carried verbatim from the current config.
             let mut candidate = local.clone();
-            if let Some(settings) = desired.runtime() {
-                apply_runtime_settings(&mut candidate, settings)?;
-            }
+            apply_runtime_settings(&mut candidate, &desired.runtime)?;
             let state = ManagementState {
                 config_version: version,
                 digest: digest_value.to_owned(),
-                config: base,
+                config: desired.clone(),
                 filter_identity: material_identity(Some(&material)),
                 receipts: Vec::new(),
                 receipt_expiry: Default::default(),
-                schema_version: match desired {
-                    DesiredConfig::V1(_) => 1,
-                    DesiredConfig::V2(_) => 2,
-                },
-                runtime: desired.runtime().cloned(),
                 applied_at: Some(Utc::now()),
                 last_error: None,
             };
@@ -296,7 +276,7 @@ impl ManagementWorker {
     async fn handle_manual_tokens(
         &self,
         server: &DnsServer,
-        desired: &DesiredConfig,
+        desired: &ManagementConfig,
         tokens: &[crate::management_dto::PendingRefreshView],
     ) {
         let Some(runtime) = &self.subscriptions else {
@@ -306,7 +286,7 @@ impl ManagementWorker {
             return;
         };
         let configured: BTreeSet<&str> = desired
-            .sources()
+            .sources
             .iter()
             .filter(|source| source.enabled)
             .map(|source| source.id.as_str())
@@ -395,7 +375,7 @@ impl ManagementWorker {
         server: &DnsServer,
         desired_version: u64,
         desired_digest: &str,
-        desired: &DesiredConfig,
+        desired: &ManagementConfig,
         clear_tokens: &[crate::management_dto::PendingCacheClearView],
     ) -> Result<(), ManagementError> {
         let state = server.management_state();
@@ -408,7 +388,7 @@ impl ManagementWorker {
             None => (Vec::new(), None),
         };
         let scoped_ids: BTreeSet<&str> = desired
-            .sources()
+            .sources
             .iter()
             .take(crate::management::MAX_RECEIPTS)
             .map(|source| source.id.as_str())

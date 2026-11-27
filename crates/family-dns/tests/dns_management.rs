@@ -16,11 +16,11 @@ use axum::routing::{get, post};
 use axum::{serve::Listener, Json, Router};
 use chrono::{DateTime, Utc};
 use family_dns::{
-    config_digest, management_dto, CacheSettingsDto, Config, DenySettingsDto, DnsServer,
-    DurableOptions, ListFormatDto, ListFormatSpec, ManagementClient, ManagementConfig,
-    ManagementConfigV2, ManagementOptions, ManagementWorker, RuntimeSettingsDto, ServiceCatalogDto,
-    ServiceDomainDto, ServiceDto, SourceMetadataDto, SubscriptionRuntime, SubscriptionSettings,
-    SubscriptionSourceDto, WorkerReadResponse, WorkerStatusBody,
+    config_digest, CacheSettingsDto, Config, DenySettingsDto, DnsServer, DurableOptions,
+    ListFormatDto, ListFormatSpec, ManagementClient, ManagementConfig, ManagementOptions,
+    ManagementWorker, RuntimeSettingsDto, ServiceCatalogDto, ServiceDomainDto, ServiceDto,
+    SourceMetadataDto, SubscriptionRuntime, SubscriptionSettings, SubscriptionSourceDto,
+    WorkerReadResponse, WorkerStatusBody,
 };
 use hickory_server::proto::op::ResponseCode;
 use hickory_server::proto::rr::RecordType;
@@ -135,8 +135,6 @@ async fn tls_router(config: Arc<ServerConfig>, router: Router) -> (String, Guard
 struct ControlState {
     version: u64,
     config: Option<ManagementConfig>,
-    config_v2: Option<ManagementConfigV2>,
-    schema_version: i32,
     digest: String,
     pending: Vec<Value>,
     pending_clear: Vec<Value>,
@@ -191,24 +189,8 @@ async fn read_handler(
         gateway_id: Uuid::parse_str(GATEWAY).unwrap(),
         kind: "dns".to_owned(),
         config_version: version,
-        schema_version: if state.reject_schema {
-            Some(99)
-        } else if version > 0 {
-            Some(if state.schema_version == 0 {
-                1
-            } else {
-                state.schema_version
-            })
-        } else {
-            None
-        },
         body_sha256: if version > 0 { Some(digest) } else { None },
-        config: if version > 0 && state.config_v2.is_none() {
-            config
-        } else {
-            None
-        },
-        config_v2: state.config_v2.clone(),
+        config: if version > 0 { config } else { None },
         pending_refreshes: pending
             .into_iter()
             .filter_map(|value| serde_json::from_value(value).ok())
@@ -417,6 +399,7 @@ fn desired(url: &str, enabled: bool) -> ManagementConfig {
             }],
         }),
         selected_services: vec!["remote-service".to_owned()],
+        runtime: RuntimeSettingsDto::default(),
     }
 }
 
@@ -425,21 +408,6 @@ fn set_desired(control: &Control, version: u64, config: &ManagementConfig) {
     state.version = version;
     state.config = Some(config.clone());
     state.digest = config_digest(config);
-    state.reject_digest = false;
-    state.reject_schema = false;
-    state.reject_auth = false;
-    state.bad_command = false;
-}
-
-fn set_desired_v2(control: &Control, version: u64, config: &ManagementConfigV2) {
-    let mut state = control.0.lock().unwrap();
-    state.version = version;
-    state.schema_version = 2;
-    state.config_v2 = Some(config.clone());
-    state.config = None;
-    state.digest = management_dto::digest(
-        &management_dto::canonical_bytes_v2(config).expect("v2 config serializes"),
-    );
     state.reject_digest = false;
     state.reject_schema = false;
     state.reject_auth = false;
@@ -696,6 +664,7 @@ async fn unchanged_download_and_removal_keep_policy_age_and_advance_generation()
         sources: Vec::new(),
         catalog: None,
         selected_services: Vec::new(),
+        runtime: RuntimeSettingsDto::default(),
     };
     set_desired(&control, 2, &removed);
     h.sync().await;
@@ -1135,6 +1104,7 @@ async fn refresh_ack_reports_never_exceed_server_limit() {
         sources: Vec::new(),
         catalog: None,
         selected_services: Vec::new(),
+        runtime: RuntimeSettingsDto::default(),
     };
     for index in 0..32 {
         let mut source = desired(&format!("{list}/list"), true).sources.remove(0);
@@ -2028,13 +1998,13 @@ async fn v2_runtime_settings_apply_clear_and_survive_restart() {
         },
         deny: DenySettingsDto::Refused,
     };
-    let desired = ManagementConfigV2 {
+    let desired = ManagementConfig {
         sources: Vec::new(),
         catalog: None,
         selected_services: Vec::new(),
         runtime: settings,
     };
-    set_desired_v2(&control, 7, &desired);
+    set_desired(&control, 7, &desired);
     let options = ManagementOptions::load(&st.options).unwrap();
     let client = Arc::new(ManagementClient::new(&options).unwrap());
     let durable = || DurableOptions {
@@ -2052,8 +2022,7 @@ async fn v2_runtime_settings_apply_clear_and_survive_restart() {
         .management_state()
         .expect("settings were not applied");
     assert_eq!(applied.config_version, 7);
-    assert_eq!(applied.schema_version, 2);
-    assert!(applied.runtime.is_some());
+    assert_eq!(applied.config.runtime.cache.max_entries, 64);
     assert_eq!(server.local_config().cache.max_entries, 64);
     assert_eq!(server.local_config().cache.positive_min_ttl_secs, Some(60));
     assert!(matches!(
@@ -2068,16 +2037,11 @@ async fn v2_runtime_settings_apply_clear_and_survive_restart() {
     );
     let generation = policy_after.bundle_generation;
 
-    // An unsupported schema fails honestly: no new apply, no LKG mutation.
-    control.0.lock().unwrap().schema_version = 99;
-    worker.sync_once(&server).await;
-    assert_eq!(server.management_state().unwrap(), applied);
-    assert_eq!(server.local_config().cache.max_entries, 64);
-    // A digest mismatch is likewise refused at read time.
-    control.0.lock().unwrap().schema_version = 2;
+    // A failed desired read refuses honestly: no new apply, no LKG mutation.
     control.0.lock().unwrap().reject_digest = true;
     worker.sync_once(&server).await;
     assert_eq!(server.management_state().unwrap(), applied);
+    assert_eq!(server.local_config().cache.max_entries, 64);
     control.0.lock().unwrap().reject_digest = false;
 
     // One delivered clear is executed once and reported truthfully. It never
