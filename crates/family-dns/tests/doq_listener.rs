@@ -36,6 +36,19 @@ const STAMP: &str = "2026-11-26T10:00:00Z";
 const ANSWER: &str = "192.0.2.55";
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Upper bound the tests allow the production release gate to wait for the
+/// owned DoQ UDP port to be observably freed after shutdown.
+const RELEASE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Stop through the production API that proves the DoQ port was released,
+/// rather than merely joining the listener task.
+async fn stop_released(server: &DnsServer) {
+    server
+        .stop_and_wait(RELEASE_TIMEOUT)
+        .await
+        .expect("the owned DoQ UDP port must be released within the test deadline");
+}
+
 struct Cert {
     ca_pem: String,
     cert_pem: String,
@@ -218,7 +231,12 @@ async fn doq_query(
         .map_err(|_| "DoQ query timed out".to_owned())?
         .ok_or_else(|| "DoQ stream closed without a response".to_owned())?
         .map_err(|error| error.to_string())?;
-    Ok(response.into_message())
+    let message = response.into_message();
+    // Close the maintained client stream explicitly: dropping a
+    // QuicClientStream without DnsRequestSender::shutdown leaves the QUIC
+    // connection open. No verifier or transport behavior is changed here.
+    stream.shutdown();
+    Ok(message)
 }
 
 #[tokio::test]
@@ -263,7 +281,7 @@ async fn trusted_doq_client_answers_allowed_and_denied_with_flags() {
         .expect("trusted client must complete the handshake for a denied query");
     assert_code(&denied, ResponseCode::NXDomain);
     assert_flags(&denied);
-    server.stop().await;
+    stop_released(&server).await;
 }
 
 #[tokio::test]
@@ -316,7 +334,7 @@ async fn wrong_ca_and_wrong_hostname_are_rejected() {
         .is_err(),
         "wrong hostname must not verify the server chain"
     );
-    server.stop().await;
+    stop_released(&server).await;
 }
 
 #[tokio::test]
@@ -341,7 +359,7 @@ async fn disabled_listener_binds_no_port_and_stop_releases_the_endpoint() {
         UdpSocket::bind(("127.0.0.1", doq_port)).await.is_ok(),
         "enabled = false must leave the DoQ port free"
     );
-    server.stop().await;
+    stop_released(&server).await;
 
     let enabled_cfg = Config::parse(&config(
         plain_port,
@@ -358,7 +376,7 @@ async fn disabled_listener_binds_no_port_and_stop_releases_the_endpoint() {
         UdpSocket::bind(("127.0.0.1", doq_port)).await.is_err(),
         "the enabled DoQ listener must hold the UDP port"
     );
-    server.stop().await;
+    stop_released(&server).await;
     assert!(
         UdpSocket::bind(("127.0.0.1", doq_port)).await.is_ok(),
         "stop must release the QUIC endpoint and its UDP port"
@@ -541,6 +559,10 @@ async fn valid_durable_doq_start_and_restart_serve_the_persisted_listener() {
 
     let server = DnsServer::start_durable(options()).await.unwrap();
     assert!(st.state.exists());
+    assert!(
+        UdpSocket::bind(addr).await.is_err(),
+        "a live durable DoQ listener must hold its UDP port"
+    );
     let persisted = fs::read(&st.state).unwrap();
     let allowed = doq_query(
         addr,
@@ -552,7 +574,12 @@ async fn valid_durable_doq_start_and_restart_serve_the_persisted_listener() {
     .expect("a fresh durable start must serve DoQ");
     assert_code(&allowed, ResponseCode::NoError);
     assert_flags(&allowed);
-    server.stop().await;
+    stop_released(&server).await;
+    assert!(
+        UdpSocket::bind(addr).await.is_ok(),
+        "the old DoQ port must be free before the real same-port restart"
+    );
+    drop(server);
 
     fs::write(
         &st.config,
@@ -583,7 +610,7 @@ async fn valid_durable_doq_start_and_restart_serve_the_persisted_listener() {
     .expect("a restart must serve DoQ from the persisted bundle");
     assert_code(&allowed, ResponseCode::NoError);
     assert_flags(&allowed);
-    server.stop().await;
+    stop_released(&server).await;
 }
 
 #[tokio::test]
@@ -632,7 +659,7 @@ async fn reload_rejects_doq_listener_transport_change() {
         before,
         "a rejected reload must not mutate persisted state"
     );
-    server.stop().await;
+    stop_released(&server).await;
 }
 
 #[test]
@@ -768,7 +795,7 @@ async fn doq_coexists_with_dot_and_doh_on_one_handler() {
     .expect("all three listeners must share one handler");
     assert_code(&allowed, ResponseCode::NoError);
     assert_flags(&allowed);
-    server.stop().await;
+    stop_released(&server).await;
     assert!(
         UdpSocket::bind(("127.0.0.1", doq)).await.is_ok(),
         "stop must release the QUIC endpoint alongside the other listeners"
@@ -818,5 +845,5 @@ async fn doq_source_device_comes_from_the_accepted_socket_address() {
             .is_some_and(|id| id.to_string() == device)),
         "the source range must select the configured device from the socket address"
     );
-    server.stop().await;
+    stop_released(&server).await;
 }

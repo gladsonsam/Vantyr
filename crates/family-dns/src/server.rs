@@ -50,6 +50,10 @@ use crate::subscription::{AppliedStatus, SourceStatus, SubscriptionRuntime};
 
 const TCP_TIMEOUT_SECS: u64 = 5;
 const TCP_MAX_BYTES: usize = 32 * 1024;
+/// Small bounded backoff between bind proofs in `stop_and_wait`. It is a
+/// retry delay only; release is proven by a successful rebind, never by the
+/// passing of time. Capped by the caller's deadline.
+const RELEASE_PROBE_BACKOFF: Duration = Duration::from_millis(2);
 /// Opt-in durable mode. `now` is supplied by the caller so tests and the CLI
 /// use the same code path; the binary passes `Utc::now()`.
 #[derive(Clone, Debug)]
@@ -154,6 +158,11 @@ pub struct DnsStatus {
 pub struct DnsServer {
     shutdown: CancellationToken,
     bind_addr: SocketAddr,
+    /// The OS-assigned address of the DoQ UDP socket, captured from
+    /// `UdpSocket::local_addr()` at the moment of a successful bind. Never a
+    /// caller-supplied address. Used only by `stop_and_wait` to verify that
+    /// the exact owned port has been released before a same-port restart.
+    doq_bound: Option<SocketAddr>,
     task: Mutex<Option<JoinHandle<()>>>,
     observations: ObservationLog,
     current: SnapshotHandle,
@@ -498,6 +507,7 @@ impl DnsServer {
         // from the accepted connection address; no identity is inferred from it.
         // It is registered last, so any failure here drops the already-registered
         // sockets and tasks before the serving task is started.
+        let mut doq_bound_addr = None;
         if let (Some(spec), Some(cfg)) = (config.doq_listener.as_ref(), tls.doq) {
             let doq = UdpSocket::bind(spec.bind.configured_addr()).await?;
             let doq_bound = doq.local_addr()?;
@@ -509,6 +519,10 @@ impl DnsServer {
                 Duration::from_secs(TCP_TIMEOUT_SECS),
                 cfg,
             )?;
+            // Retain the address the OS actually assigned at a successful
+            // bind (it may be an ephemeral port). This is the only address
+            // `stop_and_wait` is allowed to verify.
+            doq_bound_addr = Some(doq_bound);
         }
         let shutdown = server.shutdown_token().clone();
         let task = tokio::spawn(async move {
@@ -519,6 +533,7 @@ impl DnsServer {
         Ok(Self {
             shutdown,
             bind_addr: bound,
+            doq_bound: doq_bound_addr,
             task: Mutex::new(Some(task)),
             observations,
             current,
@@ -1105,14 +1120,71 @@ impl DnsServer {
     }
 
     /// Stop an owned server (tests and library callers).
+    ///
+    /// This cancels the shutdown token and awaits the listener task. It does
+    /// NOT wait for the DoQ UDP socket to be released: Hickory's maintained
+    /// registration moves that socket into a private QUIC endpoint whose
+    /// driver drops it asynchronously after the joined task ends, and the
+    /// pinned API exposes no close or wait handle for it. A caller that must
+    /// rebind the same DoQ port should use [`Self::stop_and_wait`] instead.
     pub async fn stop(self) {
         self.stop_inner().await;
     }
 
     /// Stop a server shared with a subscription runtime. Safe while other
     /// handles exist; no `Arc::try_unwrap` is needed or permitted here.
+    ///
+    /// Same task-join guarantee and the same DoQ socket-release limitation as
+    /// [`Self::stop`]; use [`Self::stop_and_wait`] when a same-port DoQ restart
+    /// depends on the port being free.
     pub async fn stop_shared(&self) {
         self.stop_inner().await;
+    }
+
+    /// Stop, then verify the owned DoQ UDP port is observably released.
+    ///
+    /// This performs the same shutdown and task join as [`Self::stop`], then
+    /// repeatedly rebinds the exact OS-assigned DoQ address captured at
+    /// startup until the bind succeeds or `timeout` elapses. The successful
+    /// probe socket is dropped immediately: the guarantee is that release was
+    /// *observed* at completion, not that the port is reserved for a later
+    /// caller (another process may claim it between the probe and its bind).
+    ///
+    /// Only `AddrInUse` is retried, with a small backoff bounded by the
+    /// deadline; any other bind error is returned. When no DoQ listener was
+    /// enabled this is just the existing shutdown. Repeated calls are
+    /// idempotent, and `&self` works for both owned and `Arc<DnsServer>`
+    /// callers. Operationally the timeout is an upper bound on waiting for
+    /// the quinn driver to finish after the listener task joins; if the port
+    /// is still held when the deadline passes, an error is returned rather
+    /// than proceeding with an unproven release.
+    pub async fn stop_and_wait(&self, timeout: Duration) -> Result<()> {
+        self.stop_inner().await;
+        let Some(addr) = self.doq_bound else {
+            return Ok(());
+        };
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            match UdpSocket::bind(addr).await {
+                Ok(probe) => {
+                    // Release is proven by the bind; never hold a reservation.
+                    drop(probe);
+                    return Ok(());
+                }
+                Err(error) if error.kind() == io::ErrorKind::AddrInUse => {
+                    let now = tokio::time::Instant::now();
+                    if now >= deadline {
+                        anyhow::bail!(
+                            "DoQ UDP port {addr} was not released within {:?}",
+                            timeout
+                        );
+                    }
+                    let remaining = deadline - now;
+                    tokio::time::sleep(remaining.min(RELEASE_PROBE_BACKOFF)).await;
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
     }
 }
 

@@ -401,6 +401,21 @@ evidence replay, assignment freshness, TLS and private option custody. No UI
 wrappers are accepted for these APIs. Established opaque CONNECT tunnels are
 not retroactively closed by credential revocation.
 
+### DoQ listener shutdown lifecycle candidate
+
+The DoQ listener checkpoint `bdb07dea` is an unaccepted candidate with
+intermittent shutdown/restart failures. A bounded repair adds a production
+`DnsServer::stop_and_wait(timeout)` that joins the listener task and then
+proves the exact OS-assigned DoQ UDP port is free by rebinding it and dropping
+the probe immediately; `stop`/`stop_shared` keep their task-join semantics and
+are documented as not guaranteeing socket release. The maintained Hickory QUIC
+registration moves the socket into a private endpoint with no close/wait handle,
+so this is an observed-release gate with an explicit bounded deadline, not a
+port reservation. Ten focused DoQ listener tests pass, including no-client
+shutdown, used connections, transport coexistence and a real same-port durable
+restart. This candidate is still pending review: no acceptance, integration,
+push or deployment is claimed.
+
 ## Frontend continuation
 
 `feat/network-ui` is pushed at `415431a3`, with no frontend-owned uncommitted
