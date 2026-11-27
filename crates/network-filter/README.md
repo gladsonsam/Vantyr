@@ -15,12 +15,14 @@ compiles them.
 | --- | --- | --- | --- |
 | hosts / bare / wildcard domain lists | Hickory `hickory-server` 0.26.4 | MIT OR Apache-2.0 | `store::blocklist::BlocklistZoneHandler::add(Read)`, `entry_count()`, public `ZoneHandler::lookup()` |
 | DNS-representable ABP domain rules | `adblock` 0.13.6 (Brave `adblock-rust`, <https://github.com/brave/adblock-rust>) | **MPL-2.0** | `FilterSet`, `Engine`, public `NetworkFilterMask`/metadata, `BlockerResult` precedence |
+| bounded hostname regex rules | `regex` 1.13.2 (<https://github.com/rust-lang/regex>) | MIT OR Apache-2.0 | `RegexBuilder` with explicit compile/DFA/nesting bounds; `is_match` on the canonical host |
 
 Only `adblock`'s `debug-info` feature is enabled (needed for rule/source
 evidence). `embedded-domain-resolver`, `single-thread` and `full-regex-handling`
-are off: we reject every regex rule, and the engine must stay `Sync` for an
-`Arc` snapshot swap. The `abp` feature is on by default and can be disabled by
-callers that only need Hickory hosts lists.
+are off: hostname regex rules are compiled by the bounded automata engine in
+this crate instead, and the ABP engine must stay `Sync` for an `Arc` snapshot
+swap. The `abp` feature is on by default, enables both upstreams above and can
+be disabled by callers that only need Hickory hosts lists.
 
 No DNS wire format, cryptography, or full adblock syntax compiler is
 implemented here.
@@ -40,8 +42,8 @@ implemented here.
 
 ### ABP source (`ListFormat::Abp`, feature `abp`)
 
-Unicode and punycode IDN rules are currently rejected by the ABP adapter
-with a diagnostic. Hosts-source IDNA canonicalisation remains supported.
+Hosts-source IDNA canonicalisation remains supported. For hostname regex rules,
+write IDN patterns in punycode: the matched host is the canonical ASCII form.
 
 
 Accepted, after an explicit DNS-representability guard **and** upstream parsing:
@@ -49,17 +51,26 @@ Accepted, after an explicit DNS-representability guard **and** upstream parsing:
 - `||host^` — domain-anchored block, matching that host and its subdomains;
 - `@@||host^` — exception, yielding `AllowException` inside the list layer;
 - `||host^$important` — upstream `$important` precedence, read from
-  `BlockerResult` (an important block beats an exception).
+  `BlockerResult` (an important block beats an exception);
+- `/regexp/`, `@@/regexp/`, `/regexp/$important` — hostname regex rules. These
+  match the canonical host directly (ASCII lowercase, punycode for IDN, no
+  trailing dot). Patterns are case-insensitive, `^`/`$` anchor the whole
+  hostname and an unanchored pattern matches anywhere in it. Regex rules never
+  see a URL, scheme, path or trailing slash. An orphan `@@` regex exception
+  still yields the list-layer `AllowException` signal;
+- escaped slashes (`\/`) are accepted inside a regex body. Every pattern is
+  bounded in text length, compiled-program size, DFA size and nesting depth.
 
-Upstream matching needs a request-shaped value. A minimal synthetic
+Upstream domain-rule matching needs a request-shaped value. A minimal synthetic
 `http://<canonical-host>/` carrier is built **only** to carry the queried
-hostname. No path, scheme, source URL, third-party state or content-type
-semantics are derived from it, and none are exposed to callers.
+hostname into that engine. Regex rules do not use it. No path, scheme, source
+URL, third-party state or content-type semantics are derived from it, and none
+are exposed to callers.
 
 Rejected with a bounded diagnostic (never silently matched):
 
-- regex rules (including `/.../`) — **Regex support: MISSING**; a separate
-  step would need a maintained regex parser;
+- regex modifiers other than `important`, and important regex exceptions
+  (`@@/regexp/$important`), which would need to override important blocks;
 - paths and URLs (`||host/path`, `http://`, `https://`);
 - cosmetic / element-hiding rules (`##`, `#@#`, `$$`);
 - every `$` option except `important` — including `$third-party`,
@@ -90,12 +101,18 @@ other record type returns `NoMatch`.
 
 Deterministic precedence (highest first):
 
-1. upstream `$important` block from an ABP source;
+1. `$important` block from an ABP source (domain rule or hostname regex);
 2. a selected service domain set (lexicographically first id on overlap);
-3. upstream `@@` exception -> `AllowException`;
-4. a plain ABP block;
+3. `@@` exception from an ABP source (domain rule or hostname regex) ->
+   `AllowException`;
+4. a plain ABP block (domain rule or hostname regex);
 5. a hosts/bare/wildcard list block (lexicographically first id);
 6. `NoMatch`.
+
+Within one ABP source, important blocks outrank exceptions, which outrank plain
+blocks. Regex rules use the same ranking as upstream domain rules; on an equal
+rank the domain rule's evidence is kept. A service block always outranks an
+exception.
 
 `AllowException` is strictly a **list-layer** outcome. It must never be used
 to override the household baseline policy owned by the DNS worker. This crate
@@ -103,14 +120,17 @@ never sees that policy and makes no such claim.
 
 Evidence is honest about upstream limits: Hickory's blocklist API does not
 expose the matched entry, so hosts/service decisions carry only list or service
-id attribution. ABP decisions carry the upstream-reported rule, bounded and
-mapped to its source index.
+id attribution. ABP domain decisions carry the upstream-reported rule, bounded and
+mapped to its source index. Hostname regex decisions carry the exact rule text
+and its own source id and line, independent of upstream debug information.
 
 ## Bounds and failure behaviour
 
 Defaults: 8 MiB aggregate raw bytes, at most 32 lists, 250 000 accepted rules,
-at most 64 retained diagnostics, 64 services, 512 domains per service.
-`compile_with_limits` lets callers lower every bound.
+at most 64 retained diagnostics, 64 services, 512 domains per service. Regex
+patterns are additionally bounded to 200 bytes of text, 256 KiB of compiled
+program, 256 KiB of DFA cache and 32 levels of nesting. `compile_with_limits`
+lets callers lower the general bounds.
 
 `compile` is pure: it returns `Result`. Any non-`Note` diagnostic (unsupported
 rule, malformed/empty source, invalid catalog entry) or exceeded bound rejects
@@ -132,7 +152,7 @@ then call `compile`; publish the resulting snapshot only on `Ok`.
 
 - remote HTTP/S subscription refresh and local content-addressed durability;
 - DNS worker integration and enforcement;
-- regex rules, full ABP syntax, and query-type-specific modifiers;
+- full ABP syntax, further modifiers and context-dependent rule selection;
 - exhaustive service catalogs and live feeds.
 
 ## Tests

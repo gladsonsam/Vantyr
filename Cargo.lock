@@ -7107,6 +7107,7 @@ dependencies = [
  "adblock",
  "futures-executor",
  "hickory-server",
+ "regex",
  "sha2 0.10.9",
 ]
 

@@ -1,12 +1,13 @@
-//! Real-backend tests: Hickory blocklist matching and `adblock` domain rules.
-//! All fixtures are synthetic and local; no live feed or HTTP is involved.
+//! Real-backend tests: Hickory blocklist matching, `adblock` domain rules and
+//! bounded hostname regex rules. All fixtures are synthetic and local; no live
+//! feed or HTTP is involved.
 
 use std::str::FromStr;
 
 use hickory_server::proto::rr::{Name, RecordType};
 use vantyr_network_filter::{
     compile, compile_with_limits, CompileError, DiagnosticKind, FilterOutcome, Limits, ListFormat,
-    ListSource,
+    ListSource, ServiceCatalog, ServiceDefinition, ServiceDomain,
 };
 
 fn name(value: &str) -> Name {
@@ -270,14 +271,13 @@ fn abp_domain_rules_exception_and_upstream_important_precedence() {
 #[test]
 fn unsupported_abp_rules_are_diagnosed_not_silently_matched() {
     const PREFIX: &[u8] = b"||clean.test^\n";
-    let rejected: [&[u8]; 9] = [
+    let rejected: [&[u8]; 8] = [
         b"||ads.example^\n@@||ads.example^\n||ads.example^$third-party\n",
         b"||ads.example^$script\n",
         b"||ads.example^$image\n",
         b"||ads.example^$dns\n",
         b"||ads.example/path\n",
         b"example.com##.ad\n",
-        b"/ads.example/\n",
         b"||ads.example\n",
         b"ads.example\n",
     ];
@@ -319,4 +319,240 @@ fn abp_exception_does_not_weaken_a_hosts_block_into_an_allow() {
     assert_eq!(metadata[0].id, "abp");
     assert_eq!(metadata[1].id, "hosts");
     assert_eq!(metadata.len(), 2);
+}
+
+#[test]
+fn hostname_regex_anchors_case_trailing_dot_and_idna() {
+    const TEXT: &[u8] = b"\
+/^ads\\.example$/
+/^xn--bcher-kva\\.example$/
+/^http:\\/\\//
+/^catalog\\.test\\/$/
+/unanchored\\.test/
+";
+    let snapshot = compile(3, &[abp_source("rx", TEXT)], None, &[]).unwrap();
+
+    match snapshot.evaluate(&name("ads.example."), RecordType::A) {
+        FilterOutcome::Block { evidence } => {
+            assert_eq!(evidence.source_id, "rx");
+            assert_eq!(
+                evidence.source_kind,
+                vantyr_network_filter::SourceKind::List
+            );
+            assert_eq!(evidence.rule.as_deref(), Some("/^ads\\.example$/"));
+            assert_eq!(evidence.note, "hostname regex rule");
+        }
+        other => panic!("anchored regex must block: {other:?}"),
+    }
+    for blocked in [
+        "ADS.Example.",
+        "ads.example",
+        "bücher.example.",
+        "XN--BCHER-KVA.EXAMPLE.",
+        "foo.unanchored.test.",
+        "unanchored.test.evil.test.",
+    ] {
+        assert!(
+            matches!(
+                snapshot.evaluate(&name(blocked), RecordType::A),
+                FilterOutcome::Block { .. }
+            ),
+            "{blocked} must match a canonical hostname regex"
+        );
+    }
+    for allowed in [
+        "sub.ads.example.",
+        "ads.example.evil.test.",
+        "catalog.test.",
+        "plain.test.",
+    ] {
+        assert_eq!(
+            snapshot.evaluate(&name(allowed), RecordType::A),
+            FilterOutcome::NoMatch,
+            "{allowed} must not match an anchored regex or a URL-shaped pattern"
+        );
+    }
+    for qtype in [RecordType::A, RecordType::AAAA, RecordType::CNAME] {
+        assert!(matches!(
+            snapshot.evaluate(&name("ads.example."), qtype),
+            FilterOutcome::Block { .. }
+        ));
+    }
+    assert_eq!(
+        snapshot.evaluate(&name("ads.example."), RecordType::TXT),
+        FilterOutcome::NoMatch,
+        "regex rules must not add semantics to unsupported query types"
+    );
+}
+
+#[test]
+fn hostname_regex_block_exception_and_important_precedence() {
+    const TEXT: &[u8] = b"\
+||ads.example^
+/^ads\\.example$/
+@@/^rewards\\.ads\\.example$/
+/^video\\.test$/$important
+@@/^video\\.test$/
+||news.test^$important
+@@/^news\\.test$/
+/^promo\\.test$/
+@@/^promo\\.test$/
+";
+    let snapshot = compile(4, &[abp_source("abp", TEXT)], None, &[]).unwrap();
+
+    match snapshot.evaluate(&name("ads.example."), RecordType::A) {
+        FilterOutcome::Block { evidence } => {
+            // On an equal rank the already-accepted domain rule wins.
+            assert_eq!(evidence.rule.as_deref(), Some("||ads.example^"));
+        }
+        other => panic!("plain block must win with stable evidence: {other:?}"),
+    }
+    match snapshot.evaluate(&name("rewards.ads.example."), RecordType::A) {
+        FilterOutcome::AllowException { evidence } => {
+            assert_eq!(
+                evidence.rule.as_deref(),
+                Some("@@/^rewards\\.ads\\.example$/")
+            );
+        }
+        other => panic!("regex exception must beat a plain domain block: {other:?}"),
+    }
+    match snapshot.evaluate(&name("video.test."), RecordType::A) {
+        FilterOutcome::Block { evidence } => {
+            assert_eq!(evidence.rule.as_deref(), Some("/^video\\.test$/$important"));
+            assert!(evidence.note.contains("important"));
+        }
+        other => panic!("important regex block must beat an exception: {other:?}"),
+    }
+    match snapshot.evaluate(&name("news.test."), RecordType::A) {
+        FilterOutcome::Block { evidence } => {
+            assert_eq!(evidence.rule.as_deref(), Some("||news.test^$important"));
+        }
+        other => panic!("important domain block must beat a regex exception: {other:?}"),
+    }
+    match snapshot.evaluate(&name("promo.test."), RecordType::A) {
+        FilterOutcome::AllowException { evidence } => {
+            assert_eq!(evidence.rule.as_deref(), Some("@@/^promo\\.test$/"));
+        }
+        other => panic!("regex exception must beat a regex block: {other:?}"),
+    }
+    assert_eq!(
+        snapshot.evaluate(&name("video.test.evil.test."), RecordType::A),
+        FilterOutcome::NoMatch,
+        "anchors stay relative to the whole hostname"
+    );
+}
+
+#[test]
+fn invalid_and_unbounded_regex_rules_are_diagnosed() {
+    fn rejected(extra: &str, kind: DiagnosticKind, needle: &str) {
+        let mut bytes = b"||ok.test^\n".to_vec();
+        bytes.extend_from_slice(extra.as_bytes());
+        bytes.push(b'\n');
+        match compile(1, &[abp_source("abp", &bytes)], None, &[]) {
+            Err(CompileError::Rejected(diagnostics)) => assert!(
+                diagnostics
+                    .iter()
+                    .any(|d| d.kind == kind && d.detail.contains(needle)),
+                "expected {kind:?} containing {needle:?}: {diagnostics:?}"
+            ),
+            other => panic!("expected bounded rejection: {other:?}"),
+        }
+    }
+
+    rejected("/[/", DiagnosticKind::Malformed, "regex compile error");
+    rejected("//", DiagnosticKind::Malformed, "empty");
+    rejected(
+        "/unterminated",
+        DiagnosticKind::Malformed,
+        "closing delimiter",
+    );
+    rejected(
+        "/foo/$third-party",
+        DiagnosticKind::Unsupported,
+        "$third-party",
+    );
+    rejected(
+        "@@/foo/$important",
+        DiagnosticKind::Unsupported,
+        "important exceptions",
+    );
+    rejected(
+        "/foo/bar",
+        DiagnosticKind::Malformed,
+        "followed by modifiers",
+    );
+    rejected(
+        &format!("/{}/", "a".repeat(201)),
+        DiagnosticKind::Limit("regex pattern length".to_owned()),
+        "bounded length",
+    );
+
+    let mut deep = String::from("/");
+    deep.push_str(&"(".repeat(40));
+    deep.push('a');
+    deep.push_str(&")".repeat(40));
+    deep.push('/');
+    rejected(&deep, DiagnosticKind::Malformed, "regex compile error");
+}
+
+#[test]
+fn regex_evidence_is_deterministic_across_source_order() {
+    const A: &[u8] = b"||a.example^\n";
+    const B: &[u8] = b"/^b\\.example$/\n";
+    let forward = compile(1, &[abp_source("a", A), abp_source("b", B)], None, &[]).unwrap();
+    let reverse = compile(1, &[abp_source("b", B), abp_source("a", A)], None, &[]).unwrap();
+    for snapshot in [&forward, &reverse] {
+        match snapshot.evaluate(&name("b.example."), RecordType::A) {
+            FilterOutcome::Block { evidence } => {
+                assert_eq!(evidence.source_id, "b");
+                assert_eq!(evidence.rule.as_deref(), Some("/^b\\.example$/"));
+            }
+            other => panic!("regex evidence must be stable: {other:?}"),
+        }
+    }
+    assert_eq!(forward.lists()[1].accepted_rules, 1);
+}
+
+#[test]
+fn regex_exceptions_never_override_a_hard_block() {
+    let snapshot = compile(
+        1,
+        &[
+            hosts_source("hosts", b"both.test\n"),
+            abp_source("abp", b"@@/^both\\.test$/\n/^other\\.test$/\n"),
+        ],
+        None,
+        &[],
+    )
+    .unwrap();
+    assert!(matches!(
+        snapshot.evaluate(&name("both.test."), RecordType::A),
+        FilterOutcome::AllowException { .. }
+    ));
+
+    let catalog = ServiceCatalog {
+        version: "1".to_owned(),
+        services: vec![ServiceDefinition {
+            id: "svc".to_owned(),
+            label: "svc".to_owned(),
+            domains: vec![ServiceDomain::Suffix("served.test".to_owned())],
+            version: "1".to_owned(),
+            source: None,
+            evidence: None,
+        }],
+    };
+    let snapshot = compile(
+        2,
+        &[abp_source(
+            "abp",
+            b"@@/^served\\.test$/\n/^unrelated\\.test$/\n",
+        )],
+        Some(&catalog),
+        &["svc".to_owned()],
+    )
+    .unwrap();
+    match snapshot.evaluate(&name("served.test."), RecordType::A) {
+        FilterOutcome::Block { evidence } => assert_eq!(evidence.source_id, "svc"),
+        other => panic!("a service block must outrank a regex exception: {other:?}"),
+    }
 }

@@ -16,8 +16,12 @@
 //!   -> `adblock` 0.13.6 (Brave `adblock-rust`, MPL-2.0), feature `abp`.
 //!   A minimal synthetic `http://<canonical-host>/` carrier is used only to
 //!   satisfy upstream's request-shaped matcher. Path, URL, scheme,
-//!   third-party, content-type, cosmetic and regex rules are rejected with
+//!   third-party, content-type and cosmetic rules are rejected with
 //!   diagnostics; no HTTP context semantics are claimed.
+//! * bounded hostname regex rules (`/regex/`, `@@/regex/`, `/regex/$important`)
+//!   -> `regex` 1.13.2 (MIT OR Apache-2.0), feature `abp`. These match the
+//!   canonical hostname directly, with explicit compile-size, DFA-size and
+//!   nesting bounds. No synthetic URL is ever used for them.
 //!
 //! A small typed `ServiceCatalog` maps operator-selected service ids to exact
 //! and suffix domain sets. Services are compiled through the same Hickory
@@ -31,7 +35,8 @@
 //! to override the household baseline policy owned by the DNS worker.
 //!
 //! Attribution: `adblock` (https://github.com/brave/adblock-rust), MPL-2.0;
-//! Hickory (https://hickory-dns.org), MIT OR Apache-2.0.
+//! Hickory (https://hickory-dns.org), MIT OR Apache-2.0;
+//! `regex` (https://github.com/rust-lang/regex), MIT OR Apache-2.0.
 
 mod canonical;
 mod hosts;
@@ -42,6 +47,8 @@ mod types;
 
 #[cfg(feature = "abp")]
 mod abp;
+#[cfg(feature = "abp")]
+mod hostname_regex;
 
 pub use limits::{
     Limits, MAX_DIAGNOSTICS, MAX_DIAGNOSTIC_LEN, MAX_DOMAINS_PER_SERVICE, MAX_FIELD_LEN,

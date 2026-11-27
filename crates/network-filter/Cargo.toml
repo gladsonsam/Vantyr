@@ -10,6 +10,7 @@ publish = false
 # wire format, cryptography, or a full adblock syntax engine of its own.
 hickory-server   = { version = "=0.26.4", default-features = false, features = ["blocklist"] }
 adblock          = { version = "=0.13.6", default-features = false, features = ["debug-info"], optional = true }
+regex            = { version = "=1.13.2", optional = true }
 futures-executor = "=0.3.34"
 sha2             = "=0.10.9"
 
@@ -17,4 +18,4 @@ sha2             = "=0.10.9"
 default = ["abp"]
 # MPL-2.0 licensed upstream. Downstream crates that do not need ABP domain
 # rules can disable it and keep only the Hickory hosts/bare/wildcard path.
-abp = ["dep:adblock"]
+abp = ["dep:adblock", "dep:regex"]
