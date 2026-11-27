@@ -1607,6 +1607,7 @@ dependencies = [
  "vantyr-network-runtime",
  "vantyr-network-subscriptions",
  "webpki-roots",
+ "x509-parser",
 ]
 
 [[package]]

@@ -407,6 +407,13 @@ impl DnsServer {
         subscriptions: Option<Arc<SubscriptionRuntime>>,
         events: Option<Arc<EventQueue>>,
     ) -> Result<Self> {
+        // Load and validate the operator-supplied certificate/key BEFORE any
+        // socket exists. A custody/consistency/expiry failure returns here with
+        // no listener and no mutation of persisted state.
+        let dot_tls = match &config.dot_listener {
+            Some(spec) if spec.enabled => Some(crate::dot::load_server_config(spec)?),
+            _ => None,
+        };
         let current: SnapshotHandle = Arc::new(RwLock::new(snapshot));
         let handler = FilteringHandler::with_events(current.clone(), events);
         let mut server = Server::new(handler);
@@ -429,6 +436,19 @@ impl DnsServer {
         };
         server.register_socket(udp);
         server.register_listener(tcp, Duration::from_secs(TCP_TIMEOUT_SECS), TCP_MAX_BYTES);
+        // The optional DoT listener shares this Server (and therefore its
+        // shutdown token) and the same FilteringHandler: decrypted queries get
+        // the identical immutable policy and source-IP device mapping.
+        if let (Some(spec), Some(tls)) = (config.dot_listener.as_ref(), dot_tls) {
+            let dot = TcpListener::bind(spec.bind.configured_addr()).await?;
+            let dot_bound = dot.local_addr()?;
+            reject_upstream_self_loop(&config, dot_bound)?;
+            server.register_tls_listener_with_tls_config(
+                dot,
+                Duration::from_secs(TCP_TIMEOUT_SECS),
+                tls,
+            )?;
+        }
         let shutdown = server.shutdown_token().clone();
         let task = tokio::spawn(async move {
             if let Err(error) = server.block_until_done().await {

@@ -69,6 +69,9 @@ pub const MAX_SELECTED_SERVICES: usize = 64;
 pub const MAX_SERVICE_DOMAINS: usize = 512;
 pub const MAX_SUBSCRIPTION_SOURCES: usize = 32;
 pub const MAX_CACHE_PATH_LEN: usize = 512;
+/// Bounds on operator-supplied DoT server certificate/key path strings. The
+/// files themselves are read with their own byte bound in `dot::load_server_config`.
+pub const MAX_TLS_PATH_LEN: usize = 512;
 
 // Bounded response-cache settings. The entry cap counts cached RESPONSES, not
 // bytes: one response may be large, so this is a count bound only and is not a
@@ -267,7 +270,7 @@ fn default_device_profile() -> String {
 
 /// Explicit listener settings. The default is a high loopback port shared by
 /// UDP and TCP; privileged ports are always rejected.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BindConfig {
     #[serde(default = "default_loopback")]
@@ -276,6 +279,24 @@ pub struct BindConfig {
     pub port: u16,
     #[serde(default)]
     pub allow_non_loopback: bool,
+}
+
+/// Explicit operator opt-in for a DNS-over-TLS server listener. There is no
+/// implicit enablement: a listener exists only when `enabled` is true AND both
+/// bounded paths are supplied. The bind is separate from the plaintext UDP/TCP
+/// bind (Hickory requires a different port); the same source-IP device mapping
+/// and immutable policy apply to decrypted queries. Certificate rotation is
+/// deliberately not supported here, so this whole block is transport identity
+/// and a reload that changes it is rejected.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DotListenerConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_bind")]
+    pub bind: BindConfig,
+    pub cert_path: String,
+    pub key_path: String,
 }
 
 impl Default for BindConfig {
@@ -1054,6 +1075,10 @@ pub struct Config {
     pub event_retention_secs: Option<u64>,
     #[serde(default)]
     pub bind: BindConfig,
+    /// Optional, explicit DoT server listener. Omitted or `enabled = false`
+    /// means no encrypted listener is created; nothing enables it implicitly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dot_listener: Option<DotListenerConfig>,
     #[serde(default)]
     pub deny: DenyConfig,
     #[serde(default)]
@@ -1160,6 +1185,7 @@ impl Config {
                 bail!("a public bind address is never allowed");
             }
         }
+        self.validate_dot_listener()?;
 
         if self.upstreams.len() + self.encrypted_upstreams.len() > MAX_UPSTREAMS {
             bail!("at most {MAX_UPSTREAMS} upstreams are allowed");
@@ -1427,6 +1453,75 @@ impl Config {
             }
             if !(1..=MAX_TTL_SECS).contains(ttl) {
                 bail!("sinkhole TTL must be 1..={MAX_TTL_SECS}");
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate the optional DoT listener block without reading a file or
+    /// opening a socket. Public bind, privileged port, path bounds,
+    /// distinct-port and self-loop checks all run before any listener exists.
+    fn validate_dot_listener(&self) -> Result<()> {
+        let Some(dot) = &self.dot_listener else {
+            return Ok(());
+        };
+        for (value, label) in [
+            (&dot.cert_path, "DoT cert_path"),
+            (&dot.key_path, "DoT key_path"),
+        ] {
+            if value.is_empty()
+                || value.len() > MAX_TLS_PATH_LEN
+                || value.chars().any(char::is_control)
+            {
+                bail!("{label} is empty, unbounded or malformed");
+            }
+        }
+        // A present but disabled block stays inert: no certificate is read and
+        // no socket is bound. Enabling is an explicit operator decision.
+        if !dot.enabled {
+            return Ok(());
+        }
+        let ip = parsed_ip(&dot.bind.address, "DoT listener address")?;
+        let canonical = normalize_ip(ip);
+        if dot.bind.port != 0 && dot.bind.port < 1024 {
+            bail!("DoT listener port must be 1024 or higher; privileged ports are not used");
+        }
+        if !canonical.is_loopback() {
+            if !dot.bind.allow_non_loopback {
+                bail!("non-loopback DoT listener requires dot_listener.bind.allow_non_loopback = true");
+            }
+            if canonical.is_unspecified() {
+                bail!("an unspecified DoT listener address is never allowed");
+            }
+            if is_public_address(canonical) {
+                bail!("a public DoT listener address is never allowed");
+            }
+        }
+        let dot_addr = SocketAddr::new(canonical, dot.bind.port);
+        let plain_addr = SocketAddr::new(normalize_ip(self.bind.address()), self.bind.port);
+        if dot.bind.port != 0 && dot_addr == plain_addr {
+            bail!("DoT listener must use a different port from the plaintext listener");
+        }
+        // Upstreams may not point back at the encrypted listener either. A
+        // zero port defers this to the post-bind guard in `server::serve`.
+        if dot.bind.port != 0 {
+            for raw in &self.upstreams {
+                let addr = SocketAddr::from_str(raw)
+                    .map_err(|_| anyhow::anyhow!("upstream '{raw}' must be an IP:port literal"))?;
+                if forwards_to_self(&addr, &dot_addr) {
+                    bail!("upstream {addr} points back at the DoT listener");
+                }
+            }
+            for spec in &self.encrypted_upstreams {
+                let bootstrap = IpAddr::from_str(spec.bootstrap())
+                    .map_err(|_| anyhow::anyhow!("encrypted bootstrap is not an IP literal"))?;
+                let candidate = SocketAddr::new(normalize_ip(bootstrap), spec.port());
+                if forwards_to_self(&candidate, &dot_addr) {
+                    bail!(
+                        "{} encrypted upstream points back at the DoT listener",
+                        spec.scheme()
+                    );
+                }
             }
         }
         Ok(())

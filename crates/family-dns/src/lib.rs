@@ -27,6 +27,7 @@ pub mod bundle;
 pub mod compile;
 pub mod config;
 pub mod controller;
+pub mod dot;
 pub mod events;
 pub mod filter;
 pub mod handler;
@@ -44,11 +45,11 @@ pub mod upstream;
 pub use bundle::{Bundle, BundleStore, BundleValidator};
 pub use compile::{compile, CompileError};
 pub use config::{
-    read_bounded, BindConfig, CacheConfig, Config, DenyConfig, DeviceConfig, EncryptedUpstreamSpec,
-    FilterConfig, FilterSourceSpec, ListFormatSpec, MatchSpec, RecordSpec, RuleSpec, SafeSearchConfig,
-    ScheduleSpec, ServiceCatalogSpec, ServiceDomainSpec, ServiceSpec, SourceOrigin,
-    SubscriptionSettings, SubscriptionSourceSpec, MAX_BOGUS_NXDOMAIN_IPS, MAX_CACHE_ENTRIES,
-    MAX_CA_PEM_BYTES, MAX_CONFIG_BYTES,
+    read_bounded, BindConfig, CacheConfig, Config, DenyConfig, DeviceConfig, DotListenerConfig,
+    EncryptedUpstreamSpec, FilterConfig, FilterSourceSpec, ListFormatSpec, MatchSpec, RecordSpec,
+    RuleSpec, SafeSearchConfig, ScheduleSpec, ServiceCatalogSpec, ServiceDomainSpec, ServiceSpec,
+    SourceOrigin, SubscriptionSettings, SubscriptionSourceSpec, MAX_BOGUS_NXDOMAIN_IPS,
+    MAX_CACHE_ENTRIES, MAX_CA_PEM_BYTES, MAX_CONFIG_BYTES, MAX_TLS_PATH_LEN,
 };
 pub use controller::{
     policy_digest, sync_once, ControllerClient, ControllerError, ControllerOptions,

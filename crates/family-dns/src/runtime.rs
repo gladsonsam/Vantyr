@@ -24,7 +24,9 @@ use hickory_server::store::in_memory::InMemoryZoneHandler;
 use hickory_server::zone_handler::{AxfrPolicy, Catalog, ZoneType};
 use vantyr_network_filter::FilterSnapshot;
 
-use crate::config::{forwards_to_self, CacheConfig, Config, DenyConfig, RecordSpec};
+use crate::config::{
+    forwards_to_self, CacheConfig, Config, DenyConfig, DotListenerConfig, RecordSpec,
+};
 use crate::filter::FilterMaterial;
 use crate::management::ManagementState;
 use crate::observe::ObservationLog;
@@ -274,6 +276,23 @@ pub(crate) fn same_transport(a: &Config, b: &Config) -> bool {
     a.bind.address == b.bind.address
         && a.bind.port == b.bind.port
         && a.bind.allow_non_loopback == b.bind.allow_non_loopback
+        && same_dot_listener(a.dot_listener.as_ref(), b.dot_listener.as_ref())
+}
+
+/// The DoT listener block is transport identity. Certificate rotation is not
+/// supported, so any change to it (including enable/disable or cert/key paths)
+/// is a transport change and must be rejected by reload/controller pull.
+fn same_dot_listener(a: Option<&DotListenerConfig>, b: Option<&DotListenerConfig>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.enabled == b.enabled
+                && a.bind == b.bind
+                && a.cert_path == b.cert_path
+                && a.key_path == b.key_path
+        }
+        _ => false,
+    }
 }
 
 /// Self-loop guard after the OS has assigned an ephemeral port.
