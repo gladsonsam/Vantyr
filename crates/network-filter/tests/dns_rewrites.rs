@@ -332,9 +332,11 @@ fn unsupported_and_malformed_rewrites_are_diagnosed_not_silently_applied() {
 
 #[test]
 fn global_rewrite_cap_exactly_at_and_over_budget() {
-    let mut limits = Limits::default();
-    limits.max_dns_rewrites = 3;
-    limits.max_diagnostics = 1;
+    let limits = Limits {
+        max_dns_rewrites: 3,
+        max_diagnostics: 1,
+        ..Limits::default()
+    };
     const EXACT: &str = "\
 ||a.test^$dnsrewrite=192.0.2.1
 ||b.test^$dnsrewrite=192.0.2.2
