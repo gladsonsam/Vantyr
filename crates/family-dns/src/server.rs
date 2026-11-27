@@ -25,6 +25,7 @@ use chrono::{DateTime, Utc};
 use family_policy::Policy;
 use hickory_resolver::Hosts;
 use hickory_server::server::Server;
+use rustls::ServerConfig;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -208,7 +209,10 @@ impl DnsServer {
             None,
             hosts,
         )?;
-        Self::serve(config, snapshot, observations, None, None, events).await
+        // Prepare the operator's DoT material once from the same validated
+        // config the snapshot was built from, before any socket exists.
+        let dot_tls = crate::dot::prepare_dot_tls(&config)?;
+        Self::serve(config, snapshot, observations, None, None, events, dot_tls).await
     }
 
     /// Start in opt-in durable mode. On a lost-ack restart the local bundle is
@@ -294,6 +298,13 @@ impl DnsServer {
     ) -> Result<(Self, Vec<String>)> {
         let validator = BundleValidator;
         let mut bootstrap_errors: Vec<String> = Vec::new();
+        // Prepare TLS ONCE for whichever config is actually selected, and pass
+        // the result into `serve`. On a cold start that is the bootstrap config;
+        // on a restart it is the persisted bundle. No path is re-read later, so
+        // an invalid cert/key fails before any state write and before any bind
+        // and there is no preflight/reload window to exploit.
+        let mut prepared_tls: Option<Arc<ServerConfig>> = None;
+        let mut needs_tls_prepare = true;
         let store = match BundleStore::open_from_snapshot_with_limit(
             &options.state_path,
             &options.worker_id,
@@ -316,6 +327,10 @@ impl DnsServer {
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("no state file and no bootstrap config"))?;
                 let config = Config::parse(&read_bounded(path)?)?;
+                // Validate/load DoT material for the config that is about to
+                // become the persisted bundle, before any state write or bind.
+                prepared_tls = crate::dot::prepare_dot_tls(&config)?;
+                needs_tls_prepare = false;
                 let household = config.household_id.clone();
                 let store = BundleStore::open_with_limit(
                     &options.state_path,
@@ -357,6 +372,13 @@ impl DnsServer {
         let bundle = store
             .current()
             .expect("a durable store always has a loaded or bootstrapped bundle");
+        if needs_tls_prepare {
+            // Restart: the persisted bundle is authoritative. Prepare TLS from
+            // its config, NOT from the bootstrap file, and still before any
+            // bind. A changed bootstrap config cannot redirect the listener's
+            // transport or certificate paths.
+            prepared_tls = crate::dot::prepare_dot_tls(&bundle.config)?;
+        }
         let observations = ObservationLog::default();
         // Recompile from the persisted bytes, never from the source paths. A
         // source file/cache that changed or vanished while the worker was down
@@ -393,6 +415,7 @@ impl DnsServer {
             Some(store),
             None,
             events,
+            prepared_tls,
         )
         .await?;
         server.subscriptions = subscriptions;
@@ -406,14 +429,12 @@ impl DnsServer {
         store: Option<BundleStore>,
         subscriptions: Option<Arc<SubscriptionRuntime>>,
         events: Option<Arc<EventQueue>>,
+        dot_tls: Option<Arc<ServerConfig>>,
     ) -> Result<Self> {
-        // Load and validate the operator-supplied certificate/key BEFORE any
-        // socket exists. A custody/consistency/expiry failure returns here with
-        // no listener and no mutation of persisted state.
-        let dot_tls = match &config.dot_listener {
-            Some(spec) if spec.enabled => Some(crate::dot::load_server_config(spec)?),
-            _ => None,
-        };
+        // TLS is prepared ONCE by the caller against the actual selected
+        // config, before any state write and before any bind. Do not reload
+        // from the paths here: a second read would reopen the TOCTOU window
+        // and could let a bad certificate fail after state was persisted.
         let current: SnapshotHandle = Arc::new(RwLock::new(snapshot));
         let handler = FilteringHandler::with_events(current.clone(), events);
         let mut server = Server::new(handler);

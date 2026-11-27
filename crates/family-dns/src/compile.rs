@@ -137,6 +137,9 @@ pub fn compile(base: &Config, policy: &Policy) -> Result<Config, CompileError> {
         event_retention_secs: Some(policy.event_retention_secs),
         // Preserved from the local, explicitly configured worker config.
         bind: base.bind.clone(),
+        // The DoT listener is transport identity owned by the operator, never
+        // something a controller policy pull may add, drop or rewrite.
+        dot_listener: base.dot_listener.clone(),
         deny: base.deny.clone(),
         upstreams: base.upstreams.clone(),
         encrypted_upstreams: base.encrypted_upstreams.clone(),
@@ -281,6 +284,23 @@ mod tests {
         };
         let compiled = compile(&base, &sample_policy()).unwrap();
         assert_eq!(compiled.safe_search, base.safe_search);
+    }
+
+    #[test]
+    fn compiled_config_preserves_operator_dot_listener_transport() {
+        let mut base = base();
+        base.dot_listener = Some(crate::config::DotListenerConfig {
+            enabled: true,
+            bind: crate::config::BindConfig {
+                address: "127.0.0.1".to_owned(),
+                port: 15_354,
+                allow_non_loopback: false,
+            },
+            cert_path: "/tmp/vantyr-dot-test.pem".to_owned(),
+            key_path: "/tmp/vantyr-dot-test.key".to_owned(),
+        });
+        let compiled = compile(&base, &sample_policy()).unwrap();
+        assert_eq!(compiled.dot_listener, base.dot_listener);
     }
 
     #[test]

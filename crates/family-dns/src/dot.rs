@@ -13,19 +13,19 @@
 //! transport change and is rejected by reload. DoH/DoQ/DNSCrypt/H3 server
 //! listeners are out of scope.
 
-use std::fs::{self, File};
+use std::fs::OpenOptions;
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
 use anyhow::{bail, Result};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::ServerConfig;
 
-use crate::config::DotListenerConfig;
+use crate::config::{Config, DotListenerConfig};
 
 /// Byte bound for each PEM file. Mirrors the existing bounded CA material
 /// limit; the read itself stops at one byte over so an oversized file is
@@ -34,17 +34,27 @@ const MAX_DOT_PEM_BYTES: usize = 16 * 1024;
 const DOT_ALPN: &[u8] = b"dot";
 
 /// Read one bounded PEM file with protected custody:
-///   * regular file only, never a symlink or a directory;
-///   * private key files must be mode 0600 on Unix;
+///   * the path is opened with `O_NOFOLLOW`, so swapping it for a symlink
+///     between a path check and the open cannot redirect the read;
+///   * regular-file, byte-bound and (for a private key) mode-0600 checks are
+///     made on the OPENED DESCRIPTOR (`file.metadata()`), never on a path that
+///     an attacker can change before the read;
 ///   * at most `MAX_DOT_PEM_BYTES`, read with a bound before allocation.
 fn read_protected_pem(path: &str, label: &str, private: bool) -> Result<Vec<u8>> {
-    let meta = fs::symlink_metadata(Path::new(path))
-        .map_err(|error| anyhow::anyhow!("{label} cannot be inspected: {error}"))?;
-    if meta.file_type().is_symlink() {
-        bail!("{label} must be a regular file, not a symlink");
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        options.custom_flags(libc::O_NOFOLLOW);
     }
+    let file = options
+        .open(Path::new(path))
+        .map_err(|error| anyhow::anyhow!("{label} cannot be opened: {error}"))?;
+    let meta = file
+        .metadata()
+        .map_err(|error| anyhow::anyhow!("{label} cannot be inspected: {error}"))?;
     if !meta.is_file() {
-        bail!("{label} must be a regular file");
+        bail!("{label} must be a regular file, not a symlink or directory");
     }
     if meta.len() as usize > MAX_DOT_PEM_BYTES {
         bail!("{label} exceeds {MAX_DOT_PEM_BYTES} bytes");
@@ -59,14 +69,27 @@ fn read_protected_pem(path: &str, label: &str, private: bool) -> Result<Vec<u8>>
     #[cfg(not(unix))]
     let _ = private;
 
-    let mut bytes = Vec::new();
-    let read = File::open(path)?
+    let mut bytes = Vec::with_capacity(meta.len() as usize);
+    let read = file
         .take(MAX_DOT_PEM_BYTES as u64 + 1)
         .read_to_end(&mut bytes)?;
     if read > MAX_DOT_PEM_BYTES {
         bail!("{label} exceeds {MAX_DOT_PEM_BYTES} bytes");
     }
     Ok(bytes)
+}
+
+/// Prepare the maintained rustls server config for the ACTUAL selected config
+/// exactly once. Callers pass the result through to `serve` rather than
+/// reloading from the paths afterwards: a fresh durable start can therefore
+/// fail on a bad certificate before it writes any state, and there is no
+/// preflight/reload window in which the on-disk material can change between
+/// validation and use.
+pub(crate) fn prepare_dot_tls(config: &Config) -> Result<Option<Arc<ServerConfig>>> {
+    match &config.dot_listener {
+        Some(spec) if spec.enabled => Ok(Some(load_server_config(spec)?)),
+        _ => Ok(None),
+    }
 }
 
 /// Build the maintained rustls server config for the DoT listener. Every

@@ -260,7 +260,7 @@ async fn trusted_dot_client_answers_allowed_and_denied_with_flags() {
     let denied = dot_query(addr, "blocked.example.", &cert.ca_pem, "dns.example.test")
         .await
         .expect("trusted client must complete the handshake for a denied query");
-    assert_code(&denied, ResponseCode::NxDomain);
+    assert_code(&denied, ResponseCode::NXDomain);
     assert_flags(&denied);
     server.stop().await;
 }
@@ -448,6 +448,228 @@ async fn bad_custody_consistency_and_expiry_fail_before_a_listener_exists() {
     }
 }
 
+/// A fresh durable start must reject bad certificate custody BEFORE it writes
+/// the state file or binds either socket. The non-durable custody test cannot
+/// catch this: that path never persists anything.
+#[tokio::test]
+async fn fresh_durable_start_with_invalid_custody_writes_no_state_and_releases_ports() {
+    let valid = cert_for(&["dns.example.test"], false);
+    let st = Fixture::new("durable-invalid");
+    st.write_material(&valid);
+    let (plain_port, dot_port) = two_free_ports();
+    fs::write(
+        &st.config,
+        &config(
+            plain_port,
+            dot_spec(
+                dot_port,
+                st.cert.to_str().unwrap(),
+                st.key.to_str().unwrap(),
+                true,
+            ),
+        ),
+    )
+    .unwrap();
+    let options = DurableOptions {
+        state_path: st.state.clone(),
+        worker_id: WORKER.to_owned(),
+        config_path: Some(st.config.clone()),
+        now: STAMP.parse().unwrap(),
+        hooks: None,
+    };
+
+    // Mismatched key: rustls consistency rejects before the bundle is applied.
+    let other = cert_for(&["dns.example.test"], false);
+    fs::write(&st.key, &other.key_pem).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&st.key, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    assert!(DnsServer::start_durable(options.clone()).await.is_err());
+    assert!(
+        !st.state.exists(),
+        "a failed durable start must not write the state file"
+    );
+    assert!(
+        tokio::net::TcpListener::bind(("127.0.0.1", plain_port))
+            .await
+            .is_ok(),
+        "the plaintext port must be released after a failed start"
+    );
+    assert!(
+        tokio::net::TcpListener::bind(("127.0.0.1", dot_port))
+            .await
+            .is_ok(),
+        "the DoT port must be released after a failed start"
+    );
+
+    // Expired leaf: the maintained X.509 validity parser rejects it.
+    st.write_material(&valid);
+    let expired = cert_for(&["dns.example.test"], true);
+    fs::write(&st.cert, &expired.cert_pem).unwrap();
+    fs::write(&st.key, &expired.key_pem).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&st.key, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    assert!(DnsServer::start_durable(options.clone()).await.is_err());
+    assert!(!st.state.exists(), "expiry must not write state");
+    assert!(
+        tokio::net::TcpListener::bind(("127.0.0.1", dot_port))
+            .await
+            .is_ok(),
+        "expiry must release the DoT port"
+    );
+
+    // Insecure key mode: protected custody rejects it before any write.
+    st.write_material(&valid);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&st.key, fs::Permissions::from_mode(0o644)).unwrap();
+    }
+    assert!(DnsServer::start_durable(options).await.is_err());
+    assert!(!st.state.exists(), "an insecure key must not write state");
+    assert!(
+        tokio::net::TcpListener::bind(("127.0.0.1", plain_port))
+            .await
+            .is_ok(),
+        "an insecure key must release the plaintext port"
+    );
+}
+
+/// A valid durable start persists state and serves DoT; a restart serves the
+/// listener from the persisted bundle, not from a changed bootstrap file.
+#[tokio::test]
+async fn valid_durable_dot_start_and_restart_serve_the_persisted_listener() {
+    let cert = cert_for(&["dns.example.test"], false);
+    let st = Fixture::new("durable-valid");
+    st.write_material(&cert);
+    let (plain_port, dot_port) = two_free_ports();
+    let cfg = config(
+        plain_port,
+        dot_spec(
+            dot_port,
+            st.cert.to_str().unwrap(),
+            st.key.to_str().unwrap(),
+            true,
+        ),
+    );
+    fs::write(&st.config, &cfg).unwrap();
+    let options = || DurableOptions {
+        state_path: st.state.clone(),
+        worker_id: WORKER.to_owned(),
+        config_path: Some(st.config.clone()),
+        now: STAMP.parse().unwrap(),
+        hooks: None,
+    };
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), dot_port);
+
+    let server = DnsServer::start_durable(options()).await.unwrap();
+    assert!(
+        st.state.exists(),
+        "a valid durable start must persist state"
+    );
+    let persisted = fs::read(&st.state).unwrap();
+    let allowed = dot_query(
+        addr,
+        "www.allowed.example.",
+        &cert.ca_pem,
+        "dns.example.test",
+    )
+    .await
+    .expect("a fresh durable start must serve DoT");
+    assert_code(&allowed, ResponseCode::NoError);
+    assert_flags(&allowed);
+    server.stop().await;
+
+    // The bootstrap config changes its cert paths to files that do not exist.
+    // Restart still succeeds: the persisted bundle supplies the listener config.
+    fs::write(
+        &st.config,
+        &config(
+            plain_port,
+            dot_spec(
+                dot_port,
+                "/nonexistent/vantyr-dot-cert.pem",
+                "/nonexistent/vantyr-dot-key.pem",
+                true,
+            ),
+        ),
+    )
+    .unwrap();
+    let server = DnsServer::start_durable(options()).await.unwrap();
+    assert_eq!(
+        fs::read(&st.state).unwrap(),
+        persisted,
+        "a restart must not rewrite the last good state"
+    );
+    let allowed = dot_query(
+        addr,
+        "www.allowed.example.",
+        &cert.ca_pem,
+        "dns.example.test",
+    )
+    .await
+    .expect("a restart must serve DoT from the persisted bundle");
+    assert_code(&allowed, ResponseCode::NoError);
+    assert_flags(&allowed);
+    server.stop().await;
+}
+
+/// The same CIDR-selected restricted profile denies a name over DoT whether
+/// the operator wrote the range as native IPv4 or IPv4-mapped IPv6.
+#[tokio::test]
+async fn dot_native_and_mapped_cidr_ranges_deny_a_name_identically() {
+    let cert = cert_for(&["dns.example.test"], false);
+    let st = Fixture::new("dot-cidr");
+    st.write_material(&cert);
+    let device = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+
+    for range in ["127.0.0.0/24", "::ffff:127.0.0.0/120"] {
+        let (plain_port, dot_port) = two_free_ports();
+        let mut value: serde_json::Value = serde_json::from_slice(&config(
+            plain_port,
+            dot_spec(
+                dot_port,
+                st.cert.to_str().unwrap(),
+                st.key.to_str().unwrap(),
+                true,
+            ),
+        ))
+        .unwrap();
+        value["devices"] = json!([{
+            "id": device,
+            "default_profile": "restricted",
+            "source_ranges": [range]
+        }]);
+        let cfg = Config::parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+        let server = DnsServer::start(cfg).await.unwrap();
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), dot_port);
+        let denied = dot_query(
+            addr,
+            "www.allowed.example.",
+            &cert.ca_pem,
+            "dns.example.test",
+        )
+        .await
+        .expect("trusted client must complete the handshake");
+        assert_code(&denied, ResponseCode::NXDomain);
+        assert_flags(&denied);
+        let observations = server.observations();
+        assert!(
+            observations.iter().any(|o| o
+                .device_id
+                .as_ref()
+                .is_some_and(|id| id.to_string() == device)),
+            "the {range} source range must select the configured device, not the unknown default"
+        );
+        server.stop().await;
+    }
+}
+
 #[test]
 fn dot_listener_bind_public_privileged_and_self_loop_invariants() {
     let (plain, dot) = two_free_ports();
@@ -530,7 +752,7 @@ async fn reload_rejects_dot_listener_transport_change() {
 
     // A newer policy that also changes the DoT listener is a transport change;
     // no snapshot is swapped and no file is written.
-    let changed = config(
+    let changed = String::from_utf8(config(
         plain,
         dot_spec(
             free_port(),
@@ -538,10 +760,11 @@ async fn reload_rejects_dot_listener_transport_change() {
             st.key.to_str().unwrap(),
             true,
         ),
-    )
+    ))
+    .unwrap()
     .replace("\"policy_revision\": 2", "\"policy_revision\": 3");
     assert!(matches!(
-        server.reload(&changed, Utc::now()),
+        server.reload(changed.as_bytes(), Utc::now()),
         Err(ReloadError::TransportChange(_))
     ));
     assert_eq!(
