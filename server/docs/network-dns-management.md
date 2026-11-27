@@ -1,10 +1,10 @@
 # Stage A — bounded HTTP DNS management control plane
 
-Status: **control plane and worker consumer accepted for list/service settings;
-additive schema-v2 runtime settings and cache-clear command implemented in local
-source and covered by scoped tests**. Migration `0082` is additive and latest;
-migrations `0073`–`0081` and their checksums are untouched (0081 is reserved by
-the event agent; 0083 is reserved by the proxy agent). This slice saves a *desired* management config and
+Status: **one current DNS management contract** for list/service settings,
+desired runtime cache/response settings and the cache-clear command, with
+control plane and worker consumer covered by scoped tests. Migration `0085`
+collapses stored desire to that one shape; migrations `0073`–`0084` and their
+checksums are untouched (0081/0084 event, 0083 proxy reserved). This slice saves a *desired* management config and
 records *worker-reported* observations. It never publishes a policy revision,
 changes `original_published_at`, changes a desired-policy assignment, or claims
 that a gateway applied, enforced or verified anything. The DNS worker consumer
@@ -94,13 +94,12 @@ lock with an exact admin recheck). Stale writes get 409. Callers cannot set a
 version, timestamp, digest or household id (unknown fields → 400). Audit detail
 carries only operation names, version and digest — never a URL or metadata.
 
-`GET` returns `{desired: null | {config_version, schema_version, body_sha256,
-config, created_at, updated_at, updated_by}, delivery: [...], supported:
-{...}}`. An empty household is `desired:null` with 200. `supported` reports
+`GET` returns `{desired: null | {config_version, body_sha256, config,
+created_at, updated_at, updated_by}, delivery: [...], supported: {...}}`. An empty household is `desired:null` with 200. `supported` reports
 `worker_consumer:"opt_in"`, `service_blocking:"dns_domains"`, and `false` for
 SafeSearch, statistics, serve-stale, rate limiting, retention controls and
-`verified`. With schema v2, `cache_ttl_controls`, `response_mode_controls` and
-`cache_clear` are `true` ONLY for the runtime-supported fields below. No caller
+`verified`. `cache_ttl_controls`, `response_mode_controls` and `cache_clear`
+are `true` ONLY for the runtime-supported fields below. No caller
 can set a value that implies a missing runtime feature. `opt_in` denotes accepted
 software support, not a claim that any particular gateway is configured,
 currently reporting or verified.
@@ -174,58 +173,50 @@ Worker status envelope: `{audience, command, household_id, gateway_id, kind,
 report_id, config_version, body_sha256, reported_at, applied: object|null,
 sources: [...], refresh_ack: [...]}`. Response: `{ok:true, report_id}`.
 Worker read envelope: `{household_id, gateway_id, kind:"dns", config_version,
-schema_version, body_sha256, config, pending_refreshes:[{source_id,
-refresh_seq, config_version, expires_at}], server_time}`; `config_version:0`
-with null `schema_version`/`body_sha256`/`config` means no desired config.
+body_sha256, config, pending_refreshes:[{source_id, refresh_seq, config_version,
+expires_at}], pending_cache_clear:[{clear_seq, config_version, expires_at}],
+server_time}`; `config_version:0` with null `body_sha256`/`config` means no
+desired config. There is no schema discriminator and no legacy reader.
 
-## Canonical digest golden fixture (pin for the worker's typed mirror)
+## Canonical digest fixture (one current shape)
 
-Sources, catalog services and selected ids are sorted by id and selected ids
-deduped, then `serde_json::to_vec` — no other canonical crypto or parser. The
-following input (deliberately unsorted, with explicit nulls) must produce the
-exact SHA below; the worker should mirror this test verbatim:
+The single current `ManagementConfig` is `sources, catalog, selected_services,
+runtime` in that exact serde field order; `runtime` is required. The shared
+server-generated fixtures at `tests/network-contracts/dns-management/{read,report}.json`
+round-trip in both validators, whose canonical digest is
+`4652ce3244e14658db02de0c05520507d0d92619a434a6a455a8309f5dbb6d37`. An old
+body without `runtime`, or an envelope carrying a `schema_version` field, is
+rejected by strict parsing; there is no conversion reader.
 
-```json
-{"sources":[{"id":"a_list","url":"https://raw.githubusercontent.com/o/r/main/hosts.txt","format":"hosts","enabled":true,"interval_secs":3600,"max_stale_secs":null,"metadata":{"title":"List","publisher":"Publisher","license":"MIT"}},{"id":"z_list","url":"https://raw.githubusercontent.com/o/r/main/hosts.txt","format":"abp","enabled":true,"interval_secs":null,"max_stale_secs":null,"metadata":{"title":"List","publisher":"Publisher","license":"MIT"}}],"catalog":{"version":"operator-2026-11","services":[{"id":"a_service","label":"Service","version":"1","domains":[{"type":"suffix","value":"example.test"}],"source":null,"evidence":null,"license":"operator-declared"},{"id":"z_service","label":"Service","version":"1","domains":[{"type":"suffix","value":"example.test"}],"source":null,"evidence":null,"license":"operator-declared"}]},"selected_services":["a_service","z_service"]}
-```
+## One current runtime contract and cache clear
 
-SHA-256: `820a75626ccf71e9a30529b381dc7dd2dd5abc9209446c850b129acc2a2ea93e`.
-
-## Additive schema v2: runtime settings and cache clear
-
-Migration `0082` widens `network_dns_management_config.schema_version` from
-`= 1` to `IN (1, 2)` and adds the cache-clear request/delivery/ack tables. It
-does **not** update any credential row: default issuance remains heartbeat-only
-and the two existing explicit DNS commands (`read_dns_management`,
-`report_dns_status`) are reused, so no new command scope or gateway auth file is
-touched.
-
-`ManagementConfigV2` contains the v1 fields in the SAME order plus one
-`runtime` object; v1 DTOs, fixtures and the golden SHA above are unchanged:
+The required `runtime` object is the only server-manageable runtime surface:
 
 ```
 runtime: {
-  cache: { enabled: bool (default true), max_entries: u64 (default 4096, 0..=65536,
+  cache: { enabled: bool, max_entries: u64 (0..=65536),
            positive_min_ttl_secs / positive_max_ttl_secs / negative_min_ttl_secs /
-           negative_max_ttl_secs: Option<u32> in 1..=86400, min <= max) },
+           negative_max_ttl_secs: Option<u32> in 1..=86400, min <= max },
   deny:  { mode: "nxdomain" | "refused" | "sinkhole",
            sinkhole ipv4/ipv6 literals and ttl_secs in 1..=86400 }
 }
 ```
 
 Only cache enable/size/TTL bounds and denial mode/denial TTL are supported.
-System hosts-file opt-in, bogus-NXDOMAIN IPs, IPv6/HTTPS/SVCB hints, serve-expired,
-DO, ECS, retention, rate limiting, listener, upstream, trust, paths and device
-mapping stay operator-local and are rejected as unknown fields. PATCH gains
-`set_runtime_settings{runtime}` (upgrade to schema 2) and
-`reset_runtime_settings{}` (back to schema 1); the same CAS, audit and 16 KiB
-canonical-body bounds apply. `GET` returns `config:null, config_v2:{...}` for
-v2. Worker reads carry `config_v2` as an additive optional field; an old v1
-worker's strict parser rejects it and fails honestly without poisoning
-last-known-good. Applied settings and the schema are persisted in the single
-bundle and overlaid on local reload/controller/subscription paths. Settings
-commits and policy commits share the bundle generation but keep policy revision
-and publication time separate and never freshen a cached body's age.
+System hosts-file opt-in, bogus-NXDOMAIN IPs, IPv6/HTTPS/SVCB hints,
+serve-expired, DO, ECS, retention, rate limiting, listener, upstream, trust,
+paths and device mapping are rejected as unknown fields. PATCH offers
+`set_runtime_settings{runtime}` and `reset_runtime_settings{}` (current
+defaults); the same CAS, audit and 16 KiB canonical-body bounds apply. Applied
+settings live in the single bundle config and are copied onto local reload,
+controller and subscription paths. Settings commits and policy commits keep
+policy revision and publication time separate and never freshen a cached body.
+
+Migration `0085` upgrades stored desired bodies to this one shape: an older
+body gets the current default `runtime` appended in canonical order and a
+recomputed SHA-256; already-current bodies keep their bytes/digest. Delivery,
+gateway-state and status digests are updated coherently for changed versions;
+config versions, timestamps, generations and all unrelated records are intact.
 
 ### Cache clear command
 
@@ -243,13 +234,6 @@ acknowledged timestamps and **no entries count**. A clear targets the current
 resolver cache only; it never bumps settings, policy or generation, is not a
 flush barrier against in-flight repopulation, and is executed by the worker
 before any ack is claimed.
-
-### v2 shared fixtures
-
-`tests/network-contracts/dns-management-v2/{read,report}.json` are generated by
-the server serializers and parsed by both validators. The v2 config's golden
-SHA-256 is `4652ce3244e14658db02de0c05520507d0d92619a434a6a455a8309f5dbb6d37`.
-The v1 fixture golden SHA and the Stage A canonical SHA are unchanged.
 
 ## Verification performed
 
@@ -346,20 +330,19 @@ then the actual session and CSRF middleware are exercised.
   acceptance. Statistics, general DNS settings and other capability gaps are not
   implemented by the list/service management routes.
 
-## Schema-v2 settings/clear verification note
+## Current-contract verification note
 
-Scoped checks exercise the additive v2 wire end to end on the dedicated
-throwaway PostgreSQL (`127.0.0.1:58743`) only: v1 and v2 shared fixtures round-
-trip in both validators with their pinned digests; real HTTP CAS PATCH upgrades
-to schema 2, rejects unsupported/out-of-bounds runtime fields, and resets to v1
-without touching policy history; cache-clear request replay, cooldown, per-
-gateway delivery, exact ack replay, forged/stale-token 409, repeated cycles and
-truthful lifecycle timestamps are checked without any entries count. The real
-server/worker TLS/UDP/TCP test now drives a v2 settings apply, verifies the
-effect through a real counting DNS origin (cache collapses repeated queries),
-executes a delivered clear and confirms a fresh origin hit with no generation or
-policy bump, then disables the cache and confirms every query reaches the
-origin. Offline bundle restart and worker-side version-gate/digest-failure tests
-confirm applied settings and original times survive without poisoning
-last-known-good. No live provider, host DNS/router/CA change, deploy, push or PR
-is part of this work.
+Scoped checks run on the dedicated throwaway PostgreSQL (`127.0.0.1:58743`)
+only. The single shared fixture round-trips in both validators with its pinned
+digest; old-shape bodies and discriminator-bearing envelopes are rejected.
+Real HTTP CAS PATCH sets and resets runtime settings, rejects
+unsupported/out-of-bounds fields, and never touches policy history. Cache-clear
+cooldown, replay, per-gateway delivery/ack, forged/stale-token 409, repeated
+cycles and truthful lifecycle timestamps are checked without any entries
+count. The real server/worker TLS/UDP+TCP test drives a settings apply, proves
+effect through a counting DNS origin (cache collapses repeated queries),
+executes a delivered clear with a fresh origin hit and no generation/policy
+bump, then disables the cache and confirms every query reaches the origin.
+Offline bundle restart and worker-side digest-failure tests confirm applied
+settings and original times survive without poisoning last-known-good. No
+deploy, push, live provider or host change is part of this work.

@@ -22,9 +22,8 @@ use uuid::Uuid;
 
 use crate::controller::{read_private_file, CONTROLLER_AUDIENCE};
 use crate::management_dto::{
-    canonical_bytes, canonical_bytes_v2, digest, is_digest, DesiredConfig, RefreshAckDto,
-    RuntimeSettingsDto, WorkerReadBody, WorkerReadResponse, WorkerStatusBody,
-    CONFIG_SCHEMA_VERSION, CONFIG_SCHEMA_VERSION_V2, MAX_CACHE_ENTRIES, MAX_IP_LEN, MAX_TTL_SECS,
+    canonical_bytes, digest, is_digest, RefreshAckDto, RuntimeSettingsDto, WorkerReadBody,
+    WorkerReadResponse, WorkerStatusBody, MAX_CACHE_ENTRIES, MAX_IP_LEN, MAX_TTL_SECS,
 };
 
 /// Applied management state persisted in the ONE durable bundle. The desired
@@ -45,21 +44,10 @@ pub struct ManagementState {
     /// wire; used to avoid reporting expired or stale acknowledgements.
     #[serde(default)]
     pub receipt_expiry: std::collections::BTreeMap<String, DateTime<Utc>>,
-    /// Schema of the applied desired config. Old bundles default to v1.
-    #[serde(default = "default_schema_version")]
-    pub schema_version: i32,
-    /// Support settings actually applied by the durable publish. `None` means
-    /// the local worker config's cache/deny fields remain authoritative.
-    #[serde(default)]
-    pub runtime: Option<RuntimeSettingsDto>,
     #[serde(default)]
     pub applied_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub last_error: Option<String>,
-}
-
-fn default_schema_version() -> i32 {
-    CONFIG_SCHEMA_VERSION
 }
 
 /// Server `MAX_SOURCES` also bounds refresh_ack in WorkerStatusBody.
@@ -123,21 +111,7 @@ pub fn validate_state(state: &ManagementState) -> Result<(), ManagementError> {
             "applied management version or digest is invalid".into(),
         ));
     }
-    if state.schema_version != CONFIG_SCHEMA_VERSION
-        && state.schema_version != CONFIG_SCHEMA_VERSION_V2
-    {
-        return Err(ManagementError::Integrity(
-            "applied management schema is unsupported".into(),
-        ));
-    }
-    if state.schema_version == CONFIG_SCHEMA_VERSION_V2 && state.runtime.is_none() {
-        return Err(ManagementError::Integrity(
-            "v2 applied management is missing its runtime settings".into(),
-        ));
-    }
-    if let Some(settings) = &state.runtime {
-        validate_runtime(settings)?;
-    }
+    validate_runtime(&state.config.runtime)?;
     if state.filter_identity.len() > 64 || state.filter_identity.chars().any(|c| c.is_control()) {
         return Err(ManagementError::Integrity(
             "applied filter identity is malformed".into(),
@@ -474,10 +448,8 @@ impl ManagementClient {
             ));
         }
         if response.config_version == 0 {
-            if response.schema_version.is_some()
-                || response.body_sha256.is_some()
+            if response.body_sha256.is_some()
                 || response.config.is_some()
-                || response.config_v2.is_some()
                 || !response.pending_cache_clear.is_empty()
             {
                 return Err(ManagementError::Integrity(
@@ -486,8 +458,8 @@ impl ManagementClient {
             }
             return Ok(());
         }
-        let (Some(schema), Some(digest_value)) =
-            (response.schema_version, response.body_sha256.as_deref())
+        let (Some(digest_value), Some(config)) =
+            (response.body_sha256.as_deref(), response.config.as_ref())
         else {
             return Err(ManagementError::Integrity(
                 "desired config is incomplete".into(),
@@ -496,28 +468,10 @@ impl ManagementClient {
         if !is_digest(digest_value) {
             return Err(ManagementError::Integrity("digest is malformed".into()));
         }
-        // Select the typed body by the server-declared schema. A v1 shape is
-        // never coerced into v2 bytes; an unsupported version fails honestly
-        // before any commit or report and cannot poison last-known-good.
-        let selected: DesiredConfig = match (schema, &response.config, &response.config_v2) {
-            (CONFIG_SCHEMA_VERSION, Some(config), None) => DesiredConfig::V1(config.clone()),
-            (CONFIG_SCHEMA_VERSION_V2, None, Some(config)) => DesiredConfig::V2(config.clone()),
-            (CONFIG_SCHEMA_VERSION, None, Some(_)) | (CONFIG_SCHEMA_VERSION_V2, Some(_), None) => {
-                return Err(ManagementError::Integrity(
-                    "management config shape does not match its schema".into(),
-                ))
-            }
-            _ => {
-                return Err(ManagementError::Integrity(format!(
-                    "unsupported management schema {schema}"
-                )))
-            }
-        };
-        let canonical = match &selected {
-            DesiredConfig::V1(config) => canonical_bytes(config),
-            DesiredConfig::V2(config) => canonical_bytes_v2(config),
-        }
-        .map_err(|_| ManagementError::Integrity("config is not serializable".into()))?;
+        // Strict current shape only. An unknown field or a missing `runtime`
+        // already failed deserialization; no fallback or coercion exists.
+        let canonical = canonical_bytes(config)
+            .map_err(|_| ManagementError::Integrity("config is not serializable".into()))?;
         if digest(&canonical) != digest_value {
             return Err(ManagementError::Integrity(
                 "management config digest does not match".into(),

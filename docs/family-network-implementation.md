@@ -63,7 +63,7 @@ the native-agent current-config round-trip/obsolete-key rejection test pass
   default-off system hosts lookup and A/AAAA response shaping are implemented.
   Cache capacity is eventual response-count eviction, not a hard instantaneous
   or byte bound. Clear is not a barrier against in-flight repopulation. An
-  additive schema-v2 management wire now delivers desired cache enable/size/TTL
+  single current management wire now delivers desired cache enable/size/TTL
   and denial mode/TTL, applies them by one atomic bundle publish, and issues a
   truthful cache-clear command with per-gateway delivery/ack; effect is checked
   by real origin-hit counts. Serve-expired, DO/ECS and HTTPS/SVCB IPv6 hints

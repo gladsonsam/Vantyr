@@ -1480,11 +1480,10 @@ async fn runtime_settings_are_cas_versioned_schema_gated_and_policy_independent(
         )
         .await;
     assert_eq!(status, 200, "{body}");
-    assert_eq!(body["desired"]["schema_version"], 2);
-    assert!(body["desired"]["config"].is_null());
-    assert!(body["desired"]["config_v2"].is_object());
+    assert!(body["desired"].get("schema_version").is_none());
+    assert!(body["desired"].get("config_v2").is_none());
     assert_eq!(
-        body["desired"]["config_v2"]["runtime"]["cache"]["max_entries"],
+        body["desired"]["config"]["runtime"]["cache"]["max_entries"],
         1024
     );
     assert_eq!(body["supported"]["cache_ttl_controls"], true);
@@ -1492,20 +1491,20 @@ async fn runtime_settings_are_cas_versioned_schema_gated_and_policy_independent(
     assert_eq!(body["supported"]["cache_clear"], true);
     assert_eq!(body["supported"]["serve_stale"], false);
     assert_eq!(body["supported"]["verified"], false);
-    let digest_v2 = body["desired"]["body_sha256"].as_str().unwrap().to_owned();
+    let digest_current = body["desired"]["body_sha256"].as_str().unwrap().to_owned();
 
-    // Strict worker read: schema and typed bytes agree, no v1 body is present.
+    // Strict worker read: one current shape, no version discriminator.
     let (status, read) = worker_read_paced(&http, &bearer, hid, gid).await;
     assert_eq!(status, 200, "{read}");
-    assert_eq!(read["schema_version"], 2);
-    assert!(read["config"].is_null());
-    assert!(read["config_v2"].is_object());
-    assert_eq!(read["body_sha256"], digest_v2);
-    let typed: super::dns_management_dto::ManagementConfigV2 =
-        serde_json::from_value(read["config_v2"].clone()).unwrap();
+    assert!(read.get("schema_version").is_none());
+    assert!(read.get("config_v2").is_none());
+    assert!(read["config"].is_object());
+    assert_eq!(read["body_sha256"], digest_current);
+    let typed: super::dns_management_dto::ManagementConfig =
+        serde_json::from_value(read["config"].clone()).unwrap();
     assert_eq!(
-        digest(&super::dns_management_dto::canonical_bytes_v2(&typed).unwrap()),
-        digest_v2
+        digest(&super::dns_management_dto::canonical_bytes(&typed).unwrap()),
+        digest_current
     );
 
     // No-op and unsupported settings are honest.
@@ -1539,7 +1538,7 @@ async fn runtime_settings_are_cas_versioned_schema_gated_and_policy_independent(
         .await;
     assert_eq!(status, 400);
 
-    // Explicit reset returns to the frozen v1 shape with a real version bump.
+    // Reset restores the current defaults with a real version bump.
     let (status, body) = http
         .patch(
             &path,
@@ -1547,8 +1546,15 @@ async fn runtime_settings_are_cas_versioned_schema_gated_and_policy_independent(
         )
         .await;
     assert_eq!(status, 200, "{body}");
-    assert_eq!(body["desired"]["schema_version"], 1);
-    assert!(body["desired"]["config_v2"].is_null());
+    assert!(body["desired"].get("schema_version").is_none());
+    assert_eq!(
+        body["desired"]["config"]["runtime"]["cache"]["max_entries"],
+        4096
+    );
+    assert_eq!(
+        body["desired"]["config"]["runtime"]["deny"]["mode"],
+        "nxdomain"
+    );
     assert_eq!(body["desired"]["config_version"], 2);
     let policies_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM network_policies")
         .fetch_one(&pool)
@@ -1607,7 +1613,7 @@ async fn cache_clear_delivery_ack_cooldown_and_per_gateway_isolation_are_truthfu
         )
         .await;
     assert_eq!(status, 200, "{saved}");
-    let digest_v2 = saved["desired"]["body_sha256"].as_str().unwrap().to_owned();
+    let digest_current = saved["desired"]["body_sha256"].as_str().unwrap().to_owned();
 
     // Stale CAS and an absent desired config are refused.
     let (status, _) = http
@@ -1642,7 +1648,7 @@ async fn cache_clear_delivery_ack_cooldown_and_per_gateway_isolation_are_truthfu
 
     let attempted = Utc::now() - ChronoDuration::seconds(2);
     let report_a = clear_ack_body(
-        status_body(hid, gid_a, 1, &digest_v2, 1, Uuid::new_v4()),
+        status_body(hid, gid_a, 1, &digest_current, 1, Uuid::new_v4()),
         1,
         1,
         attempted,
@@ -1653,7 +1659,7 @@ async fn cache_clear_delivery_ack_cooldown_and_per_gateway_isolation_are_truthfu
     let (status, _) = worker_status_paced(&http, &cred_a, report_a).await;
     assert_eq!(status, 200);
     let forged = clear_ack_body(
-        status_body(hid, gid_b, 1, &digest_v2, 1, Uuid::new_v4()),
+        status_body(hid, gid_b, 1, &digest_current, 1, Uuid::new_v4()),
         9,
         1,
         attempted,
@@ -1695,7 +1701,7 @@ async fn cache_clear_delivery_ack_cooldown_and_per_gateway_isolation_are_truthfu
 
     // B reports its own exact ack; no settings or policy version is bumped.
     let report_b = clear_ack_body(
-        status_body(hid, gid_b, 1, &digest_v2, 1, Uuid::new_v4()),
+        status_body(hid, gid_b, 1, &digest_current, 1, Uuid::new_v4()),
         1,
         1,
         attempted,
@@ -1723,7 +1729,7 @@ async fn cache_clear_delivery_ack_cooldown_and_per_gateway_isolation_are_truthfu
         &http,
         &cred_a,
         clear_ack_body(
-            status_body(hid, gid_a, 1, &digest_v2, 1, Uuid::new_v4()),
+            status_body(hid, gid_a, 1, &digest_current, 1, Uuid::new_v4()),
             1,
             1,
             attempted,
@@ -1738,7 +1744,7 @@ async fn cache_clear_delivery_ack_cooldown_and_per_gateway_isolation_are_truthfu
         &http,
         &cred_a,
         clear_ack_body(
-            status_body(hid, gid_a, 1, &digest_v2, 1, Uuid::new_v4()),
+            status_body(hid, gid_a, 1, &digest_current, 1, Uuid::new_v4()),
             2,
             1,
             attempted,

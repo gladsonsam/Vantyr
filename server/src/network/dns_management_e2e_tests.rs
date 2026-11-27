@@ -808,9 +808,9 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
     let digest_v1 = body["desired"]["body_sha256"].as_str().unwrap().to_string();
     assert_eq!(digest_v1.len(), 64);
     // Server digest and the worker's typed mirror agree on the wire bytes.
-    let desired_v1: ManagementConfig =
+    let desired_config: ManagementConfig =
         serde_json::from_value(body["desired"]["config"].clone()).unwrap();
-    assert_eq!(digest_v1, config_digest(&desired_v1));
+    assert_eq!(digest_v1, config_digest(&desired_config));
 
     // Real worker: explicit credential file, options, CA (all owner-0600),
     // production fetcher/compiler, and the background coordinator loop.
@@ -927,20 +927,20 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
         "TCP refresh"
     );
 
-    let state_v2 = server.management_state().expect("applied state lost");
+    let state_after_refresh = server.management_state().expect("applied state lost");
     assert_eq!(
-        state_v2.config_version, 1,
+        state_after_refresh.config_version, 1,
         "refresh must not bump config version"
     );
-    assert_eq!(state_v2.digest, digest_v1);
+    assert_eq!(state_after_refresh.digest, digest_v1);
     assert_eq!(
-        state_v2.applied_at, state_v1.applied_at,
+        state_after_refresh.applied_at, state_v1.applied_at,
         "applied_at was freshened"
     );
-    assert_eq!(state_v2.receipts.len(), 1);
-    assert_eq!(state_v2.receipts[0].source_id, "remote-list");
-    assert_eq!(state_v2.receipts[0].refresh_seq, refresh_seq);
-    assert_eq!(state_v2.receipts[0].config_version, 1);
+    assert_eq!(state_after_refresh.receipts.len(), 1);
+    assert_eq!(state_after_refresh.receipts[0].source_id, "remote-list");
+    assert_eq!(state_after_refresh.receipts[0].refresh_seq, refresh_seq);
+    assert_eq!(state_after_refresh.receipts[0].config_version, 1);
     let final_status = server.status();
     assert_eq!(final_status.policy_revision, install_status.policy_revision);
     assert_eq!(
@@ -1050,7 +1050,7 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(offline.status(), final_status);
-    assert_eq!(offline.management_state().unwrap(), state_v2);
+    assert_eq!(offline.management_state().unwrap(), state_after_refresh);
     assert!(offline.subscription_status().is_none());
     assert!(blocked(&offline, "changed.block.test.", false).await);
     assert!(!blocked(&offline, "managed.block.test.", false).await);
@@ -1082,7 +1082,7 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
     worker2.start(Arc::downgrade(&online));
     let restarted_state = online.management_state().unwrap();
     assert_eq!(
-        restarted_state, state_v2,
+        restarted_state, state_after_refresh,
         "restart lost applied management state"
     );
     assert!(blocked(&online, "changed.block.test.", false).await);
@@ -1232,8 +1232,8 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
     .await;
 
     // ── Phase 6: real desired runtime settings applied by the worker ─────────
-    // The v2 config carries ONLY the supported cache/deny fields; the policy
-    // revision, publication age and local operator fields stay untouched.
+    // The single current config carries ONLY the supported cache/deny fields;
+    // policy revision, publication age and local operator fields stay untouched.
     let runtime = json!({
         "cache": {
             "enabled": true,
@@ -1254,12 +1254,16 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
             ),
         )
         .await;
-    assert_eq!(status, 200, "v2 settings PATCH failed: {body}");
-    assert_eq!(body["desired"]["schema_version"], 2);
-    let digest_v2 = body["desired"]["body_sha256"].as_str().unwrap().to_owned();
-    wait_until(30, "worker reports the applied v2 settings", || {
+    assert_eq!(status, 200, "settings PATCH failed: {body}");
+    assert!(body["desired"].get("schema_version").is_none());
+    assert_eq!(
+        body["desired"]["config"]["runtime"]["cache"]["max_entries"],
+        64
+    );
+    let digest_current = body["desired"]["body_sha256"].as_str().unwrap().to_owned();
+    wait_until(30, "worker reports the applied settings", || {
         let online = &online;
-        let expected = digest_v2.clone();
+        let expected = digest_current.clone();
         async move {
             online
                 .management_state()
@@ -1267,24 +1271,24 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
         }
     })
     .await;
-    let applied_v2 = online.management_state().unwrap();
-    let status_v2 = online.status();
+    let applied_settings = online.management_state().unwrap();
+    let status_after_settings = online.status();
     assert_eq!(
-        status_v2.policy_revision, install_status.policy_revision,
+        status_after_settings.policy_revision, install_status.policy_revision,
         "settings changed the policy revision"
     );
     assert_eq!(
-        status_v2.policy_published_at, install_status.policy_published_at,
+        status_after_settings.policy_published_at, install_status.policy_published_at,
         "settings freshened the policy publication time"
     );
-    assert!(
-        applied_v2.runtime.is_some(),
+    assert_eq!(
+        online.local_config().cache.max_entries,
+        64,
         "settings were not persisted in the bundle"
     );
-    assert_eq!(applied_v2.runtime.as_ref().unwrap().cache.max_entries, 64);
     // A NEW settings apply legitimately records a new applied time; what must
     // never freshen is the policy publication age or a cached body's age.
-    assert!(applied_v2.applied_at >= state_after_fetch.applied_at);
+    assert!(applied_settings.applied_at >= state_after_fetch.applied_at);
 
     // Effect, not just fields: two UDP and two TCP queries of a fresh name
     // produce exactly ONE origin hit because the maintained cache answers the
@@ -1339,8 +1343,8 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
     );
     let state_after_clear = online.management_state().unwrap();
     assert_eq!(state_after_clear.config_version, 2);
-    assert_eq!(state_after_clear.digest, digest_v2);
-    assert_eq!(state_after_clear.applied_at, applied_v2.applied_at);
+    assert_eq!(state_after_clear.digest, digest_current);
+    assert_eq!(state_after_clear.applied_at, applied_settings.applied_at);
     let hits_before_query = origin.hits();
     assert!(answered(&online, "cached.origin.test.", false).await);
     assert_eq!(

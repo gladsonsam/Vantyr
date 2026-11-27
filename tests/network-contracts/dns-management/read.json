@@ -3,10 +3,8 @@
   "gateway_id": "00000000-0000-0000-0000-000000000002",
   "kind": "dns",
   "config_version": 1,
-  "schema_version": 2,
   "body_sha256": "4652ce3244e14658db02de0c05520507d0d92619a434a6a455a8309f5dbb6d37",
-  "config": null,
-  "config_v2": {
+  "config": {
     "sources": [
       {
         "id": "list1",
