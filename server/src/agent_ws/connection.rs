@@ -14,7 +14,6 @@ use super::history_ingest::ingest_history_frame_binary;
 use super::policy_push::push_initial_policies;
 use super::{MAX_AGENT_BINARY_BYTES, MAX_AGENT_TEXT_BYTES};
 use crate::agents::db as agents_db;
-use crate::agents::modules::db as modules_db;
 use crate::auth::secrets;
 use crate::state::{AgentControl, AppState, AGENT_CMD_CHANNEL_CAPACITY};
 use vantyr_protocol::frames::{AUDIO_FRAME_MAGIC, HISTORY_FRAME_MAGIC};
@@ -68,10 +67,6 @@ pub(crate) async fn register_authenticated_connection(
     else {
         return Ok(None);
     };
-    // Fail closed: an unknown history is treated as a modern, grant-reporting agent.
-    let legacy_policy_delivery = !modules_db::has_module_report(&state.db, agent_id)
-        .await
-        .unwrap_or(true);
     let connected_at = chrono::Utc::now();
     let conn_id = Uuid::new_v4();
     let (shutdown_tx, shutdown_rx) = watch::channel(None);
@@ -95,7 +90,6 @@ pub(crate) async fn register_authenticated_connection(
                 connected_at,
                 session_id,
                 shutdown: shutdown_tx,
-                legacy_policy_delivery,
                 screen_live_tuning: false,
             },
         );
