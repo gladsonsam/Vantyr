@@ -33,6 +33,15 @@ existing 16 KiB body constraint. Seeded migration tests and an upgrade test with
 a pre-existing applied bundle are missing. Repair design is pending; no database
 migration or DNS candidate integration has been performed on Hermes.
 
+Strict persistence cleanup source `adf4092a` passed fresh independent review,
+24 `vantyr-network-runtime` tests and five DNS `generation_migration` tests on
+Hermes, with each complete command under the shared Rust validation lock.
+It removes `Persistable::normalize`, missing-counter repair and unused
+policy-only persistence aliases. Current counters, high-water checks, private
+atomic persistence and last-known-good behavior remain. Rejected missing-counter
+bundles leave disk bytes unchanged. No full DNS/workspace/clippy or database
+validation is claimed by this focused acceptance.
+
 ## Stop state
 
 The user requested that the current small agent jobs finish, then work stop for
@@ -144,11 +153,11 @@ compatibility removal, then run focused DB/E2E tests. A no-op `reject_schema`
 test toggle remains. Old persisted worker shapes are intentionally rejected;
 decide/document any explicit offline conversion rather than adding old readers.
 
-This candidate still contains old DNS bundle counter-normalization machinery;
-the requested network-runtime cleanup was NOT completed. Remove it as a separate
-small task: `Persistable::normalize`, DNS legacy missing-counter acceptance,
-dead policy-only persistence aliases, and tests that accept old bundles. Keep
-strict current counters, LKG, private-file and atomic-persistence checks intact.
+This candidate still contains old DNS bundle counter-normalization machinery.
+The separate Hermes cleanup source `adf4092a` is now accepted and integrated;
+retain it when integrating candidate slices. It removes `Persistable::normalize`,
+missing-counter acceptance and dead policy-only persistence aliases while
+preserving strict current counters, LKG, private-file and atomic-persistence checks.
 
 ### Policy report gate
 
