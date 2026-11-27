@@ -22,14 +22,19 @@ pub fn canonical_query(input: &str) -> Result<Name, String> {
 pub fn canonical_entry(input: &str) -> Result<String, String> {
     let mut name = parse(input, true)?;
     name.set_fqdn(true);
-    Ok(name.to_string().to_ascii_lowercase())
+    // `Display`/`to_string` decodes IDNA back to Unicode, which would break
+    // the ASCII promise above. `to_ascii` keeps internationalised labels in
+    // their `xn--` punycode form, matching upstream parsers.
+    Ok(name.to_ascii().to_ascii_lowercase())
 }
 
-/// Host form used for the minimal synthetic ABP request carrier. No path,
-/// scheme or query component is ever derived from this string.
+/// Host form used for the minimal synthetic ABP request carrier. It is the
+/// same ASCII/punycode presentation as `canonical_entry`, without the trailing
+/// dot. No path, scheme or query component is ever derived from this string,
+/// so a Unicode query and its punycode spelling produce the same carrier.
 #[cfg(feature = "abp")]
 pub fn hostname_of(name: &Name) -> String {
-    name.to_string().trim_end_matches('.').to_ascii_lowercase()
+    name.to_ascii().trim_end_matches('.').to_ascii_lowercase()
 }
 
 fn parse(input: &str, allow_leading_wildcard: bool) -> Result<Name, String> {

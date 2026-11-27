@@ -8,6 +8,9 @@
 //! with invented HTTP semantics. Bounded hostname regex rules are compiled and
 //! matched separately against the canonical host; see `hostname_regex`.
 //! Precedence (`$important` over `@@`) is preserved for both rule families.
+//! Important domain exceptions are held in a separate exception-only engine
+//! so they are detected deterministically even when an ordinary exception
+//! matches the same host.
 
 use adblock::engine::Engine;
 use adblock::filters::network::{NetworkFilterMask, NetworkFilterMaskHelper};
@@ -30,15 +33,20 @@ const DOMAIN_RULE_NOTE: &str = "upstream-reported rule";
 pub(crate) struct AbpEngine {
     engine: Engine,
     source_ids: Vec<String>,
+    /// Exception-only engine holding just the validated
+    /// `@@||host^$important` domain rules. Upstream reports only one selected
+    /// exception for a match, so reading importance from that result is
+    /// nondeterministic when ordinary and important exceptions overlap. A
+    /// separate engine makes the important case unambiguous.
+    important_exceptions: Option<Engine>,
+    important_source_ids: Vec<String>,
     regex: HostnameRegexEngine,
 }
 
 pub(crate) enum AbpVerdict {
-    /// An `@@||host^$important` exception. Upstream reports important
-    /// exceptions in its exception result, not in the `important` flag (that
-    /// flag describes blocking filters only). It outranks every block so the
-    /// domain-rule important-exception semantics are preserved when a regex
-    /// important block is also present.
+    /// An `@@||host^$important` exception, identified by the dedicated
+    /// exception-only engine. It outranks every block so the domain-rule
+    /// important-exception semantics survive a regex important block.
     ImportantException(Evidence),
     ImportantBlock(Evidence),
     Exception(Evidence),
@@ -61,7 +69,11 @@ impl AbpVerdict {
 /// Which pipeline accepted one validated rule.
 enum Accepted {
     Skip,
-    Domain,
+    Domain {
+        /// Upstream metadata says this is an `@@...$important` rule, so it is
+        /// routed to the dedicated exception-only engine.
+        important_exception: bool,
+    },
     /// Classified but not compiled: the global budget is charged first.
     Regex(RegexPlan),
 }
@@ -78,18 +90,32 @@ pub(crate) fn build(
     }
     let mut set = FilterSet::new(true);
     let mut source_ids: Vec<String> = Vec::new();
+    let mut important_set = FilterSet::new(true);
+    let mut important_source_ids: Vec<String> = Vec::new();
     let mut accepted_per_source: Vec<usize> = Vec::new();
     let mut regex_rules: Vec<RegexRule> = Vec::new();
     let mut regex_budget = RegexBudget::new();
 
     for (id, text) in sources {
         let mut kept = String::new();
+        let mut important_kept = String::new();
         let mut accepted = 0usize;
         for (index, line) in text.lines().enumerate() {
             match validate(line) {
-                Ok(Accepted::Domain) => {
-                    kept.push_str(line.trim());
-                    kept.push('\n');
+                Ok(Accepted::Domain {
+                    important_exception,
+                }) => {
+                    // Partition important exceptions into the dedicated
+                    // engine. The main engine then only ever selects ordinary
+                    // exceptions, so no verdict depends on which one upstream
+                    // happens to return.
+                    if important_exception {
+                        important_kept.push_str(line.trim());
+                        important_kept.push('\n');
+                    } else {
+                        kept.push_str(line.trim());
+                        kept.push('\n');
+                    }
                     accepted += 1;
                 }
                 Ok(Accepted::Regex(plan)) => {
@@ -155,12 +181,32 @@ pub(crate) fn build(
             source_ids.push("unknown".to_owned());
         }
         source_ids[record.source_index] = (*id).to_owned();
+
+        if !important_kept.is_empty() {
+            let record = important_set.add_filter_list(
+                important_kept,
+                ParseOptions {
+                    rule_types: RuleTypes::NetworkOnly,
+                    ..ParseOptions::default()
+                },
+            );
+            while important_source_ids.len() <= record.source_index {
+                important_source_ids.push("unknown".to_owned());
+            }
+            important_source_ids[record.source_index] = (*id).to_owned();
+        }
     }
 
     Ok((
         Some(AbpEngine {
             engine: Engine::new_with_filter_set(set),
             source_ids,
+            important_exceptions: if important_source_ids.is_empty() {
+                None
+            } else {
+                Some(Engine::new_with_filter_set(important_set))
+            },
+            important_source_ids,
             regex: HostnameRegexEngine::new(regex_rules),
         }),
         accepted_per_source,
@@ -259,6 +305,7 @@ fn validate(line: &str) -> Result<Accepted, (DiagnosticKind, String)> {
         rule_types: RuleTypes::NetworkOnly,
         ..ParseOptions::default()
     };
+    let mut important_exception = false;
     match parse_filter(rule, true, opts) {
         Ok(ParsedLine::Network(filter)) => {
             if filter.mask.is_regex()
@@ -306,6 +353,9 @@ fn validate(line: &str) -> Result<Accepted, (DiagnosticKind, String)> {
                     "upstream exception flag disagrees with the rule prefix".to_owned(),
                 ));
             }
+            // Captured from upstream's own mask here while `filter` is in
+            // scope, not later inferred from a selected raw line.
+            important_exception = exception && filter.mask.is_important();
         }
         Ok(ParsedLine::Cosmetic(_)) => {
             return Err((
@@ -320,27 +370,42 @@ fn validate(line: &str) -> Result<Accepted, (DiagnosticKind, String)> {
             ));
         }
     }
-    Ok(Accepted::Domain)
+    Ok(Accepted::Domain {
+        important_exception,
+    })
 }
 
 impl AbpEngine {
     pub(crate) fn check(&self, host: &str) -> AbpVerdict {
         let url = format!("http://{host}/");
         let request = Request::preparsed(&url, host, "", "other", false, "");
+
+        // Important domain exceptions live in a dedicated exception-only
+        // engine. Upstream reports a single selected exception for a match,
+        // which is nondeterministic when an ordinary and an important
+        // exception both match. Checking the dedicated engine first makes the
+        // important verdict independent of that selection, and the evidence
+        // still names the rule and source that actually matched.
+        if let Some(engine) = &self.important_exceptions {
+            // The exception-only engine has no blocking filters, so upstream
+            // would otherwise skip exception lookup entirely. Force it so the
+            // dedicated engine reports its matched important exception.
+            let dedicated = engine.check_network_request_subset(&request, false, true);
+            if let Some(info) = dedicated.exception.as_ref() {
+                return AbpVerdict::ImportantException(self.important_evidence(Some(info)));
+            }
+        }
+
         let result = self.engine.check_network_request(&request);
 
-        // Upstream's `important` flag describes a matched *blocking* filter;
-        // `@@...$important` is reported in the exception result instead. Read
-        // that metadata before mapping so a domain important exception keeps
-        // its semantics against important blocks from any rule family.
+        // The main engine holds no important exceptions: they were partitioned
+        // into the dedicated engine above. Its `important` flag therefore only
+        // describes a matched blocking filter, and any exception it selects is
+        // an ordinary one.
         let upstream = if result.important {
             AbpVerdict::ImportantBlock(self.evidence(result.filter.as_ref(), IMPORTANT_BLOCK_NOTE))
         } else if let Some(info) = result.exception.as_ref() {
-            if is_important_exception(info) {
-                AbpVerdict::ImportantException(self.evidence(Some(info), IMPORTANT_EXCEPTION_NOTE))
-            } else {
-                AbpVerdict::Exception(self.evidence(Some(info), DOMAIN_RULE_NOTE))
-            }
+            AbpVerdict::Exception(self.evidence(Some(info), DOMAIN_RULE_NOTE))
         } else if result.should_block() {
             AbpVerdict::Block(self.evidence(result.filter.as_ref(), DOMAIN_RULE_NOTE))
         } else {
@@ -365,47 +430,45 @@ impl AbpEngine {
     }
 
     fn evidence(&self, info: Option<&FilterRuleDebugInfo>, note: &'static str) -> Evidence {
-        let (source_id, rule) = match info {
-            Some(info) => {
-                let source_id = info
-                    .source_location
-                    .as_ref()
-                    .and_then(|location| self.source_ids.get(location.source_index as usize))
-                    .cloned()
-                    .unwrap_or_else(|| "unknown".to_owned());
-                (source_id, info.raw_line.as_deref().and_then(bounded_rule))
-            }
-            None => ("unknown".to_owned(), None),
-        };
-        let note = if rule.is_some() {
-            note
-        } else {
-            NO_RULE_EVIDENCE
-        };
-        Evidence {
-            source_id,
-            source_kind: SourceKind::List,
-            rule,
-            note,
-        }
+        build_evidence(info, &self.source_ids, note)
+    }
+
+    /// Evidence for a match in the dedicated engine must use that engine's
+    /// source mapping; its `source_index` values are not the main engine's.
+    fn important_evidence(&self, info: Option<&FilterRuleDebugInfo>) -> Evidence {
+        build_evidence(info, &self.important_source_ids, IMPORTANT_EXCEPTION_NOTE)
     }
 }
 
-/// An upstream exception rule is `important` when its retained raw line is an
-/// `@@` rule carrying `$important`. Debug info is enabled for our `FilterSet`,
-/// so the raw line is present for rules we accepted through `validate`.
-fn is_important_exception(info: &FilterRuleDebugInfo) -> bool {
-    match info.raw_line.as_deref() {
-        Some(line) => {
-            let line = line.trim();
-            line.starts_with("@@")
-                && line.split_once('$').is_some_and(|(_, options)| {
-                    options
-                        .split(',')
-                        .any(|option| option.eq_ignore_ascii_case("important"))
-                })
+/// Build truthful evidence from upstream debug info and the source mapping of
+/// the engine that produced the match.
+fn build_evidence(
+    info: Option<&FilterRuleDebugInfo>,
+    source_ids: &[String],
+    note: &'static str,
+) -> Evidence {
+    let (source_id, rule) = match info {
+        Some(info) => {
+            let source_id = info
+                .source_location
+                .as_ref()
+                .and_then(|location| source_ids.get(location.source_index as usize))
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_owned());
+            (source_id, info.raw_line.as_deref().and_then(bounded_rule))
         }
-        None => false,
+        None => ("unknown".to_owned(), None),
+    };
+    let note = if rule.is_some() {
+        note
+    } else {
+        NO_RULE_EVIDENCE
+    };
+    Evidence {
+        source_id,
+        source_kind: SourceKind::List,
+        rule,
+        note,
     }
 }
 

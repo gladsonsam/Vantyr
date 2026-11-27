@@ -716,3 +716,174 @@ fn regex_bodies_may_contain_cosmetic_markers() {
         Err(CompileError::Rejected(_))
     ));
 }
+
+#[test]
+fn unicode_and_punycode_spellings_agree_across_hosts_domain_and_regex() {
+    const UNICODE_QUERY: &str = "bücher.example.";
+    const PUNY_QUERY: &str = "xn--bcher-kva.example.";
+
+    // Hosts list written with the Unicode spelling. Both query spellings must
+    // canonicalise to the same Hickory name through the maintained IDNA path.
+    let hosts = compile(
+        1,
+        &[hosts_source("hosts", "bücher.example\n".as_bytes())],
+        None,
+        &[],
+    )
+    .unwrap();
+    for query in [UNICODE_QUERY, PUNY_QUERY] {
+        assert!(
+            matches!(
+                hosts.evaluate(&name(query), RecordType::A),
+                FilterOutcome::Block { .. }
+            ),
+            "{query} must reach the same hosts block"
+        );
+    }
+
+    // Domain-anchored rules written with either spelling must both be
+    // accepted (the ASCII promise) and must match both query spellings.
+    for (id, text) in [
+        ("domain-unicode", "||bücher.example^\n"),
+        ("domain-puny", "||xn--bcher-kva.example^\n"),
+    ] {
+        let snapshot = compile(2, &[abp_source(id, text.as_bytes())], None, &[]).unwrap();
+        for query in [UNICODE_QUERY, PUNY_QUERY] {
+            match snapshot.evaluate(&name(query), RecordType::A) {
+                FilterOutcome::Block { evidence } => {
+                    assert_eq!(evidence.source_id, id, "evidence must name the rule source");
+                    assert_eq!(evidence.rule.as_deref(), Some(text.trim()));
+                }
+                other => panic!("{query} must match {text:?}: {other:?}"),
+            }
+        }
+    }
+
+    // Hostname regex rules see the ASCII/punycode presentation, so a punycode
+    // pattern matches a Unicode query exactly as it matches a punycode query.
+    let regex = compile(
+        3,
+        &[abp_source("regex", b"/^xn--bcher-kva\\.example$/\n")],
+        None,
+        &[],
+    )
+    .unwrap();
+    for query in [UNICODE_QUERY, PUNY_QUERY] {
+        match regex.evaluate(&name(query), RecordType::A) {
+            FilterOutcome::Block { evidence } => {
+                assert_eq!(evidence.source_id, "regex");
+                assert_eq!(
+                    evidence.rule.as_deref(),
+                    Some("/^xn--bcher-kva\\.example$/")
+                );
+            }
+            other => panic!("{query} must match the punycode regex: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn important_domain_exception_beats_ordinary_exception_and_regex_important_block_in_both_orders() {
+    // An ordinary and an important domain exception match the same host. The
+    // ordinary path also carries a block so upstream produces an exception
+    // result at all. A regex important block adds a competing high rank.
+    const ORDINARY: &[u8] = b"\
+||conflict.example^
+@@||conflict.example^
+";
+    const IMPORTANT: &[u8] = b"@@||conflict.example^$important\n";
+    const REGEX: &[u8] = b"/^conflict\\.example$/$important\n";
+
+    let ordered = [
+        [
+            abp_source("a-important", IMPORTANT),
+            abp_source("m-ordinary", ORDINARY),
+            abp_source("z-regex", REGEX),
+        ],
+        [
+            abp_source("a-regex", REGEX),
+            abp_source("m-ordinary", ORDINARY),
+            abp_source("z-important", IMPORTANT),
+        ],
+    ];
+    for (index, sources) in ordered.into_iter().enumerate() {
+        let expected_source = if index == 0 {
+            "a-important"
+        } else {
+            "z-important"
+        };
+        let snapshot = compile(1, &sources, None, &[]).unwrap();
+        match snapshot.evaluate(&name("conflict.example."), RecordType::A) {
+            FilterOutcome::AllowException { evidence } => {
+                assert_eq!(
+                    evidence.source_id, expected_source,
+                    "important exception evidence must name its own source"
+                );
+                assert_eq!(
+                    evidence.rule.as_deref(),
+                    Some("@@||conflict.example^$important")
+                );
+                assert!(evidence.note.contains("important exception"));
+            }
+            other => panic!(
+                "important exception must beat both the ordinary exception and the regex important block: {other:?}"
+            ),
+        }
+    }
+}
+
+#[test]
+fn important_domain_exception_beats_domain_important_block_in_both_orders() {
+    // Upstream's `important` blocking flag suppresses exception lookup, so the
+    // important exception is matched in its own exception-only engine instead.
+    const BLOCK: &[u8] = b"||conflict.example^$important\n";
+    const EXCEPTION: &[u8] = b"@@||conflict.example^$important\n";
+
+    let ordered = [
+        [
+            abp_source("a-block", BLOCK),
+            abp_source("z-exception", EXCEPTION),
+        ],
+        [
+            abp_source("a-exception", EXCEPTION),
+            abp_source("z-block", BLOCK),
+        ],
+    ];
+    for (index, sources) in ordered.into_iter().enumerate() {
+        let expected_source = if index == 0 {
+            "z-exception"
+        } else {
+            "a-exception"
+        };
+        let snapshot = compile(2, &sources, None, &[]).unwrap();
+        match snapshot.evaluate(&name("conflict.example."), RecordType::A) {
+            FilterOutcome::AllowException { evidence } => {
+                assert_eq!(evidence.source_id, expected_source);
+                assert_eq!(
+                    evidence.rule.as_deref(),
+                    Some("@@||conflict.example^$important")
+                );
+                assert!(evidence.note.contains("important exception"));
+            }
+            other => panic!("important exception must beat a domain important block: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn important_domain_block_keeps_truthful_evidence() {
+    const TEXT: &[u8] = b"\
+||ads.example^
+@@||ads.example^
+||ads.example^$important
+";
+    let snapshot = compile(3, &[abp_source("abp", TEXT)], None, &[]).unwrap();
+    match snapshot.evaluate(&name("ads.example."), RecordType::A) {
+        FilterOutcome::Block { evidence } => {
+            assert_eq!(evidence.source_id, "abp");
+            assert_eq!(evidence.rule.as_deref(), Some("||ads.example^$important"));
+            assert!(evidence.note.contains("important"));
+        }
+        other => panic!("important domain block must beat ordinary exception: {other:?}"),
+    }
+}
