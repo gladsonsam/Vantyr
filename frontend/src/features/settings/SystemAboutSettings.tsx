@@ -227,7 +227,11 @@ function StorageUsageCard({ storage }: { storage: Loaded<StorageUsage> }) {
       title="Storage usage"
       help="Total size is PostgreSQL pg_database_size (the entire database on disk). Details lists each table."
       action={
-        <RefreshAction action="Refresh usage" loading={storage.loading} onClick={storage.onReload} />
+        <RefreshAction
+          action="Refresh usage"
+          loading={storage.loading}
+          onClick={storage.onReload}
+        />
       }
     >
       <SettingsCardBody className="space-y-5">

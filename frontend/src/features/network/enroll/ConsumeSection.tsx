@@ -37,8 +37,8 @@ export function VerifiedSessionCard({
       <div className="flex items-start gap-3">
         <Info className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
         <p className="text-sm font-medium">
-          This is session evidence only. It does not prove who is using a shared device, and it
-          does not prove that any traffic is routed or protected.
+          This is session evidence only. It does not prove who is using a shared device, and it does
+          not prove that any traffic is routed or protected.
         </p>
       </div>
       <KeyValueGrid className="sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
@@ -161,7 +161,12 @@ export function ConsumeSection({
             disabled={!ready || verifying}
             onClick={() => {
               if (!device) return;
-              onConsume({ grant_id: grantId.trim(), secret: secret.trim(), purpose, device_id: device });
+              onConsume({
+                grant_id: grantId.trim(),
+                secret: secret.trim(),
+                purpose,
+                device_id: device,
+              });
               setSecret("");
             }}
           >
@@ -171,7 +176,9 @@ export function ConsumeSection({
         {session ? (
           <VerifiedSessionCard
             session={session}
-            deviceLabel={devices.find((d) => d.id === session.device_id)?.label ?? session.device_id}
+            deviceLabel={
+              devices.find((d) => d.id === session.device_id)?.label ?? session.device_id
+            }
           />
         ) : null}
       </SettingsCardBody>

@@ -26,7 +26,10 @@ export function useDnsSettingsEdit(): DnsSettingsEdit {
 }
 
 function isConflict(error: unknown) {
-  return error instanceof RuntimeConflictError || (error as { kind?: string } | null)?.kind === "conflict";
+  return (
+    error instanceof RuntimeConflictError ||
+    (error as { kind?: string } | null)?.kind === "conflict"
+  );
 }
 
 /** Page-level conflict and error state for compare-and-set edits of the DNS runtime settings. */

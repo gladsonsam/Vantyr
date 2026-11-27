@@ -8,11 +8,7 @@ import { api, errorText } from "@/api";
 import { getExistingSubscription, isPushSupported, subscribeToPush } from "@/lib/pwa";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { Switch } from "@/components/common/SettingsSwitch";
-import {
-  SettingsCardBody,
-  SettingsRow,
-  SettingsSection,
-} from "./components/SettingsLayout";
+import { SettingsCardBody, SettingsRow, SettingsSection } from "./components/SettingsLayout";
 
 type NotifPermission = "default" | "granted" | "denied";
 
@@ -172,9 +168,7 @@ function PushSwitch({ toggle, data }: { toggle: PushToggle; data: PushStatus }) 
         layout="switch"
         label="Alert notifications on this browser"
         description={
-          <span
-            className={data.subscribed ? "font-medium text-success" : "font-medium"}
-          >
+          <span className={data.subscribed ? "font-medium text-success" : "font-medium"}>
             {state}
           </span>
         }

@@ -54,8 +54,8 @@ export function IssuedTokenDialog({
               <DialogTitle className="flex items-center gap-2">
                 Worker token for {issued.gatewayLabel}
                 <HelpTip label="About worker tokens">
-                  This token lets the gateway worker call Vantyr. It is not a person’s proxy
-                  sign-in credential and not a dashboard session. Only its hash is stored.
+                  This token lets the gateway worker call Vantyr. It is not a person’s proxy sign-in
+                  credential and not a dashboard session. Only its hash is stored.
                 </HelpTip>
               </DialogTitle>
               <DialogDescription className="flex items-start gap-2 text-warning">
@@ -78,10 +78,18 @@ export function IssuedTokenDialog({
               </KeyValueCard>
             </KeyValueGrid>
             {issued.gatewayKind === "dns" &&
-            issued.commands.some((c) => c === "read_dns_management" || c === "report_dns_status") ? (
+            issued.commands.some(
+              (c) => c === "read_dns_management" || c === "report_dns_status",
+            ) ? (
               <p className="text-sm text-muted-foreground">
                 Run the DNS worker with a private (mode 0600) credential file and --dns-management
                 (usually together with --subscriptions). Management reports are not heartbeats.
+              </p>
+            ) : null}
+            {issued.gatewayKind === "dns" && issued.commands.includes("report_dns_events") ? (
+              <p className="text-sm text-muted-foreground">
+                Reporting stays off until the operator sets a private (mode 0600) options file,
+                passes --dns-events FILE and uses a credential with this scope.
               </p>
             ) : null}
             <div className="flex flex-wrap gap-2">
@@ -89,9 +97,7 @@ export function IssuedTokenDialog({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() =>
-                  download(`${slug}.env`, `VANTYR_GATEWAY_TOKEN=${issued.token}\n`)
-                }
+                onClick={() => download(`${slug}.env`, `VANTYR_GATEWAY_TOKEN=${issued.token}\n`)}
               >
                 <Download /> Download .env
               </Button>

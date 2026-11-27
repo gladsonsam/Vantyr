@@ -115,10 +115,14 @@ function SignInBody({
   const device = useDevice();
   const query = useProxyAccessQuery();
   if (query.isPending) return null;
-  if (query.isError) return <UnavailableSection title={TITLE} reason="Couldn’t load proxy sign-in." />;
+  if (query.isError)
+    return <UnavailableSection title={TITLE} reason="Couldn’t load proxy sign-in." />;
   if (query.data.state === "unavailable") {
     return (
-      <UnavailableSection title={TITLE} reason="Proxy sign-in isn’t available on this server yet." />
+      <UnavailableSection
+        title={TITLE}
+        reason="Proxy sign-in isn’t available on this server yet."
+      />
     );
   }
   const view = query.data.data;

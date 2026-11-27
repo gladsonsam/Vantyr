@@ -59,7 +59,6 @@ export function DotText({
   );
 }
 
-
 /**
  * Render inside a dialog's body (it mounts only while open): pins a fresh basis on open, and shows
  * a non-dismissable notice with Reload when the pinned basis is no longer the latest.

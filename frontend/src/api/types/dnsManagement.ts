@@ -28,9 +28,7 @@ export interface DnsSubscriptionSource {
   metadata: DnsSourceMetadata;
 }
 
-export type DnsServiceDomain =
-  | { type: "exact"; value: string }
-  | { type: "suffix"; value: string };
+export type DnsServiceDomain = { type: "exact"; value: string } | { type: "suffix"; value: string };
 
 export interface DnsServiceDefinition {
   id: string;

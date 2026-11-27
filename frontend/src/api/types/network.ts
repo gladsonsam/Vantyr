@@ -105,25 +105,13 @@ export const NETWORK_DEVICE_TYPES = [
 ] as const;
 export type NetworkDeviceType = (typeof NETWORK_DEVICE_TYPES)[number];
 
-export const NETWORK_ASSIGNMENT_ROLES = [
-  "owner",
-  "member",
-  "guest",
-  "managed",
-  "unknown",
-] as const;
+export const NETWORK_ASSIGNMENT_ROLES = ["owner", "member", "guest", "managed", "unknown"] as const;
 export type NetworkAssignmentRole = (typeof NETWORK_ASSIGNMENT_ROLES)[number];
 
 export const NETWORK_CONNECTION_KINDS = ["agent", "dns", "proxy"] as const;
 export type NetworkConnectionKind = (typeof NETWORK_CONNECTION_KINDS)[number];
 
-export const NETWORK_PROVENANCES = [
-  "manual",
-  "agent",
-  "dns",
-  "proxy",
-  "import",
-] as const;
+export const NETWORK_PROVENANCES = ["manual", "agent", "dns", "proxy", "import"] as const;
 export type NetworkProvenance = (typeof NETWORK_PROVENANCES)[number];
 
 export const NETWORK_CONNECTION_STATUSES = [
@@ -134,8 +122,7 @@ export const NETWORK_CONNECTION_STATUSES = [
   "error",
   "revoked",
 ] as const;
-export type NetworkConnectionStatus =
-  (typeof NETWORK_CONNECTION_STATUSES)[number];
+export type NetworkConnectionStatus = (typeof NETWORK_CONNECTION_STATUSES)[number];
 
 /** PATCH household: send only edited fields. */
 export interface NetworkHouseholdPatch {
@@ -186,12 +173,12 @@ export const NETWORK_GATEWAY_COMMANDS = [
   "read_policy",
   "read_dns_management",
   "report_dns_status",
+  "report_dns_events",
 ] as const;
 export type NetworkGatewayCommand = (typeof NETWORK_GATEWAY_COMMANDS)[number];
 
 /** Capabilities a worker may report (server allowlist). */
-export type NetworkGatewayCapability =
-  "dns" | "proxy" | "heartbeat" | "config-read";
+export type NetworkGatewayCapability = "dns" | "proxy" | "heartbeat" | "config-read";
 
 /** `capabilities` and `last_seen_at` are reported, unverified observations, not enforcement state. */
 export interface NetworkGateway {
@@ -305,10 +292,7 @@ export type NetworkPolicyEffect = "allow" | "deny";
 
 /** Externally tagged, snake_case. The server accepts only domain_suffix and host_exact for now. */
 export type NetworkPolicyMatcher =
-  | { domain_suffix: string }
-  | { host_exact: string }
-  | { category: string }
-  | "any";
+  { domain_suffix: string } | { host_exact: string } | { category: string } | "any";
 
 /** Weekdays Monday = 0 .. Sunday = 6; minutes from local midnight (0..=1440). */
 export interface NetworkPolicySchedule {
@@ -489,7 +473,6 @@ export interface NetworkDesiredPolicy {
   assigned_by: string | null;
   assigned_at: string;
 }
-
 
 // ─── BYOD enrollment ─────────────────────────────────────────────────────────
 

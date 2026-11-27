@@ -6,10 +6,7 @@ import { DeviceRules } from "@/features/devices/components/DeviceRules";
 import { OverviewCard } from "@/features/devices/components/OverviewCard";
 import { OverviewAgent } from "@/features/devices/components/OverviewAgent";
 import { OverviewDnsStats, OverviewProxyStats } from "@/features/devices/components/OverviewStats";
-import {
-  CONNECTION_KINDS,
-  connectedCount,
-} from "@/features/devices/lib/deviceModel";
+import { CONNECTION_KINDS, connectedCount } from "@/features/devices/lib/deviceModel";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 
 function Figure({ label, value, hue }: { label: string; value: ReactNode; hue: string }) {
@@ -47,7 +44,9 @@ export function DeviceOverviewPage() {
           dnsDeviceId={showDns ? device.deviceId : null}
         />
       ) : null}
-      {!hasAgent && showDns && device.deviceId ? <OverviewDnsStats deviceId={device.deviceId} /> : null}
+      {!hasAgent && showDns && device.deviceId ? (
+        <OverviewDnsStats deviceId={device.deviceId} />
+      ) : null}
       {!hasAgent && !showDns && showProxy && device.deviceId ? (
         <OverviewProxyStats deviceId={device.deviceId} />
       ) : null}

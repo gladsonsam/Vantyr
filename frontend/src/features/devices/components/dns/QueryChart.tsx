@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { fmtDateTime } from "@/lib/utils";
+import { fmtDateTime, parseTimestamp } from "@/lib/utils";
+import { seriesHasBlocked } from "./statsWindowText";
 import type { DnsStats, StatsWindow } from "@/features/network/runtime/types";
 
 export type ChartSeries = DnsStats["series"];
@@ -8,8 +9,9 @@ const W = 720;
 const H = 160;
 
 /**
- * Queries over time as stacked bars: allowed on the bottom, blocked on top. Dependency-free; hovering
- * a bar shows that bucket's counts.
+ * Observations over time as bars. When every bucket carries a blocked count (the demo) the bars stack
+ * allowed under blocked; otherwise (the real server sends a total per bucket only) they are one series,
+ * with no allowed/blocked split. Dependency-free; hovering a bar shows that bucket's counts.
  */
 export function QueryChart({
   series,
@@ -18,7 +20,7 @@ export function QueryChart({
   window,
 }: {
   series: ChartSeries;
-  /** What the data really covers: its start and end label the axis, never the requested range. */
+  /** The requested window labels the axis; actual timestamps never imply continuous coverage. */
   window?: StatsWindow;
   title?: string;
   /** What the buckets count, for the chart's accessible name. */
@@ -31,8 +33,15 @@ export function QueryChart({
   const first = series[0];
   const last = series[series.length - 1];
   const middle = series[Math.floor(series.length / 2)];
-  const startAt = window?.actualStart ?? first?.at;
-  const endAt = window?.actualEnd ?? last?.at;
+  const split = seriesHasBlocked(series);
+  const startAt = window?.requestedStart ?? window?.actualStart ?? first?.at;
+  const endAt = window?.requestedEnd ?? window?.actualEnd ?? last?.at;
+  const startMs = parseTimestamp(startAt ?? "")?.getTime();
+  const endMs = parseTimestamp(endAt ?? "")?.getTime();
+  const midAt =
+    startMs !== undefined && endMs !== undefined
+      ? new Date((startMs + endMs) / 2).toISOString()
+      : middle?.at;
   const active = hover === null ? null : series[hover];
   return (
     <div className="space-y-4">
@@ -41,12 +50,14 @@ export function QueryChart({
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded-sm bg-primary" />
-            Allowed
+            {split ? "Allowed" : "Observations"}
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-sm bg-destructive" />
-            Blocked
-          </span>
+          {split ? (
+            <span className="flex items-center gap-1.5">
+              <span className="size-2 rounded-sm bg-destructive" />
+              Blocked
+            </span>
+          ) : null}
         </div>
       </div>
       <div className="relative" onMouseLeave={() => setHover(null)}>
@@ -55,7 +66,9 @@ export function QueryChart({
           preserveAspectRatio="none"
           className="block h-40 w-full"
           role="img"
-          aria-label={`${title}, with blocked ${noun} marked`}
+          aria-label={
+            split ? `${title}, with blocked ${noun} marked` : `${title}, ${noun} per time bucket`
+          }
         >
           {[0.25, 0.5, 0.75].map((line) => (
             <line
@@ -71,8 +84,9 @@ export function QueryChart({
           ))}
           {series.map((bucket, index) => {
             const x = index * (barWidth + gap);
-            const allowedHeight = ((bucket.total - bucket.blocked) / max) * (H - 4);
-            const blockedHeight = (bucket.blocked / max) * (H - 4);
+            const blockedCount = split ? (bucket.blocked ?? 0) : 0;
+            const allowedHeight = ((bucket.total - blockedCount) / max) * (H - 4);
+            const blockedHeight = (blockedCount / max) * (H - 4);
             return (
               <g key={bucket.at} onMouseEnter={() => setHover(index)}>
                 <rect x={x - gap / 2} y={0} width={barWidth + gap} height={H} fill="transparent" />
@@ -85,15 +99,17 @@ export function QueryChart({
                   className="fill-primary"
                   opacity={hover === null || hover === index ? 1 : 0.55}
                 />
-                <rect
-                  x={x}
-                  y={H - blockedHeight}
-                  width={barWidth}
-                  height={Math.max(blockedHeight, 0)}
-                  rx={1.5}
-                  className="fill-destructive"
-                  opacity={hover === null || hover === index ? 1 : 0.55}
-                />
+                {split ? (
+                  <rect
+                    x={x}
+                    y={H - blockedHeight}
+                    width={barWidth}
+                    height={Math.max(blockedHeight, 0)}
+                    rx={1.5}
+                    className="fill-destructive"
+                    opacity={hover === null || hover === index ? 1 : 0.55}
+                  />
+                ) : null}
               </g>
             );
           })}
@@ -106,20 +122,29 @@ export function QueryChart({
             }}
           >
             <div className="mb-1 text-muted-foreground">{fmtDateTime(active.at)}</div>
-            <div className="flex items-center gap-1.5 tabular-nums">
-              <span className="size-2 rounded-sm bg-primary" />
-              {(active.total - active.blocked).toLocaleString()} allowed
-            </div>
-            <div className="flex items-center gap-1.5 tabular-nums">
-              <span className="size-2 rounded-sm bg-destructive" />
-              {active.blocked.toLocaleString()} blocked
-            </div>
+            {split ? (
+              <>
+                <div className="flex items-center gap-1.5 tabular-nums">
+                  <span className="size-2 rounded-sm bg-primary" />
+                  {(active.total - (active.blocked ?? 0)).toLocaleString()} allowed
+                </div>
+                <div className="flex items-center gap-1.5 tabular-nums">
+                  <span className="size-2 rounded-sm bg-destructive" />
+                  {(active.blocked ?? 0).toLocaleString()} blocked
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center gap-1.5 tabular-nums">
+                <span className="size-2 rounded-sm bg-primary" />
+                {active.total.toLocaleString()} {noun}
+              </div>
+            )}
           </div>
         ) : null}
       </div>
       <div className="flex justify-between text-xs text-muted-foreground">
         <span>{startAt ? fmtDateTime(startAt) : ""}</span>
-        <span className="hidden sm:inline">{middle ? fmtDateTime(middle.at) : ""}</span>
+        <span className="hidden sm:inline">{midAt ? fmtDateTime(midAt) : ""}</span>
         <span>{endAt ? fmtDateTime(endAt) : ""}</span>
       </div>
     </div>

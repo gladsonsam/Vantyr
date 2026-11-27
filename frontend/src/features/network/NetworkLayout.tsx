@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useContext, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Link, Outlet } from "react-router-dom";
 import {
   Activity,
@@ -26,6 +26,8 @@ import { SettingsArea, SettingsNavLinks } from "@/features/settings/components/S
 import { NetworkScopeContext, useNetworkHousehold } from "./access/networkScope";
 import { useNetworkAdmin } from "./access/useNetworkAdmin";
 import { useNetworkAccess } from "./access/useNetworkAccess";
+import { createHttpRuntime } from "./runtime/httpRuntime";
+import { NetworkRuntimeContext, unavailableRuntime } from "./runtime/NetworkRuntimeSource";
 
 const SECTIONS = [
   { id: "overview", to: "/network", label: "Overview", icon: LayoutDashboard },
@@ -104,11 +106,25 @@ function EnrollDeviceLink() {
   if (!contexts.data || contexts.data.contexts.length === 0) return null;
   return (
     <p className="mt-4 text-center text-sm">
-      <Link to="/network/enroll" className="font-medium text-primary underline-offset-4 hover:underline">
+      <Link
+        to="/network/enroll"
+        className="font-medium text-primary underline-offset-4 hover:underline"
+      >
         Enroll a device
       </Link>
     </p>
   );
+}
+
+/**
+ * Supplies the server-backed runtime (DNS events and statistics) for one household. When something
+ * above already supplied a runtime (the demo environment), that one is kept.
+ */
+function HouseholdRuntime({ householdId, children }: { householdId: string; children: ReactNode }) {
+  const inherited = useContext(NetworkRuntimeContext);
+  const http = useMemo(() => createHttpRuntime(householdId), [householdId]);
+  if (inherited !== unavailableRuntime) return <>{children}</>;
+  return <NetworkRuntimeContext.Provider value={http}>{children}</NetworkRuntimeContext.Provider>;
 }
 
 /**
@@ -162,9 +178,11 @@ export function NetworkLayout() {
     case "ready":
       return (
         <NetworkScopeContext.Provider value={access.household}>
-          <SettingsArea nav={<SectionNav />}>
-            <Outlet />
-          </SettingsArea>
+          <HouseholdRuntime householdId={access.household.id}>
+            <SettingsArea nav={<SectionNav />}>
+              <Outlet />
+            </SettingsArea>
+          </HouseholdRuntime>
         </NetworkScopeContext.Provider>
       );
   }

@@ -309,12 +309,12 @@ export function NetworkHouseholdPage() {
   };
   const agentFor = (c: NetworkConnection) => {
     const id =
-      c.enrolled_agent_id ??
-      assignmentList.find((a) => a.id === c.assignment_id)?.agent_id ??
-      null;
+      c.enrolled_agent_id ?? assignmentList.find((a) => a.id === c.assignment_id)?.agent_id ?? null;
     return id ? id.slice(0, 8) : null;
   };
-  const withConnections = deviceList.filter((d) => connectionList.some((c) => c.device_id === d.id));
+  const withConnections = deviceList.filter((d) =>
+    connectionList.some((c) => c.device_id === d.id),
+  );
 
   return (
     <div className="space-y-8">
@@ -359,7 +359,9 @@ export function NetworkHouseholdPage() {
         icon={<Cable />}
         variant="plain"
         help="How each device reaches Vantyr. Status and last seen are what was reported or entered, not verified. Admins can edit the status and linked agent, revoke, or delete a connection that isn’t active."
-        action={isAdmin ? <AddConnectionForm household={household.id} devices={deviceList} /> : null}
+        action={
+          isAdmin ? <AddConnectionForm household={household.id} devices={deviceList} /> : null
+        }
       >
         {withConnections.length === 0 ? (
           <div className="rounded-xl border border-border/70 bg-card/10">

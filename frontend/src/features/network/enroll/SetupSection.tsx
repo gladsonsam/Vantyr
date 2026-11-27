@@ -39,8 +39,7 @@ export function SetupSection({
   const [purpose, setPurpose] = useState<NetworkSetupPurpose>("proxy_setup");
   const [secs, setSecs] = useState("300");
   const n = Number(secs);
-  const valid =
-    Number.isInteger(n) && n >= NETWORK_GRANT_MIN_SECS && n <= NETWORK_GRANT_MAX_SECS;
+  const valid = Number.isInteger(n) && n >= NETWORK_GRANT_MIN_SECS && n <= NETWORK_GRANT_MAX_SECS;
 
   return (
     <SettingsSection

@@ -7,6 +7,7 @@ import { demoEnrollmentApi } from "./enrollment";
 import { demoGroupsApi } from "./groups";
 import { demoModulesApi } from "./modules";
 import { demoDnsManagementApi } from "./dnsManagement";
+import { demoDnsEventsApi } from "./dnsEvents";
 import { demoNetworkApi } from "./network";
 import { demoNotificationsApi } from "./notifications";
 import { demoRecallApi } from "./recall";
@@ -33,6 +34,7 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     ...demoModulesApi(state),
     ...demoNetworkApi(),
     ...demoDnsManagementApi(),
+    ...demoDnsEventsApi(),
     ...demoNotificationsApi(),
     ...demoRecallApi(state),
     ...demoRemoteApi(state),

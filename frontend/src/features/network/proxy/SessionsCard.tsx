@@ -32,7 +32,9 @@ export function SessionsCard({
       description="Proxy sign-in is evidence only. It does not prove who is using the device."
     >
       {sessions.length === 0 ? (
-        <p className="px-5 py-4 text-sm text-muted-foreground">No one is signed in via the proxy.</p>
+        <p className="px-5 py-4 text-sm text-muted-foreground">
+          No one is signed in via the proxy.
+        </p>
       ) : (
         <ul className="divide-y divide-border/50">
           {sessions.map((session) => (

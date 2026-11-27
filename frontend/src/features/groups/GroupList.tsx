@@ -23,7 +23,10 @@ interface GroupListProps {
 /** One row per group: identity, what it holds, then its actions. Same layout from phone to desktop. */
 export function GroupList({ groups, ruleCounts, onAction }: GroupListProps) {
   return (
-    <ul aria-label="Agent groups" className="overflow-hidden rounded-xl border border-border/70 bg-card/10">
+    <ul
+      aria-label="Agent groups"
+      className="overflow-hidden rounded-xl border border-border/70 bg-card/10"
+    >
       {groups.map((g) => (
         <li
           key={g.id}

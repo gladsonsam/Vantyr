@@ -7,6 +7,8 @@ export interface CredentialRequestValues {
   readDnsManagement: boolean;
   /** DNS gateways only. */
   reportDnsStatus: boolean;
+  /** DNS gateways only. */
+  reportDnsEvents: boolean;
 }
 
 export const DEFAULT_CREDENTIAL_REQUEST: CredentialRequestValues = {
@@ -14,6 +16,7 @@ export const DEFAULT_CREDENTIAL_REQUEST: CredentialRequestValues = {
   readPolicy: true,
   readDnsManagement: false,
   reportDnsStatus: false,
+  reportDnsEvents: false,
 };
 
 /** Pre-checks the scopes a previous credential held. Never upgrades: only what it had. */
@@ -25,17 +28,22 @@ export function valuesFromCommands(
     readPolicy: commands.includes("read_policy"),
     readDnsManagement: commands.includes("read_dns_management"),
     reportDnsStatus: commands.includes("report_dns_status"),
+    reportDnsEvents: commands.includes("report_dns_events"),
   };
 }
 
 /** Heartbeat is always sent; the DNS scopes are only ever requested for DNS gateways. */
-export function toCredentialBody(values: CredentialRequestValues, kind: NetworkGatewayKind = "dns") {
+export function toCredentialBody(
+  values: CredentialRequestValues,
+  kind: NetworkGatewayKind = "dns",
+) {
   const hours = Math.min(720, Math.max(1, Math.round(Number(values.hours)) || 24));
   const commands: NetworkGatewayCommand[] = ["heartbeat"];
   if (values.readPolicy) commands.push("read_policy");
   if (kind === "dns") {
     if (values.readDnsManagement) commands.push("read_dns_management");
     if (values.reportDnsStatus) commands.push("report_dns_status");
+    if (values.reportDnsEvents) commands.push("report_dns_events");
   }
   return { expires_in_hours: hours, commands };
 }
@@ -43,4 +51,5 @@ export function toCredentialBody(values: CredentialRequestValues, kind: NetworkG
 export const DNS_SCOPE_COMMANDS: readonly NetworkGatewayCommand[] = [
   "read_dns_management",
   "report_dns_status",
+  "report_dns_events",
 ];

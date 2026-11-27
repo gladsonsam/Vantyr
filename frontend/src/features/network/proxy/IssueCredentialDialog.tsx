@@ -195,8 +195,8 @@ export function IssueCredentialDialog({
                 <HelpTip label="What is this?">{PROXY_CREDENTIAL_HELP}</HelpTip>
               </DialogTitle>
               <DialogDescription>
-                Next you get its secret, shown once. Signing in with it is evidence, not proof of who
-                is using the device.
+                Next you get its secret, shown once. Signing in with it is evidence, not proof of
+                who is using the device.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2">

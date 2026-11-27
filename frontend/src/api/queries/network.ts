@@ -26,20 +26,13 @@ import type {
 export const networkKeys = {
   all: ["network"] as const,
   households: () => [...networkKeys.all, "households"] as const,
-  inventory: (household: string) =>
-    [...networkKeys.all, household, "inventory"] as const,
-  persons: (household: string) =>
-    [...networkKeys.inventory(household), "persons"] as const,
-  devices: (household: string) =>
-    [...networkKeys.inventory(household), "devices"] as const,
-  assignments: (household: string) =>
-    [...networkKeys.inventory(household), "assignments"] as const,
-  connections: (household: string) =>
-    [...networkKeys.inventory(household), "connections"] as const,
-  enrollments: (household: string) =>
-    [...networkKeys.inventory(household), "enrollments"] as const,
-  grants: (household: string) =>
-    [...networkKeys.all, household, "grants"] as const,
+  inventory: (household: string) => [...networkKeys.all, household, "inventory"] as const,
+  persons: (household: string) => [...networkKeys.inventory(household), "persons"] as const,
+  devices: (household: string) => [...networkKeys.inventory(household), "devices"] as const,
+  assignments: (household: string) => [...networkKeys.inventory(household), "assignments"] as const,
+  connections: (household: string) => [...networkKeys.inventory(household), "connections"] as const,
+  enrollments: (household: string) => [...networkKeys.inventory(household), "enrollments"] as const,
+  grants: (household: string) => [...networkKeys.all, household, "grants"] as const,
   audit: (household: string, filters?: NetworkAuditFilters) =>
     [...networkKeys.all, household, "audit", filters ?? {}] as const,
   policyCurrent: (household: string) =>
@@ -50,42 +43,26 @@ export const networkKeys = {
     [...networkKeys.policiesRoot(household), "diff", from, to] as const,
   enrollmentContexts: (page?: NetworkPageParams) =>
     [...networkKeys.all, "enrollment-contexts", page ?? {}] as const,
-  gatewaysRoot: (household: string) =>
-    [...networkKeys.all, household, "gateways"] as const,
+  gatewaysRoot: (household: string) => [...networkKeys.all, household, "gateways"] as const,
   gateways: (household: string, kind?: NetworkGatewayKind) =>
     [...networkKeys.gatewaysRoot(household), "list", kind ?? "all"] as const,
   gatewayCredentials: (household: string, gateway: string) =>
     [...networkKeys.gatewaysRoot(household), gateway, "credentials"] as const,
-  gatewayReports: (
-    household: string,
-    gateway: string,
-    page?: NetworkPageParams,
-  ) =>
-    [
-      ...networkKeys.gatewaysRoot(household),
-      gateway,
-      "reports",
-      page ?? {},
-    ] as const,
+  gatewayReports: (household: string, gateway: string, page?: NetworkPageParams) =>
+    [...networkKeys.gatewaysRoot(household), gateway, "reports", page ?? {}] as const,
   gatewayDesired: (household: string, gateway: string) =>
     [...networkKeys.gatewaysRoot(household), gateway, "desired"] as const,
   policies: (household: string, page?: NetworkPageParams) =>
     [...networkKeys.all, household, "policies", page ?? {}] as const,
-  policiesRoot: (household: string) =>
-    [...networkKeys.all, household, "policies"] as const,
+  policiesRoot: (household: string) => [...networkKeys.all, household, "policies"] as const,
   // BYOD
-  bindings: (household: string) =>
-    [...networkKeys.all, household, "bindings"] as const,
+  bindings: (household: string) => [...networkKeys.all, household, "bindings"] as const,
   deviceAuthorizations: (household: string, binding: string) =>
     [...networkKeys.bindings(household), binding, "device-authorizations"] as const,
-  enrollRoot: (household: string) =>
-    [...networkKeys.all, household, "enroll"] as const,
-  ownDevices: (household: string) =>
-    [...networkKeys.enrollRoot(household), "devices"] as const,
-  ownGrants: (household: string) =>
-    [...networkKeys.enrollRoot(household), "grants"] as const,
-  ownSessions: (household: string) =>
-    [...networkKeys.enrollRoot(household), "sessions"] as const,
+  enrollRoot: (household: string) => [...networkKeys.all, household, "enroll"] as const,
+  ownDevices: (household: string) => [...networkKeys.enrollRoot(household), "devices"] as const,
+  ownGrants: (household: string) => [...networkKeys.enrollRoot(household), "grants"] as const,
+  ownSessions: (household: string) => [...networkKeys.enrollRoot(household), "sessions"] as const,
 };
 
 /** Rows per page of the device-authorization list. */
@@ -165,19 +142,14 @@ export const networkQueries = {
   gateways: (household: string, kind?: NetworkGatewayKind) =>
     queryOptions({
       queryKey: networkKeys.gateways(household, kind),
-      queryFn: () =>
-        api.networkGateways(household, kind ? { kind } : undefined),
+      queryFn: () => api.networkGateways(household, kind ? { kind } : undefined),
     }),
   gatewayCredentials: (household: string, gateway: string) =>
     queryOptions({
       queryKey: networkKeys.gatewayCredentials(household, gateway),
       queryFn: () => api.networkGatewayCredentials(household, gateway),
     }),
-  gatewayReports: (
-    household: string,
-    gateway: string,
-    page?: NetworkPageParams,
-  ) =>
+  gatewayReports: (household: string, gateway: string, page?: NetworkPageParams) =>
     queryOptions({
       queryKey: networkKeys.gatewayReports(household, gateway, page),
       queryFn: () => api.networkGatewayReports(household, gateway, page),
@@ -234,11 +206,7 @@ export function usePolicyRevision(household: string, revision: number | null) {
 }
 
 /** Diff between two stored revisions; idle until both are set. */
-export function usePolicyDiff(
-  household: string,
-  from: number | null,
-  to: number | null,
-) {
+export function usePolicyDiff(household: string, from: number | null, to: number | null) {
   return useQuery({
     ...networkQueries.policyDiff(household, from ?? 0, to ?? 0),
     enabled: from != null && to != null && from >= 1 && to >= 1,
@@ -285,11 +253,7 @@ export function useBindingMutations(household: string) {
 }
 
 /** Pages of one binding's device authorizations, loaded on demand with `fetchNextPage`. */
-export function useDeviceAuthorizations(
-  household: string,
-  binding: string,
-  enabled = true,
-) {
+export function useDeviceAuthorizations(household: string, binding: string, enabled = true) {
   return useInfiniteQuery({
     queryKey: networkKeys.deviceAuthorizations(household, binding),
     queryFn: ({ pageParam }) =>
@@ -298,8 +262,7 @@ export function useDeviceAuthorizations(
         offset: pageParam,
       }),
     initialPageParam: 0,
-    getNextPageParam: (last) =>
-      last.truncated ? last.offset + last.returned : undefined,
+    getNextPageParam: (last) => (last.truncated ? last.offset + last.returned : undefined),
     enabled,
   });
 }
@@ -333,8 +296,7 @@ export function useRegisterEnrollDevice(household: string) {
   return useMutation({
     mutationFn: (body: Parameters<typeof api.networkOwnDeviceRegister>[1]) =>
       api.networkOwnDeviceRegister(household, body),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: networkKeys.ownDevices(household) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: networkKeys.ownDevices(household) }),
   });
 }
 
@@ -343,8 +305,7 @@ export function useEndEnrolledDevice(household: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (device: string) => api.networkOwnDeviceEnd(household, device),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: networkKeys.enrollRoot(household) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: networkKeys.enrollRoot(household) }),
   });
 }
 
@@ -354,8 +315,7 @@ export function useIssueSetupGrant(household: string) {
   return useMutation({
     mutationFn: (body: Parameters<typeof api.networkSetupGrantIssue>[1]) =>
       api.networkSetupGrantIssue(household, body),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: networkKeys.ownGrants(household) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: networkKeys.ownGrants(household) }),
   });
 }
 
@@ -363,8 +323,7 @@ export function useConsumeSetupGrant(household: string) {
   const queryClient = useQueryClient();
   return useMutation<NetworkVerifiedSession, Error, NetworkSetupGrantConsume>({
     mutationFn: (body) => api.networkSetupGrantConsume(household, body),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: networkKeys.enrollRoot(household) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: networkKeys.enrollRoot(household) }),
   });
 }
 
@@ -372,8 +331,7 @@ export function useEndSession(household: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (session: string) => api.networkOwnSessionEnd(household, session),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: networkKeys.enrollRoot(household) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: networkKeys.enrollRoot(household) }),
   });
 }
 
@@ -382,8 +340,7 @@ export function useEndAllSessions(household: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => api.networkOwnSessionsEndAll(household),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: networkKeys.enrollRoot(household) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: networkKeys.enrollRoot(household) }),
   });
 }
 
@@ -403,9 +360,7 @@ export interface GatewayObservation {
   reportedFailure: string | null;
 }
 
-export function toGatewayObservation(
-  report: NetworkGatewayReport,
-): GatewayObservation {
+export function toGatewayObservation(report: NetworkGatewayReport): GatewayObservation {
   return {
     reportedAt: report.reported_at,
     observedAt: report.observed_at,
@@ -479,8 +434,7 @@ export function useBootstrapNetworkMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (name: string) => api.networkBootstrap({ name }),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: networkKeys.all }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: networkKeys.all }),
   });
 }
 
@@ -488,10 +442,8 @@ export function useBootstrapNetworkMutation() {
 export function useUpdateHouseholdMutation(household: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: NetworkHouseholdPatch) =>
-      api.networkHouseholdUpdate(household, body),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: networkKeys.households() }),
+    mutationFn: (body: NetworkHouseholdPatch) => api.networkHouseholdUpdate(household, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: networkKeys.households() }),
   });
 }
 
@@ -512,10 +464,7 @@ export function useUpdateGatewayMutation(household: string) {
  * Conservative inventory delete. 409 (with the server's reasons) while the row is referenced.
  * Refreshes inventory and BYOD lists, since bindings and enrollments can reference rows.
  */
-export function useDeleteInventoryMutation(
-  household: string,
-  kind: NetworkInventoryDeleteKind,
-) {
+export function useDeleteInventoryMutation(household: string, kind: NetworkInventoryDeleteKind) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.networkInventoryDelete(household, kind, id),
@@ -546,10 +495,7 @@ export function useCreatePersonMutation(household: string) {
 export function useUpdatePersonMutation(household: string) {
   const invalidate = useInvalidateInventory(household);
   return useMutation({
-    mutationFn: ({
-      id,
-      ...body
-    }: { id: string } & Parameters<typeof api.networkPersonUpdate>[2]) =>
+    mutationFn: ({ id, ...body }: { id: string } & Parameters<typeof api.networkPersonUpdate>[2]) =>
       api.networkPersonUpdate(household, id, body),
     onSuccess: invalidate,
   });
@@ -567,10 +513,7 @@ export function useCreateDeviceMutation(household: string) {
 export function useUpdateDeviceMutation(household: string) {
   const invalidate = useInvalidateInventory(household);
   return useMutation({
-    mutationFn: ({
-      id,
-      ...body
-    }: { id: string } & Parameters<typeof api.networkDeviceUpdate>[2]) =>
+    mutationFn: ({ id, ...body }: { id: string } & Parameters<typeof api.networkDeviceUpdate>[2]) =>
       api.networkDeviceUpdate(household, id, body),
     onSuccess: invalidate,
   });
@@ -633,18 +576,14 @@ export function useGatewayMutations(household: string) {
       onSuccess: invalidate,
     }),
     revoke: useMutation({
-      mutationFn: (gateway: string) =>
-        api.networkGatewayRevoke(household, gateway),
+      mutationFn: (gateway: string) => api.networkGatewayRevoke(household, gateway),
       onSuccess: invalidate,
     }),
   };
 }
 
 /** Issue / rotate resolve with the one-time `token`; show it immediately, it is never served again. */
-export function useGatewayCredentialMutations(
-  household: string,
-  gateway: string,
-) {
+export function useGatewayCredentialMutations(household: string, gateway: string) {
   const queryClient = useQueryClient();
   const invalidate = () =>
     queryClient.invalidateQueries({
@@ -652,24 +591,16 @@ export function useGatewayCredentialMutations(
     });
   return {
     issue: useMutation({
-      mutationFn: (
-        body: Parameters<typeof api.networkGatewayCredentialIssue>[2],
-      ) => api.networkGatewayCredentialIssue(household, gateway, body),
+      mutationFn: (body: Parameters<typeof api.networkGatewayCredentialIssue>[2]) =>
+        api.networkGatewayCredentialIssue(household, gateway, body),
       onSuccess: invalidate,
     }),
     rotate: useMutation({
       mutationFn: ({
         credential,
         ...body
-      }: { credential: string } & Parameters<
-        typeof api.networkGatewayCredentialRotate
-      >[3]) =>
-        api.networkGatewayCredentialRotate(
-          household,
-          gateway,
-          credential,
-          body,
-        ),
+      }: { credential: string } & Parameters<typeof api.networkGatewayCredentialRotate>[3]) =>
+        api.networkGatewayCredentialRotate(household, gateway, credential, body),
       onSuccess: invalidate,
     }),
     revoke: useMutation({
@@ -704,13 +635,8 @@ export function usePolicyMutations(household: string) {
 export function useSetDesiredPolicyMutation(household: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      gateway,
-      revision,
-    }: {
-      gateway: string;
-      revision: number;
-    }) => api.networkGatewayDesiredPolicySet(household, gateway, { revision }),
+    mutationFn: ({ gateway, revision }: { gateway: string; revision: number }) =>
+      api.networkGatewayDesiredPolicySet(household, gateway, { revision }),
     onSuccess: () =>
       queryClient.invalidateQueries({
         queryKey: networkKeys.gatewaysRoot(household),

@@ -36,8 +36,9 @@ export function CredentialRequestFields({
           Allowed commands
           <HelpTip label="About allowed commands">
             Heartbeat lets the worker report in. Read policy also lets it fetch the policy it is
-            asked to run. {kind === "dns"
-              ? "Read DNS management lets a DNS worker fetch its list subscriptions, and Report DNS status lets it report what it applied. Older tokens are never upgraded; request each scope you want. "
+            asked to run.{" "}
+            {kind === "dns"
+              ? "Read DNS management lets a DNS worker fetch its list subscriptions, and Report DNS status lets it report what it applied. Report DNS events lets it send the domains it answered as observations; they are not visits or complete history, and events can be lost. Older tokens are never upgraded; request each scope you want. "
               : ""}
             Nothing else is granted.
           </HelpTip>
@@ -80,6 +81,22 @@ export function CredentialRequestFields({
               <Label htmlFor={`${idPrefix}-report-dns`} className="font-normal">
                 Report DNS status
               </Label>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <Checkbox
+                id={`${idPrefix}-report-events`}
+                checked={values.reportDnsEvents}
+                onCheckedChange={(checked) =>
+                  onChange({ ...values, reportDnsEvents: checked === true })
+                }
+              />
+              <Label htmlFor={`${idPrefix}-report-events`} className="font-normal">
+                Report DNS events
+              </Label>
+              <HelpTip label="About reporting DNS events">
+                Lets the DNS worker send the domains it answered as observations. Observations are
+                not visits or complete history, and events can be lost.
+              </HelpTip>
             </div>
           </>
         ) : null}

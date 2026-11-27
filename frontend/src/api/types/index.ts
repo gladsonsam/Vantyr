@@ -10,3 +10,4 @@ export * from "./modules";
 export * from "./audit";
 export * from "./network";
 export * from "./dnsManagement";
+export * from "./dnsEvents";

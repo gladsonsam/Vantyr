@@ -22,7 +22,13 @@ const DISABLE_COPY =
   "The gateway stops being able to fetch policy or heartbeat. Credentials are not revoked.";
 
 /** Rename a gateway from its detail page. Label edits stay allowed for a revoked gateway. */
-export function RenameGatewayDialog({ household, gateway }: { household: string; gateway: NetworkGateway }) {
+export function RenameGatewayDialog({
+  household,
+  gateway,
+}: {
+  household: string;
+  gateway: NetworkGateway;
+}) {
   const update = useUpdateGatewayMutation(household);
   const [label, setLabel] = useState(gateway.label);
   const changed = label.trim() !== gateway.label;

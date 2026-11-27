@@ -48,7 +48,6 @@ export function InspectionCard({ inspection }: { inspection: ProxyInspection }) 
       }
     >
       <SettingsCardBody>
-
         <Stepper
           step={step}
           showFooter={false}

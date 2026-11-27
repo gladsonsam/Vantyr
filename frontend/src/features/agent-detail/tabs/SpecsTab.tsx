@@ -265,11 +265,7 @@ function Capabilities({ info }: { info: AgentInfo }) {
     >
       <KeyValueGrid>
         {entries.map(([key, value], index) => (
-          <KeyValueCard
-            key={key}
-            label={capabilityLabel(key as CapabilityKey)}
-            format="custom"
-          >
+          <KeyValueCard key={key} label={capabilityLabel(key as CapabilityKey)} format="custom">
             <div className={cn("text-sm wrap-break-word", TONE_CLASS[tones[index]])}>
               {value.replace(/_/g, " ")}
             </div>
@@ -298,7 +294,9 @@ function DriveSpecs({ info }: { info: AgentInfo }) {
           </p>
         ) : null}
         {drives.length === 0 ? (
-          <p className="text-sm text-muted-foreground lg:col-span-2">This device reported no drives.</p>
+          <p className="text-sm text-muted-foreground lg:col-span-2">
+            This device reported no drives.
+          </p>
         ) : null}
         {drives.map((drive, idx) => {
           const usage = driveUsage(drive);
@@ -318,7 +316,9 @@ function DriveSpecs({ info }: { info: AgentInfo }) {
                     <MetricRing
                       percent={usage.pct}
                       variant="disk"
-                      tone={usage.pct >= 90 ? "destructive" : usage.pct >= 80 ? "warning" : "default"}
+                      tone={
+                        usage.pct >= 90 ? "destructive" : usage.pct >= 80 ? "warning" : "default"
+                      }
                       size={28}
                       stroke={4}
                       className="mr-1"

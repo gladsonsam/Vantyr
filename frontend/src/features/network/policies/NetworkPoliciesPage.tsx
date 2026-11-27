@@ -84,11 +84,7 @@ function RevisionLifecycle() {
         loadingMore={policies.isFetching}
         onLoadMore={() => setLimit((n) => n + PAGE_SIZE)}
       />
-      <PolicyComposer
-        household={household.id}
-        timezone={household.timezone}
-        latest={versions[0]}
-      />
+      <PolicyComposer household={household.id} timezone={household.timezone} latest={versions[0]} />
     </>
   );
 }

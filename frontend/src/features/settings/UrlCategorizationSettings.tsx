@@ -55,18 +55,18 @@ export function UrlCategorizationSettings({ isAdmin, urlCat }: UrlCatSettingsPro
   return (
     <>
       <SettingsSection title={TITLE} description={WHAT_IT_DOES}>
-          {!status || initialLoading ? (
-            <p className="flex items-center gap-2 px-5 py-4 text-sm text-muted-foreground">
-              <Spinner /> Loading…
-            </p>
-          ) : (
-            <CategorizationBody
-              urlCat={urlCat}
-              status={status}
-              onOpenOverrides={() => setOverridesOpen(true)}
-              onOpenCategories={() => setCategoriesOpen(true)}
-            />
-          )}
+        {!status || initialLoading ? (
+          <p className="flex items-center gap-2 px-5 py-4 text-sm text-muted-foreground">
+            <Spinner /> Loading…
+          </p>
+        ) : (
+          <CategorizationBody
+            urlCat={urlCat}
+            status={status}
+            onOpenOverrides={() => setOverridesOpen(true)}
+            onOpenCategories={() => setCategoriesOpen(true)}
+          />
+        )}
       </SettingsSection>
 
       <CategoryManagerModal visible={categoriesOpen} onDismiss={() => setCategoriesOpen(false)} />
@@ -110,33 +110,33 @@ function CategorizationBody({
       )}
       {loadError && (
         <div className="px-5 py-4">
-        <Alert variant="destructive">
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-            <span>Couldn't refresh the status. What's shown may be out of date. {loadError}</span>
-            <Button variant="outline" size="sm" onClick={() => void urlCat.refresh()}>
-              Try again
-            </Button>
-          </AlertDescription>
-        </Alert>
+          <Alert variant="destructive">
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+              <span>Couldn't refresh the status. What's shown may be out of date. {loadError}</span>
+              <Button variant="outline" size="sm" onClick={() => void urlCat.refresh()}>
+                Try again
+              </Button>
+            </AlertDescription>
+          </Alert>
         </div>
       )}
 
-        <SwitchRow
-          id="urlcat-enabled"
-          label="Categorize website visits"
-          hint="Gives each new URL visit a category from the lists."
-          checked={enabled}
-          disabled={saving}
-          onChange={(checked) => void urlCat.save({ enabled: checked })}
-        />
-        <SwitchRow
-          id="urlcat-auto-update"
-          label="Keep the lists up to date"
-          hint={enabled ? "Downloads fresh lists automatically." : "Turn on categorization first."}
-          checked={status.settings.auto_update}
-          disabled={saving || !enabled}
-          onChange={(checked) => void urlCat.save({ auto_update: checked })}
-        />
+      <SwitchRow
+        id="urlcat-enabled"
+        label="Categorize website visits"
+        hint="Gives each new URL visit a category from the lists."
+        checked={enabled}
+        disabled={saving}
+        onChange={(checked) => void urlCat.save({ enabled: checked })}
+      />
+      <SwitchRow
+        id="urlcat-auto-update"
+        label="Keep the lists up to date"
+        hint={enabled ? "Downloads fresh lists automatically." : "Turn on categorization first."}
+        checked={status.settings.auto_update}
+        disabled={saving || !enabled}
+        onChange={(checked) => void urlCat.save({ auto_update: checked })}
+      />
 
       <div className="px-5 py-4">
         <UrlSourceForm

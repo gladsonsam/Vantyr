@@ -11,4 +11,3 @@ export const FLEET_COLUMNS: { id: FleetColumnId; label: string; defaultVisible: 
 export const DEFAULT_FLEET_COLUMNS: ReadonlySet<FleetColumnId> = new Set(
   FLEET_COLUMNS.filter((column) => column.defaultVisible).map((column) => column.id),
 );
-

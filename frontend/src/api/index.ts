@@ -14,6 +14,7 @@ import { rulesEndpoints } from "@/api/endpoints/rules";
 import { auditEndpoints } from "@/api/endpoints/audit";
 import { networkEndpoints } from "@/api/endpoints/network";
 import { dnsManagementEndpoints } from "@/api/endpoints/dnsManagement";
+import { dnsEventsEndpoints } from "@/api/endpoints/dnsEvents";
 
 export { ApiError, apiUrl, errorText, isApiError, setDashboardCsrfToken } from "./client";
 export {
@@ -30,6 +31,7 @@ export {
   type MjpegStreamTuning,
 } from "@/api/endpoints/remote";
 export * from "./dnsManagementValidation";
+export * from "./dnsEventsValidation";
 export { SETTINGS_VERSION_POLL_INTERVAL_MS } from "@/api/endpoints/settings";
 
 /** Every REST endpoint, composed from the per-domain modules in `./endpoints`. */
@@ -50,6 +52,7 @@ export const realApi = {
   ...auditEndpoints,
   ...networkEndpoints,
   ...dnsManagementEndpoints,
+  ...dnsEventsEndpoints,
 };
 
 export type ApiClient = typeof realApi;

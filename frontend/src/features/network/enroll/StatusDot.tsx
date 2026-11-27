@@ -20,7 +20,9 @@ export function StatusDot({
   className?: string;
 }) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5 text-sm font-medium", TONE[tone], className)}>
+    <span
+      className={cn("inline-flex items-center gap-1.5 text-sm font-medium", TONE[tone], className)}
+    >
       <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
       {label}
     </span>

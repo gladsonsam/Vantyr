@@ -2,11 +2,7 @@ import { useState } from "react";
 import { ListFilter, RefreshCw, Trash2 } from "lucide-react";
 import { isApiError } from "@/api";
 import { useDnsStatus, useRefreshDnsList } from "@/api/queries/dnsManagement";
-import {
-  DNS_LIMITS,
-  validateDnsSource,
-  type DnsFieldError,
-} from "@/api/dnsManagementValidation";
+import { DNS_LIMITS, validateDnsSource, type DnsFieldError } from "@/api/dnsManagementValidation";
 import type {
   DnsDesiredView,
   DnsGatewayStatus,
@@ -105,17 +101,13 @@ function DownloadText({ source }: { source: DnsSourceStatus }) {
     case "quarantined":
       return (
         <DotText tone="destructive">
-          <span>
-            Quarantined{error}
-          </span>
+          <span>Quarantined{error}</span>
         </DotText>
       );
     default:
       return (
         <DotText tone="destructive">
-          <span>
-            No usable copy{error}
-          </span>
+          <span>No usable copy{error}</span>
         </DotText>
       );
   }
@@ -276,7 +268,12 @@ function ProvenanceField({
   return (
     <Field label={label} id={id} error={error} help={help ? PROVENANCE_HELP : undefined}>
       <div className="flex gap-2">
-        <Input id={id} value={value} maxLength={DNS_LIMITS.maxTextLen} onChange={(e) => onChange(e.target.value)} />
+        <Input
+          id={id}
+          value={value}
+          maxLength={DNS_LIMITS.maxTextLen}
+          onChange={(e) => onChange(e.target.value)}
+        />
         {unspecified ? (
           <Button type="button" variant="outline" onClick={() => onChange("Unspecified")}>
             Unspecified
@@ -298,7 +295,8 @@ function ListFormFields({
   errors: DnsFieldError[];
   mode: "add" | "edit";
 }) {
-  const set = <K extends keyof ListDraft>(key: K, value: ListDraft[K]) => setDraft({ ...draft, [key]: value });
+  const set = <K extends keyof ListDraft>(key: K, value: ListDraft[K]) =>
+    setDraft({ ...draft, [key]: value });
   const err = (key: string) => errorAt(errors, `source.${key}`);
   const show = (key: string, value: string) => (value.length > 0 ? err(key) : null);
   const p = mode;
@@ -306,8 +304,18 @@ function ListFormFields({
     <div className="grid max-h-[60vh] gap-4 overflow-y-auto pr-1">
       {mode === "add" ? (
         <>
-          <Field label="Id" id={`${p}-list-id`} error={show("id", draft.id)} hint="Letters, digits, _ and -. It cannot be changed later.">
-            <Input id={`${p}-list-id`} value={draft.id} maxLength={DNS_LIMITS.maxSourceIdLen} onChange={(e) => set("id", e.target.value)} />
+          <Field
+            label="Id"
+            id={`${p}-list-id`}
+            error={show("id", draft.id)}
+            hint="Letters, digits, _ and -. It cannot be changed later."
+          >
+            <Input
+              id={`${p}-list-id`}
+              value={draft.id}
+              maxLength={DNS_LIMITS.maxSourceIdLen}
+              onChange={(e) => set("id", e.target.value)}
+            />
           </Field>
           <Field
             label="URL"
@@ -315,7 +323,12 @@ function ListFormFields({
             error={show("url", draft.url)}
             hint="HTTPS only, no username, query or fragment. Use a raw file URL, not a GitHub page."
           >
-            <Input id={`${p}-list-url`} value={draft.url} placeholder="https://" onChange={(e) => set("url", e.target.value)} />
+            <Input
+              id={`${p}-list-url`}
+              value={draft.url}
+              placeholder="https://"
+              onChange={(e) => set("url", e.target.value)}
+            />
           </Field>
           <Field label="Format" id={`${p}-list-format`} help={FORMAT_HELP}>
             <Select value={draft.format} onValueChange={(v) => set("format", v as DnsListFormat)}>
@@ -336,7 +349,11 @@ function ListFormFields({
       )}
       <div className="flex items-center justify-between gap-4 text-sm">
         <label htmlFor={`${p}-list-enabled`}>Enabled</label>
-        <Switch id={`${p}-list-enabled`} checked={draft.enabled} onCheckedChange={(c) => set("enabled", c)} />
+        <Switch
+          id={`${p}-list-enabled`}
+          checked={draft.enabled}
+          onCheckedChange={(c) => set("enabled", c)}
+        />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <SecsField
@@ -356,20 +373,35 @@ function ListFormFields({
           fallback={DNS_LIMITS.defaultMaxStaleSecs}
         />
       </div>
-      <ProvenanceField id={`${p}-list-title`} label="Title" value={draft.title} onChange={(v) => set("title", v)} error={show("metadata.title", draft.title)} />
-      <ProvenanceField id={`${p}-list-publisher`} label="Publisher" help unspecified value={draft.publisher} onChange={(v) => set("publisher", v)} error={show("metadata.publisher", draft.publisher)} />
-      <ProvenanceField id={`${p}-list-license`} label="Licence" unspecified value={draft.license} onChange={(v) => set("license", v)} error={show("metadata.license", draft.license)} />
+      <ProvenanceField
+        id={`${p}-list-title`}
+        label="Title"
+        value={draft.title}
+        onChange={(v) => set("title", v)}
+        error={show("metadata.title", draft.title)}
+      />
+      <ProvenanceField
+        id={`${p}-list-publisher`}
+        label="Publisher"
+        help
+        unspecified
+        value={draft.publisher}
+        onChange={(v) => set("publisher", v)}
+        error={show("metadata.publisher", draft.publisher)}
+      />
+      <ProvenanceField
+        id={`${p}-list-license`}
+        label="Licence"
+        unspecified
+        value={draft.license}
+        onChange={(v) => set("license", v)}
+        error={show("metadata.license", draft.license)}
+      />
     </div>
   );
 }
 
-function AddListDialog({
-  editor,
-  desired,
-}: {
-  editor: DnsEditor;
-  desired: DnsDesiredView | null;
-}) {
+function AddListDialog({ editor, desired }: { editor: DnsEditor; desired: DnsDesiredView | null }) {
   const [draft, setDraft] = useState<ListDraft>(EMPTY_DRAFT);
   const { pinned, basis, stale, pin } = usePinnedBasis(desired, editor);
   const existing = pinned?.config.sources ?? [];
@@ -430,7 +462,11 @@ function EditListDialog({
     draft.publisher.trim() !== stored.publisher ||
     draft.license.trim() !== stored.license
   ) {
-    patch.metadata = { title: draft.title.trim(), publisher: draft.publisher.trim(), license: draft.license.trim() };
+    patch.metadata = {
+      title: draft.title.trim(),
+      publisher: draft.publisher.trim(),
+      license: draft.license.trim(),
+    };
   }
   const changed = Object.keys(patch).length > 0;
   return (
@@ -493,20 +529,24 @@ function ListRow({
           {publisher} · {license}
         </div>
         <div className="text-[0.8125rem] text-muted-foreground">
-          {FORMAT_LABEL[source.format]} · every {formatSecs(interval)} · keeps a copy up to {formatSecs(stale)}
+          {FORMAT_LABEL[source.format]} · every {formatSecs(interval)} · keeps a copy up to{" "}
+          {formatSecs(stale)}
         </div>
         <div className="text-[0.8125rem]">
           <RowStatus statuses={statuses} source={source} desiredVersion={desiredVersion} />
         </div>
         {note ? (
-          <div role="status" className={`text-[0.8125rem] ${note.kind === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+          <div
+            role="status"
+            className={`text-[0.8125rem] ${note.kind === "error" ? "text-destructive" : "text-muted-foreground"}`}
+          >
             {note.kind === "error" ? (
               note.message
             ) : (
               <>
-                {note.result.created ? "Refresh requested" : "A refresh was already requested"}, expires{" "}
-                <TimeAgo iso={note.result.expires_at} />. The gateway checks about once a minute; this does not
-                mean the list was downloaded.
+                {note.result.created ? "Refresh requested" : "A refresh was already requested"},
+                expires <TimeAgo iso={note.result.expires_at} />. The gateway checks about once a
+                minute; this does not mean the list was downloaded.
               </>
             )}
           </div>
@@ -518,7 +558,10 @@ function ListRow({
           checked={source.enabled}
           disabled={editor.busy || editor.conflict}
           onCheckedChange={(checked) =>
-            void editor.run([{ op: "set_list", id: source.id, patch: { enabled: checked } }], desiredVersion)
+            void editor.run(
+              [{ op: "set_list", id: source.id, patch: { enabled: checked } }],
+              desiredVersion,
+            )
           }
         />
         <Button

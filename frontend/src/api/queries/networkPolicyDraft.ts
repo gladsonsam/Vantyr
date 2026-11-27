@@ -1,8 +1,4 @@
-import type {
-  NetworkPolicyDraft,
-  NetworkPolicyRule,
-  NetworkPolicyView,
-} from "@/api/types";
+import type { NetworkPolicyDraft, NetworkPolicyRule, NetworkPolicyView } from "@/api/types";
 
 /** Stored content the composer cannot carry into a new draft (the server refuses it for now). */
 export type DroppedPolicyContent =
@@ -46,16 +42,10 @@ export function policyToDraft(view: NetworkPolicyView): {
     return true;
   });
   const device_profiles = Object.fromEntries(
-    Object.entries(body.device_profiles).map(([name, rules]) => [
-      name,
-      rules.filter(keep),
-    ]),
+    Object.entries(body.device_profiles).map(([name, rules]) => [name, rules.filter(keep)]),
   );
 
-  const personRules = Object.values(body.person_rules).reduce(
-    (n, rules) => n + rules.length,
-    0,
-  );
+  const personRules = Object.values(body.person_rules).reduce((n, rules) => n + rules.length, 0);
   const dropped: DroppedPolicyContent[] = [];
   if (personRules > 0) dropped.push({ kind: "person_rules", count: personRules });
   if (body.exceptions.length > 0)

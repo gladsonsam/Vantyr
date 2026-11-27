@@ -8,7 +8,9 @@ type StatStripProps = {
 
 /** Compact inline row of stats (icon, number, label). */
 export function StatStrip({ children, className }: StatStripProps) {
-  return <div className={cn("flex flex-wrap items-center gap-x-1 gap-y-1", className)}>{children}</div>;
+  return (
+    <div className={cn("flex flex-wrap items-center gap-x-1 gap-y-1", className)}>{children}</div>
+  );
 }
 
 /** Hairline between two stats, as in Arcane's page header. */
@@ -55,7 +57,8 @@ export function StatStripItem({
       className={cn(
         base,
         "outline-none hover:bg-muted/40 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-        active && "bg-primary/15 text-primary hover:bg-primary/15 hover:text-primary [&>span:nth-child(2)]:text-primary",
+        active &&
+          "bg-primary/15 text-primary hover:bg-primary/15 hover:text-primary [&>span:nth-child(2)]:text-primary",
         className,
       )}
     >

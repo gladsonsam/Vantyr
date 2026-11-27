@@ -17,7 +17,8 @@ export function StatCard({
   label: string;
   value: ReactNode;
   delta?: ReactNode;
-  trend: number[];
+  /** Omit when there is no per-bucket data: no trend is ever invented. */
+  trend?: number[];
   trendMax?: number;
   hue: string;
 }) {
@@ -30,11 +31,11 @@ export function StatCard({
           </div>
           {delta ? <span className="text-sm font-medium tabular-nums">{delta}</span> : null}
         </div>
-        <Sparkline
-          values={trend}
-          max={trendMax}
-          className={cn("mt-4 block h-16 w-full", hue)}
-        />
+        {trend ? (
+          <Sparkline values={trend} max={trendMax} className={cn("mt-4 block h-16 w-full", hue)} />
+        ) : (
+          <div className="h-5" />
+        )}
       </div>
       <div className={cn("px-1 text-base font-medium", hue)}>{label}</div>
     </div>

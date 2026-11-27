@@ -35,8 +35,7 @@ import type {
 import { asRecord, page } from "./helpers";
 
 const HOUSEHOLD = "hh-demo";
-const ago = (minutes: number) =>
-  new Date(Date.now() - minutes * 60_000).toISOString();
+const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 
 /** Fake Vantyr Network inventory. In memory, so creating and editing works for the demo session. */
 export function demoNetworkApi(): Partial<ApiClient> {
@@ -434,8 +433,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       person_display_name: "Jo",
     },
   ];
-  const activeBinding = () =>
-    bindings.find((b) => b.active && b.dashboard_user === DEMO_USER);
+  const activeBinding = () => bindings.find((b) => b.active && b.dashboard_user === DEMO_USER);
   const requireBinding = () => {
     const binding = activeBinding();
     if (!binding)
@@ -557,11 +555,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
   ];
   // Demo policy bodies. r13 baseline malware+phishing; r14 adds two device profiles; r15 adds a
   // baseline chat block. Content only: metadata comes from `policies`.
-  const demoRule = (
-    ruleId: string,
-    domain: string,
-    reason: string,
-  ): NetworkPolicyRule => ({
+  const demoRule = (ruleId: string, domain: string, reason: string): NetworkPolicyRule => ({
     id: ruleId,
     effect: "deny",
     matcher: { domain_suffix: domain },
@@ -574,7 +568,9 @@ export function demoNetworkApi(): Partial<ApiClient> {
   ];
   const r14Profiles: Record<string, NetworkPolicyRule[]> = {
     "Living room TV": [demoRule("tv-mature", "mature.example", "Not for the living room")],
-    "Kitchen tablet": [demoRule("tablet-social", "social.example", "No social media on the tablet")],
+    "Kitchen tablet": [
+      demoRule("tablet-social", "social.example", "No social media on the tablet"),
+    ],
   };
   const policyBodies = new Map<number, NetworkPolicyBody>();
   const setBody = (
@@ -607,12 +603,14 @@ export function demoNetworkApi(): Partial<ApiClient> {
   const policyView = (revision: number): NetworkPolicyView => {
     const meta = policies.find((p) => p.revision === revision);
     const body = policyBodies.get(revision);
-    if (!meta || !body) throw new ApiError("policy revision is not readable in this household", 404);
+    if (!meta || !body)
+      throw new ApiError("policy revision is not readable in this household", 404);
     return { ...meta, policy: { ...body, published_at: meta.published_at } };
   };
   const checkRevision = (value: unknown): number => {
     const n = typeof value === "number" ? value : Number(value);
-    if (!Number.isInteger(n) || n < 1) throw new ApiError("revision must be a positive integer", 400);
+    if (!Number.isInteger(n) || n < 1)
+      throw new ApiError("revision must be a positive integer", 400);
     return n;
   };
   const provenance = (view: NetworkPolicyView) => ({
@@ -634,7 +632,11 @@ export function demoNetworkApi(): Partial<ApiClient> {
     compare("timezone", a.timezone, b.timezone);
     compare("stale_after_secs", a.stale_after_secs, b.stale_after_secs);
     compare("event_retention_secs", a.event_retention_secs, b.event_retention_secs);
-    compare("device_profile_ids", Object.keys(a.device_profiles).sort(), Object.keys(b.device_profiles).sort());
+    compare(
+      "device_profile_ids",
+      Object.keys(a.device_profiles).sort(),
+      Object.keys(b.device_profiles).sort(),
+    );
     compare("person_rules", a.person_rules, b.person_rules);
     compare("exceptions", a.exceptions, b.exceptions);
     const index = (p: NetworkPolicyBody) => {
@@ -680,18 +682,26 @@ export function demoNetworkApi(): Partial<ApiClient> {
     ["network_binding_create", 60 * 24 * 7, "demo-user-admin", "ok", { person_id: "per-jo" }],
     ["network_device_enroll", 60 * 24 * 6, "demo-user-jo", "ok", { device_id: "dev-tablet" }],
     ["network_setup_grant_issue", 60 * 24 * 2, "demo-user-jo", "ok", { purpose: "proxy_setup" }],
-    ["network_setup_grant_consume", 60 * 24 * 2 - 5, "demo-user-jo", "denied", { purpose: "proxy_setup" }],
+    [
+      "network_setup_grant_consume",
+      60 * 24 * 2 - 5,
+      "demo-user-jo",
+      "denied",
+      { purpose: "proxy_setup" },
+    ],
     ["network_policy_rollback", 60 * 24 * 5, "demo-user-admin", "ok", { source_revision: 13 }],
     ["network_person_create", 60 * 24 * 21, "demo-user-admin", "ok", { display_name: "Jo" }],
     ["network_device_create", 60 * 24 * 22, "demo-user-admin", "ok", { label: "Kitchen tablet" }],
-    ["network_grant_create", 60 * 24 * 25, "demo-user-admin", "ok", { grant_name: "network_enroll" }],
+    [
+      "network_grant_create",
+      60 * 24 * 25,
+      "demo-user-admin",
+      "ok",
+      { grant_name: "network_enroll" },
+    ],
   ];
   const audit: NetworkAuditRow[] = [
-    [
-      "network_gateway_desired_policy_set",
-      45,
-      { gateway_id: GATEWAY, revision: 15 },
-    ],
+    ["network_gateway_desired_policy_set", 45, { gateway_id: GATEWAY, revision: 15 }],
     ["network_policy_publish", 45, { revision: 15 }],
     [
       "network_gateway_credential_rotate",
@@ -731,8 +741,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
   audit.sort((x, y) => minute(y) - minute(x) || y.id - x.id);
 
   const now = () => new Date().toISOString();
-  const text = (value: unknown) =>
-    typeof value === "string" ? value.trim() : "";
+  const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
   return {
     networkHouseholds: async () => ({ households }),
@@ -790,8 +799,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       const b = asRecord(body);
       const person = persons.find((p) => p.id === personId);
       if (person) {
-        if (typeof b.display_name === "string")
-          person.display_name = b.display_name.trim();
+        if (typeof b.display_name === "string") person.display_name = b.display_name.trim();
         if ("note" in b) person.note = text(b.note) || null;
         if (typeof b.is_default_profile === "boolean") {
           if (b.is_default_profile) for (const p of persons) p.is_default_profile = false;
@@ -813,8 +821,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
         household_id: HOUSEHOLD,
         label: text(b.label),
         shared: b.shared === true,
-        device_type: (text(b.device_type) ||
-          "unknown") as NetworkDevice["device_type"],
+        device_type: (text(b.device_type) || "unknown") as NetworkDevice["device_type"],
         created_at: now(),
         updated_at: now(),
       });
@@ -854,8 +861,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       const b = asRecord(body);
       const assignment = assignments.find((a) => a.id === assignmentId);
       if (assignment) {
-        if (typeof b.role === "string")
-          assignment.role = b.role as NetworkAssignment["role"];
+        if (typeof b.role === "string") assignment.role = b.role as NetworkAssignment["role"];
         if (typeof b.active === "boolean") assignment.active = b.active;
         // Omitted keeps; explicit null (or empty) clears.
         if ("agent_id" in b) assignment.agent_id = text(b.agent_id) || null;
@@ -977,8 +983,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
         revoked_at: null,
         dashboard_username: "admin",
         dashboard_display_name: "Demo Admin",
-        person_display_name:
-          persons.find((p) => p.id === text(b.person_id))?.display_name ?? "",
+        person_display_name: persons.find((p) => p.id === text(b.person_id))?.display_name ?? "",
       });
       return { ok: true, binding_id: created };
     },
@@ -1012,7 +1017,11 @@ export function demoNetworkApi(): Partial<ApiClient> {
     },
     networkDeviceAuthorize: async (_household, bindingId, body) => {
       const deviceId = text(asRecord(body).device_id);
-      if (deviceAuths.some((a) => a.binding_id === bindingId && a.device_id === deviceId && a.status === "enrolled"))
+      if (
+        deviceAuths.some(
+          (a) => a.binding_id === bindingId && a.device_id === deviceId && a.status === "enrolled",
+        )
+      )
         throw new ApiError("That device is already authorized for this person.", 409);
       const created = id("enr");
       deviceAuths.push({
@@ -1026,7 +1035,11 @@ export function demoNetworkApi(): Partial<ApiClient> {
       });
       const binding = bindings.find((x) => x.id === bindingId);
       const device = devices.find((d) => d.id === deviceId);
-      if (binding?.dashboard_user === DEMO_USER && device && !ownDevices.some((d) => d.id === deviceId))
+      if (
+        binding?.dashboard_user === DEMO_USER &&
+        device &&
+        !ownDevices.some((d) => d.id === deviceId)
+      )
         ownDevices.push({
           id: device.id,
           label: device.label,
@@ -1231,8 +1244,15 @@ export function demoNetworkApi(): Partial<ApiClient> {
     networkPolicyRevision: async (_household, revision): Promise<NetworkPolicyViewResponse> => ({
       policy: policyView(checkRevision(revision)),
     }),
-    networkPolicyDiff: async (_household, fromRevision, toRevision): Promise<NetworkPolicyDiffResponse> => ({
-      diff: buildDiff(policyView(checkRevision(fromRevision)), policyView(checkRevision(toRevision))),
+    networkPolicyDiff: async (
+      _household,
+      fromRevision,
+      toRevision,
+    ): Promise<NetworkPolicyDiffResponse> => ({
+      diff: buildDiff(
+        policyView(checkRevision(fromRevision)),
+        policyView(checkRevision(toRevision)),
+      ),
     }),
 
     networkGateways: async (_household, params) => ({
@@ -1296,21 +1316,12 @@ export function demoNetworkApi(): Partial<ApiClient> {
     }),
     networkGatewayCredentialIssue: async (_household, gatewayId, body) =>
       issueCredential(gatewayId, body, null),
-    networkGatewayCredentialRotate: async (
-      _household,
-      gatewayId,
-      credentialId,
-      body,
-    ) => {
+    networkGatewayCredentialRotate: async (_household, gatewayId, credentialId, body) => {
       const old = credentials.find((c) => c.id === credentialId);
       if (old) old.revoked_at = now();
       return issueCredential(gatewayId, body, credentialId);
     },
-    networkGatewayCredentialRevoke: async (
-      _household,
-      _gatewayId,
-      credentialId,
-    ) => {
+    networkGatewayCredentialRevoke: async (_household, _gatewayId, credentialId) => {
       const credential = credentials.find((c) => c.id === credentialId);
       if (credential) credential.revoked_at = now();
       return { ok: true };
@@ -1327,8 +1338,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       return { policies: rows, count: rows.length };
     },
     networkPolicyPublish: async (_household, body) => savePolicy(null, body),
-    networkPolicyRollback: async (_household, body) =>
-      savePolicy(asRecord(body).source_revision),
+    networkPolicyRollback: async (_household, body) => savePolicy(asRecord(body).source_revision),
     networkGatewayDesiredPolicy: async (_household, gatewayId) => ({
       desired: desired?.gateway_id === gatewayId ? desired : null,
     }),
@@ -1351,12 +1361,9 @@ export function demoNetworkApi(): Partial<ApiClient> {
     rotatedFrom: string | null,
   ): { credential_id: string; token: string; expires_at: string } {
     const b = asRecord(body);
-    const hours =
-      typeof b.expires_in_hours === "number" ? b.expires_in_hours : 24;
+    const hours = typeof b.expires_in_hours === "number" ? b.expires_in_hours : 24;
     const commands =
-      Array.isArray(b.commands) && b.commands.length > 0
-        ? b.commands
-        : ["heartbeat"];
+      Array.isArray(b.commands) && b.commands.length > 0 ? b.commands : ["heartbeat"];
     const credentialId = id("cred");
     const expires = new Date(Date.now() + hours * 3_600_000).toISOString();
     credentials.unshift({
@@ -1365,8 +1372,7 @@ export function demoNetworkApi(): Partial<ApiClient> {
       gateway_id: gatewayId,
       kind: gateways.find((g) => g.id === gatewayId)?.kind ?? "dns",
       audience: "vantyr-gateway-worker",
-      allowed_commands:
-        commands as NetworkGatewayCredential["allowed_commands"],
+      allowed_commands: commands as NetworkGatewayCredential["allowed_commands"],
       expires_at: expires,
       revoked_at: null,
       last_used_at: null,

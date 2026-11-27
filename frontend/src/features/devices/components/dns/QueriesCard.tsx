@@ -7,6 +7,7 @@ import { useDnsStatsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import type { StatsRange } from "@/features/network/runtime/types";
 import { RangePicker } from "../RangePicker";
 import { QueryChart } from "./QueryChart";
+import { seriesHasBlocked } from "./statsWindowText";
 import { TopDomains } from "./TopDomains";
 
 function Figure({ value }: { value: number }) {
@@ -38,14 +39,21 @@ export function QueriesCard({ deviceId }: { deviceId: string }) {
   const stats = query.data.data;
   const observed = stats.observations;
   const blocked = stats.blockedObservations;
-  const allowed = observed - blocked;
+  // The server's own totals; never derived from buckets.
+  const allowed = stats.allowed ?? observed - blocked;
   const share = observed === 0 ? 0 : (blocked / observed) * 100;
   const totals = stats.series.map((bucket) => bucket.total);
-  const allowedSeries = stats.series.map((bucket) => bucket.total - bucket.blocked);
-  const blockedSeries = stats.series.map((bucket) => bucket.blocked);
-  const ratioSeries = stats.series.map((bucket) =>
-    bucket.total === 0 ? 0 : (bucket.blocked / bucket.total) * 100,
-  );
+  // Trends only where per-bucket blocked counts exist (the demo); the real server sends totals only.
+  const split = seriesHasBlocked(stats.series);
+  const allowedSeries = split
+    ? stats.series.map((bucket) => bucket.total - (bucket.blocked ?? 0))
+    : undefined;
+  const blockedSeries = split ? stats.series.map((bucket) => bucket.blocked ?? 0) : undefined;
+  const ratioSeries = split
+    ? stats.series.map((bucket) =>
+        bucket.total === 0 ? 0 : ((bucket.blocked ?? 0) / bucket.total) * 100,
+      )
+    : undefined;
   const pct = (part: number) => (observed === 0 ? "0%" : `${Math.round((part / observed) * 100)}%`);
 
   return (
@@ -84,6 +92,9 @@ export function QueriesCard({ deviceId }: { deviceId: string }) {
         <HelpTip label="About these counts">
           Each count is how many times a domain was observed, not a visit or a page view. Vantyr
           does not keep browser history, and only hostnames are recorded, never full URLs.
+          {split
+            ? null
+            : " The over-time chart shows observations per time bucket; the server does not split each bucket into allowed and blocked."}
         </HelpTip>
       </p>
       <div className="rounded-xl border border-border/70 bg-card/10 p-5">

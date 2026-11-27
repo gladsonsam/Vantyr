@@ -134,7 +134,11 @@ function TerminalSession({ agentId }: { agentId: string }) {
 }
 
 function Unavailable({ children }: { children: string }) {
-  return <div className="rounded-xl border border-border/70 bg-card/10 p-6 text-sm text-muted-foreground">{children}</div>;
+  return (
+    <div className="rounded-xl border border-border/70 bg-card/10 p-6 text-sm text-muted-foreground">
+      {children}
+    </div>
+  );
 }
 
 /** Connection state on the left, the one thing you can do about it on the right. */

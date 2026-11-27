@@ -27,7 +27,12 @@ const DOWNLOAD: Record<DnsDownloadState, { text: string; label: string }> = {
 };
 
 function Dot({ className }: { className: string }) {
-  return <span className={cn("size-1.5 shrink-0 rounded-full bg-current", className)} aria-hidden="true" />;
+  return (
+    <span
+      className={cn("size-1.5 shrink-0 rounded-full bg-current", className)}
+      aria-hidden="true"
+    />
+  );
 }
 
 function formatBytes(n: number): string {
@@ -67,7 +72,10 @@ function Fact({ label, iso }: { label: string; iso: string | null }) {
 }
 
 function SourceRow({ source, title }: { source: DnsSourceStatus; title?: string }) {
-  const state = DOWNLOAD[source.download] ?? { text: "text-muted-foreground", label: source.download };
+  const state = DOWNLOAD[source.download] ?? {
+    text: "text-muted-foreground",
+    label: source.download,
+  };
   return (
     <li className="space-y-1 px-5 py-3">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
@@ -82,7 +90,9 @@ function SourceRow({ source, title }: { source: DnsSourceStatus; title?: string 
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[0.8125rem] text-muted-foreground">
         <span>
-          {source.rule_count === null ? "Rules unknown" : `${source.rule_count.toLocaleString()} rules`}
+          {source.rule_count === null
+            ? "Rules unknown"
+            : `${source.rule_count.toLocaleString()} rules`}
         </span>
         <span>{formatBytes(source.bytes)}</span>
         <Fact label="Checked" iso={source.checked_at} />
@@ -95,7 +105,8 @@ function SourceRow({ source, title }: { source: DnsSourceStatus; title?: string 
           {source.failure_count > 0 ? <span>{source.failure_count} failures</span> : null}
           {source.cooldown_until ? (
             <span>
-              {source.failure_count > 0 ? " · " : ""}cooldown until <TimeAgo iso={source.cooldown_until} />
+              {source.failure_count > 0 ? " · " : ""}cooldown until{" "}
+              <TimeAgo iso={source.cooldown_until} />
             </span>
           ) : null}
           {source.last_error ? (
@@ -141,7 +152,9 @@ function GatewayStatusCard({
           />
           <LifecycleRow
             tone={deliveredVersion === null ? "text-muted-foreground" : "text-primary"}
-            title={deliveredVersion === null ? "Not delivered yet" : `Delivered v${deliveredVersion}`}
+            title={
+              deliveredVersion === null ? "Not delivered yet" : `Delivered v${deliveredVersion}`
+            }
           >
             {deliveredAt ? <TimeAgo iso={deliveredAt} /> : null}
           </LifecycleRow>
@@ -153,7 +166,13 @@ function GatewayStatusCard({
             </LifecycleRow>
           ) : (
             <LifecycleRow
-              tone={applied === null ? "text-muted-foreground" : behind ? "text-warning" : "text-primary"}
+              tone={
+                applied === null
+                  ? "text-muted-foreground"
+                  : behind
+                    ? "text-warning"
+                    : "text-primary"
+              }
               title={
                 applied === null ? (
                   "Never applied"
@@ -184,7 +203,9 @@ function GatewayStatusCard({
                     "Apply time not reported"
                   )}
                   {behind ? (
-                    <span className="block">Gateway is on an older configuration than desired.</span>
+                    <span className="block">
+                      Gateway is on an older configuration than desired.
+                    </span>
                   ) : null}
                 </>
               )}
@@ -197,7 +218,9 @@ function GatewayStatusCard({
           </p>
         ) : null}
         {applied?.last_error ? (
-          <p className="break-words text-[0.8125rem] text-warning">Apply error: {applied.last_error}</p>
+          <p className="break-words text-[0.8125rem] text-warning">
+            Apply error: {applied.last_error}
+          </p>
         ) : null}
       </div>
       {status && status.sources.length > 0 ? (
@@ -274,8 +297,8 @@ export function DnsStatusPanel({
       ) : null}
       {gatewaysShown.length === 0 ? (
         <p className="rounded-xl border border-border/70 bg-card/10 px-5 py-4 text-sm text-muted-foreground">
-          No gateway has fetched or reported DNS management yet. Reports need a worker credential with
-          the DNS report scope and the worker running with --dns-management.
+          No gateway has fetched or reported DNS management yet. Reports need a worker credential
+          with the DNS report scope and the worker running with --dns-management.
         </p>
       ) : (
         gatewaysShown.map((gateway) => (

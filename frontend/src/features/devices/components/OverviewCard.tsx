@@ -16,7 +16,12 @@ export function OverviewCard({
   children: ReactNode;
 }) {
   return (
-    <section className={cn("flex min-w-0 flex-col gap-5 rounded-xl border border-border/70 bg-card/10 p-6", className)}>
+    <section
+      className={cn(
+        "flex min-w-0 flex-col gap-5 rounded-xl border border-border/70 bg-card/10 p-6",
+        className,
+      )}
+    >
       <div className="flex min-h-8 items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 text-base font-semibold">
           {title}

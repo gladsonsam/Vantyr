@@ -1,4 +1,4 @@
-import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { networkKeys } from "@/api/queries/network";
 import { useNetworkRuntime } from "@/features/network/runtime/NetworkRuntimeSource";
 import type { EventsQuery } from "@/features/network/runtime/types";
@@ -19,4 +19,11 @@ export function useActivityEvents(query: Omit<EventsQuery, "cursor" | "offset">)
         ? last.data.nextCursor
         : undefined,
   });
+}
+
+/** Starts the list over from the newest row, with a fresh window. Used when "Load more" can no longer continue. */
+export function useResetActivityEvents() {
+  const queryClient = useQueryClient();
+  return () =>
+    void queryClient.resetQueries({ queryKey: [...networkKeys.all, "runtime", "events-list"] });
 }

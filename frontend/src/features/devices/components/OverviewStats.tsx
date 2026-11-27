@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { StatsWindowNote } from "./dns/StatsWindowNote";
+import { seriesHasBlocked } from "./dns/statsWindowText";
 import { StatCard } from "@/components/common/StatCard";
 import { useDnsStatsQuery, useProxyStatsQuery } from "@/features/network/runtime/useRuntimeQueries";
 
@@ -16,14 +17,21 @@ export function OverviewDnsStats({
   leading?: ReactNode[];
 }) {
   const query = useDnsStatsQuery({ deviceId, range: "24h" });
-  if (query.isPending) return leading.length > 0 ? <div className="grid grid-cols-2 gap-5">{leading}</div> : <div className="h-40" />;
+  if (query.isPending)
+    return leading.length > 0 ? (
+      <div className="grid grid-cols-2 gap-5">{leading}</div>
+    ) : (
+      <div className="h-40" />
+    );
   if (query.isError || query.data.state === "unavailable") {
     return leading.length > 0 ? <div className="grid grid-cols-2 gap-5">{leading}</div> : null;
   }
   const stats = query.data.data;
   const total = stats.observations;
   const blocked = stats.blockedObservations;
-  const allowed = total - blocked;
+  // The server's own totals; per-bucket trends exist only when every bucket carries a blocked count.
+  const allowed = stats.allowed ?? total - blocked;
+  const split = seriesHasBlocked(stats.series);
   const top = stats.topBlocked[0];
   return (
     <div className="space-y-3">
@@ -47,22 +55,26 @@ export function OverviewDnsStats({
           label="Allowed"
           value={allowed.toLocaleString()}
           delta={pct(allowed, total)}
-          trend={stats.series.map((b) => b.total - b.blocked)}
+          trend={split ? stats.series.map((b) => b.total - (b.blocked ?? 0)) : undefined}
           hue="text-info"
         />
         <StatCard
           label="Blocked"
           value={blocked.toLocaleString()}
           delta={pct(blocked, total)}
-          trend={stats.series.map((b) => b.blocked)}
+          trend={split ? stats.series.map((b) => b.blocked ?? 0) : undefined}
           hue="text-destructive"
         />
         {top ? (
           <StatCard
             label="Top blocked"
-            value={<span title={top.domain} className="block truncate text-xl leading-9">{top.domain}</span>}
+            value={
+              <span title={top.domain} className="block truncate text-xl leading-9">
+                {top.domain}
+              </span>
+            }
             delta={`seen ${top.count.toLocaleString()}×`}
-            trend={stats.series.map((b) => b.blocked)}
+            trend={split ? stats.series.map((b) => b.blocked ?? 0) : undefined}
             hue="text-warning"
           />
         ) : null}
@@ -84,7 +96,11 @@ export function OverviewProxyStats({ deviceId }: { deviceId: string }) {
   const top = stats.topBlocked[0];
   return (
     <div className="space-y-3">
-      <div className={top ? "grid grid-cols-2 gap-5 lg:grid-cols-4" : "grid grid-cols-2 gap-5 lg:grid-cols-3"}>
+      <div
+        className={
+          top ? "grid grid-cols-2 gap-5 lg:grid-cols-4" : "grid grid-cols-2 gap-5 lg:grid-cols-3"
+        }
+      >
         <StatCard
           label="Observations"
           value={total.toLocaleString()}
@@ -108,7 +124,11 @@ export function OverviewProxyStats({ deviceId }: { deviceId: string }) {
         {top ? (
           <StatCard
             label="Top blocked"
-            value={<span title={top.domain} className="block truncate text-xl leading-9">{top.domain}</span>}
+            value={
+              <span title={top.domain} className="block truncate text-xl leading-9">
+                {top.domain}
+              </span>
+            }
             delta={`seen ${top.count.toLocaleString()}×`}
             trend={stats.series.map((b) => b.blocked)}
             hue="text-warning"

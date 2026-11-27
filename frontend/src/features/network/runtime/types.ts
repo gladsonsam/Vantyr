@@ -328,7 +328,24 @@ export interface IssuedProxyCredential {
 // ── Events ──────────────────────────────────────────────────────────────────
 
 export type EventSource = "dns" | "proxy" | "agent";
-export type IdentityEvidence = "verified" | "asserted" | "weak" | "unknown";
+/**
+ * `observed` is a DNS worker's network observation of a device: the weakest evidence that still names
+ * something, never a person and never a verified sign-in.
+ */
+export type IdentityEvidence = "verified" | "asserted" | "weak" | "unknown" | "observed";
+
+/** DNS-only detail of one observation. Absent on proxy/agent events and in the demo's older fixtures. */
+export interface DnsEventDetail {
+  /** When the server stored the observation (the event's `at` is when the worker observed it). */
+  receivedAt: string;
+  queryType: string;
+  protocol: string;
+  appliedRule: string | null;
+  filterBlocked: boolean;
+  filterSourceId: string | null;
+  filterSourceKind: "list" | "service" | null;
+  deniedAliasTarget: string | null;
+}
 
 export interface NetworkEvent {
   id: string;
@@ -346,9 +363,12 @@ export interface NetworkEvent {
   subject: string;
   effect: Effect;
   reason: string;
-  revision: number;
-  /** Events describing one action share this id, so one visit is not counted three times. */
-  correlationId: string;
+  /** The policy revision the gateway reported, or `null` when it reported none. */
+  revision: number | null;
+  /** Events describing one action share this id, so one visit is not counted three times. `null` when none was reported. */
+  correlationId: string | null;
+  /** Only DNS observations from the real server carry this. */
+  dns?: DnsEventDetail;
   /**
    * How many times the gateway observed this host or domain in this row (1 for a raw row). These are
    * observations of a domain or host, not browser visits or page history.
@@ -398,6 +418,11 @@ export interface EventsRetention {
 export interface EventsCapabilities {
   sources: EventSource[];
   grouping: EventsGrouping[];
+  /**
+   * Whether the "Unrecognised devices" filter works. The real server cannot filter on "no device", so
+   * it reports `false`; when omitted it is treated as supported.
+   */
+  unrecognisedFilter?: boolean;
 }
 
 export interface EventsPage {
@@ -408,8 +433,15 @@ export interface EventsPage {
   hasMore: boolean;
   nextCursor: string | null;
   retention: EventsRetention;
-  /** The requested range reaches back further than anything stored. */
+  /**
+   * The range may be incomplete. For the real DNS store this is a conservative warning (the count cap
+   * may have evicted older rows, or offset paging was capped), never proof of eviction or its cause.
+   */
   truncated: boolean;
+  /** Offset paging hit its cap. The real source always offers a cursor, so this is normally false. */
+  paginationLimited?: boolean;
+  /** Counts only what workers reported. Not visits, not complete history. Set by the real source. */
+  observedOnly?: boolean;
 }
 
 // ── DNS statistics ──────────────────────────────────────────────────────────
@@ -434,6 +466,9 @@ export interface StatsWindow {
   /** Whole days of data that exist inside the request. */
   retainedDays: number;
   shortened: boolean;
+  /** The requested window bounds. Chart axes and empty states use these, not the actual bounds. Real source only. */
+  requestedStart?: string;
+  requestedEnd?: string;
   /**
    * Why the window is shorter than requested: the configured retention in days, the event count cap
    * evicting older rows, or neither (`none`, not shortened).
@@ -441,11 +476,22 @@ export interface StatsWindow {
   limitedBy: StatsLimit;
 }
 
-export type StatsLimit = "days" | "count_cap" | "none";
+/**
+ * `unknown` means "may be incomplete, cause not known": the real server's `shortened` is a conservative
+ * warning that cannot tell retention days from the count cap, and it is not proof anything was removed.
+ */
+export type StatsLimit = "days" | "count_cap" | "unknown" | "none";
 
 export interface DomainCount {
   domain: string;
   count: number;
+}
+
+/** One DNS statistics bucket. The server reports a total per bucket only, so `blocked` can be absent. */
+export interface DnsSeriesPoint {
+  at: string;
+  total: number;
+  blocked?: number;
 }
 
 /** Counts of DNS queries answered, bucketed over time. These are domain decisions, not page visits. */
@@ -456,10 +502,26 @@ export interface DnsStats {
   observations: number;
   blockedObservations: number;
   window: StatsWindow;
-  /** Oldest first; evenly spaced buckets across the range. */
-  series: { at: string; total: number; blocked: number }[];
+  /** Oldest first; evenly spaced buckets across the requested range. Sums to `total` on the real source. */
+  series: DnsSeriesPoint[];
   topDomains: DomainCount[];
   topBlocked: DomainCount[];
+  /** Allowed decisions (a policy decision, not answer success). Real source only. */
+  allowed?: number;
+  /** Queries that mapped to no device. Real source only. */
+  unknownDeviceQueries?: number;
+  /** Real source only. Counts per device id; the server sends no labels. */
+  topDevices?: { deviceId: string; count: number }[];
+  /** Whether each top list was cut at its cap. Real source only. */
+  topTruncated?: { domains: boolean; blocked: boolean; devices: boolean };
+  /** Store state at read time. Real source only. */
+  retention?: {
+    keepDays: number;
+    oldestStoredAt: string | null;
+    newestStoredAt: string | null;
+    storedCount: number;
+    capCount: number;
+  };
 }
 
 /** Counts of proxy requests decided, bucketed over time. Hosts only: never full URLs or page contents. */

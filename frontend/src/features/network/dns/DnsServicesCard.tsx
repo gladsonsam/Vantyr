@@ -103,7 +103,10 @@ function ServiceFormFields({
   const err = (key: string) => errorAt(errors, `catalog.services[0].${key}`);
   const show = (key: string, value: string) => (value.length > 0 ? err(key) : null);
   const setDomain = (i: number, next: DnsServiceDomain) =>
-    set("domains", draft.domains.map((d, j) => (j === i ? next : d)));
+    set(
+      "domains",
+      draft.domains.map((d, j) => (j === i ? next : d)),
+    );
   const domainsError = err("domains");
   return (
     <div className="grid max-h-[60vh] gap-4 overflow-y-auto pr-1">
@@ -123,18 +126,31 @@ function ServiceFormFields({
           />
         </Field>
         <Field label="Label" id={`${mode}-svc-label`} error={show("label", draft.label)}>
-          <Input id={`${mode}-svc-label`} value={draft.label} onChange={(e) => set("label", e.target.value)} />
+          <Input
+            id={`${mode}-svc-label`}
+            value={draft.label}
+            onChange={(e) => set("label", e.target.value)}
+          />
         </Field>
       </div>
-      <Field label="Version" id={`${mode}-svc-version`} error={show("version", draft.version)} hint="Your own revision marker for this definition.">
-        <Input id={`${mode}-svc-version`} value={draft.version} onChange={(e) => set("version", e.target.value)} />
+      <Field
+        label="Version"
+        id={`${mode}-svc-version`}
+        error={show("version", draft.version)}
+        hint="Your own revision marker for this definition."
+      >
+        <Input
+          id={`${mode}-svc-version`}
+          value={draft.version}
+          onChange={(e) => set("version", e.target.value)}
+        />
       </Field>
       <div className="space-y-2">
         <div className="flex items-center gap-1.5 text-sm font-medium">
           Domains
           <HelpTip label="About domain types">
-            Suffix blocks the domain and all of its subdomains. Exact blocks only that name. Enter hostnames such as
-            example.com, with no URL, path or wildcard.
+            Suffix blocks the domain and all of its subdomains. Exact blocks only that name. Enter
+            hostnames such as example.com, with no URL, path or wildcard.
           </HelpTip>
         </div>
         {draft.domains.map((d, i) => {
@@ -144,7 +160,9 @@ function ServiceFormFields({
               <div className="flex gap-2">
                 <Select
                   value={d.type}
-                  onValueChange={(v) => setDomain(i, { type: v as DnsServiceDomain["type"], value: d.value })}
+                  onValueChange={(v) =>
+                    setDomain(i, { type: v as DnsServiceDomain["type"], value: d.value })
+                  }
                 >
                   <SelectTrigger aria-label={`Domain ${i + 1} type`} className="w-36 shrink-0">
                     <SelectValue />
@@ -166,7 +184,12 @@ function ServiceFormFields({
                   size="icon"
                   aria-label={`Remove domain ${i + 1}`}
                   disabled={draft.domains.length <= 1}
-                  onClick={() => set("domains", draft.domains.filter((_, j) => j !== i))}
+                  onClick={() =>
+                    set(
+                      "domains",
+                      draft.domains.filter((_, j) => j !== i),
+                    )
+                  }
                 >
                   <X />
                 </Button>
@@ -194,14 +217,34 @@ function ServiceFormFields({
           Add domain
         </Button>
       </div>
-      <Field label="Source (optional)" id={`${mode}-svc-source`} error={err("source")} hint="Where you got these domains.">
-        <Input id={`${mode}-svc-source`} value={draft.source} maxLength={DNS_LIMITS.maxFieldLen} onChange={(e) => set("source", e.target.value)} />
+      <Field
+        label="Source (optional)"
+        id={`${mode}-svc-source`}
+        error={err("source")}
+        hint="Where you got these domains."
+      >
+        <Input
+          id={`${mode}-svc-source`}
+          value={draft.source}
+          maxLength={DNS_LIMITS.maxFieldLen}
+          onChange={(e) => set("source", e.target.value)}
+        />
       </Field>
       <Field label="Evidence (optional)" id={`${mode}-svc-evidence`} error={err("evidence")}>
-        <Input id={`${mode}-svc-evidence`} value={draft.evidence} maxLength={DNS_LIMITS.maxFieldLen} onChange={(e) => set("evidence", e.target.value)} />
+        <Input
+          id={`${mode}-svc-evidence`}
+          value={draft.evidence}
+          maxLength={DNS_LIMITS.maxFieldLen}
+          onChange={(e) => set("evidence", e.target.value)}
+        />
       </Field>
       <Field label="Licence (optional)" id={`${mode}-svc-license`} error={err("license")}>
-        <Input id={`${mode}-svc-license`} value={draft.license} maxLength={DNS_LIMITS.maxFieldLen} onChange={(e) => set("license", e.target.value)} />
+        <Input
+          id={`${mode}-svc-license`}
+          value={draft.license}
+          maxLength={DNS_LIMITS.maxFieldLen}
+          onChange={(e) => set("license", e.target.value)}
+        />
       </Field>
     </div>
   );
@@ -217,15 +260,23 @@ function ServiceDialog({
   service?: DnsServiceDefinition;
 }) {
   const mode = service ? "edit" : "add";
-  const [draft, setDraft] = useState<ServiceDraft>(() => (service ? draftOf(service) : EMPTY_SERVICE));
+  const [draft, setDraft] = useState<ServiceDraft>(() =>
+    service ? draftOf(service) : EMPTY_SERVICE,
+  );
   const { pinned, basis, stale, pin } = usePinnedBasis(desired, editor);
   // Everything below derives from the snapshot the dialog opened with (full set_catalog is built from it).
   const catalog = pinned?.config.catalog ?? null;
   const selected = pinned?.config.selected_services ?? [];
   const next = serviceOf(draft);
-  const errors = validateDnsCatalog({ version: catalog?.version ?? DEFAULT_CATALOG_VERSION, services: [next] });
+  const errors = validateDnsCatalog({
+    version: catalog?.version ?? DEFAULT_CATALOG_VERSION,
+    services: [next],
+  });
   if (!service && catalog?.services.some((s) => s.id === next.id)) {
-    errors.push({ path: "catalog.services[0].id", message: "A service with this id already exists" });
+    errors.push({
+      path: "catalog.services[0].id",
+      message: "A service with this id already exists",
+    });
   }
   const [removeError, setRemoveError] = useState<string | null>(null);
   const count = catalog?.services.length ?? 0;
@@ -255,14 +306,17 @@ function ServiceDialog({
       canSubmit={errors.length === 0 && !stale}
       disabledReason={full ? `At most ${DNS_LIMITS.maxServices} services are allowed.` : undefined}
       onSubmit={async () => {
-        const result = await editor.submit([
-          {
-            op: "set_catalog",
-            catalog: catalogWith(catalog, (all) =>
-              service ? all.map((s) => (s.id === service.id ? next : s)) : [...all, next],
-            ),
-          },
-        ], basis);
+        const result = await editor.submit(
+          [
+            {
+              op: "set_catalog",
+              catalog: catalogWith(catalog, (all) =>
+                service ? all.map((s) => (s.id === service.id ? next : s)) : [...all, next],
+              ),
+            },
+          ],
+          basis,
+        );
         return result.changed ? undefined : { notice: "No changes" };
       }}
       onReset={() => setDraft(service ? draftOf(service) : EMPTY_SERVICE)}
@@ -290,7 +344,8 @@ function ServiceDialog({
             ) : null}
             {selected.includes(service.id) ? (
               <p className="text-xs text-muted-foreground">
-                This service is selected for blocking. Removing it also unselects it, saved together in one change.
+                This service is selected for blocking. Removing it also unselects it, saved together
+                in one change.
               </p>
             ) : null}
           </div>
@@ -395,7 +450,9 @@ function CatalogVersionDialog({
   // The whole catalog is resubmitted, so it must be the one the dialog opened with.
   const catalog = pinned?.config.catalog ?? latestCatalog;
   const trimmed = version.trim();
-  const message = validateDnsCatalog({ version: trimmed, services: [] }).find((e) => e.path === "catalog.version")?.message ?? null;
+  const message =
+    validateDnsCatalog({ version: trimmed, services: [] }).find((e) => e.path === "catalog.version")
+      ?.message ?? null;
   return (
     <FormDialog
       edit
@@ -405,9 +462,10 @@ function CatalogVersionDialog({
       submitLabel="Save"
       canSubmit={message === null && trimmed !== catalog.version && !stale}
       onSubmit={async () => {
-        const result = await editor.submit([
-          { op: "set_catalog", catalog: { version: trimmed, services: catalog.services } },
-        ], basis);
+        const result = await editor.submit(
+          [{ op: "set_catalog", catalog: { version: trimmed, services: catalog.services } }],
+          basis,
+        );
         return result.changed ? undefined : { notice: "No changes" };
       }}
       onReset={() => setVersion(latestCatalog.version)}
@@ -450,7 +508,8 @@ export function DnsServicesCard({
     >
       {services.length === 0 || !desired ? (
         <p className="px-5 py-4 text-sm text-muted-foreground">
-          No services defined. Define the domains of an app or site you want to block; Vantyr does not ship a list.
+          No services defined. Define the domains of an app or site you want to block; Vantyr does
+          not ship a list.
         </p>
       ) : (
         services.map((service) => (

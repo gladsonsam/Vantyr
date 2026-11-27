@@ -36,10 +36,7 @@ export function ScheduleRowsEditor({
       {rows.map((r, i) => {
         const next = overnightEnd(r);
         return (
-          <div
-            key={rowKeys[i]}
-            className="flex flex-col gap-1 border-b border-border/60 pb-3"
-          >
+          <div key={rowKeys[i]} className="flex flex-col gap-1 border-b border-border/60 pb-3">
             <div className="flex flex-wrap items-center gap-2">
               <div className="min-w-32 flex-1">
                 <FormSelect

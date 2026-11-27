@@ -13,10 +13,6 @@ import { droppedText, formatSeconds, plural, scopeLabel } from "./policyViewLib"
 
 // ── Wording ─────────────────────────────────────────────────────────────────
 
-
-
-
-
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const hhmm = (minute: number) =>
   `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
@@ -39,9 +35,9 @@ function scheduleText(schedule: NetworkPolicyRule["schedule"]): string | null {
 }
 
 const effectText = (e: NetworkPolicyEffect) => (e === "allow" ? "Allow" : "Block");
-const effectColor = (e: NetworkPolicyEffect) => (e === "allow" ? "text-success" : "text-destructive");
+const effectColor = (e: NetworkPolicyEffect) =>
+  e === "allow" ? "text-success" : "text-destructive";
 const effectDot = (e: NetworkPolicyEffect) => (e === "allow" ? "bg-success" : "bg-destructive");
-
 
 // ── Shared bits ─────────────────────────────────────────────────────────────
 
@@ -84,7 +80,11 @@ export function PolicyBodyView({ view }: { view: NetworkPolicyView }) {
   const { dropped } = policyToDraft(view);
   // Category and match-everything rules are shown below; person rules and exceptions only as counts.
   const present = dropped.filter(
-    (d) => d.kind === "person_rules" || d.kind === "exceptions" || d.kind === "category_matchers" || d.kind === "any_matchers",
+    (d) =>
+      d.kind === "person_rules" ||
+      d.kind === "exceptions" ||
+      d.kind === "category_matchers" ||
+      d.kind === "any_matchers",
   );
   const profiles = Object.entries(body.device_profiles).sort(([a], [b]) => a.localeCompare(b));
   return (
@@ -284,8 +284,7 @@ export function PolicyDiffView({ diff }: { diff: NetworkPolicyDiff }) {
         </div>
         {rollbackNote ? <div>{rollbackNote}</div> : null}
         <div>
-          Content hashes{" "}
-          <span className="font-mono">{shortHash(diff.from.body_sha256)}</span> →{" "}
+          Content hashes <span className="font-mono">{shortHash(diff.from.body_sha256)}</span> →{" "}
           <span className="font-mono">{shortHash(diff.to.body_sha256)}</span> (content integrity
           only)
         </div>
@@ -303,7 +302,11 @@ export function PolicyDiffView({ diff }: { diff: NetworkPolicyDiff }) {
             <Count label="added" value={counts.added_rules} dot="bg-success" />
             <Count label="removed" value={counts.removed_rules} dot="bg-destructive" />
             <Count label="changed" value={counts.changed_rules} dot="bg-warning" />
-            <Count label="settings changed" value={counts.changed_settings} dot="bg-muted-foreground" />
+            <Count
+              label="settings changed"
+              value={counts.changed_settings}
+              dot="bg-muted-foreground"
+            />
           </div>
           <p className="text-xs text-muted-foreground">
             {plural(counts.total_rules_from, "rule")} in r{diff.from.revision},{" "}

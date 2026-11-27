@@ -38,10 +38,7 @@ export interface NetworkRuntimeSource {
   dns(): Promise<Availability<DnsView>>;
   dnsStats(query: DnsStatsQuery): Promise<Availability<DnsStats>>;
   /** Changes DNS settings. Like policy, a saved change is not proof a gateway is enforcing it. */
-  updateDns(
-    patch: DnsSettingsPatch,
-    options?: DnsUpdateOptions,
-  ): Promise<Availability<DnsView>>;
+  updateDns(patch: DnsSettingsPatch, options?: DnsUpdateOptions): Promise<Availability<DnsView>>;
   /** Drops cached answers. Does not change the settings version. */
   clearDnsCache(): Promise<Availability<DnsCacheClearResult>>;
   proxy(): Promise<Availability<ProxyView>>;

@@ -8,10 +8,7 @@ import {
 } from "@/features/network/components/AvailabilityGate";
 import { useNetworkHousehold } from "@/features/network/access/networkScope";
 import { useNetworkAdmin } from "@/features/network/access/useNetworkAdmin";
-import {
-  useProxyAccessQuery,
-  useProxyQuery,
-} from "@/features/network/runtime/useRuntimeQueries";
+import { useProxyAccessQuery, useProxyQuery } from "@/features/network/runtime/useRuntimeQueries";
 import { KeyValueCard, KeyValueGrid } from "@/components/common/resource-detail/KeyValueCard";
 import { SettingsPageHeader } from "@/features/settings/components/SettingsLayout";
 import { SignInCredentialsCard } from "./CredentialsCard";
@@ -26,15 +23,15 @@ function ProxyAccessSections() {
   if (query.isPending) return null;
   if (query.isError) {
     return (
-      <LoadFailedCard
-        message="Couldn’t load proxy sign-in."
-        onRetry={() => void query.refetch()}
-      />
+      <LoadFailedCard message="Couldn’t load proxy sign-in." onRetry={() => void query.refetch()} />
     );
   }
   if (query.data.state === "unavailable") {
     return (
-      <UnavailableSection title="Sign-in credentials" reason="Proxy sign-in isn’t available on this server yet." />
+      <UnavailableSection
+        title="Sign-in credentials"
+        reason="Proxy sign-in isn’t available on this server yet."
+      />
     );
   }
   const access = query.data.data;
@@ -77,7 +74,9 @@ export function NetworkProxyPage() {
             <KeyValueGrid className="sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
               <KeyValueCard label="Address">{listener.address}</KeyValueCard>
               <KeyValueCard label="Accepts" format="text">
-                {listener.protocols.map((p) => (p === "connect" ? "CONNECT" : "HTTP")).join(" and ")}
+                {listener.protocols
+                  .map((p) => (p === "connect" ? "CONNECT" : "HTTP"))
+                  .join(" and ")}
               </KeyValueCard>
               <KeyValueCard label="Destinations" format="text">
                 {listener.destinationPolicy}

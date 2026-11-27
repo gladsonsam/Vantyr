@@ -34,7 +34,9 @@ export function DeleteInventorySection({
     <div className="space-y-3 border-t border-border/50 pt-4">
       <div className="flex items-center gap-1.5 text-sm font-medium">
         Delete {noun}
-        {blockedHelp ? <HelpTip label={`Why ${noun} can’t be deleted yet`}>{blockedHelp}</HelpTip> : null}
+        {blockedHelp ? (
+          <HelpTip label={`Why ${noun} can’t be deleted yet`}>{blockedHelp}</HelpTip>
+        ) : null}
       </div>
       <p className="text-sm text-muted-foreground">{DELETE_COPY}</p>
       <HoldAction

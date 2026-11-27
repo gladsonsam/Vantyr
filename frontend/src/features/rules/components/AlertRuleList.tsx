@@ -1,4 +1,13 @@
-import { BellRing, Camera, Clock, History, MoreHorizontal, Pencil, Trash2, Users } from "lucide-react";
+import {
+  BellRing,
+  Camera,
+  Clock,
+  History,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import {
   DropdownMenu,

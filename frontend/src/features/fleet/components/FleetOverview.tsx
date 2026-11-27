@@ -31,7 +31,11 @@ import { useFleetTable, type FleetTableProps } from "@/features/fleet/hooks/useF
 import type { AgentActionHandlers, PowerAction } from "./AgentActionsMenu";
 import { FLEET_GRID_CLASS, FleetGridView } from "./FleetGridView";
 import { FleetTableView } from "./FleetTableView";
-import { DEFAULT_FLEET_COLUMNS, FLEET_COLUMNS, type FleetColumnId } from "@/features/fleet/lib/fleetColumns";
+import {
+  DEFAULT_FLEET_COLUMNS,
+  FLEET_COLUMNS,
+  type FleetColumnId,
+} from "@/features/fleet/lib/fleetColumns";
 import { TablePager } from "@/components/common/data-table/TablePager";
 import { paginate } from "@/components/common/data-table/pagination";
 import { FleetToolbar, type StatusCounts } from "./FleetToolbar";
@@ -653,7 +657,11 @@ function FleetRows({
   if (viewMode === "table" && !isMobile && pageRows.length > 0) {
     return (
       <div className="flex flex-col gap-4">
-        <FleetTableView {...viewProps} rows={pageRows} footer={otherCards.length ? undefined : pager} />
+        <FleetTableView
+          {...viewProps}
+          rows={pageRows}
+          footer={otherCards.length ? undefined : pager}
+        />
         {otherCards.length > 0 && (
           <>
             <div className={FLEET_GRID_CLASS}>{otherCards}</div>

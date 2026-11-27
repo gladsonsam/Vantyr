@@ -104,15 +104,26 @@ async function readJsonResponse<T>(
       notifySessionExpired();
     }
     const retryRaw = res.headers.get("Retry-After");
-    const retryParsed = retryRaw != null && /^\d+$/.test(retryRaw.trim()) ? Number(retryRaw) : undefined;
+    const retryParsed =
+      retryRaw != null && /^\d+$/.test(retryRaw.trim()) ? Number(retryRaw) : undefined;
     if (ct.includes("application/json")) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       const suffix = opts?.includePathInHttpError ? ` – ${path}` : "";
-      throw new ApiError(body.error ?? `HTTP ${res.status}${suffix}`, res.status, body, retryParsed);
+      throw new ApiError(
+        body.error ?? `HTTP ${res.status}${suffix}`,
+        res.status,
+        body,
+        retryParsed,
+      );
     }
     const text = await res.text().catch(() => "");
     const suffix = opts?.includePathInHttpError ? ` – ${path}` : "";
-    throw new ApiError(text.trim() || `HTTP ${res.status}${suffix}`, res.status, undefined, retryParsed);
+    throw new ApiError(
+      text.trim() || `HTTP ${res.status}${suffix}`,
+      res.status,
+      undefined,
+      retryParsed,
+    );
   }
 
   if (!ct.includes("application/json")) {

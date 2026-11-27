@@ -2,8 +2,12 @@ import { fmtDateTime } from "@/lib/utils";
 import type { EventsPage } from "@/features/network/runtime/types";
 
 /** What is kept and how much of it is stored, so nobody assumes the log goes back further than it does. */
-export function RetentionLine({ page }: { page: Pick<EventsPage, "retention" | "truncated"> }) {
-  const { retention, truncated } = page;
+export function RetentionLine({
+  page,
+}: {
+  page: Pick<EventsPage, "retention" | "truncated" | "paginationLimited">;
+}) {
+  const { retention, truncated, paginationLimited } = page;
   const stored =
     retention.capCount === null
       ? `${retention.storedCount.toLocaleString()} stored`
@@ -16,7 +20,14 @@ export function RetentionLine({ page }: { page: Pick<EventsPage, "retention" | "
   return (
     <p className="text-xs text-muted-foreground">
       {parts.join(" · ")}
-      {truncated ? <span className="block">Older entries have been removed</span> : null}
+      {truncated ? (
+        <span className="block">Some entries may be missing from this window</span>
+      ) : null}
+      {paginationLimited ? (
+        <span className="block">
+          Paging by position stopped early; narrow the filters to see more
+        </span>
+      ) : null}
     </p>
   );
 }

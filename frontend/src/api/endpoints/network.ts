@@ -1,11 +1,4 @@
-import {
-  delJson,
-  get,
-  limitOffsetQuery,
-  patchJson,
-  postJsonRes,
-  putJson,
-} from "@/api/client";
+import { delJson, get, limitOffsetQuery, patchJson, postJsonRes, putJson } from "@/api/client";
 import type {
   NetworkAgentEnrollment,
   NetworkAssignment,
@@ -72,25 +65,21 @@ const INVENTORY_PATH: Record<NetworkInventoryDeleteKind, string> = {
  * the dashboard's admin/operator/viewer roles never imply it.
  */
 export const networkEndpoints = {
-  networkHouseholds: (): Promise<{ households: NetworkHousehold[] }> =>
-    get("/network/households"),
+  networkHouseholds: (): Promise<{ households: NetworkHousehold[] }> => get("/network/households"),
   networkHouseholdCreate: (body: {
     name: string;
     timezone?: string;
-  }): Promise<{ household_id: string }> =>
-    postJsonRes("/network/households", body),
+  }): Promise<{ household_id: string }> => postJsonRes("/network/households", body),
   /** Admin-only, audited, one-time: creates the first household and its first grant. */
   networkBootstrap: (body: {
     name: string;
     timezone?: string;
-  }): Promise<{ household_id: string }> =>
-    postJsonRes("/network/bootstrap", body),
+  }): Promise<{ household_id: string }> => postJsonRes("/network/bootstrap", body),
 
   networkHouseholdUpdate: (
     household: string,
     body: NetworkHouseholdPatch,
-  ): Promise<NetworkHouseholdPatchResult> =>
-    patchJson(base(household), body),
+  ): Promise<NetworkHouseholdPatchResult> => patchJson(base(household), body),
 
   networkPersons: (household: string): Promise<{ persons: NetworkPerson[] }> =>
     get(`${base(household)}/persons`),
@@ -106,8 +95,7 @@ export const networkEndpoints = {
       note?: Patch<string>;
       is_default_profile?: boolean;
     },
-  ): Promise<{ ok: boolean }> =>
-    patchJson(`${base(household)}/persons/${id}`, body),
+  ): Promise<{ ok: boolean }> => patchJson(`${base(household)}/persons/${id}`, body),
 
   networkDevices: (household: string): Promise<{ devices: NetworkDevice[] }> =>
     get(`${base(household)}/devices`),
@@ -124,12 +112,9 @@ export const networkEndpoints = {
     household: string,
     id: string,
     body: { label?: string; device_type?: NetworkDeviceType; shared?: boolean },
-  ): Promise<{ ok: boolean }> =>
-    patchJson(`${base(household)}/devices/${id}`, body),
+  ): Promise<{ ok: boolean }> => patchJson(`${base(household)}/devices/${id}`, body),
 
-  networkAssignments: (
-    household: string,
-  ): Promise<{ assignments: NetworkAssignment[] }> =>
+  networkAssignments: (household: string): Promise<{ assignments: NetworkAssignment[] }> =>
     get(`${base(household)}/assignments`),
   networkAssignmentCreate: (
     household: string,
@@ -141,8 +126,7 @@ export const networkEndpoints = {
       active?: boolean;
       note?: string;
     },
-  ): Promise<{ id: string }> =>
-    postJsonRes(`${base(household)}/assignments`, body),
+  ): Promise<{ id: string }> => postJsonRes(`${base(household)}/assignments`, body),
   networkAssignmentUpdate: (
     household: string,
     id: string,
@@ -152,12 +136,9 @@ export const networkEndpoints = {
       active?: boolean;
       note?: Patch<string>;
     },
-  ): Promise<{ ok: boolean }> =>
-    patchJson(`${base(household)}/assignments/${id}`, body),
+  ): Promise<{ ok: boolean }> => patchJson(`${base(household)}/assignments/${id}`, body),
 
-  networkConnections: (
-    household: string,
-  ): Promise<{ connections: NetworkConnection[] }> =>
+  networkConnections: (household: string): Promise<{ connections: NetworkConnection[] }> =>
     get(`${base(household)}/connections`),
   networkConnectionCreate: (
     household: string,
@@ -175,8 +156,7 @@ export const networkEndpoints = {
       revoked_at?: string;
       note?: string;
     },
-  ): Promise<{ id: string }> =>
-    postJsonRes(`${base(household)}/connections`, body),
+  ): Promise<{ id: string }> => postJsonRes(`${base(household)}/connections`, body),
   networkConnectionUpdate: (
     household: string,
     id: string,
@@ -191,25 +171,20 @@ export const networkEndpoints = {
       revoked_at?: Patch<string>;
       note?: Patch<string>;
     },
-  ): Promise<{ ok: boolean }> =>
-    patchJson(`${base(household)}/connections/${id}`, body),
+  ): Promise<{ ok: boolean }> => patchJson(`${base(household)}/connections/${id}`, body),
 
   /** Conservative: 409 while anything references the row. Deletes the inventory record only. */
   networkInventoryDelete: (
     household: string,
     kind: NetworkInventoryDeleteKind,
     id: string,
-  ): Promise<NetworkDeleteResult> =>
-    delJson(`${base(household)}/${INVENTORY_PATH[kind]}/${id}`),
+  ): Promise<NetworkDeleteResult> => delJson(`${base(household)}/${INVENTORY_PATH[kind]}/${id}`),
 
   networkAgentEnrollments: (
     household: string,
   ): Promise<{ enrollments: NetworkAgentEnrollment[] }> =>
     get(`${base(household)}/agent-enrollments`),
-  networkAgentEnroll: (
-    household: string,
-    body: { agent_id: string },
-  ): Promise<{ ok: boolean }> =>
+  networkAgentEnroll: (household: string, body: { agent_id: string }): Promise<{ ok: boolean }> =>
     postJsonRes(`${base(household)}/agent-enrollments`, body),
 
   networkGrants: (household: string): Promise<{ grants: NetworkGrant[] }> =>
@@ -217,14 +192,12 @@ export const networkEndpoints = {
   networkGrantCreate: (
     household: string,
     body: { user_id: string; grant: NetworkGrantName },
-  ): Promise<{ ok: boolean; created: boolean }> =>
-    postJsonRes(`${base(household)}/grants`, body),
+  ): Promise<{ ok: boolean; created: boolean }> => postJsonRes(`${base(household)}/grants`, body),
   networkGrantDelete: (
     household: string,
     userId: string,
     grant: NetworkGrantName,
-  ): Promise<{ ok: boolean }> =>
-    delJson(`${base(household)}/grants/${userId}/${grant}`),
+  ): Promise<{ ok: boolean }> => delJson(`${base(household)}/grants/${userId}/${grant}`),
 
   // ─── Household audit (network_admin; newest first; exact-match filters) ──────
   networkAudit: (
@@ -253,27 +226,21 @@ export const networkEndpoints = {
   networkGatewayCreate: (
     household: string,
     body: { kind: NetworkGatewayKind; label: string },
-  ): Promise<{ id: string }> =>
-    postJsonRes(`${base(household)}/gateways`, body),
+  ): Promise<{ id: string }> => postJsonRes(`${base(household)}/gateways`, body),
   networkGatewayUpdate: (
     household: string,
     gateway: string,
     body: NetworkGatewayPatch,
   ): Promise<NetworkGatewayPatchResult> =>
     patchJson(`${base(household)}/gateways/${gateway}`, body),
-  networkGatewayRevoke: (
-    household: string,
-    gateway: string,
-  ): Promise<{ ok: boolean }> =>
+  networkGatewayRevoke: (household: string, gateway: string): Promise<{ ok: boolean }> =>
     delJson(`${base(household)}/gateways/${gateway}`),
   networkGatewayCredentials: (
     household: string,
     gateway: string,
     page?: NetworkPageParams,
   ): Promise<{ credentials: NetworkGatewayCredential[] }> =>
-    get(
-      `${base(household)}/gateways/${gateway}/credentials${limitOffsetQuery(page)}`,
-    ),
+    get(`${base(household)}/gateways/${gateway}/credentials${limitOffsetQuery(page)}`),
   /** The returned `token` is shown once; it cannot be fetched again. */
   networkGatewayCredentialIssue: (
     household: string,
@@ -287,10 +254,7 @@ export const networkEndpoints = {
     credential: string,
     body: NetworkGatewayCredentialRequest,
   ): Promise<NetworkGatewayCredentialIssued> =>
-    postJsonRes(
-      `${base(household)}/gateways/${gateway}/credentials/${credential}/rotate`,
-      body,
-    ),
+    postJsonRes(`${base(household)}/gateways/${gateway}/credentials/${credential}/rotate`, body),
   networkGatewayCredentialRevoke: (
     household: string,
     gateway: string,
@@ -303,9 +267,7 @@ export const networkEndpoints = {
     gateway: string,
     page?: NetworkPageParams,
   ): Promise<{ reports: NetworkGatewayReport[] }> =>
-    get(
-      `${base(household)}/gateways/${gateway}/reports${limitOffsetQuery(page)}`,
-    ),
+    get(`${base(household)}/gateways/${gateway}/reports${limitOffsetQuery(page)}`),
 
   // ─── Versioned policy (saved proposals only) and desired assignment ──────────
   networkPolicies: (
@@ -320,27 +282,22 @@ export const networkEndpoints = {
   networkPolicyRevision: (
     household: string,
     revision: number,
-  ): Promise<NetworkPolicyViewResponse> =>
-    get(`${base(household)}/policies/${revision}`),
+  ): Promise<NetworkPolicyViewResponse> => get(`${base(household)}/policies/${revision}`),
   networkPolicyDiff: (
     household: string,
     fromRevision: number,
     toRevision: number,
   ): Promise<NetworkPolicyDiffResponse> =>
-    get(
-      `${base(household)}/policies/diff?from_revision=${fromRevision}&to_revision=${toRevision}`,
-    ),
+    get(`${base(household)}/policies/diff?from_revision=${fromRevision}&to_revision=${toRevision}`),
   networkPolicyPublish: (
     household: string,
     body: NetworkPolicyDraft,
-  ): Promise<NetworkPolicySaved> =>
-    postJsonRes(`${base(household)}/policies`, body),
+  ): Promise<NetworkPolicySaved> => postJsonRes(`${base(household)}/policies`, body),
   /** Copies a historical revision into a new saved revision. */
   networkPolicyRollback: (
     household: string,
     body: { source_revision: number; expected_revision?: number },
-  ): Promise<NetworkPolicySaved> =>
-    postJsonRes(`${base(household)}/policies/rollback`, body),
+  ): Promise<NetworkPolicySaved> => postJsonRes(`${base(household)}/policies/rollback`, body),
   networkGatewayDesiredPolicy: (
     household: string,
     gateway: string,
@@ -354,9 +311,7 @@ export const networkEndpoints = {
     putJson(`${base(household)}/gateways/${gateway}/desired-policy`, body),
 
   // ─── BYOD: principal bindings and device authorizations (network_admin) ─────
-  networkBindings: (
-    household: string,
-  ): Promise<{ bindings: NetworkBinding[] }> =>
+  networkBindings: (household: string): Promise<{ bindings: NetworkBinding[] }> =>
     get(`${base(household)}/bindings`),
   networkBindingCreate: (
     household: string,
@@ -364,47 +319,31 @@ export const networkEndpoints = {
   ): Promise<{ ok: boolean; binding_id: string }> =>
     postJsonRes(`${base(household)}/bindings`, body),
   /** Invalidates the person's enrolled devices, grants and sessions. */
-  networkBindingDelete: (
-    household: string,
-    binding: string,
-  ): Promise<{ ok: boolean }> =>
+  networkBindingDelete: (household: string, binding: string): Promise<{ ok: boolean }> =>
     delJson(`${base(household)}/bindings/${binding}`),
   networkDeviceAuthorizations: (
     household: string,
     binding: string,
     page?: NetworkPageParams,
   ): Promise<NetworkDeviceAuthorizationPage> =>
-    get(
-      `${base(household)}/bindings/${binding}/device-authorizations${limitOffsetQuery(page)}`,
-    ),
+    get(`${base(household)}/bindings/${binding}/device-authorizations${limitOffsetQuery(page)}`),
   networkDeviceAuthorize: (
     household: string,
     binding: string,
     body: { device_id: string },
   ): Promise<{ ok: boolean; enrollment_id: string }> =>
-    postJsonRes(
-      `${base(household)}/bindings/${binding}/device-authorizations`,
-      body,
-    ),
+    postJsonRes(`${base(household)}/bindings/${binding}/device-authorizations`, body),
 
   // ─── BYOD self-service (network_enroll + an active binding) ──────────────────
-  networkOwnDevices: (
-    household: string,
-  ): Promise<{ devices: NetworkOwnDevice[] }> =>
+  networkOwnDevices: (household: string): Promise<{ devices: NetworkOwnDevice[] }> =>
     get(`${base(household)}/enroll/devices`),
   networkOwnDeviceRegister: (
     household: string,
     body: { label: string; device_type: NetworkSelfDeviceType; shared?: boolean },
-  ): Promise<NetworkEnrolledDevice> =>
-    postJsonRes(`${base(household)}/enroll/devices`, body),
-  networkOwnDeviceEnd: (
-    household: string,
-    device: string,
-  ): Promise<{ ok: boolean }> =>
+  ): Promise<NetworkEnrolledDevice> => postJsonRes(`${base(household)}/enroll/devices`, body),
+  networkOwnDeviceEnd: (household: string, device: string): Promise<{ ok: boolean }> =>
     delJson(`${base(household)}/enroll/devices/${device}`),
-  networkOwnGrants: (
-    household: string,
-  ): Promise<{ grants: NetworkOwnGrant[] }> =>
+  networkOwnGrants: (household: string): Promise<{ grants: NetworkOwnGrant[] }> =>
     get(`${base(household)}/enroll/grants`),
   /** The returned `secret` is shown once; it cannot be fetched again. */
   networkSetupGrantIssue: (
@@ -414,31 +353,23 @@ export const networkEndpoints = {
       purpose: NetworkSetupPurpose;
       expires_in_secs: number;
     },
-  ): Promise<NetworkSetupGrantIssued> =>
-    postJsonRes(`${base(household)}/enroll/grants`, body),
+  ): Promise<NetworkSetupGrantIssued> => postJsonRes(`${base(household)}/enroll/grants`, body),
   networkSetupGrantConsume: (
     household: string,
     body: NetworkSetupGrantConsume,
   ): Promise<NetworkVerifiedSession> =>
     postJsonRes(`${base(household)}/enroll/grants/consume`, body),
-  networkOwnSessions: (
-    household: string,
-  ): Promise<{ sessions: NetworkOwnSession[] }> =>
+  networkOwnSessions: (household: string): Promise<{ sessions: NetworkOwnSession[] }> =>
     get(`${base(household)}/enroll/sessions`),
   /** Network sign-out only: it does not end the dashboard session. */
   networkOwnSessionsEndAll: (
     household: string,
   ): Promise<NetworkSessionEndResult & { ended: number }> =>
     delJson(`${base(household)}/enroll/sessions`),
-  networkOwnSessionEnd: (
-    household: string,
-    session: string,
-  ): Promise<NetworkSessionEndResult> =>
+  networkOwnSessionEnd: (household: string, session: string): Promise<NetworkSessionEndResult> =>
     delJson(`${base(household)}/enroll/sessions/${session}`),
 
   // ─── Enrollment contexts: households and people the signed-in user is bound to ─
-  networkEnrollmentContexts: (
-    page?: NetworkPageParams,
-  ): Promise<NetworkEnrollmentContextPage> =>
+  networkEnrollmentContexts: (page?: NetworkPageParams): Promise<NetworkEnrollmentContextPage> =>
     get(`/network/enrollment-contexts${limitOffsetQuery(page)}`),
 };

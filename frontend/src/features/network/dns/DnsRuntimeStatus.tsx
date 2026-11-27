@@ -45,15 +45,25 @@ export function DnsSettingsNotices() {
         >
           <span className="flex items-center gap-2 text-warning">
             <AlertTriangle className="size-4" aria-hidden="true" />
-            {DNS_SETTINGS_CONFLICT}. Nothing was overwritten. Reload to see the latest before changing anything.
+            {DNS_SETTINGS_CONFLICT}. Nothing was overwritten. Reload to see the latest before
+            changing anything.
           </span>
-          <Button type="button" variant="outline" size="sm" onClick={edit.reload} disabled={edit.reloading}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={edit.reload}
+            disabled={edit.reloading}
+          >
             Reload
           </Button>
         </div>
       ) : null}
       {edit.error ? (
-        <p role="alert" className="rounded-xl border border-destructive/50 bg-card/10 px-5 py-3 text-sm text-destructive">
+        <p
+          role="alert"
+          className="rounded-xl border border-destructive/50 bg-card/10 px-5 py-3 text-sm text-destructive"
+        >
           {edit.error}
         </p>
       ) : null}

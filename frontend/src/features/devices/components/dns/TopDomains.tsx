@@ -34,7 +34,10 @@ export function TopDomains({
         <h3 className="font-medium">{title}</h3>
         <span
           title={`${total.toLocaleString()} ${noun}`}
-          className={cn("text-sm font-medium tabular-nums", blocked ? "text-destructive" : "text-primary")}
+          className={cn(
+            "text-sm font-medium tabular-nums",
+            blocked ? "text-destructive" : "text-primary",
+          )}
         >
           {total.toLocaleString()}
           <span className="ml-1.5 text-xs font-normal text-muted-foreground">{noun}</span>

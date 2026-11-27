@@ -79,7 +79,9 @@ export function EnrollChooser() {
 
   const { contexts, has_more, next_offset, pagination_limited } = query.data;
   if (contexts.length === 1 && !has_more) {
-    return <Navigate to={`/network/enroll/${encodeURIComponent(contexts[0].household_id)}`} replace />;
+    return (
+      <Navigate to={`/network/enroll/${encodeURIComponent(contexts[0].household_id)}`} replace />
+    );
   }
 
   if (contexts.length === 0) {

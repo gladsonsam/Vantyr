@@ -38,7 +38,8 @@ export function MetricRing({
   children,
   className,
 }: MetricRingProps) {
-  const clamped = percent === undefined || Number.isNaN(percent) ? 0 : Math.max(0, Math.min(100, percent));
+  const clamped =
+    percent === undefined || Number.isNaN(percent) ? 0 : Math.max(0, Math.min(100, percent));
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - clamped / 100);
@@ -74,11 +75,16 @@ export function MetricRing({
             strokeLinecap={clamped >= 3 ? "round" : "butt"}
             strokeDasharray={circumference}
             strokeDashoffset={offset}
-            className={cn("transition-[stroke-dashoffset] duration-300 ease-out", metricColorClass(variant, tone))}
+            className={cn(
+              "transition-[stroke-dashoffset] duration-300 ease-out",
+              metricColorClass(variant, tone),
+            )}
           />
         )}
       </svg>
-      {children ? <span className="relative flex items-center leading-none">{children}</span> : null}
+      {children ? (
+        <span className="relative flex items-center leading-none">{children}</span>
+      ) : null}
     </span>
   );
 }

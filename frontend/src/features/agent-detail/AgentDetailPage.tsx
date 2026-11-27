@@ -291,16 +291,12 @@ export function AgentDetailPage({
   return (
     <div
       className={
-        embedded
-          ? "flex min-w-0 flex-col"
-          : "flex min-h-0 min-w-0 flex-1 flex-col bg-background"
+        embedded ? "flex min-w-0 flex-col" : "flex min-h-0 min-w-0 flex-1 flex-col bg-background"
       }
     >
       <main
         className={
-          embedded
-            ? "flex min-w-0 flex-col"
-            : "flex h-full min-h-0 min-w-0 flex-1 flex-col"
+          embedded ? "flex min-w-0 flex-col" : "flex h-full min-h-0 min-w-0 flex-1 flex-col"
         }
       >
         {embedded ? (
@@ -349,7 +345,9 @@ export function AgentDetailPage({
             </div>
           )}
           {/* Live desktop first, full width; the device facts are a slim strip underneath. */}
-          <div className={`flex flex-col gap-3 ${embedded ? "" : "px-3 pt-3 sm:px-5 sm:pt-4 md:px-8"} [&>.screen-remote-panel]:flex-[0_0_auto]!`}>
+          <div
+            className={`flex flex-col gap-3 ${embedded ? "" : "px-3 pt-3 sm:px-5 sm:pt-4 md:px-8"} [&>.screen-remote-panel]:flex-[0_0_auto]!`}
+          >
             {/* Offline: no live panel to show, just the device facts. */}
             {agent.online && (
               <ScreenTab

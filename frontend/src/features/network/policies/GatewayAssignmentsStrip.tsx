@@ -55,7 +55,9 @@ function Line({
 
 function GatewayRow({ status }: { status: GatewayStatus }) {
   const { gateway, desired, observation } = status;
-  const reportedApplied = observation ? parseReportedRevision(observation.reportedAppliedRevision) : null;
+  const reportedApplied = observation
+    ? parseReportedRevision(observation.reportedAppliedRevision)
+    : null;
   const inactive = Boolean(gateway.revoked_at) || !gateway.enabled;
   const differs = desired !== null && observation !== null && reportedApplied !== desired.revision;
   return (
@@ -63,20 +65,22 @@ function GatewayRow({ status }: { status: GatewayStatus }) {
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <div className="text-sm font-semibold">
           {gateway.label}{" "}
-          <span className="text-xs font-normal text-muted-foreground uppercase">{gateway.kind}</span>
+          <span className="text-xs font-normal text-muted-foreground uppercase">
+            {gateway.kind}
+          </span>
         </div>
         <span className="text-xs text-muted-foreground">
-          {gateway.revoked_at
-            ? "Revoked"
-            : !gateway.enabled
-              ? "Disabled"
-              : observation
-                ? (
-                  <>
-                    Last report <TimeAgo iso={observation.reportedAt} />
-                  </>
-                )
-                : "Has not reported"}
+          {gateway.revoked_at ? (
+            "Revoked"
+          ) : !gateway.enabled ? (
+            "Disabled"
+          ) : observation ? (
+            <>
+              Last report <TimeAgo iso={observation.reportedAt} />
+            </>
+          ) : (
+            "Has not reported"
+          )}
         </span>
       </div>
       <div className="mt-2 grid gap-1.5 md:grid-cols-3 md:gap-x-6">
@@ -143,8 +147,8 @@ export function GatewayAssignmentsStrip({
       action={
         <HelpTip label="About desired and reported">
           Saving a revision does nothing on its own. Assigning it makes it the gateway’s desired
-          revision; the gateway fetches it and reports back. That report is the gateway’s own
-          claim. No check confirms the rules actually work.
+          revision; the gateway fetches it and reports back. That report is the gateway’s own claim.
+          No check confirms the rules actually work.
         </HelpTip>
       }
     >

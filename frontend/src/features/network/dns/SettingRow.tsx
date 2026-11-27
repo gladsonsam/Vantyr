@@ -14,7 +14,12 @@ export function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <SettingsRow label={label} help={help} description={description} controlClassName="md:justify-end">
+    <SettingsRow
+      label={label}
+      help={help}
+      description={description}
+      controlClassName="md:justify-end"
+    >
       {children}
     </SettingsRow>
   );

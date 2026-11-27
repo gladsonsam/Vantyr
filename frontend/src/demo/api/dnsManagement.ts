@@ -38,7 +38,11 @@ function canonicalSource(s: DnsSubscriptionSource): string {
     enabled: s.enabled,
     interval_secs: s.interval_secs ?? null,
     max_stale_secs: s.max_stale_secs ?? null,
-    metadata: { title: s.metadata.title, publisher: s.metadata.publisher, license: s.metadata.license },
+    metadata: {
+      title: s.metadata.title,
+      publisher: s.metadata.publisher,
+      license: s.metadata.license,
+    },
   });
 }
 
@@ -144,7 +148,8 @@ export function demoDnsManagementApi(): Partial<ApiClient> {
         {
           gateway_id: GATEWAY,
           delivered_version: 3,
-          delivered_sha256: desired.config_version === 3 ? desired.body_sha256 : fakeDigest(seedConfig),
+          delivered_sha256:
+            desired.config_version === 3 ? desired.body_sha256 : fakeDigest(seedConfig),
           delivered_at: ago(60 * 2),
           reported_version: 2,
           reported_sha256: reportedSha,

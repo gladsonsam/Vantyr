@@ -45,9 +45,13 @@ function AddBindingForm({
       title="Map a person to a dashboard user"
       description="The user will be able to enroll their own devices as this person, once they also hold the enrollment grant."
       submitLabel="Create mapping"
-      disabledReason={persons.length === 0 ? "Add a person on the Household page first." : undefined}
+      disabledReason={
+        persons.length === 0 ? "Add a person on the Household page first." : undefined
+      }
       canSubmit={Boolean(person && chosenUser)}
-      onSubmit={() => create.mutateAsync({ person_id: person as string, user_id: chosenUser as string })}
+      onSubmit={() =>
+        create.mutateAsync({ person_id: person as string, user_id: chosenUser as string })
+      }
       onReset={() => {
         setPerson(null);
         setUser(null);
@@ -181,8 +185,8 @@ export function BindingsSection({ household }: { household: string }) {
                       Hold to revoke
                     </HoldAction>
                     <HelpTip label="About revoking">
-                      Revoking invalidates this person’s enrolled devices, setup grants and
-                      verified sessions. They would need to be mapped and enroll again.
+                      Revoking invalidates this person’s enrolled devices, setup grants and verified
+                      sessions. They would need to be mapped and enroll again.
                     </HelpTip>
                   </span>
                 ) : null}

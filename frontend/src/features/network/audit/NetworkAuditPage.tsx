@@ -79,8 +79,7 @@ export function NetworkAuditPage() {
   const actorProblem = textProblem(actorDraft.trim());
   const from = toInstant(fromValue, false);
   const to = toInstant(toValue, true);
-  const rangeProblem =
-    from && to && from > to ? "“From” must be before or equal to “To”." : null;
+  const rangeProblem = from && to && from > to ? "“From” must be before or equal to “To”." : null;
 
   const filters = useMemo<NetworkAuditFilters>(() => {
     const next: NetworkAuditFilters = { limit: Number(pageSize) };
@@ -141,8 +140,8 @@ export function NetworkAuditPage() {
         <span className="flex items-center gap-2">
           Audit
           <HelpTip label="About the audit">
-            Changes made to this household, newest first. Action and actor filters are exact
-            matches on the stored value (not a search), so “network.policy” won’t match
+            Changes made to this household, newest first. Action and actor filters are exact matches
+            on the stored value (not a search), so “network.policy” won’t match
             “network.policy.saved”. Pick a suggestion or type the full value. Dates are in your
             local time.
           </HelpTip>
@@ -154,7 +153,11 @@ export function NetworkAuditPage() {
 
   if (first.isPending) return <PageLoading />;
   const status = isApiError(first.error) ? first.error.status : null;
-  if (first.isError && !first.data && (status === 403 || status === 404 || status === null || status >= 500)) {
+  if (
+    first.isError &&
+    !first.data &&
+    (status === 403 || status === 404 || status === null || status >= 500)
+  ) {
     return (
       <div className="space-y-8">
         {header}
@@ -295,7 +298,10 @@ export function NetworkAuditPage() {
       </div>
 
       {serverMessage ? (
-        <p role="alert" className="rounded-xl border border-destructive/40 px-4 py-3 text-sm text-destructive">
+        <p
+          role="alert"
+          className="rounded-xl border border-destructive/40 px-4 py-3 text-sm text-destructive"
+        >
           {serverMessage}
         </p>
       ) : null}
@@ -349,7 +355,10 @@ export function NetworkAuditPage() {
       )}
 
       {lastExtra?.isError ? (
-        <div role="alert" className="flex items-center justify-center gap-3 text-sm text-destructive">
+        <div
+          role="alert"
+          className="flex items-center justify-center gap-3 text-sm text-destructive"
+        >
           Couldn’t load more records.
           <Button variant="outline" size="sm" onClick={() => void lastExtra.refetch()}>
             Retry

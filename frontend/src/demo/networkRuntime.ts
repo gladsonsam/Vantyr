@@ -237,7 +237,7 @@ function statsWindow(q: DnsStatsQuery, keepDays: number, storedDays = DEMO_STORE
 }
 
 /** Deterministic per-device DNS statistics: a daily rhythm, a blocked share, and a few repeat domains. */
-function buildStats(q: DnsStatsQuery, keepDays: number): DnsStats {
+export function buildStats(q: DnsStatsQuery, keepDays: number): DnsStats {
   const { window, buckets, stepMinutes } = statsWindow(q, keepDays);
   // A stable number per device, so each one looks different but never flickers between renders.
   const seed = [...(q.deviceId ?? "all")].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
@@ -315,12 +315,33 @@ function buildProxyStats(q: ProxyStatsQuery, inspectedShare: number, keepDays: n
     }));
   const hosts =
     q.deviceId === "dev-desktop"
-      ? ["homework.example", "docs.example", "video.example", "cdn.example", "search.example", "update.example"]
-      : ["news.example", "cdn.example", "api.streaming.example", "search.example", "images.example", "update.example"];
+      ? [
+          "homework.example",
+          "docs.example",
+          "video.example",
+          "cdn.example",
+          "search.example",
+          "update.example",
+        ]
+      : [
+          "news.example",
+          "cdn.example",
+          "api.streaming.example",
+          "search.example",
+          "images.example",
+          "update.example",
+        ];
   const blockedHosts =
     q.deviceId === "dev-desktop"
       ? ["games.example", "tracker.ads.example", "telemetry.example"]
-      : ["malware.example", "tracker.ads.example", "phishing.example", "telemetry.example", "mature.example", "ads2.example"];
+      : [
+          "malware.example",
+          "tracker.ads.example",
+          "phishing.example",
+          "telemetry.example",
+          "mature.example",
+          "ads2.example",
+        ];
   return {
     total,
     blocked,
@@ -344,9 +365,10 @@ const UNRECOGNISED = "Unrecognised";
 export const DEMO_EVENT_CAPABILITIES: EventsCapabilities = {
   sources: ["dns", "proxy", "agent"],
   grouping: ["raw", "by_host"],
+  unrecognisedFilter: true,
 };
 
-function buildEvents(): NetworkEvent[] {
+export function buildEvents(): NetworkEvent[] {
   const rows: Omit<NetworkEvent, "id" | "at" | "correlationId" | "observations">[][] = [];
   const visit = (
     device: string,
@@ -398,15 +420,10 @@ function buildEvents(): NetworkEvent[] {
     "Kitchen tablet: no social media",
     ["dns"],
   );
-  visit(
-    "Desktop",
-    "Sam",
-    "verified",
-    "homework.example",
-    "allow",
-    "Exception approved by Alex",
-    ["dns", "proxy"],
-  );
+  visit("Desktop", "Sam", "verified", "homework.example", "allow", "Exception approved by Alex", [
+    "dns",
+    "proxy",
+  ]);
   visit(
     "Laptop",
     "Alex",
@@ -880,7 +897,11 @@ export function createDemoNetworkRuntime(): NetworkRuntimeSource {
       const oldestStoredAt = stored.length ? stored[stored.length - 1].at : null;
       return ready<EventsPage>({
         events: slice,
-        capabilities: { sources: [...capabilities.sources], grouping: [...capabilities.grouping] },
+        capabilities: {
+          sources: [...capabilities.sources],
+          grouping: [...capabilities.grouping],
+          unrecognisedFilter: capabilities.unrecognisedFilter,
+        },
         total: rows.length,
         hasMore,
         nextCursor: hasMore ? String(start + q.limit) : null,

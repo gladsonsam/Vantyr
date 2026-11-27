@@ -165,72 +165,72 @@ export function SettingsPage() {
           }
         />
 
-      {/* Panels stay mounted so a half-edited form survives switching tabs. */}
-      <TabsContent value="agents" keepMounted className="flex flex-col gap-8">
-        <AgentEnrollmentSettings
-          isAdmin={isAdmin}
-          enrollClaims={enrollClaims}
-          enrollClaimsLoading={enrollClaimsLoading}
-          enrollClaimsError={errorMessage(claimsQuery.error)}
-          onRefreshClaims={loadEnrollmentClaims}
-          onApproveClaim={approveEnrollmentClaim}
-          onRejectClaim={rejectEnrollmentClaim}
-          enrollTokens={enrollTokens}
-          enrollTokensLoading={enrollTokensLoading}
-          enrollTokensError={enrollTokensError}
-          setEnrollTokensError={setEnrollTokensError}
-          loadEnrollmentTokens={loadEnrollmentTokens}
-          onGenerateToken={(body) => api.createAgentEnrollmentToken(body)}
-          onRevokeToken={async (id) => {
-            await api.revokeAgentEnrollmentToken(id);
-          }}
-          onRevokeAllTokens={async () => {
-            await api.revokeAllAgentEnrollmentTokens();
-          }}
-          onListTokenUses={(id) => api.listAgentEnrollmentTokenUses(id).then((r) => r.uses ?? [])}
-        />
-        <SecuritySettings />
-      </TabsContent>
+        {/* Panels stay mounted so a half-edited form survives switching tabs. */}
+        <TabsContent value="agents" keepMounted className="flex flex-col gap-8">
+          <AgentEnrollmentSettings
+            isAdmin={isAdmin}
+            enrollClaims={enrollClaims}
+            enrollClaimsLoading={enrollClaimsLoading}
+            enrollClaimsError={errorMessage(claimsQuery.error)}
+            onRefreshClaims={loadEnrollmentClaims}
+            onApproveClaim={approveEnrollmentClaim}
+            onRejectClaim={rejectEnrollmentClaim}
+            enrollTokens={enrollTokens}
+            enrollTokensLoading={enrollTokensLoading}
+            enrollTokensError={enrollTokensError}
+            setEnrollTokensError={setEnrollTokensError}
+            loadEnrollmentTokens={loadEnrollmentTokens}
+            onGenerateToken={(body) => api.createAgentEnrollmentToken(body)}
+            onRevokeToken={async (id) => {
+              await api.revokeAgentEnrollmentToken(id);
+            }}
+            onRevokeAllTokens={async () => {
+              await api.revokeAllAgentEnrollmentTokens();
+            }}
+            onListTokenUses={(id) => api.listAgentEnrollmentTokenUses(id).then((r) => r.uses ?? [])}
+          />
+          <SecuritySettings />
+        </TabsContent>
 
-      <TabsContent value="data" keepMounted className="flex flex-col gap-8">
-        <DataRetentionSettings isAdmin={isAdmin} form={retention} />
-        <RecallCaptureSettings isAdmin={isAdmin} />
-        <UrlCategorizationSettings isAdmin={isAdmin} urlCat={urlCat} />
-      </TabsContent>
+        <TabsContent value="data" keepMounted className="flex flex-col gap-8">
+          <DataRetentionSettings isAdmin={isAdmin} form={retention} />
+          <RecallCaptureSettings isAdmin={isAdmin} />
+          <UrlCategorizationSettings isAdmin={isAdmin} urlCat={urlCat} />
+        </TabsContent>
 
-      <TabsContent value="alerts" keepMounted className="flex flex-col gap-8">
-        {/* This browser's switch is for everyone, so it leads for people who cannot configure channels. */}
-        {!isAdmin && <BrowserPushToggle />}
-        <NotificationsSettings isAdmin={isAdmin} />
-        {isAdmin && <BrowserPushToggle />}
-      </TabsContent>
+        <TabsContent value="alerts" keepMounted className="flex flex-col gap-8">
+          {/* This browser's switch is for everyone, so it leads for people who cannot configure channels. */}
+          {!isAdmin && <BrowserPushToggle />}
+          <NotificationsSettings isAdmin={isAdmin} />
+          {isAdmin && <BrowserPushToggle />}
+        </TabsContent>
 
-      <TabsContent value="system" keepMounted className="flex flex-col gap-8">
-        <SystemAboutSettings
-          isAdmin={isAdmin}
-          storage={{
-            data: storageQuery.data ?? null,
-            error: storageQuery.error ? errorText(storageQuery.error) : null,
-            loading: storageQuery.isFetching,
-            updatedAt: storageQuery.dataUpdatedAt,
-            onReload: () => void storageQuery.refetch(),
-          }}
-          version={{
-            data: releaseQuery.data ?? null,
-            error: releaseQuery.error ? messageOf(releaseQuery.error) : null,
-            loading: releaseQuery.isFetching,
-            updatedAt: releaseQuery.dataUpdatedAt,
-            onReload: checkGithubRelease,
-          }}
-          autoUpdate={{
-            data: autoUpdateQuery.data ?? null,
-            error: autoUpdateQuery.error ? errorText(autoUpdateQuery.error) : null,
-            loading: autoUpdateQuery.isFetching,
-            onReload: () => void autoUpdateQuery.refetch(),
-            onSave: saveGlobalAutoUpdate,
-          }}
-        />
-      </TabsContent>
+        <TabsContent value="system" keepMounted className="flex flex-col gap-8">
+          <SystemAboutSettings
+            isAdmin={isAdmin}
+            storage={{
+              data: storageQuery.data ?? null,
+              error: storageQuery.error ? errorText(storageQuery.error) : null,
+              loading: storageQuery.isFetching,
+              updatedAt: storageQuery.dataUpdatedAt,
+              onReload: () => void storageQuery.refetch(),
+            }}
+            version={{
+              data: releaseQuery.data ?? null,
+              error: releaseQuery.error ? messageOf(releaseQuery.error) : null,
+              loading: releaseQuery.isFetching,
+              updatedAt: releaseQuery.dataUpdatedAt,
+              onReload: checkGithubRelease,
+            }}
+            autoUpdate={{
+              data: autoUpdateQuery.data ?? null,
+              error: autoUpdateQuery.error ? errorText(autoUpdateQuery.error) : null,
+              loading: autoUpdateQuery.isFetching,
+              onReload: () => void autoUpdateQuery.refetch(),
+              onSave: saveGlobalAutoUpdate,
+            }}
+          />
+        </TabsContent>
       </div>
     </Tabs>
   );

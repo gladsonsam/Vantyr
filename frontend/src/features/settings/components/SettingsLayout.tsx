@@ -18,7 +18,6 @@ export interface SettingsNavItem {
 
 import { NAV_ITEM } from "./settingsNav";
 
-
 /** The class names for the tab list when it is used as the section nav. */
 export const SETTINGS_TAB_LIST_CLASS =
   "group-data-horizontal/tabs:h-auto h-auto w-full justify-start gap-1 rounded-none bg-transparent p-0 lg:sticky lg:top-4 lg:w-56 lg:shrink-0 lg:flex-col lg:self-start lg:overflow-visible";
@@ -61,7 +60,9 @@ export function SettingsNavLinks({
     [...items]
       .reverse()
       .find((item) =>
-        isActive ? isActive(item, pathname) : pathname === item.to || pathname.startsWith(`${item.to}/`),
+        isActive
+          ? isActive(item, pathname)
+          : pathname === item.to || pathname.startsWith(`${item.to}/`),
       )?.id ?? items[0]?.id;
   return (
     <nav
@@ -107,9 +108,7 @@ export function SettingsPageHeader({
     <div className={cn("flex flex-wrap items-start justify-between gap-4", className)}>
       <div className="min-w-0 flex-1">
         <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
-        {description ? (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-        ) : null}
+        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </div>
@@ -299,9 +298,7 @@ export function SettingsField({
         <Label htmlFor={htmlFor} className="text-sm font-medium">
           {label}
         </Label>
-        {description ? (
-          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-        ) : null}
+        {description ? <p className="mt-0.5 text-xs text-muted-foreground">{description}</p> : null}
       </div>
       {children}
       {error ? (

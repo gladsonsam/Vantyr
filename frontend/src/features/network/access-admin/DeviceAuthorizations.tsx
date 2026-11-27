@@ -2,11 +2,7 @@ import { useState } from "react";
 import { ShieldPlus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { errorText } from "@/api";
-import {
-  networkQueries,
-  useAuthorizeDevice,
-  useDeviceAuthorizations,
-} from "@/api/queries/network";
+import { networkQueries, useAuthorizeDevice, useDeviceAuthorizations } from "@/api/queries/network";
 import { Button } from "@vantyr/ui/components/button";
 import {
   Select,
@@ -95,7 +91,10 @@ export function DeviceAuthorizations({
       ) : (
         <ul className="divide-y divide-border/50 rounded-xl border border-border/70">
           {rows.map((row) => (
-            <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+            <li
+              key={row.id}
+              className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5"
+            >
               <span className="text-sm font-medium">{label(row.device_id)}</span>
               <span className="flex items-center gap-4 text-[0.8125rem] text-muted-foreground">
                 <StatusDot

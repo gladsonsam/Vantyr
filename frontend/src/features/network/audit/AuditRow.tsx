@@ -40,7 +40,10 @@ export function AuditRow({ row }: { row: NetworkAuditRow }) {
           <TimeAgo iso={row.ts} />
           <ChevronDown
             aria-hidden
-            className={cn("size-3.5 transition-transform motion-reduce:transition-none", open && "rotate-180")}
+            className={cn(
+              "size-3.5 transition-transform motion-reduce:transition-none",
+              open && "rotate-180",
+            )}
           />
         </span>
       </button>

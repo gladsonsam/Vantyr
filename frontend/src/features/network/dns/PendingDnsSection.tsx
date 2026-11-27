@@ -13,12 +13,22 @@ const MANAGEMENT: PendingItem[] = [
     meaning: "Currently set only in the gateway’s command line or config file, not from here.",
   },
   { name: "Local records", meaning: "Add, edit or remove a local A, AAAA or CNAME record." },
-  { name: "Cache controls", meaning: "Clear the cache and test that a name resolves. Only the demo preview can clear the cache for now." },
+  {
+    name: "Cache controls",
+    meaning:
+      "Clear the cache and test that a name resolves. Only the demo preview can clear the cache for now.",
+  },
   { name: "CIDR allow list", meaning: "Edit the address ranges (CIDR) that may ask this server." },
   { name: "Per-device overrides", meaning: "Give one device its own DNS settings." },
-  { name: "Blocked response mode", meaning: "Choose NXDOMAIN, refused or a sinkhole answer for blocked names." },
+  {
+    name: "Blocked response mode",
+    meaning: "Choose NXDOMAIN, refused or a sinkhole answer for blocked names.",
+  },
   { name: "Rate limiting", meaning: "Limit how many queries a client can send." },
-  { name: "Retention, statistics and query logs", meaning: "Choose how long query data is kept and view statistics and logs." },
+  {
+    name: "Retention, statistics and query logs",
+    meaning: "Choose how long query data is kept and view statistics and logs.",
+  },
   { name: "SafeSearch", meaning: "Force safe-search results on supported search engines." },
 ];
 
@@ -26,7 +36,8 @@ const ADVANCED: PendingItem[] = [
   { name: "DNSSEC", meaning: "Check that answers are signed by the domain’s owner." },
   {
     name: "EDNS client subnet (ECS)",
-    meaning: "Pass part of a device’s address to upstream servers so they can pick a nearby answer.",
+    meaning:
+      "Pass part of a device’s address to upstream servers so they can pick a nearby answer.",
   },
   { name: "AAAA handling", meaning: "Choose whether IPv6 answers are returned to devices." },
 ];
@@ -60,7 +71,11 @@ function DemoOnlyServices() {
   const list = (items: string[] | undefined) =>
     Array.isArray(items) && items.length > 0 ? items.join(", ") : "None";
   const safe =
-    typeof services.safeSearch === "boolean" ? (services.safeSearch ? "On" : "Off") : "Not reported";
+    typeof services.safeSearch === "boolean"
+      ? services.safeSearch
+        ? "On"
+        : "Off"
+      : "Not reported";
   return (
     <div className="px-5 py-4">
       <h4 className="mb-2 flex items-center gap-2 text-sm font-medium">

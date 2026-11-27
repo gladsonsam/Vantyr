@@ -40,7 +40,17 @@ import { DeleteInventorySection } from "./DeleteInventorySection";
 import { FormDialog } from "./FormDialog";
 import { KIND_LABEL, ROLE_LABEL, STATUS_TONE, TYPE_LABEL } from "./labels";
 
-function Field({ label, id, help, children }: { label: string; id: string; help?: string; children: ReactNode }) {
+function Field({
+  label,
+  id,
+  help,
+  children,
+}: {
+  label: string;
+  id: string;
+  help?: string;
+  children: ReactNode;
+}) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5">
@@ -62,10 +72,23 @@ function notePatch(draft: string, stored: string | null): { note?: string | null
   return { note: next.length > 0 ? next : null };
 }
 
-function NoteField({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
+function NoteField({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
   return (
     <Field label="Note" id={id} help="Clearing the text and saving removes the stored note.">
-      <Input id={id} value={value} onChange={(event) => onChange(event.target.value)} maxLength={500} />
+      <Input
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        maxLength={500}
+      />
     </Field>
   );
 }
@@ -131,7 +154,9 @@ export function EditHouseholdForm({ household }: { household: NetworkHousehold }
       trigger="Edit household"
       title="Edit household"
       submitLabel="Save"
-      canSubmit={name.trim().length > 0 && timezone.trim().length > 0 && (nameChanged || zoneChanged)}
+      canSubmit={
+        name.trim().length > 0 && timezone.trim().length > 0 && (nameChanged || zoneChanged)
+      }
       onSubmit={async () => {
         const result = await update.mutateAsync({
           ...(nameChanged ? { name: name.trim() } : {}),
@@ -175,7 +200,9 @@ export function EditHouseholdForm({ household }: { household: NetworkHousehold }
             <option key={zone} value={zone} />
           ))}
         </datalist>
-        <p className="text-[0.8125rem] text-muted-foreground">IANA name, such as Africa/Lagos or UTC.</p>
+        <p className="text-[0.8125rem] text-muted-foreground">
+          IANA name, such as Africa/Lagos or UTC.
+        </p>
       </Field>
     </FormDialog>
   );
@@ -207,7 +234,12 @@ export function AddPersonForm({ household }: { household: string }) {
 }
 
 function slug(text: string) {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "device";
+  return (
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "device"
+  );
 }
 
 /** A device belongs to the household; no person is needed to add one. */
@@ -261,7 +293,11 @@ export function AddDeviceForm({ household }: { household: string }) {
         </Select>
       </Field>
       <div className="flex items-center gap-2 text-sm">
-        <Checkbox id="device-shared" checked={shared} onCheckedChange={(c) => setShared(c === true)} />
+        <Checkbox
+          id="device-shared"
+          checked={shared}
+          onCheckedChange={(c) => setShared(c === true)}
+        />
         <Label htmlFor="device-shared" className="font-normal">
           Shared by the household
         </Label>
@@ -368,7 +404,9 @@ export function AddConnectionForm({
       submitLabel="Add connection"
       disabledReason={devices.length === 0 ? "Add a device first." : undefined}
       canSubmit={Boolean(device)}
-      onSubmit={() => create.mutateAsync({ device_id: device as string, kind, provenance: "manual" })}
+      onSubmit={() =>
+        create.mutateAsync({ device_id: device as string, kind, provenance: "manual" })
+      }
       onReset={() => {
         setDevice(null);
         setKind("dns");
@@ -408,7 +446,13 @@ export function AddConnectionForm({
 
 const NONE = "none";
 
-export function EditPersonForm({ household, person }: { household: string; person: NetworkPerson }) {
+export function EditPersonForm({
+  household,
+  person,
+}: {
+  household: string;
+  person: NetworkPerson;
+}) {
   const update = useUpdatePersonMutation(household);
   const [name, setName] = useState(person.display_name);
   const [isDefault, setIsDefault] = useState(person.is_default_profile);
@@ -437,12 +481,7 @@ export function EditPersonForm({ household, person }: { household: string; perso
         setNote(person.note ?? "");
       }}
       footerExtra={
-        <DeleteInventorySection
-          household={household}
-          kind="person"
-          id={person.id}
-          noun="person"
-        />
+        <DeleteInventorySection household={household} kind="person" id={person.id} noun="person" />
       }
     >
       <Field label="Name" id={`person-name-${person.id}`}>
@@ -474,7 +513,13 @@ export function EditPersonForm({ household, person }: { household: string; perso
   );
 }
 
-export function EditDeviceForm({ household, device }: { household: string; device: NetworkDevice }) {
+export function EditDeviceForm({
+  household,
+  device,
+}: {
+  household: string;
+  device: NetworkDevice;
+}) {
   const update = useUpdateDeviceMutation(household);
   const [label, setLabel] = useState(device.label);
   const [type, setType] = useState<NetworkDeviceType>(device.device_type);
@@ -502,12 +547,7 @@ export function EditDeviceForm({ household, device }: { household: string; devic
         setShared(device.shared);
       }}
       footerExtra={
-        <DeleteInventorySection
-          household={household}
-          kind="device"
-          id={device.id}
-          noun="device"
-        />
+        <DeleteInventorySection household={household} kind="device" id={device.id} noun="device" />
       }
     >
       <Field label="Name" id={`device-name-${device.id}`}>

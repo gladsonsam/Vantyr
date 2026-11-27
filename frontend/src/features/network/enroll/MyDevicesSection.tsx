@@ -2,7 +2,11 @@ import { useState } from "react";
 import { Smartphone, Unplug } from "lucide-react";
 import { errorText } from "@/api";
 import { useEndEnrolledDevice, useRegisterEnrollDevice } from "@/api/queries/network";
-import { NETWORK_SELF_DEVICE_TYPES, type NetworkOwnDevice, type NetworkSelfDeviceType } from "@/api/types";
+import {
+  NETWORK_SELF_DEVICE_TYPES,
+  type NetworkOwnDevice,
+  type NetworkSelfDeviceType,
+} from "@/api/types";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
 import { Input } from "@vantyr/ui/components/input";
 import { Label } from "@vantyr/ui/components/label";
@@ -32,9 +36,7 @@ function AddDeviceForm({ household }: { household: string }) {
       description="Registers a new device under your name. It starts as unverified: nothing is routed or protected until it is set up."
       submitLabel="Add device"
       canSubmit={label.trim().length > 0}
-      onSubmit={() =>
-        register.mutateAsync({ label: label.trim(), device_type: type, shared })
-      }
+      onSubmit={() => register.mutateAsync({ label: label.trim(), device_type: type, shared })}
       onReset={() => {
         setLabel("");
         setType("phone");
@@ -68,13 +70,17 @@ function AddDeviceForm({ household }: { household: string }) {
         </Select>
       </div>
       <div className="flex items-center gap-2 text-sm">
-        <Checkbox id="enroll-shared" checked={shared} onCheckedChange={(c) => setShared(c === true)} />
+        <Checkbox
+          id="enroll-shared"
+          checked={shared}
+          onCheckedChange={(c) => setShared(c === true)}
+        />
         <Label htmlFor="enroll-shared" className="font-normal">
           Shared with other people
         </Label>
         <HelpTip label="About shared devices">
-          On a shared device a sign-in cannot tell who is using it right now, so it is never
-          treated as proof of the person at the screen.
+          On a shared device a sign-in cannot tell who is using it right now, so it is never treated
+          as proof of the person at the screen.
         </HelpTip>
       </div>
     </FormDialog>

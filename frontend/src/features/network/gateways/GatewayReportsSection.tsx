@@ -56,7 +56,8 @@ export function GatewayReportsSection({
                   </span>
                 </div>
                 <div className="text-[0.8125rem] text-muted-foreground">
-                  Capabilities: {report.capabilities.length ? report.capabilities.join(", ") : "none reported"}
+                  Capabilities:{" "}
+                  {report.capabilities.length ? report.capabilities.join(", ") : "none reported"}
                 </div>
                 {report.failure ? (
                   <div className="text-[0.8125rem] text-destructive">Failure: {report.failure}</div>

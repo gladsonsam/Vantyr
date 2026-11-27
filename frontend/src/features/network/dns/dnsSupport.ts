@@ -12,4 +12,3 @@ export function resolveSupported(view: Pick<DnsView, "supportedSettings">): DnsS
     ...view.supportedSettings,
   };
 }
-

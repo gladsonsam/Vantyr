@@ -87,7 +87,13 @@ function vitalList(
           },
         ]
       : []),
-    { label: "Memory", value: mem.text, tone: "text-foreground", pct: mem.pct, ring: "memory" as const },
+    {
+      label: "Memory",
+      value: mem.text,
+      tone: "text-foreground",
+      pct: mem.pct,
+      ring: "memory" as const,
+    },
     {
       label: online ? "Uptime" : "Last seen",
       value: online ? uptimeText : lastSeenText,
@@ -156,7 +162,10 @@ export function AgentVitals({
       {vital.pct != null && vital.ring ? (
         <MetricRing percent={vital.pct} variant={vital.ring} size={26} stroke={3.5} />
       ) : vital.dot ? (
-        <span className={cn("size-2 shrink-0 rounded-full bg-current", vital.tone)} aria-hidden="true" />
+        <span
+          className={cn("size-2 shrink-0 rounded-full bg-current", vital.tone)}
+          aria-hidden="true"
+        />
       ) : null}
       <div className="min-w-0">
         <dt className="text-xs text-muted-foreground">{vital.label}</dt>
@@ -170,7 +179,10 @@ export function AgentVitals({
         >
           {vital.value}
           {vital.extra && (
-            <span className="hidden font-normal text-muted-foreground sm:inline"> · {vital.extra}</span>
+            <span className="hidden font-normal text-muted-foreground sm:inline">
+              {" "}
+              · {vital.extra}
+            </span>
           )}
         </dd>
       </div>

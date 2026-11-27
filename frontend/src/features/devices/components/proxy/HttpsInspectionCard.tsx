@@ -13,7 +13,11 @@ const TITLE = "HTTPS inspection";
 
 const TRUST: Record<TrustState, { label: string; mark: StatusMarkStatus; text: string }> = {
   not_enabled: { label: "Not set up", mark: "cancelled", text: "text-muted-foreground" },
-  pending_trust: { label: "Waiting for devices to trust it", mark: "running", text: "text-warning" },
+  pending_trust: {
+    label: "Waiting for devices to trust it",
+    mark: "running",
+    text: "text-warning",
+  },
   trusted: { label: "Trusted", mark: "done", text: "text-success" },
   rotating: { label: "Rotating", mark: "running", text: "text-warning" },
   retired: { label: "Retired", mark: "cancelled", text: "text-muted-foreground" },
@@ -97,7 +101,9 @@ export function HttpsInspectionCard({ label }: { label: string }) {
         ) : null}
         {info.pinnedApps.length > 0 ? (
           <Row label="Apps you listed as not inspectable">
-            <span className="min-w-0 truncate">{info.pinnedApps.map((a) => a.name).join(", ")}</span>
+            <span className="min-w-0 truncate">
+              {info.pinnedApps.map((a) => a.name).join(", ")}
+            </span>
           </Row>
         ) : null}
       </dl>

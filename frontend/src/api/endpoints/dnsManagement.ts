@@ -22,8 +22,7 @@ export const dnsManagementEndpoints = {
   dnsManagementPatch: (
     household: string,
     body: DnsManagementPatchBody,
-  ): Promise<DnsManagementPatchResult> =>
-    patchJson(`${base(household)}/management`, body),
+  ): Promise<DnsManagementPatchResult> => patchJson(`${base(household)}/management`, body),
   /**
    * `network_admin`. 404 unknown list, 409 disabled. A repeat inside the cooldown is HTTP 200 with
    * `created: false` and the original `config_version` and `expires_at`, not an error.

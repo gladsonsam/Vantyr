@@ -34,7 +34,9 @@ export function SignInCredentialsCard({
   const deviceLabel = new Map((devices.data?.devices ?? []).map((d) => [d.id, d.label]));
   const [now] = useState(() => Date.now());
 
-  const credentials = [...access.credentials].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const credentials = [...access.credentials].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt),
+  );
   // Matched by person id only: a display name is not an identity. A credential without one gets no
   // "revoke all" action (it can still be revoked on its own).
   const activePeople = [
@@ -78,7 +80,10 @@ export function SignInCredentialsCard({
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="text-sm font-medium">{credential.label}</span>
                     <span
-                      className={cn("flex items-center gap-1.5 text-sm font-medium", text.className)}
+                      className={cn(
+                        "flex items-center gap-1.5 text-sm font-medium",
+                        text.className,
+                      )}
                     >
                       <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
                       {text.label}

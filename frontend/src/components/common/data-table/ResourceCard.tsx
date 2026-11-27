@@ -91,9 +91,7 @@ export function ResourceCardFields({
   children: ReactNode;
   className?: string;
 }) {
-  return (
-    <dl className={cn("grid grid-cols-2 gap-x-4 gap-y-3 py-3", className)}>{children}</dl>
-  );
+  return <dl className={cn("grid grid-cols-2 gap-x-4 gap-y-3 py-3", className)}>{children}</dl>;
 }
 
 export function ResourceCardField({

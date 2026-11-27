@@ -56,8 +56,7 @@ export function DeviceRules({
         help={
           <HelpTip label="About rules">
             Anything else is {applied.defaultEffect === "allow" ? "allowed" : "blocked"} by the
-            household default. A person’s own rules apply only once they are verified on the
-            device.
+            household default. A person’s own rules apply only once they are verified on the device.
           </HelpTip>
         }
         className={className}
@@ -107,8 +106,8 @@ export function DeviceRules({
         <div className="flex items-start gap-3 rounded-xl border border-border/70 p-3 text-sm">
           <StatusMark status="pending" size={20} color="var(--muted-foreground)" />
           <span className="text-muted-foreground">
-            Revision {waiting.revision} is saved but not applied. It changes nothing for this
-            device until the gateways apply it.
+            Revision {waiting.revision} is saved but not applied. It changes nothing for this device
+            until the gateways apply it.
           </span>
         </div>
       ) : null}

@@ -98,7 +98,9 @@ export function FleetGridView({
                 </ResourceCardField>
                 <ResourceCardField label={row.online ? "Uptime" : "Last seen"} title={stored}>
                   <span className="tabular-nums">
-                    {row.online ? formatUptime(row.effectiveUptimeSecs) : formatLastSeen(row.last_seen)}
+                    {row.online
+                      ? formatUptime(row.effectiveUptimeSecs)
+                      : formatLastSeen(row.last_seen)}
                   </span>
                 </ResourceCardField>
                 <ResourceCardField label="IP address">

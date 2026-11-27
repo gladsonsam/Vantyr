@@ -84,4 +84,3 @@ export function desiredVsReported(
     detail: `Desired ${revisionLabel(desired.revision)}; reported applied ${reportedRevisionLabel(observation.reportedAppliedRevision)}.`,
   };
 }
-

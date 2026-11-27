@@ -79,7 +79,8 @@ export function useDnsEditor(householdId: string, desired: DnsDesiredView | null
 
   const submit = useCallback(
     async (operations: DnsOperation[], basis: DnsBasis) => {
-      if (conflictRef.current) throw new Error(`${CONFLICT_MESSAGE} Reload to see the latest before changing anything.`);
+      if (conflictRef.current)
+        throw new Error(`${CONFLICT_MESSAGE} Reload to see the latest before changing anything.`);
       if (basis.basisVersion !== latest.current.version) throw new Error(STALE_MESSAGE);
       const problems = validateDnsOperations(operations, basis.basisConfig, basis.basisVersion);
       if (problems.length > 0) throw new Error(problems[0]!.message);
@@ -154,4 +155,3 @@ export function usePinnedBasis(desired: DnsDesiredView | null, editor: DnsEditor
   const stale = editor.conflict || (desired?.config_version ?? 0) !== basis.basisVersion;
   return { pinned, basis, stale, pin };
 }
-

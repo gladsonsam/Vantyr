@@ -197,7 +197,10 @@ function IdentityList({
       {identities.length === 0 ? (
         <p className="text-sm text-muted-foreground">No linked identities.</p>
       ) : (
-        <ul aria-label="Linked identities" className="rounded-lg border border-border/70 bg-muted/20">
+        <ul
+          aria-label="Linked identities"
+          className="rounded-lg border border-border/70 bg-muted/20"
+        >
           {identities.map((i) => (
             <IdentityRow key={i.id} identity={i} name={name} disabled={busy} onUnlink={onUnlink} />
           ))}

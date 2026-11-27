@@ -59,7 +59,11 @@ export function AgentSectionNav({
               onValueChange={(next) => onTabChange(next as TabKey)}
               className="min-w-0"
             >
-              <TabsList variant="line" aria-label={`${AGENT_SECTION_META[section].label} tools`} className="h-9!">
+              <TabsList
+                variant="line"
+                aria-label={`${AGENT_SECTION_META[section].label} tools`}
+                className="h-9!"
+              >
                 {siblings.map((tab) => {
                   const meta = AGENT_TAB_META[tab];
                   const Icon = meta.icon;

@@ -108,7 +108,8 @@ function RuleRow({
       />
       {rule.schedule ? (
         <p className="text-xs text-muted-foreground">
-          Keeps the schedule it had in the revision you started from. Editing schedules is not supported here yet.
+          Keeps the schedule it had in the revision you started from. Editing schedules is not
+          supported here yet.
         </p>
       ) : null}
       {shown ? (
@@ -234,7 +235,9 @@ export function PolicyComposer({
       revision: view.revision,
       dropped: [
         ...dropped.map(droppedText),
-        ...(view.policy.default_effect !== "deny" ? ["the household default (it becomes block)"] : []),
+        ...(view.policy.default_effect !== "deny"
+          ? ["the household default (it becomes block)"]
+          : []),
       ],
     });
   };
@@ -263,12 +266,7 @@ export function PolicyComposer({
       action={
         <>
           {latest ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!current.data}
-              onClick={startFromCurrent}
-            >
+            <Button variant="outline" size="sm" disabled={!current.data} onClick={startFromCurrent}>
               {current.isPending
                 ? "Loading current…"
                 : `Start from current (r${current.data?.policy.revision ?? latest.revision})`}
@@ -293,9 +291,16 @@ export function PolicyComposer({
           </p>
         ) : null}
         {base ? (
-          <div role="status" className="space-y-1 rounded-xl border border-border/70 px-4 py-3 text-[0.8125rem]">
+          <div
+            role="status"
+            className="space-y-1 rounded-xl border border-border/70 px-4 py-3 text-[0.8125rem]"
+          >
             <div>Started from r{base.revision}.</div>
-            <div className={base.dropped.length > 0 ? "font-medium text-warning" : "text-muted-foreground"}>
+            <div
+              className={
+                base.dropped.length > 0 ? "font-medium text-warning" : "text-muted-foreground"
+              }
+            >
               {base.dropped.length > 0
                 ? `Publishing creates a new revision using exactly the content below; r${base.revision} remains in history. The new revision will omit: ${base.dropped.join(", ")}.`
                 : `Nothing was left out. Publishing creates a new revision using exactly the content below; r${base.revision} remains in history.`}
@@ -441,8 +446,7 @@ export function PolicyComposer({
             <div className="font-medium">
               {total} rule{total === 1 ? "" : "s"} ({state.baseline.length} baseline,{" "}
               {total - state.baseline.length} in {state.profiles.length} profile
-              {state.profiles.length === 1 ? "" : "s"}) · about{" "}
-              {formatBytes(draftSizeBytes(state))}
+              {state.profiles.length === 1 ? "" : "s"}) · about {formatBytes(draftSizeBytes(state))}
             </div>
             <div className="text-muted-foreground">
               {latest
@@ -476,7 +480,9 @@ export function PolicyComposer({
             disabled={problems.length > 0 || publish.isPending}
             onConfirm={async () => {
               setSaved(null);
-              const result = await publish.mutateAsync(toDraft(state, base?.revision ?? latest?.revision));
+              const result = await publish.mutateAsync(
+                toDraft(state, base?.revision ?? latest?.revision),
+              );
               setSaved(
                 `Saved as revision ${result.revision}. It is not assigned to any gateway yet; assign it from History.`,
               );

@@ -114,7 +114,9 @@ export function CompareRevisionDialog({
           </DialogDescription>
         </DialogHeader>
         {others.length === 0 ? (
-          <p className="text-sm text-muted-foreground">There is no other listed revision to compare with.</p>
+          <p className="text-sm text-muted-foreground">
+            There is no other listed revision to compare with.
+          </p>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground">Compare with</span>
@@ -144,7 +146,10 @@ export function CompareRevisionDialog({
         {other === null ? null : diff.isPending ? (
           <Loading />
         ) : diff.isError ? (
-          <ReadFailed message={readError(diff.error, "comparison")} onRetry={() => void diff.refetch()} />
+          <ReadFailed
+            message={readError(diff.error, "comparison")}
+            onRetry={() => void diff.refetch()}
+          />
         ) : (
           <PolicyDiffView diff={diff.data.diff} />
         )}

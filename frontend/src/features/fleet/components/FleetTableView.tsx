@@ -121,7 +121,9 @@ export function FleetTableView({
               <SortHead title="Status" sortKey="connectivity" sort={sort} onSort={onSort} />
             </TableHead>
             {show("activity") && <TableHead className="min-w-44">Current activity</TableHead>}
-            {show("uptime") && <TableHead className="hidden w-32 @2xl:table-cell">Uptime</TableHead>}
+            {show("uptime") && (
+              <TableHead className="hidden w-32 @2xl:table-cell">Uptime</TableHead>
+            )}
             {show("lastSeen") && (
               <TableHead className="hidden w-32 @2xl:table-cell">
                 <SortHead title="Last seen" sortKey="last_seen" sort={sort} onSort={onSort} />

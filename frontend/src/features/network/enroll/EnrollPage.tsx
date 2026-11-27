@@ -2,7 +2,11 @@ import { useState } from "react";
 import { ShieldOff } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { isApiError } from "@/api";
-import { useConsumeSetupGrant, useEnrollmentContexts, useOwnEnrollDevices } from "@/api/queries/network";
+import {
+  useConsumeSetupGrant,
+  useEnrollmentContexts,
+  useOwnEnrollDevices,
+} from "@/api/queries/network";
 import type { NetworkSetupGrantIssued } from "@/api/types";
 import { usePageHeader } from "@/app/shell/usePageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -52,7 +56,10 @@ export function EnrollPage() {
         />
       );
     return (
-      <LoadFailedCard message="Couldn’t load your devices." onRetry={() => void devices.refetch()} />
+      <LoadFailedCard
+        message="Couldn’t load your devices."
+        onRetry={() => void devices.refetch()}
+      />
     );
   }
 

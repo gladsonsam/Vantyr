@@ -8,7 +8,11 @@ import { UnavailableSection } from "@/features/network/components/AvailabilityGa
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { useEventsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import type { EventSource } from "@/features/network/runtime/types";
-import { eventPerson, sourceSupported, unsupportedSourceText } from "@/features/network/activity/evidenceLib";
+import {
+  eventPerson,
+  sourceSupported,
+  unsupportedSourceText,
+} from "@/features/network/activity/evidenceLib";
 import { cn } from "@/lib/utils";
 
 const SOURCE_LABEL: Record<EventSource, string> = { dns: "DNS", proxy: "Proxy", agent: "Agent" };
@@ -62,7 +66,9 @@ export function DeviceDecisions({
         help={
           <HelpTip label="About decisions">
             Each row is a domain or host a gateway observed, with its decision. It is not browser
-            history or a record of pages visited, and only hostnames are kept, never full URLs.
+            history or a record of pages visited, and only hostnames are kept, never full URLs. A
+            missing decision means no observation was received, never that the device was protected.
+            Allowed is a policy decision, not proof the lookup was answered or enforced.
           </HelpTip>
         }
         action={

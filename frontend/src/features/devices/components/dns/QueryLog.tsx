@@ -21,7 +21,7 @@ const COPY = {
   dns: {
     title: "Recent lookups",
     helpLabel: "About the lookup log",
-    help: "Each row is a domain name a gateway observed, with its decision. It is not browser history or a record of pages visited, and only hostnames are kept, never full URLs.",
+    help: "Each row is a domain name a gateway observed, with its decision. It is not browser history or a record of pages visited, and only hostnames are kept, never full URLs. A missing lookup means no observation was received, not that the device was protected. Allowed is a policy decision, not proof the lookup was answered.",
     placeholder: "Search domains…",
     searchLabel: "Search the lookup log",
     unavailable: "Lookup log",
@@ -147,12 +147,16 @@ export function QueryLog({
                     )}
                   >
                     <span
-                      className={cn("size-1.5 rounded-full", blocked ? "bg-destructive" : "bg-success")}
+                      className={cn(
+                        "size-1.5 rounded-full",
+                        blocked ? "bg-destructive" : "bg-success",
+                      )}
                     />
                     {blocked ? "Blocked" : "Allowed"}
                   </span>
                   <span className="col-span-3 truncate text-xs text-muted-foreground sm:col-span-1">
-                    {event.reason} · r{event.revision}
+                    {event.reason}
+                    {event.revision === null ? null : ` · r${event.revision}`}
                   </span>
                 </li>
               );

@@ -16,7 +16,10 @@ export function EnrollmentLinkSection({ household }: { household: string }) {
       description="Send this link to people who may enroll their own devices."
       help="The link only opens the enrollment page for this household. It grants nothing by itself: a person needs the network_enroll grant and a mapping to a person before it works."
     >
-      <SettingsRow label="Household link" description="Works only for people with the enrollment grant.">
+      <SettingsRow
+        label="Household link"
+        description="Works only for people with the enrollment grant."
+      >
         <div className="flex min-w-0 items-center gap-2">
           <code className="min-w-0 truncate rounded-md border border-border/70 px-2 py-1 text-xs">
             {url}

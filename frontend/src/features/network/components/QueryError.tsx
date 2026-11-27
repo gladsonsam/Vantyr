@@ -38,10 +38,5 @@ export function QueryError({
       />
     );
   }
-  return (
-    <LoadFailedCard
-      message={`Couldn’t load ${title.toLowerCase()}.`}
-      onRetry={onRetry}
-    />
-  );
+  return <LoadFailedCard message={`Couldn’t load ${title.toLowerCase()}.`} onRetry={onRetry} />;
 }

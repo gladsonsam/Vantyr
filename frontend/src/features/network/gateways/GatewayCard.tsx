@@ -52,7 +52,9 @@ export function GatewayCard({ status }: { status: GatewayStatus }) {
             {revisionLabel(desired?.revision)}
           </KeyValueCard>
           <KeyValueCard label={<ReportedAppliedLabel />} format="text">
-            {observation ? reportedRevisionLabel(observation.reportedAppliedRevision) : "Not reported yet"}
+            {observation
+              ? reportedRevisionLabel(observation.reportedAppliedRevision)
+              : "Not reported yet"}
           </KeyValueCard>
         </KeyValueGrid>
         {observation?.reportedFailure ? (

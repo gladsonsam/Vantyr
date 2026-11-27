@@ -125,10 +125,7 @@ export function GatewayCredentialsSection({
   const [error, setError] = useState<string | null>(null);
   const canChange = isAdmin && !gateway.revoked_at;
 
-  const hand = (
-    token: { token: string; expires_at: string },
-    commands: string[],
-  ) =>
+  const hand = (token: { token: string; expires_at: string }, commands: string[]) =>
     onIssued({
       token: token.token,
       expiresAt: token.expires_at,

@@ -109,6 +109,11 @@ const DnsStatusPage = lazy(() =>
     default: m.DnsStatusPage,
   })),
 );
+const ScopedActivityPage = lazy(() =>
+  import("@/features/network/activity/NetworkActivityPage").then((m) => ({
+    default: m.ScopedActivityRoute,
+  })),
+);
 const UsersPage = lazy(() =>
   import("@/features/users/UsersPage").then((m) => ({ default: m.UsersPage })),
 );
@@ -233,6 +238,8 @@ export function AppRoutes() {
         <Route path="/network/enroll/:householdId" element={<EnrollPage />} />
         {/* Events-only DNS status: also outside the administrator-gated layout. */}
         <Route path="/network/dns-status/:householdId" element={<DnsStatusPage />} />
+        {/* Events-only Activity (DNS events and stats only): outside the administrator-gated layout. */}
+        <Route path="/network/activity/:householdId" element={<ScopedActivityPage />} />
         <Route path="/network" element={<NetworkLayout />}>
           <Route index element={<NetworkOverviewPage />} />
           <Route path="policies" element={<NetworkPoliciesPage />} />

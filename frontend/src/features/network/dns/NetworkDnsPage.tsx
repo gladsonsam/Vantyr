@@ -11,12 +11,7 @@ import { DnsStatusPanel } from "@/features/network/dns-status/DnsStatusPanel";
 import type { DnsView } from "@/features/network/runtime/types";
 import { useDnsQuery } from "@/features/network/runtime/useRuntimeQueries";
 import { SettingsPageHeader } from "@/features/settings/components/SettingsLayout";
-import {
-  AccessCard,
-  CacheCard,
-  FilteringCard,
-  LoggingCard,
-} from "./DnsSettingsCards";
+import { AccessCard, CacheCard, FilteringCard, LoggingCard } from "./DnsSettingsCards";
 import { EncryptedCard, RewritesCard, UpstreamsCard } from "./DnsReadOnlyCards";
 import { DnsManagementSections } from "./DnsManagementSections";
 import { PendingDnsSection } from "./PendingDnsSection";

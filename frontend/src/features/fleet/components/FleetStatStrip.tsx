@@ -1,9 +1,5 @@
 import { ArrowUpCircle, Monitor, Wifi, WifiOff } from "lucide-react";
-import {
-  StatStrip,
-  StatStripDivider,
-  StatStripItem,
-} from "@/components/common/StatStrip";
+import { StatStrip, StatStripDivider, StatStripItem } from "@/components/common/StatStrip";
 import type { FleetStatusFilter } from "@/features/fleet/lib/fleetPreferences";
 import type { StatusCounts } from "./FleetToolbar";
 

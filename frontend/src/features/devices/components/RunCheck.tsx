@@ -73,14 +73,14 @@ export function RunCheck({
     <div className="space-y-2">
       {state === "idle" ? (
         <div className="flex items-center gap-1.5">
-        <Button variant="outline" size="sm" onClick={run}>
-          Run check
-        </Button>
-        <HelpTip label="About running a check">
-          Gateway reachability, the DNS decision, proxy sign-in, certificate trust and canary
-          coverage are different checks. One generic result can’t prove all of them, so read it as
-          only what the gateway answered.
-        </HelpTip>
+          <Button variant="outline" size="sm" onClick={run}>
+            Run check
+          </Button>
+          <HelpTip label="About running a check">
+            Gateway reachability, the DNS decision, proxy sign-in, certificate trust and canary
+            coverage are different checks. One generic result can’t prove all of them, so read it as
+            only what the gateway answered.
+          </HelpTip>
         </div>
       ) : (
         <CallChip

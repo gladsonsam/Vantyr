@@ -31,7 +31,11 @@ function todaysSessions(sessions: Session[]): Session[] {
     .map((s) =>
       s.startTime >= midnight
         ? s
-        : { ...s, startTime: midnight, duration: Math.round((s.endTime.getTime() - midnight.getTime()) / 1000) },
+        : {
+            ...s,
+            startTime: midnight,
+            duration: Math.round((s.endTime.getTime() - midnight.getTime()) / 1000),
+          },
     );
 }
 
@@ -41,7 +45,10 @@ function hourly(sessions: Session[], pick: (s: Session) => number): number[] {
   const buckets = Array.from({ length: Math.max(hours, 2) }, () => 0);
   const midnight = startOfToday().getTime();
   for (const s of sessions) {
-    const hour = Math.min(buckets.length - 1, Math.floor((s.startTime.getTime() - midnight) / 3_600_000));
+    const hour = Math.min(
+      buckets.length - 1,
+      Math.floor((s.startTime.getTime() - midnight) / 3_600_000),
+    );
     if (hour >= 0) buckets[hour] += pick(s);
   }
   return buckets;
@@ -135,7 +142,9 @@ export function OverviewAgent({
           className="lg:col-span-3"
           action={
             <div className="flex items-center gap-4">
-              <span className={`flex items-center gap-2 text-sm font-medium ${online ? "text-success" : "text-muted-foreground"}`}>
+              <span
+                className={`flex items-center gap-2 text-sm font-medium ${online ? "text-success" : "text-muted-foreground"}`}
+              >
                 <span
                   aria-hidden="true"
                   className="size-2 rounded-full"
@@ -188,7 +197,11 @@ export function OverviewAgent({
           </div>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
             <span className={`flex items-center gap-2 font-medium ${tone.text}`}>
-              <span aria-hidden="true" className="size-2 rounded-full" style={{ background: tone.dot }} />
+              <span
+                aria-hidden="true"
+                className="size-2 rounded-full"
+                style={{ background: tone.dot }}
+              />
               {stateLabel}
             </span>
             {onApp !== null ? (
@@ -202,7 +215,9 @@ export function OverviewAgent({
                 {topApps.map((a) => (
                   <li key={a.exe} className="space-y-1.5">
                     <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="min-w-0 truncate">{prettyAppLabel({ exeName: a.exe, appDisplay: a.name })}</span>
+                      <span className="min-w-0 truncate">
+                        {prettyAppLabel({ exeName: a.exe, appDisplay: a.name })}
+                      </span>
                       <span className="shrink-0 tabular-nums text-muted-foreground">
                         {formatDuration(Math.round(a.secs))}
                       </span>
@@ -210,7 +225,10 @@ export function OverviewAgent({
                     <div className="h-1 overflow-hidden rounded-full bg-muted/50">
                       <div
                         className="h-full rounded-full"
-                        style={{ width: `${Math.max(4, (a.secs / maxSecs) * 100)}%`, background: appColor(a.exe) }}
+                        style={{
+                          width: `${Math.max(4, (a.secs / maxSecs) * 100)}%`,
+                          background: appColor(a.exe),
+                        }}
                       />
                     </div>
                   </li>

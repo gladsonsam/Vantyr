@@ -11,6 +11,11 @@ export const EVIDENCE: Record<IdentityEvidence, { label: string; dot: string; te
   asserted: { label: "Asserted", dot: "bg-info", text: "text-info" },
   weak: { label: "Weak", dot: "bg-warning", text: "text-warning" },
   unknown: { label: "Unknown", dot: "bg-muted-foreground/50", text: "text-muted-foreground" },
+  observed: {
+    label: "Observed by DNS",
+    dot: "bg-muted-foreground/50",
+    text: "text-muted-foreground",
+  },
 };
 
 export function evidenceLabel(evidence: IdentityEvidence): string {
@@ -35,7 +40,9 @@ export interface EventPerson {
  * not a person: it never displays a verified sign-in, even if the data says so, because only a proxy
  * sign-in can verify who is using a device. DNS events that carry weaker evidence keep it as given.
  */
-export function eventPerson(event: Pick<NetworkEvent, "source" | "personLabel" | "evidence">): EventPerson {
+export function eventPerson(
+  event: Pick<NetworkEvent, "source" | "personLabel" | "evidence">,
+): EventPerson {
   const clamped =
     event.source === "dns" && (event.evidence === "verified" || event.evidence === "unknown");
   if (clamped) {
@@ -47,7 +54,8 @@ export function eventPerson(event: Pick<NetworkEvent, "source" | "personLabel" |
     };
   }
   return {
-    name: event.personLabel,
+    // A DNS observation names a device only, so its person is never claimed.
+    name: event.source === "dns" && event.evidence === "observed" ? null : event.personLabel,
     fallback: event.source === "dns" ? DNS_PERSON_UNKNOWN : "No person identified",
     evidence: event.evidence,
     evidenceText: evidenceLabel(event.evidence),
@@ -57,13 +65,17 @@ export function eventPerson(event: Pick<NetworkEvent, "source" | "personLabel" |
 export const UNRECOGNISED_DEVICE = "Unrecognised device";
 
 /** How an event's device is named. A null device id never links to a device page. */
-export function eventDevice(event: Pick<NetworkEvent, "deviceId" | "deviceLabel" | "clientAddress">): {
+export function eventDevice(
+  event: Pick<NetworkEvent, "deviceId" | "deviceLabel" | "clientAddress">,
+): {
   label: string;
   linkable: boolean;
 } {
   if (event.deviceId === null) {
     return {
-      label: event.clientAddress ? `${UNRECOGNISED_DEVICE} (${event.clientAddress})` : UNRECOGNISED_DEVICE,
+      label: event.clientAddress
+        ? `${UNRECOGNISED_DEVICE} (${event.clientAddress})`
+        : UNRECOGNISED_DEVICE,
       linkable: false,
     };
   }
@@ -94,3 +106,8 @@ export function groupingSupported(
 export function unsupportedSourceText(source: EventSource): string {
   return `${SOURCE_NAME[source]} history isn’t available yet`;
 }
+
+export const UNLABELLED_DEVICE = "Unlabelled device";
+
+/** Server errors a "Load more" can hit once the first page's window has aged out (HTTP 400). */
+export const WINDOW_TOO_OLD = "The time window is too old to continue. Refresh the list.";

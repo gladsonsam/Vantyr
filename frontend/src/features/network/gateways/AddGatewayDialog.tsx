@@ -143,7 +143,12 @@ export function AddGatewayDialog({
               />
             </div>
           </div>
-          <CredentialRequestFields values={request} onChange={setRequest} idPrefix="add-gateway" kind={kind} />
+          <CredentialRequestFields
+            values={request}
+            onChange={setRequest}
+            idPrefix="add-gateway"
+            kind={kind}
+          />
           {error ? (
             <p role="alert" className="text-sm text-destructive">
               {error}

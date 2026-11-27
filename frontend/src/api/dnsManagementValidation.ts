@@ -117,7 +117,12 @@ function isPublicIpv6(host: string): boolean {
 
 /** Syntax-only URL check mirroring the server (HTTPS, no userinfo/query/fragment, public host). */
 export function validateDnsSourceUrl(raw: string): string | null {
-  if (raw.length === 0 || raw.length > DNS_LIMITS.maxUrlLen || hasControl(raw) || hasWhitespace(raw)) {
+  if (
+    raw.length === 0 ||
+    raw.length > DNS_LIMITS.maxUrlLen ||
+    hasControl(raw) ||
+    hasWhitespace(raw)
+  ) {
     return "Enter a URL up to 512 characters with no spaces";
   }
   let url: URL;
@@ -127,8 +132,10 @@ export function validateDnsSourceUrl(raw: string): string | null {
     return "This is not a valid URL";
   }
   if (url.protocol !== "https:") return "Only https:// URLs are allowed";
-  if (url.username !== "" || url.password !== "") return "A URL with a username or password is not allowed";
-  if (raw.includes("?") || raw.includes("#")) return "The URL must not include a query string or fragment";
+  if (url.username !== "" || url.password !== "")
+    return "A URL with a username or password is not allowed";
+  if (raw.includes("?") || raw.includes("#"))
+    return "The URL must not include a query string or fragment";
   const host = url.hostname.toLowerCase();
   if (host.startsWith("[")) {
     if (!isPublicIpv6(host.slice(1, -1))) return "The host must be a public address";
@@ -143,14 +150,19 @@ export function validateDnsSourceUrl(raw: string): string | null {
   }
   if (host === "raw.githubusercontent.com") {
     const segments = url.pathname.split("/").filter(Boolean);
-    if (segments.length < 4) return "raw.githubusercontent.com URLs must look like /owner/repo/ref/path";
+    if (segments.length < 4)
+      return "raw.githubusercontent.com URLs must look like /owner/repo/ref/path";
   }
   return null;
 }
 
 export function validateDnsInterval(value: number | null | undefined): string | null {
   if (value == null) return null;
-  if (!Number.isInteger(value) || value < DNS_LIMITS.minIntervalSecs || value > DNS_LIMITS.maxIntervalSecs) {
+  if (
+    !Number.isInteger(value) ||
+    value < DNS_LIMITS.minIntervalSecs ||
+    value > DNS_LIMITS.maxIntervalSecs
+  ) {
     return "Refresh interval must be between 300 seconds (5 minutes) and 604800 seconds (7 days)";
   }
   return null;
@@ -158,7 +170,11 @@ export function validateDnsInterval(value: number | null | undefined): string | 
 
 export function validateDnsMaxStale(value: number | null | undefined): string | null {
   if (value == null) return null;
-  if (!Number.isInteger(value) || value < DNS_LIMITS.minStaleSecs || value > DNS_LIMITS.maxStaleSecs) {
+  if (
+    !Number.isInteger(value) ||
+    value < DNS_LIMITS.minStaleSecs ||
+    value > DNS_LIMITS.maxStaleSecs
+  ) {
     return "Maximum stale time must be between 3600 seconds (1 hour) and 604800 seconds (7 days)";
   }
   return null;
@@ -173,7 +189,8 @@ function validateText(raw: string, what: string, max: number): string | null {
 
 function validateOptionalText(raw: string | null | undefined, what: string): string | null {
   if (raw == null) return null;
-  if (raw.length > DNS_LIMITS.maxFieldLen) return `${what} must be at most ${DNS_LIMITS.maxFieldLen} characters`;
+  if (raw.length > DNS_LIMITS.maxFieldLen)
+    return `${what} must be at most ${DNS_LIMITS.maxFieldLen} characters`;
   if (hasControl(raw)) return `${what} must not contain control characters`;
   return null;
 }
@@ -249,7 +266,13 @@ export function validateDnsConfig(config: DnsManagementConfig, path = "config"):
     if (ids.has(s.id)) push(`${path}.sources[${i}].id`, "Duplicate list id");
     ids.add(s.id);
   });
-  errors.push(...validateDnsSelectedServices(config.selected_services, config.catalog, `${path}.selected_services`));
+  errors.push(
+    ...validateDnsSelectedServices(
+      config.selected_services,
+      config.catalog,
+      `${path}.selected_services`,
+    ),
+  );
   if (config.catalog) errors.push(...validateDnsCatalog(config.catalog, `${path}.catalog`));
   return errors;
 }
@@ -265,7 +288,8 @@ export function validateDnsSelectedServices(
     errors.push({ path, message: `At most ${DNS_LIMITS.maxServices} services can be selected` });
   }
   if (!catalog) {
-    if (ids.length > 0) errors.push({ path, message: "Selecting services requires a service catalog" });
+    if (ids.length > 0)
+      errors.push({ path, message: "Selecting services requires a service catalog" });
     return errors;
   }
   const known = new Set(catalog.services.map((s) => s.id));
@@ -275,12 +299,20 @@ export function validateDnsSelectedServices(
     if (idError) errors.push({ path: `${path}[${i}]`, message: idError });
     if (seen.has(id)) errors.push({ path: `${path}[${i}]`, message: "Duplicate selected service" });
     seen.add(id);
-    if (!known.has(id)) errors.push({ path: `${path}[${i}]`, message: "This service is not in the catalog" });
+    if (!known.has(id))
+      errors.push({ path: `${path}[${i}]`, message: "This service is not in the catalog" });
   });
   return errors;
 }
 
-const patchKeys = ["url", "format", "enabled", "interval_secs", "max_stale_secs", "metadata"] as const;
+const patchKeys = [
+  "url",
+  "format",
+  "enabled",
+  "interval_secs",
+  "max_stale_secs",
+  "metadata",
+] as const;
 
 /**
  * Applies operations to `base` in order, the way the server does (pure; never mutates `base`).
@@ -338,7 +370,8 @@ export function applyDnsOperations(
     }
   });
   config.sources.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  if (config.catalog) config.catalog.services.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  if (config.catalog)
+    config.catalog.services.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   config.selected_services = [...new Set(config.selected_services)].sort();
   return { config, errors };
 }
@@ -409,7 +442,11 @@ export function validateDnsOperations(
     .map((op, i) => (op.op === "select_services" ? i : -1))
     .filter((i) => i >= 0);
   const lastSelect = selectOps[selectOps.length - 1];
-  for (const e of validateDnsSelectedServices(applied.config.selected_services, applied.config.catalog, "selected_services")) {
+  for (const e of validateDnsSelectedServices(
+    applied.config.selected_services,
+    applied.config.catalog,
+    "selected_services",
+  )) {
     cfg.push({
       path: lastSelect !== undefined ? `operations[${lastSelect}].ids` : e.path,
       message: e.message,
@@ -430,9 +467,15 @@ export function validateDnsOperations(
       }),
     );
     if (configBytes > DNS_LIMITS.maxConfigBytes) {
-      errors.push({ path: "operations", message: "The resulting configuration is larger than 16 KiB" });
+      errors.push({
+        path: "operations",
+        message: "The resulting configuration is larger than 16 KiB",
+      });
     }
-    const body: DnsManagementPatchBody = { expected_config_version: expectedConfigVersion, operations };
+    const body: DnsManagementPatchBody = {
+      expected_config_version: expectedConfigVersion,
+      operations,
+    };
     if (bytes(JSON.stringify(body)) > DNS_LIMITS.maxRequestBytes) {
       errors.push({ path: "operations", message: "The request is larger than 32 KiB" });
     }

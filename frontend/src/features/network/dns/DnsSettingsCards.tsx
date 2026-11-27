@@ -10,7 +10,11 @@ import { useDebouncedCommit } from "@/features/network/lib/useDebouncedCommit";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import { HoldAction } from "@/features/network/gateways/HoldAction";
 import { useClearDnsCacheMutation } from "@/features/network/runtime/useRuntimeQueries";
-import type { DnsResponseMode, DnsSupportedSettings, DnsView } from "@/features/network/runtime/types";
+import type {
+  DnsResponseMode,
+  DnsSupportedSettings,
+  DnsView,
+} from "@/features/network/runtime/types";
 import { useDnsSettingsEdit } from "./dnsSettingsEdit";
 import { SettingRow } from "./SettingRow";
 
@@ -72,23 +76,26 @@ export function FilteringCard({
         help="NXDOMAIN says the name doesn’t exist. Refused says the server won’t answer. A sinkhole answers with an address that goes nowhere."
       >
         {supported.responseMode ? (
-        <div inert={edit.disabled || undefined} className={edit.disabled ? "opacity-50" : undefined}>
-        <RubberSegment
-          aria-label="Blocked response"
-          size="sm"
-          items={[
-            { value: "nxdomain", label: "NXDOMAIN" },
-            { value: "refused", label: "Refused" },
-            { value: "sinkhole", label: "Sinkhole" },
-          ]}
-          value={filtering.responseMode}
-          onChange={(next) => edit.commit({ responseMode: next as DnsResponseMode }, version)}
-          trackColor="var(--muted)"
-          thumbColor="var(--primary)"
-          textColor="var(--muted-foreground)"
-          activeTextColor="var(--primary-foreground)"
-        />
-        </div>
+          <div
+            inert={edit.disabled || undefined}
+            className={edit.disabled ? "opacity-50" : undefined}
+          >
+            <RubberSegment
+              aria-label="Blocked response"
+              size="sm"
+              items={[
+                { value: "nxdomain", label: "NXDOMAIN" },
+                { value: "refused", label: "Refused" },
+                { value: "sinkhole", label: "Sinkhole" },
+              ]}
+              value={filtering.responseMode}
+              onChange={(next) => edit.commit({ responseMode: next as DnsResponseMode }, version)}
+              trackColor="var(--muted)"
+              thumbColor="var(--primary)"
+              textColor="var(--muted-foreground)"
+              activeTextColor="var(--primary-foreground)"
+            />
+          </div>
         ) : (
           <NotAvailableYet />
         )}
@@ -287,21 +294,21 @@ export function AccessCard({
         help="A device asking faster than this is slowed down. It protects the server from a device stuck in a loop."
       >
         {supported.rateLimit ? (
-        <WakeSlider
-          ariaLabel="Queries per second per device"
-          min={1}
-          max={200}
-          step={1}
-          value={rate}
-          disabled={edit.disabled}
-          onChange={(value) => {
-            setRate(value);
-            save({ value, version });
-          }}
-          fillColor="var(--primary)"
-          trackColor="var(--muted)"
-          formatValue={(value) => `${Math.round(value)}/s`}
-        />
+          <WakeSlider
+            ariaLabel="Queries per second per device"
+            min={1}
+            max={200}
+            step={1}
+            value={rate}
+            disabled={edit.disabled}
+            onChange={(value) => {
+              setRate(value);
+              save({ value, version });
+            }}
+            fillColor="var(--primary)"
+            trackColor="var(--muted)"
+            formatValue={(value) => `${Math.round(value)}/s`}
+          />
         ) : (
           <NotAvailableYet />
         )}

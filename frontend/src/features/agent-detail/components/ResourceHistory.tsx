@@ -124,7 +124,9 @@ export function ResourceHistory({ agentId }: { agentId: string }) {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : !points || points.length === 0 ? (
-          <div className="p-6 text-center text-sm text-muted-foreground lg:col-span-3">No samples yet.</div>
+          <div className="p-6 text-center text-sm text-muted-foreground lg:col-span-3">
+            No samples yet.
+          </div>
         ) : (
           SERIES.map((s) => {
             const vals = points.map((p) => p[s.key]);
@@ -132,10 +134,7 @@ export function ResourceHistory({ agentId }: { agentId: string }) {
             const peak = vals.reduce((m, v) => Math.max(m, v), 0);
             const subText = latest ? s.sub(latest) : "";
             return (
-              <div
-                key={s.key}
-                className="rounded-xl border border-border/70 bg-card/10 p-4"
-              >
+              <div key={s.key} className="rounded-xl border border-border/70 bg-card/10 p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                   <span className="flex items-center gap-2.5 font-semibold">
                     <MetricRing percent={cur} variant={s.ring} size={32} stroke={4}>

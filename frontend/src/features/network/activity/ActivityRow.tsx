@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { HelpTip } from "@/components/common/HelpTip";
 import { KeyValueCard, KeyValueGrid } from "@/components/common/resource-detail/KeyValueCard";
 import { TimeAgo } from "@/features/network/components/TimeAgo";
 import type { NetworkEvent } from "@/features/network/runtime/types";
@@ -49,7 +50,10 @@ export function ActivityRow({ event, grouped }: { event: NetworkEvent; grouped: 
           <TimeAgo iso={event.at} />
           <ChevronDown
             aria-hidden
-            className={cn("size-3.5 transition-transform motion-reduce:transition-none", open && "rotate-180")}
+            className={cn(
+              "size-3.5 transition-transform motion-reduce:transition-none",
+              open && "rotate-180",
+            )}
           />
         </span>
       </button>
@@ -61,6 +65,7 @@ export function ActivityRow({ event, grouped }: { event: NetworkEvent; grouped: 
       </p>
       <p className="text-xs text-muted-foreground">
         {event.reason}
+        {event.revision === null ? null : ` · r${event.revision}`}
         {seen ? ` · ${seen}` : null}
         {grouped && event.firstSeenAt && event.lastSeenAt ? (
           <>
@@ -86,9 +91,11 @@ export function ActivityRow({ event, grouped }: { event: NetworkEvent; grouped: 
             <KeyValueCard label="Matched rule or reason" format="text">
               {event.reason}
             </KeyValueCard>
-            <KeyValueCard label="Policy revision" format="text">
-              r{event.revision}
-            </KeyValueCard>
+            {event.revision === null ? null : (
+              <KeyValueCard label="Policy revision" format="text">
+                r{event.revision}
+              </KeyValueCard>
+            )}
             <KeyValueCard label="Identity evidence" format="text">
               {person.evidenceText}
             </KeyValueCard>
@@ -100,10 +107,51 @@ export function ActivityRow({ event, grouped }: { event: NetworkEvent; grouped: 
                 {fmtDateTimePrecise(event.firstSeenAt)}
               </KeyValueCard>
             ) : null}
-            <KeyValueCard label="Correlation" format="code">
-              {event.correlationId}
-            </KeyValueCard>
+            {event.correlationId === null ? null : (
+              <KeyValueCard label="Correlation" format="code">
+                {event.correlationId}
+              </KeyValueCard>
+            )}
+            {event.dns ? (
+              <>
+                <KeyValueCard label="Query type" format="text">
+                  {event.dns.queryType}
+                </KeyValueCard>
+                <KeyValueCard label="Protocol" format="text">
+                  {event.dns.protocol}
+                </KeyValueCard>
+                {event.dns.appliedRule ? (
+                  <KeyValueCard label="Matched rule" format="code">
+                    {event.dns.appliedRule}
+                  </KeyValueCard>
+                ) : null}
+                {event.dns.filterBlocked ? (
+                  <KeyValueCard label="Blocked by list" format="text">
+                    {[event.dns.filterSourceId, event.dns.filterSourceKind]
+                      .filter((part): part is string => Boolean(part))
+                      .join(" · ") || "Yes"}
+                  </KeyValueCard>
+                ) : null}
+                {event.dns.deniedAliasTarget ? (
+                  <KeyValueCard label="Alias target" format="code">
+                    {event.dns.deniedAliasTarget}
+                  </KeyValueCard>
+                ) : null}
+                <KeyValueCard label="Received" format="text">
+                  {fmtDateTimePrecise(event.dns.receivedAt)}
+                </KeyValueCard>
+              </>
+            ) : null}
           </KeyValueGrid>
+          <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+            An observation, not a visit
+            <HelpTip label="About this observation">
+              An observation is a domain a gateway reported, not a page visit. A missing event means
+              no observations were received, never that the device was protected. Allowed is a
+              policy decision, even if the upstream lookup failed (for example SERVFAIL); it is not
+              proof the answer succeeded or that anything was enforced.
+            </HelpTip>
+          </p>
         </div>
       ) : null}
     </li>

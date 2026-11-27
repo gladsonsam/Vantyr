@@ -59,7 +59,8 @@ function statusFor(f: RevisionFacts): { mark: StatusMarkStatus; text: string } {
     parts.push(`Reported applied by ${plural(f.reportedBy.length, "gateway")} (unverified)`);
   }
   if (parts.length === 0) return { mark: "pending", text: "Saved, not assigned to a gateway" };
-  if (f.failing) return { mark: "failed", text: `${parts.join(" · ")} · a gateway reports a failure` };
+  if (f.failing)
+    return { mark: "failed", text: `${parts.join(" · ")} · a gateway reports a failure` };
   return { mark: f.reportedBy.length > 0 ? "done" : "running", text: parts.join(" · ") };
 }
 
@@ -127,9 +128,7 @@ function AssignDialog({
           </Button>
           <Button
             disabled={!chosen || assign.isPending}
-            onClick={() =>
-              assign.mutate({ gateway: gatewayId, revision }, { onSuccess: onClose })
-            }
+            onClick={() => assign.mutate({ gateway: gatewayId, revision }, { onSuccess: onClose })}
           >
             {assign.isPending ? "Assigning…" : "Assign as desired"}
           </Button>
@@ -281,8 +280,8 @@ export function PolicyHistoryCard({
       action={
         <HelpTip label="About rolling back">
           Rolling back never edits or deletes history. It saves a copy of the chosen revision as a
-          new revision, which you then assign to gateways. History is bounded; the oldest
-          revisions are pruned except ones a gateway still wants.
+          new revision, which you then assign to gateways. History is bounded; the oldest revisions
+          are pruned except ones a gateway still wants.
         </HelpTip>
       }
     >

@@ -73,7 +73,14 @@ export function newRuleId(prefix: string): string {
 }
 
 export function newRule(prefix: string, effect: NetworkPolicyEffect): EditorRule {
-  return { id: newRuleId(prefix), kind: "domain_suffix", value: "", effect, reason: "", schedule: null };
+  return {
+    id: newRuleId(prefix),
+    kind: "domain_suffix",
+    value: "",
+    effect,
+    reason: "",
+    schedule: null,
+  };
 }
 
 // ── Validation ──────────────────────────────────────────────────────────────
@@ -95,14 +102,17 @@ export function domainError(raw: string): string | null {
   for (const label of v.split(".")) {
     if (label.length === 0) return "Empty label (two dots in a row).";
     if (label.length > 63) return "Each label is at most 63 characters.";
-    if (!/^[A-Za-z0-9-]+$/.test(label)) return "Letters, digits and hyphens only (no wildcards or ports).";
-    if (label.startsWith("-") || label.endsWith("-")) return "A label cannot start or end with a hyphen.";
+    if (!/^[A-Za-z0-9-]+$/.test(label))
+      return "Letters, digits and hyphens only (no wildcards or ports).";
+    if (label.startsWith("-") || label.endsWith("-"))
+      return "A label cannot start or end with a hyphen.";
   }
   return null;
 }
 
 export function reasonError(reason: string): string | null {
-  if (utf8Len(reason) > LIMITS.maxReasonLen) return `Reason is at most ${LIMITS.maxReasonLen} bytes.`;
+  if (utf8Len(reason) > LIMITS.maxReasonLen)
+    return `Reason is at most ${LIMITS.maxReasonLen} bytes.`;
   if (hasControl(reason)) return "Reason cannot contain control characters.";
   return null;
 }
@@ -170,7 +180,11 @@ export function validateEditor(state: EditorState): EditorIssues {
   const tz = timezoneError(state.timezone);
   if (tz) issues.settings.timezone = tz;
   const staleSecs = state.staleAfterMinutes * 60;
-  if (!Number.isInteger(state.staleAfterMinutes) || staleSecs < 60 || staleSecs > LIMITS.maxStaleSecs) {
+  if (
+    !Number.isInteger(state.staleAfterMinutes) ||
+    staleSecs < 60 ||
+    staleSecs > LIMITS.maxStaleSecs
+  ) {
     issues.settings.stale = "Whole minutes, between 1 and 43200 (30 days).";
   }
   if (
@@ -211,7 +225,8 @@ function toApiRule(rule: EditorRule): NetworkPolicyRule {
   return {
     id: rule.id,
     effect: rule.effect,
-    matcher: rule.kind === "host_exact" ? { host_exact: rule.value } : { domain_suffix: rule.value },
+    matcher:
+      rule.kind === "host_exact" ? { host_exact: rule.value } : { domain_suffix: rule.value },
     schedule: rule.schedule,
     reason: rule.reason,
   };
@@ -298,10 +313,24 @@ function fromApiRule(rule: NetworkPolicyRule): EditorRule | null {
   const m = rule.matcher;
   if (typeof m !== "object") return null;
   if ("domain_suffix" in m) {
-    return { id: rule.id, kind: "domain_suffix", value: m.domain_suffix, effect: rule.effect, reason: rule.reason, schedule: rule.schedule };
+    return {
+      id: rule.id,
+      kind: "domain_suffix",
+      value: m.domain_suffix,
+      effect: rule.effect,
+      reason: rule.reason,
+      schedule: rule.schedule,
+    };
   }
   if ("host_exact" in m) {
-    return { id: rule.id, kind: "host_exact", value: m.host_exact, effect: rule.effect, reason: rule.reason, schedule: rule.schedule };
+    return {
+      id: rule.id,
+      kind: "host_exact",
+      value: m.host_exact,
+      effect: rule.effect,
+      reason: rule.reason,
+      schedule: rule.schedule,
+    };
   }
   return null;
 }

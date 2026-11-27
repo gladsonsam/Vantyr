@@ -130,11 +130,10 @@ function RuleTabMain({
               onChange={list.setQuery}
             />
           )}
-          <p
-            role="status"
-            className="min-w-0 flex-1 text-sm text-muted-foreground tabular-nums"
-          >
-            {list.query ? `${list.filteredCount} of ${total} ${noun.split(" ").pop()}` : countSummary}
+          <p role="status" className="min-w-0 flex-1 text-sm text-muted-foreground tabular-nums">
+            {list.query
+              ? `${list.filteredCount} of ${total} ${noun.split(" ").pop()}`
+              : countSummary}
           </p>
           <Button onClick={onCreate}>
             <Plus /> {createLabel}

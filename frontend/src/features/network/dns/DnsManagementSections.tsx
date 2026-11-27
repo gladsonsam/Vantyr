@@ -38,7 +38,9 @@ export function DnsManagementSections({ householdId }: { householdId: string }) 
           role="alert"
           className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/10 px-5 py-4 text-sm"
         >
-          <span className="text-warning">{CONFLICT_MESSAGE} Reload to see the latest before changing anything.</span>
+          <span className="text-warning">
+            {CONFLICT_MESSAGE} Reload to see the latest before changing anything.
+          </span>
           <Button variant="outline" size="sm" onClick={editor.reload}>
             Reload
           </Button>

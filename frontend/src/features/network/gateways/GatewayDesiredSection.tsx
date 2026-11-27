@@ -96,7 +96,9 @@ export function GatewayDesiredSection({
               disabled={revisions.length === 0}
             >
               <SelectTrigger className="w-full" aria-label="Revision to assign">
-                <SelectValue placeholder={revisions.length ? "Choose revision" : "No saved revisions"} />
+                <SelectValue
+                  placeholder={revisions.length ? "Choose revision" : "No saved revisions"}
+                />
               </SelectTrigger>
               <SelectContent>
                 {revisions.map((policy) => (
@@ -133,7 +135,11 @@ export function GatewayDesiredSection({
             </p>
           ) : null}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirming(false)} disabled={assign.isPending}>
+            <Button
+              variant="outline"
+              onClick={() => setConfirming(false)}
+              disabled={assign.isPending}
+            >
               Cancel
             </Button>
             <Button onClick={() => void confirm()} disabled={assign.isPending}>
