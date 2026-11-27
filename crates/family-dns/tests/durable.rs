@@ -421,7 +421,7 @@ async fn restart_preserves_exact_rewrites_from_the_last_persisted_bundle() {
     .await;
     assert_code(&response, ResponseCode::NoError);
     assert_flags(&response);
-    assert_eq!(v4(&response), vec!["192.0.2.55".parse().unwrap()]);
+    assert_eq!(v4(&response), vec!["192.0.2.55".parse::<IpAddr>().unwrap()]);
     assert_eq!(response.answers[0].ttl, 55);
     first.stop().await;
 
@@ -442,7 +442,7 @@ async fn restart_preserves_exact_rewrites_from_the_last_persisted_bundle() {
     .await;
     assert_code(&response, ResponseCode::NoError);
     assert_flags(&response);
-    assert_eq!(v4(&response), vec!["192.0.2.55".parse().unwrap()]);
+    assert_eq!(v4(&response), vec!["192.0.2.55".parse::<IpAddr>().unwrap()]);
     assert_eq!(restarted.revision(), 5);
     assert_eq!(restarted.status().bundle_generation, 5);
     restarted.stop().await;
