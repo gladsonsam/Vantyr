@@ -144,6 +144,9 @@ pub fn compile(base: &Config, policy: &Policy) -> Result<Config, CompileError> {
         // Exact answer overrides are local operator settings. A controller
         // pull must never silently drop or replace them.
         rewrites: base.rewrites.clone(),
+        // SafeSearch is a global source-only operator setting. A controller
+        // pull must never silently turn it on or off.
+        safe_search: base.safe_search.clone(),
         default_device_profile: base.default_device_profile.clone(),
         devices: base.devices.clone(),
         // Current local filtering settings travel with every other local
@@ -266,6 +269,18 @@ mod tests {
         assert_eq!(compiled.rewrites, base.rewrites);
         assert_eq!(compiled.devices, base.devices);
         assert_eq!(compiled.event_retention_secs, Some(86_400));
+    }
+
+    #[test]
+    fn controller_pull_preserves_the_global_safe_search_opt_in() {
+        let mut base = base();
+        base.safe_search = crate::config::SafeSearchConfig {
+            enabled: true,
+            google: true,
+            bing: false,
+        };
+        let compiled = compile(&base, &sample_policy()).unwrap();
+        assert_eq!(compiled.safe_search, base.safe_search);
     }
 
     #[test]

@@ -38,6 +38,13 @@ use crate::events::{protocol_label, query_type_label, EventQueue, FinalDecision,
 use crate::policy::DecisionView;
 use crate::runtime::{RuntimeSnapshot, SnapshotHandle};
 
+/// Bounded TTL for the synthetic CNAME. Upstream A/AAAA records keep their own
+/// TTLs from the maintained resolver.
+const SAFE_SEARCH_CNAME_TTL: u32 = 60;
+/// A single SafeSearch answer may not grow beyond this many records. A CNAME
+/// plus an unbounded upstream alias chain is refused rather than released.
+const MAX_SAFE_SEARCH_ANSWERS: usize = 16;
+
 /// Captures the exact response the catalog produced so the handler can check
 /// CNAME targets before anything reaches the client.
 #[derive(Clone, Default)]
@@ -158,6 +165,51 @@ impl FilteringHandler {
                 .push(Record::from_rdata(qname.clone(), ttl, rdata));
         }
         message
+    }
+
+    /// Build a complete SafeSearch answer from the official CNAME target. The
+    /// A/AAAA glue is resolved through the SAME configured upstream with the
+    /// maintained Hickory resolver; a bare, un-followed CNAME is never treated
+    /// as a working SafeSearch answer. Failure to obtain usable bounded glue
+    /// fails closed, and the resulting records still pass the alias, bogus-IP
+    /// and IPv6 shaping checks below.
+    async fn safe_search_message(
+        snapshot: &RuntimeSnapshot,
+        request: &Request,
+        qname: &Name,
+        target: &Name,
+        qtype: RecordType,
+    ) -> anyhow::Result<Message> {
+        let mut metadata = Metadata::response_from_request(&request.metadata);
+        metadata.response_code = ResponseCode::NoError;
+        let mut message = Message::new(metadata.id, MessageType::Response, OpCode::Query);
+        message.metadata = metadata;
+        message.answers.push(Record::from_rdata(
+            qname.clone(),
+            SAFE_SEARCH_CNAME_TTL,
+            RData::CNAME(CnameData(target.clone())),
+        ));
+
+        if matches!(qtype, RecordType::A | RecordType::AAAA | RecordType::ANY) {
+            let types: &[RecordType] = match qtype {
+                RecordType::A => &[RecordType::A],
+                RecordType::AAAA => &[RecordType::AAAA],
+                _ => &[RecordType::A, RecordType::AAAA],
+            };
+            for rtype in types {
+                for record in snapshot.cache.lookup_records(target, *rtype).await? {
+                    message.answers.push(record);
+                }
+            }
+            let has_address = message
+                .answers
+                .iter()
+                .any(|record| matches!(&record.data, RData::A(_) | RData::AAAA(_)));
+            if !has_address || message.answers.len() > MAX_SAFE_SEARCH_ANSWERS {
+                anyhow::bail!("no usable bounded address answer for SafeSearch target {target}");
+            }
+        }
+        Ok(message)
     }
 
     /// Inspect the answer records for an allowed alias that leads to a denied
@@ -442,10 +494,30 @@ impl RequestHandler for FilteringHandler {
         // An exact rewrite is answered from the immutable snapshot itself. It
         // never reaches an upstream, so it cannot be defeated by an outage or
         // enriched with data the operator did not configure. The policy
-        // decision above still gates every rewrite unconditionally.
-        let (message, catalog_info) = if let Some(records) =
-            Self::rewrite_records(&snapshot, &qname, qtype)
-        {
+        // decision above still gates every rewrite unconditionally. SafeSearch
+        // is the one deliberate exception that resolves an official target
+        // through the configured upstream before answering.
+        // SafeSearch is a global opt-in carried in this one frozen snapshot.
+        // Canonical targets are never themselves selected, and non-address
+        // query types fall through to the catalog, so no rewrite loop exists.
+        let safe_target = crate::safe_search::target_for(&snapshot.config.safe_search, &qname, qtype)
+            .map(|target| Name::from_str(target).expect("validated SafeSearch target"));
+        let (message, catalog_info) = if let Some(target) = safe_target.as_ref() {
+            // SafeSearch wins over a plain exact rewrite on the same selected
+            // owner: an enabled opt-in must always produce resolved glue, not
+            // the un-followed CNAME an exact rewrite alone would return.
+            match Self::safe_search_message(&snapshot, request, &qname, target, qtype).await {
+                Ok(message) => (message, error_response(request, ResponseCode::NoError)),
+                Err(error) => {
+                    warn!(%error, %qname, "SafeSearch answer could not be resolved");
+                    if let Some(final_decision) = guard.decision.as_mut() {
+                        final_decision.allow = false;
+                        final_decision.reason_code = "safe_search_upstream_failure".to_owned();
+                    }
+                    return send_error(request, &mut response_handle, ResponseCode::ServFail).await;
+                }
+            }
+        } else if let Some(records) = Self::rewrite_records(&snapshot, &qname, qtype) {
             (
                 Self::rewritten_message(request, &qname, &records),
                 error_response(request, ResponseCode::NoError),

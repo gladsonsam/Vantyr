@@ -19,7 +19,7 @@ use anyhow::{bail, Result};
 use hickory_resolver::config::{NameServerConfig, ResolverConfig, ResolverOpts};
 use hickory_resolver::{Hosts, Resolver};
 use hickory_server::net::runtime::TokioRuntimeProvider;
-use hickory_server::proto::rr::{LowerName, Name, RecordType};
+use hickory_server::proto::rr::{LowerName, Name, Record, RecordType};
 use hickory_server::server::Request;
 use hickory_server::zone_handler::{
     AuthLookup, AxfrPolicy, LookupControlFlow, LookupError, LookupOptions, ZoneHandler, ZoneType,
@@ -48,6 +48,25 @@ impl CacheControl {
         for resolver in &self.resolvers {
             resolver.clear_cache();
         }
+    }
+
+    /// Resolve one name with the SAME maintained resolver and shared cache as
+    /// ordinary forwarding. This exists so an official SafeSearch canonical
+    /// target can be followed into real A/AAAA glue before an answer is
+    /// released; it introduces no second engine, transport or TLS path.
+    pub(crate) async fn lookup_records(
+        &self,
+        name: &Name,
+        rtype: RecordType,
+    ) -> Result<Vec<Record>> {
+        let resolver = self.resolvers.first().ok_or_else(|| {
+            anyhow::anyhow!("no configured upstream resolver for a SafeSearch target")
+        })?;
+        let lookup = resolver
+            .lookup(name.clone(), rtype)
+            .await
+            .map_err(|error| anyhow::anyhow!("SafeSearch target lookup failed: {error}"))?;
+        Ok(lookup.answers().to_vec())
     }
 }
 

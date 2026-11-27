@@ -1010,6 +1010,27 @@ impl CacheConfig {
     }
 }
 
+/// Global operator opt-in for provider-backed SafeSearch DNS rewrites.
+///
+/// Nothing is rewritten unless `enabled` is true and the matching provider
+/// switch is true. There is no per-client or per-device variant in this
+/// contract; one current field is carried in every published snapshot.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SafeSearchConfig {
+    /// Master switch. The default (`false`) leaves every query on the normal
+    /// catalog/upstream path.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Apply the documented Google Search mapping to
+    /// `forcesafesearch.google.com`.
+    #[serde(default)]
+    pub google: bool,
+    /// Apply the documented Bing mapping to `strict.bing.com`.
+    #[serde(default)]
+    pub bing: bool,
+}
+
 /// Complete, validated worker configuration. Deserialized values are kept
 /// private to the module's methods after validation so callers cannot bypass
 /// validation by mutating a field.
@@ -1050,6 +1071,10 @@ pub struct Config {
     /// household decision has allowed the question.
     #[serde(default)]
     pub rewrites: Vec<RecordSpec>,
+    /// Global SafeSearch opt-in. Source-only operator setting; no HTTP,
+    /// frontend or per-client delivery exists for it in this contract.
+    #[serde(default)]
+    pub safe_search: SafeSearchConfig,
     /// Non-overridable deny-only safety rules. Empty for local-only configs.
     #[serde(default)]
     pub baseline: Vec<RuleSpec>,
@@ -2035,5 +2060,49 @@ mod tests {
                 .join(",")
         );
         assert!(Config::parse(with_rewrites(&many).as_bytes()).is_err());
+    }
+
+    fn with_safe_search(value: &str) -> String {
+        VALID.replace(
+            "\"household_id\":",
+            &format!("\"safe_search\": {value},\n        \"household_id\":"),
+        )
+    }
+
+    #[test]
+    fn safe_search_defaults_off_and_survives_a_config_round_trip() {
+        let plain = Config::parse(VALID.as_bytes()).unwrap();
+        assert_eq!(
+            plain.safe_search,
+            SafeSearchConfig {
+                enabled: false,
+                google: false,
+                bing: false,
+            }
+        );
+
+        let json = with_safe_search(r#"{"enabled":true,"google":true,"bing":false}"#);
+        let config = Config::parse(json.as_bytes()).unwrap();
+        assert!(config.safe_search.enabled);
+        assert!(config.safe_search.google);
+        assert!(!config.safe_search.bing);
+        let bytes = serde_json::to_vec(&config).unwrap();
+        let again = Config::parse(&bytes).unwrap();
+        assert_eq!(again.safe_search, config.safe_search);
+        assert_eq!(serde_json::to_vec(&again).unwrap(), bytes);
+    }
+
+    #[test]
+    fn safe_search_rejects_unknown_fields_and_non_boolean_switches() {
+        for bad in [
+            r#"{"enabled":true,"nope":true}"#,
+            r#"{"enabled":"yes"}"#,
+            r#"{"google":1}"#,
+        ] {
+            assert!(
+                Config::parse(with_safe_search(bad).as_bytes()).is_err(),
+                "invalid safe_search accepted: {bad}"
+            );
+        }
     }
 }
