@@ -1,5 +1,28 @@
 # Network continuation — environment handoff
 
+## Current priority and candidate boundaries
+
+DNS replacement readiness takes priority over proxy work. Required DNS breadth
+includes filtering syntax/modifiers, rewrites, per-client controls, SafeSearch,
+and encrypted client and upstream transports. Partial slices do not close those
+capability rows. Operator configuration, HTTP delivery, frontend controls,
+recovery and real query behavior each need evidence before household cutover.
+Proxy authority remains unaccepted and its diagnostic work is deferred.
+
+Pending Hermes slices are isolated from the integrated branch:
+
+| Source checkpoint | Scope | Evidence / remaining gate |
+|---|---|---|
+| `497a541d` | Desired-only migration 0086 | Independently accepted in its bounded scope; two real-PG tests pass. Depends on unaccepted DNS contract upgrade; not integrated. |
+| `149d769b` | Explicit pre-0085 evidence snapshot/restore scripts | Implementation only; DB execution and independent review pending. |
+| `2e927fc7` | Explicit offline worker-bundle converter | CLI import corrected after independent static review; focused test rerun pending. |
+| `36f46347` | Exact-domain A/AAAA/CNAME operator rewrites | Prior run compiled: 133 passed, one new evaluation-log assertion failed. Assertion corrected; remaining-target validation pending. No HTTP/UI or broader rewrite acceptance. |
+| `cedc2148` | Hostname regex filtering | Blocked by test compilation, aggregate pattern budget and important-exception precedence; bounded correction in progress. |
+
+All runtime validation remains serialized by the shared Rust lock. No new
+frontend contract is accepted by these pending slices. Keep correspondence
+batched around actionable findings and exact accepted contracts.
+
 ## Hermes resumption checkpoint (2026-11-27)
 
 The prepared continuation branch started clean at `a722484b`. All six remote
