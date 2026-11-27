@@ -500,8 +500,9 @@ impl RequestHandler for FilteringHandler {
         // SafeSearch is a global opt-in carried in this one frozen snapshot.
         // Canonical targets are never themselves selected, and non-address
         // query types fall through to the catalog, so no rewrite loop exists.
-        let safe_target = crate::safe_search::target_for(&snapshot.config.safe_search, &qname, qtype)
-            .map(|target| Name::from_str(target).expect("validated SafeSearch target"));
+        let safe_target =
+            crate::safe_search::target_for(&snapshot.config.safe_search, &qname, qtype)
+                .map(|target| Name::from_str(target).expect("validated SafeSearch target"));
         let (message, catalog_info) = if let Some(target) = safe_target.as_ref() {
             // SafeSearch wins over a plain exact rewrite on the same selected
             // owner: an enabled opt-in must always produce resolved glue, not

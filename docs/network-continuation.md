@@ -95,6 +95,20 @@ per-client overrides or HTTP/UI settings. Those remain required unfinished work.
 After integration with hostname regex and CIDR selection, the parent reran the
 13 worker filter tests and eight SafeSearch integration tests: all 21 passed.
 
+The explicit DNS-over-TLS operator listener is accepted through `1dfceace`
+(source `1815fecb`, `3c23c106`, `dc591268`). Nine listener tests and strict
+crate all-target clippy pass. TLS material for the actually selected config is
+validated once before fresh durable persistence or socket binding; protected
+file reads use no-follow and descriptor checks. Client CA/hostname verification,
+policy/flags, invalid-custody startup, persisted restart, CIDR behavior and
+shutdown are tested. After integration with regex, CIDR and SafeSearch, all
+39 targeted listener/upstream/filter/SafeSearch tests passed. The two integration
+conflicts combined export lists and retained both adjacent controller-preservation
+tests; no runtime feature was dropped. Atomic certificate rotation, other
+encrypted server transports, HTTP/UI and household deployment remain open.
+Independent dependency review found active upstream work for the newly direct
+`x509-parser 0.18.1`; formal security-support evidence remains incomplete.
+
 The assembled current-contract upgrade candidate is `aa2126c2`, based on
 `705d99f2`; it includes the reviewed 0086 repair, evidence scripts and offline
 converter while preserving strict persistence cleanup and exact rewrites.
