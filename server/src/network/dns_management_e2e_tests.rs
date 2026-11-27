@@ -1398,3 +1398,179 @@ async fn real_server_and_worker_dns_management_flow(pool: PgPool) {
     worker2.shutdown().await;
     online.stop_shared().await;
 }
+
+/// A new cache-clear cycle retires the old delivery/ack cascade. When the next
+/// desired version then fails to apply, the worker must not resend the cached
+/// ack from the retired cycle: the server would reject it with 409 and roll
+/// back the entire status report on every poll until a successful apply or a
+/// restart. This drives the real worker against the real router and PostgreSQL
+/// and proves the report is accepted, the apply error is visible, no stale ack
+/// is recorded and the previously applied last-known-good bundle is untouched.
+#[sqlx::test]
+async fn stale_clear_ack_is_not_resent_after_new_cycle_and_failed_apply(pool: PgPool) {
+    let st = fixture("stale-ack");
+    let origin = CountingUpstream::start().await;
+    let (base, ca_pem, _server_guard) = spawn_server(pool.clone()).await;
+    let (list_base, list_ca, list_state, _list_guard) = start_list_server().await;
+
+    let user = insert_user(&pool, "admin", "admin").await;
+    let (token, csrf) = session_for(&pool, user, "admin").await;
+    let mgmt_base = base.clone();
+    let http = Http::new(base, &ca_pem, token, csrf);
+    let hid = bootstrap_as(&http, "E2E household").await;
+    let gid = create_gateway(&http, hid).await;
+    let bearer = issue_cred(&http, hid, gid).await;
+
+    let mgmt_path = format!("/api/network/households/{hid}/dns/management");
+    let status_path = format!("/api/network/households/{hid}/dns/status");
+    let clear_path = format!("/api/network/households/{hid}/dns/cache/clear");
+    let list_url = format!("{list_base}/list");
+
+    // Desired v1 carries one real, fetchable source.
+    let (status, body) = http
+        .patch(&mgmt_path, patch_with(0, desired_ops(&list_url)))
+        .await;
+    assert_eq!(status, 200, "PATCH v1 failed: {body}");
+    let digest_v1 = body["desired"]["body_sha256"].as_str().unwrap().to_owned();
+
+    let published = published_at();
+    let (server, worker) = start_worker(
+        &st,
+        hid,
+        gid,
+        published,
+        &list_ca,
+        &mgmt_base,
+        &ca_pem,
+        &bearer,
+        origin.addr,
+    )
+    .await;
+    worker.start(Arc::downgrade(&server));
+
+    wait_until(30, "v1 applied", || async {
+        server
+            .management_state()
+            .is_some_and(|state| state.config_version == 1)
+    })
+    .await;
+    let lkg = server.management_state().unwrap();
+    let lkg_applied_at = lkg.applied_at.clone().expect("v1 applied_at");
+    assert_eq!(lkg.digest, digest_v1);
+
+    // First cycle: the worker really clears the live cache and acks seq 1.
+    let (status, clear) = http
+        .post(&clear_path, json!({"expected_config_version": 1}))
+        .await;
+    assert_eq!(status, 200, "clear v1 failed: {clear}");
+    assert_eq!(clear["clear_seq"], 1);
+    wait_until(30, "seq 1 acked", || {
+        let http = &http;
+        let status_path = status_path.clone();
+        async move {
+            let (code, view) = http.get(&status_path).await;
+            code == 200
+                && view["gateways"].as_array().is_some_and(|gateways| {
+                    gateways.iter().any(|gateway| {
+                        gateway["gateway_id"] == json!(gid.to_string())
+                            && gateway["cache_clear"]["clear_seq"] == json!(1)
+                            && gateway["cache_clear"]["acked_at"].is_string()
+                    })
+                })
+        }
+    })
+    .await;
+
+    // New desired version with a brand-new source, then a new clear cycle.
+    // The new source has no cached last-good, so making the list server fail
+    // forces apply of v2 to fail after a real fetch attempt.
+    *list_state.fail.lock().unwrap() = true;
+    let failing_ops = vec![json!({"op":"add_list", "source": {
+        "id": "failing-list",
+        "url": list_url,
+        "format": "hosts",
+        "enabled": true,
+        "interval_secs": 300,
+        "max_stale_secs": 3600,
+        "metadata": {"title":"E2E failing list","publisher":"Operator","license":"asserted"}
+    }})];
+    let (status, body) = http.patch(&mgmt_path, patch_with(1, failing_ops)).await;
+    assert_eq!(status, 200, "PATCH v2 failed: {body}");
+    assert_eq!(body["desired"]["config_version"], 2);
+    let digest_v2 = body["desired"]["body_sha256"].as_str().unwrap().to_owned();
+    assert_ne!(digest_v2, digest_v1);
+
+    // Test-only: skip the real 60 s cooldown so the new cycle starts now.
+    sqlx::query(
+        "UPDATE network_dns_cache_clear_request \
+         SET requested_at = NOW() - INTERVAL '61 seconds' WHERE household_id = $1",
+    )
+    .bind(hid)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (status, clear2) = http
+        .post(&clear_path, json!({"expected_config_version": 2}))
+        .await;
+    assert_eq!(status, 200, "clear v2 failed: {clear2}");
+    assert_eq!(clear2["clear_seq"], 2);
+
+    // The worker now reports v2 without applying it. With no stale ack from
+    // the retired seq-1 cycle the server accepts the whole report transaction.
+    wait_until(30, "v2 reported with v1 still applied", || {
+        let http = &http;
+        let status_path = status_path.clone();
+        async move {
+            let (code, view) = http.get(&status_path).await;
+            code == 200
+                && view["gateways"].as_array().is_some_and(|gateways| {
+                    gateways.iter().any(|gateway| {
+                        gateway["gateway_id"] == json!(gid.to_string())
+                            && gateway["status"]["config_version"] == json!(2)
+                            && gateway["status"]["applied"]["config_version"] == json!(1)
+                    })
+                })
+        }
+    })
+    .await;
+
+    let (_, view) = http.get(&status_path).await;
+    let gateway = view["gateways"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["gateway_id"] == json!(gid.to_string()))
+        .unwrap();
+    // Status accepted for v2, the apply error is visible, and the old applied
+    // bundle is still the last known good. The server pins reported_version to
+    // the applied version, so it must remain 1 while the report itself is v2.
+    assert_eq!(gateway["status"]["config_version"], json!(2));
+    assert_eq!(gateway["reported_version"], json!(1));
+    let applied = &gateway["status"]["applied"];
+    assert_eq!(applied["config_version"], json!(1));
+    assert_eq!(applied["body_sha256"], json!(digest_v1));
+    assert_same_instant(
+        &applied["applied_at"],
+        lkg_applied_at,
+        "reported LKG applied_at changed",
+    );
+    assert!(
+        applied["last_error"].as_str().is_some_and(|e| !e.is_empty()),
+        "failed-apply error was not visible in the accepted status"
+    );
+    // The new cycle carries no ack: the retired seq-1 ack was never resent.
+    assert_eq!(gateway["cache_clear"]["clear_seq"], json!(2));
+    assert!(
+        gateway["cache_clear"]["acked_at"].is_null(),
+        "stale ack from the retired cycle was accepted"
+    );
+
+    let state = server.management_state().unwrap();
+    assert_eq!(state.config_version, 1);
+    assert_eq!(state.digest, digest_v1);
+    assert_eq!(state.applied_at, lkg.applied_at);
+
+    *list_state.fail.lock().unwrap() = false;
+    worker.shutdown().await;
+    server.stop_shared().await;
+}

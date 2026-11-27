@@ -423,7 +423,26 @@ impl ManagementWorker {
                     cleared_at: Utc::now(),
                 });
             }
-            ack.clone()
+            // Emit a cached ack ONLY while it still belongs to a token that is
+            // delivered right now, unexpired, and whose config version is the
+            // one actually applied. After a new clear cycle the server deletes
+            // the old delivery/ack cascade; resending a cached ack from that
+            // retired cycle is rejected with 409, which rolls back the whole
+            // status report on every poll until apply succeeds or the worker
+            // restarts. Scoping emission to the live token keeps the clear a
+            // real one-shot action, preserves exact-replay idempotence and
+            // lets a lost report be retried while its token is still live.
+            ack.as_ref()
+                .filter(|accepted| {
+                    applied_this_version
+                        && accepted.config_version == desired_version
+                        && clear_tokens.iter().any(|token| {
+                            token.clear_seq == accepted.clear_seq
+                                && token.config_version == accepted.config_version
+                                && token.expires_at > now
+                        })
+                })
+                .cloned()
         };
         let sources = all_sources
             .into_iter()
