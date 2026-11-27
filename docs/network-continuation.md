@@ -126,7 +126,8 @@ Independent review passed 18 loopback integration tests, 12 filtered library
 tests and strict crate all-target clippy. Per-client overrides and HTTP/UI
 settings remain unfinished; this acceptance covers operator configuration only.
 
-The explicit DNS-over-HTTPS (HTTP/2) operator listener is implemented on the
+The explicit DNS-over-HTTPS (HTTP/2) operator listener is accepted through
+`a5590823` (source `9cff9f37` plus a test-helper lint correction). It runs on the
 same `FilteringHandler` as the plaintext and DoT sockets, using the pinned
 Hickory 0.26.4 `register_https_listener_with_tls_config` on a single `h2` ALPN.
 Certificate custody, validity and key matching are shared with the accepted
@@ -141,6 +142,11 @@ startup and DoT/DoH coexistence. The client source is the accepted socket;
 forwarding headers, per-client path identities, trusted proxy, H3, atomic
 certificate rotation, HTTP/UI and household deployment remain open. No API,
 migration, SafeSearch or proxy scope was added.
+Independent review passed all 17 DoH/DoT listener tests; the test-helper
+correction then passed strict crate all-target clippy. After integration with
+regional and YouTube SafeSearch, all 35 listener/SafeSearch integration tests
+passed, followed by strict crate all-target clippy on the integrated tree.
+This does not close per-client path identity or management delivery.
 
 The assembled current-contract upgrade candidate is `aa2126c2`, based on
 `705d99f2`; it includes the reviewed 0086 repair, evidence scripts and offline
