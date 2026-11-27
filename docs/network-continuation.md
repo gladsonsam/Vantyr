@@ -185,6 +185,13 @@ management fields yet. UI and household cutover remain unvalidated. Existing
 installations must follow the explicit stopped-writer offline upgrade procedure
 in `server/scripts/README.offline0085.md`; no runtime fallback exists.
 
+Frontend DNS settings/cache-clear through `dde41e93` passed source review and
+its reported typecheck/lint/format gates. Exact frontend client/endpoint/form
+modules also passed 19 real HTTP product cases plus two setup checks against
+standalone backend `61d60cd3`, with genuine session/CSRF/grants and disposable
+PostgreSQL. Browser rendering, cookie policy/CORS, interactions and household
+cutover remain unvalidated; no frontend tests were restored or added.
+
 ## Hermes resumption checkpoint (2026-11-27)
 
 The prepared continuation branch started clean at `a722484b`. All six remote

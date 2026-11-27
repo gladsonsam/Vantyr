@@ -76,3 +76,17 @@ that every gateway has cleared. Draft/editor state remounts on source/household
 changes. Remaining limits: a page reload forgets the browser's pending token,
 expiry uses the client clock, and live tokens poll every five seconds until
 expiry. Existing per-gateway evidence remains authoritative after reload.
+
+Real HTTP verification passed against backend `61d60cd3` using the exact
+frontend endpoint/client/validator/form modules from `dde41e93`: 19 product
+cases and two setup checks, all passing. A standalone loopback server and fresh
+PostgreSQL ran genuine migrations, session login, CSRF and explicit household
+grants. Covered default first save, four-field current config, non-default
+cache/sinkhole update, reset, exact stale-CAS error, clear creation/cooldown/
+stale version, truthful undelivery with a real gateway but no worker, events-only
+read access, forbidden management/household/grant reads, missing session/CSRF,
+unknown fields and the request-body cap. All disposable state was removed.
+This used a Bun cookie-jar fetch shim and exact extracted TypeScript modules,
+not a browser: CORS, browser cookie policy, rendering, timers and interactions
+remain untested. Real worker apply/ack evidence is the separate backend E2E
+scope above, not a claim from this no-worker HTTP diagnostic.
