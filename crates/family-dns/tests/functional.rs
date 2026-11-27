@@ -472,9 +472,18 @@ async fn mapped_range_and_mapped_source_share_the_ipv4_profile() {
     )
     .await;
     assert_code(&outside, ResponseCode::NXDomain);
-    assert!(server.observations().iter().all(|o| o.source_ip == v4(40)
-        || o.source_ip == mapped_v4(40)
-        || o.source_ip == mapped_outside()));
+    // An IPv4 listener may observe a mapped sender as native IPv4. Compare
+    // canonical sources while retaining the profile and denial assertions.
+    let observations = server.observations();
+    assert!(observations.iter().all(|o| {
+        o.source_ip.to_canonical() == v4(40)
+            || o.source_ip.to_canonical() == mapped_outside().to_canonical()
+    }));
+    assert!(observations.iter().any(|o| {
+        o.source_ip.to_canonical() == mapped_outside().to_canonical()
+            && !o.allow
+            && o.device_id.is_none()
+    }));
     server.stop().await;
 }
 
