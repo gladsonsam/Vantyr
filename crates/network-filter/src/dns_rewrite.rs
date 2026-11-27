@@ -12,11 +12,9 @@
 //! follow the documented `||host^` semantics: the owner and every subdomain at
 //! a label boundary, never a lookalike such as `notexample.com`.
 //!
-//! Grammar references consulted, not copied: the AdGuard DNS filtering syntax
-//! documentation (`https://adguard-dns.io/kb/general/dns-filtering-syntax/`)
-//! for `||`, `^`, the `RCODE;RRTYPE;VALUE` form and the shorthands, and the
-//! maintained `AdguardTeam/urlfilter` `rules/dnsrewrite.go` for the zero/two
-//! delimiter split and keyword/IP/hostname classification.
+//! The grammar uses domain anchors, the `RCODE;RRTYPE;VALUE` form and
+//! shorthands. Zero delimiters select a shorthand; two select the full form.
+//! Keyword, IP and hostname classification is explicit and bounded.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
