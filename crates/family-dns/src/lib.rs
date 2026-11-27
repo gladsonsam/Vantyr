@@ -46,11 +46,12 @@ pub mod upstream;
 pub use bundle::{Bundle, BundleStore, BundleValidator};
 pub use compile::{compile, CompileError};
 pub use config::{
-    read_bounded, BindConfig, CacheConfig, Config, DenyConfig, DeviceConfig, DotListenerConfig,
-    EncryptedUpstreamSpec, FilterConfig, FilterSourceSpec, ListFormatSpec, MatchSpec, RecordSpec,
-    RuleSpec, SafeSearchConfig, ScheduleSpec, ServiceCatalogSpec, ServiceDomainSpec, ServiceSpec,
-    SourceOrigin, SubscriptionSettings, SubscriptionSourceSpec, MAX_BOGUS_NXDOMAIN_IPS,
-    MAX_CACHE_ENTRIES, MAX_CA_PEM_BYTES, MAX_CONFIG_BYTES, MAX_TLS_PATH_LEN,
+    read_bounded, BindConfig, CacheConfig, Config, DenyConfig, DeviceConfig, DohListenerConfig,
+    DotListenerConfig, EncryptedUpstreamSpec, FilterConfig, FilterSourceSpec, ListFormatSpec,
+    MatchSpec, RecordSpec, RuleSpec, SafeSearchConfig, ScheduleSpec, ServiceCatalogSpec,
+    ServiceDomainSpec, ServiceSpec, SourceOrigin, SubscriptionSettings, SubscriptionSourceSpec,
+    MAX_BOGUS_NXDOMAIN_IPS, MAX_CACHE_ENTRIES, MAX_CA_PEM_BYTES, MAX_CONFIG_BYTES,
+    MAX_DOH_HOSTNAME_LEN, MAX_DOH_PATH_LEN, MAX_TLS_PATH_LEN,
 };
 pub use controller::{
     policy_digest, sync_once, ControllerClient, ControllerError, ControllerOptions,

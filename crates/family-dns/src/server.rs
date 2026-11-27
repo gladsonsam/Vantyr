@@ -25,7 +25,6 @@ use chrono::{DateTime, Utc};
 use family_policy::Policy;
 use hickory_resolver::Hosts;
 use hickory_server::server::Server;
-use rustls::ServerConfig;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -35,6 +34,7 @@ use crate::bundle::{Bundle, BundleStore, BundleValidator};
 use crate::compile::compile;
 use crate::config::{read_bounded, Config};
 use crate::controller::{ControllerError, SyncCapability};
+use crate::dot::PreparedTls;
 use crate::events::EventQueue;
 use crate::filter::{
     compile_from_material, empty_filter, material_identity, no_remote, prepare as prepare_filter,
@@ -209,10 +209,11 @@ impl DnsServer {
             None,
             hosts,
         )?;
-        // Prepare the operator's DoT material once from the same validated
-        // config the snapshot was built from, before any socket exists.
-        let dot_tls = crate::dot::prepare_dot_tls(&config)?;
-        Self::serve(config, snapshot, observations, None, None, events, dot_tls).await
+        // Prepare BOTH encrypted listeners' material once from the same
+        // validated config the snapshot was built from, before any socket
+        // exists or any state is written.
+        let tls = PreparedTls::prepare(&config)?;
+        Self::serve(config, snapshot, observations, None, None, events, tls).await
     }
 
     /// Start in opt-in durable mode. On a lost-ack restart the local bundle is
@@ -298,12 +299,13 @@ impl DnsServer {
     ) -> Result<(Self, Vec<String>)> {
         let validator = BundleValidator;
         let mut bootstrap_errors: Vec<String> = Vec::new();
-        // Prepare TLS ONCE for whichever config is actually selected, and pass
-        // the result into `serve`. On a cold start that is the bootstrap config;
-        // on a restart it is the persisted bundle. No path is re-read later, so
-        // an invalid cert/key fails before any state write and before any bind
-        // and there is no preflight/reload window to exploit.
-        let mut prepared_tls: Option<Arc<ServerConfig>> = None;
+        // Prepare TLS for BOTH encrypted listeners ONCE for whichever config is
+        // actually selected, and pass the result into `serve`. On a cold start
+        // that is the bootstrap config; on a restart it is the persisted
+        // bundle. No path is re-read later, so an invalid cert/key fails before
+        // any state write and before any bind and there is no preflight/reload
+        // window to exploit.
+        let mut prepared_tls = PreparedTls::default();
         let mut needs_tls_prepare = true;
         let store = match BundleStore::open_from_snapshot_with_limit(
             &options.state_path,
@@ -327,9 +329,10 @@ impl DnsServer {
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("no state file and no bootstrap config"))?;
                 let config = Config::parse(&read_bounded(path)?)?;
-                // Validate/load DoT material for the config that is about to
-                // become the persisted bundle, before any state write or bind.
-                prepared_tls = crate::dot::prepare_dot_tls(&config)?;
+                // Validate/load both listeners' material for the config that
+                // is about to become the persisted bundle, before any state
+                // write or bind.
+                prepared_tls = PreparedTls::prepare(&config)?;
                 needs_tls_prepare = false;
                 let household = config.household_id.clone();
                 let store = BundleStore::open_with_limit(
@@ -375,9 +378,9 @@ impl DnsServer {
         if needs_tls_prepare {
             // Restart: the persisted bundle is authoritative. Prepare TLS from
             // its config, NOT from the bootstrap file, and still before any
-            // bind. A changed bootstrap config cannot redirect the listener's
-            // transport or certificate paths.
-            prepared_tls = crate::dot::prepare_dot_tls(&bundle.config)?;
+            // bind. A changed bootstrap config cannot redirect either
+            // listener's transport or certificate paths.
+            prepared_tls = PreparedTls::prepare(&bundle.config)?;
         }
         let observations = ObservationLog::default();
         // Recompile from the persisted bytes, never from the source paths. A
@@ -429,7 +432,7 @@ impl DnsServer {
         store: Option<BundleStore>,
         subscriptions: Option<Arc<SubscriptionRuntime>>,
         events: Option<Arc<EventQueue>>,
-        dot_tls: Option<Arc<ServerConfig>>,
+        tls: PreparedTls,
     ) -> Result<Self> {
         // TLS is prepared ONCE by the caller against the actual selected
         // config, before any state write and before any bind. Do not reload
@@ -457,17 +460,37 @@ impl DnsServer {
         };
         server.register_socket(udp);
         server.register_listener(tcp, Duration::from_secs(TCP_TIMEOUT_SECS), TCP_MAX_BYTES);
-        // The optional DoT listener shares this Server (and therefore its
-        // shutdown token) and the same FilteringHandler: decrypted queries get
-        // the identical immutable policy and source-IP device mapping.
-        if let (Some(spec), Some(tls)) = (config.dot_listener.as_ref(), dot_tls) {
+        // Every listener shares this Server (and therefore its shutdown token)
+        // and the same FilteringHandler: decrypted queries get the identical
+        // immutable policy and source-IP device mapping.
+        let mut bound_addrs = vec![bound];
+        // Optional DoT listener: ALPN "dot", TLS on its own port.
+        if let (Some(spec), Some(cfg)) = (config.dot_listener.as_ref(), tls.dot) {
             let dot = TcpListener::bind(spec.bind.configured_addr()).await?;
             let dot_bound = dot.local_addr()?;
             reject_upstream_self_loop(&config, dot_bound)?;
+            reject_duplicate_bind(&bound_addrs, dot_bound)?;
+            bound_addrs.push(dot_bound);
             server.register_tls_listener_with_tls_config(
                 dot,
                 Duration::from_secs(TCP_TIMEOUT_SECS),
-                tls,
+                cfg,
+            )?;
+        }
+        // Optional DoH listener: ALPN "h2" only, one hostname and one path.
+        // Hickory's maintained h2 handler takes the client source from the
+        // accepted socket; untrusted forwarding headers are never consulted.
+        if let (Some(spec), Some(cfg)) = (config.doh_listener.as_ref(), tls.doh) {
+            let doh = TcpListener::bind(spec.bind.configured_addr()).await?;
+            let doh_bound = doh.local_addr()?;
+            reject_upstream_self_loop(&config, doh_bound)?;
+            reject_duplicate_bind(&bound_addrs, doh_bound)?;
+            server.register_https_listener_with_tls_config(
+                doh,
+                Duration::from_secs(TCP_TIMEOUT_SECS),
+                cfg,
+                Some(spec.hostname.clone()),
+                spec.path.clone(),
             )?;
         }
         let shutdown = server.shutdown_token().clone();
@@ -1030,6 +1053,17 @@ impl DnsServer {
     pub async fn stop_shared(&self) {
         self.stop_inner().await;
     }
+}
+
+/// Guard the ACTUAL bound address of each listener, including OS-assigned
+/// ephemeral ports that config validation cannot know. A failure here drops
+/// the already-registered listeners (no task has been spawned yet), so no
+/// partially started server survives.
+fn reject_duplicate_bind(seen: &[SocketAddr], candidate: SocketAddr) -> Result<()> {
+    if seen.contains(&candidate) {
+        bail!("listener address {candidate} collides with another listener");
+    }
+    Ok(())
 }
 
 fn initial_state(config: &Config, material: Option<&FilterMaterial>) -> BundleState {

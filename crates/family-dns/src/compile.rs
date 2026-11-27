@@ -137,9 +137,10 @@ pub fn compile(base: &Config, policy: &Policy) -> Result<Config, CompileError> {
         event_retention_secs: Some(policy.event_retention_secs),
         // Preserved from the local, explicitly configured worker config.
         bind: base.bind.clone(),
-        // The DoT listener is transport identity owned by the operator, never
-        // something a controller policy pull may add, drop or rewrite.
+        // The encrypted listeners are transport identity owned by the operator,
+        // never something a controller policy pull may add, drop or rewrite.
         dot_listener: base.dot_listener.clone(),
+        doh_listener: base.doh_listener.clone(),
         deny: base.deny.clone(),
         upstreams: base.upstreams.clone(),
         encrypted_upstreams: base.encrypted_upstreams.clone(),

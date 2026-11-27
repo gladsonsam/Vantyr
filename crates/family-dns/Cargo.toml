@@ -29,9 +29,10 @@ chrono           = { version = "=0.4.45", features = ["serde"] }
 serde            = { version = "=1.0.229", features = ["derive"] }
 serde_json       = "=1.0.154"
 tokio            = { version = "=1.54.1", features = ["macros", "rt", "rt-multi-thread", "net", "sync", "time", "signal"] }
-# `tls-aws-lc-rs` enables the maintained DoT server listener API on the same
+# `tls-aws-lc-rs` enables the maintained DoT server listener API and
+# `https-aws-lc-rs` the maintained DoH/h2 server listener API, on the same
 # pinned version already used by the test-only listener below; no new lock edge.
-hickory-server   = { version = "=0.26.4", features = ["resolver", "tls-aws-lc-rs"] }
+hickory-server   = { version = "=0.26.4", features = ["resolver", "tls-aws-lc-rs", "https-aws-lc-rs"] }
 # Maintained DoT/DoH upstream transports. `webpki-roots` is mandatory: without
 # a root source Hickory's client config is empty and every verification fails.
 hickory-resolver = { version = "=0.26.4", default-features = false, features = ["tokio", "serde", "tls-aws-lc-rs", "https-aws-lc-rs", "webpki-roots"] }
@@ -60,10 +61,13 @@ thiserror        = "=1.0.69"
 libc             = "=0.2.191"
 
 [dev-dependencies]
-# Test-only local DoT/DoH listeners. Cargo unifies these features with the
-# production hickory-server package while building integration tests; the
-# worker itself registers no encrypted listener.
+# Test-only DoT/DoH helpers. Cargo unifies these features with the production
+# hickory-server package while building integration tests.
 hickory-server   = { version = "=0.26.4", features = ["resolver", "tls-aws-lc-rs", "https-aws-lc-rs"] }
+# Test-only client-side DoH support. `http2` lets reqwest negotiate the single
+# `h2` ALPN offered by the listener; h2 is already pinned in the workspace lock,
+# so this adds no version or checksum churn. All verification is real CA/SNI.
+reqwest          = { version = "=0.13.5", default-features = false, features = ["json", "rustls", "http2"] }
 axum             = "=0.8.9"
 rcgen            = { version = "=0.14.10", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
 tokio-rustls     = { version = "=0.26.6", default-features = false, features = ["aws_lc_rs"] }

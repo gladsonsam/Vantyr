@@ -51,6 +51,10 @@ pub const MAX_TIMEZONE_LEN: usize = 64;
 /// Bounded PEM string carried inside the one durable bundle (not a path).
 pub const MAX_CA_PEM_BYTES: usize = 16 * 1024;
 pub const MAX_DOH_PATH_LEN: usize = 256;
+/// Bounded operator-supplied DoH server hostname (a DNS name, not a URL). It is
+/// both the certificate verification identity and the HTTP `:authority` the
+/// listener accepts; no wildcard or per-client form is supported.
+pub const MAX_DOH_HOSTNAME_LEN: usize = 253;
 pub const MAX_TTL_SECS: u32 = 86_400;
 pub const MAX_STALE_SECS: u64 = 30 * 24 * 60 * 60;
 pub const DEFAULT_PORT: u16 = 15_353;
@@ -295,6 +299,30 @@ pub struct DotListenerConfig {
     pub enabled: bool,
     #[serde(default = "default_bind")]
     pub bind: BindConfig,
+    pub cert_path: String,
+    pub key_path: String,
+}
+
+/// Explicit operator opt-in for a DNS-over-HTTPS (HTTP/2) server listener.
+/// Like the DoT block it is inert unless `enabled` is true. It shares the
+/// `FilteringHandler` and immutable policy, uses the same protected certificate
+/// custody, and is registered on the Hickory server with the `h2` ALPN only.
+///
+/// `hostname` is the single certificate verification identity and expected
+/// HTTP authority; `path` is the single accepted endpoint. The client source is
+/// always the accepted socket address: `X-Forwarded-For` and other headers are
+/// never consulted, so per-client path identities and trusted-proxy mapping
+/// remain out of scope. Changing any field is a transport change rejected by
+/// reload; certificate rotation is not supported.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DohListenerConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_bind")]
+    pub bind: BindConfig,
+    pub hostname: String,
+    pub path: String,
     pub cert_path: String,
     pub key_path: String,
 }
@@ -1103,6 +1131,11 @@ pub struct Config {
     /// means no encrypted listener is created; nothing enables it implicitly.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dot_listener: Option<DotListenerConfig>,
+    /// Optional, explicit DoH (HTTP/2) server listener. Omitted or
+    /// `enabled = false` means no HTTPS listener is created; nothing enables it
+    /// implicitly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doh_listener: Option<DohListenerConfig>,
     #[serde(default)]
     pub deny: DenyConfig,
     #[serde(default)]
@@ -1210,6 +1243,7 @@ impl Config {
             }
         }
         self.validate_dot_listener()?;
+        self.validate_doh_listener()?;
 
         if self.upstreams.len() + self.encrypted_upstreams.len() > MAX_UPSTREAMS {
             bail!("at most {MAX_UPSTREAMS} upstreams are allowed");
@@ -1543,6 +1577,130 @@ impl Config {
                 if forwards_to_self(&candidate, &dot_addr) {
                     bail!(
                         "{} encrypted upstream points back at the DoT listener",
+                        spec.scheme()
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate the optional DoH (HTTP/2) listener block without reading a file
+    /// or opening a socket. Bounded hostname/path/certificate paths, public
+    /// bind, privileged port, distinct-port and self-loop checks all run before
+    /// any listener exists. Port zero is allowed for loopback test binds; the
+    /// ACTUAL bound address is checked for cross-listener collisions in
+    /// `server::serve` after every socket is bound.
+    fn validate_doh_listener(&self) -> Result<()> {
+        let Some(doh) = &self.doh_listener else {
+            return Ok(());
+        };
+        for (value, label) in [
+            (&doh.cert_path, "DoH cert_path"),
+            (&doh.key_path, "DoH key_path"),
+        ] {
+            if value.is_empty()
+                || value.len() > MAX_TLS_PATH_LEN
+                || value.chars().any(char::is_control)
+            {
+                bail!("{label} is empty, unbounded or malformed");
+            }
+        }
+        // One bounded hostname, not a URL: the server uses it both as the
+        // certificate verification identity/SNI and as the expected HTTP
+        // authority. No wildcard, scheme, userinfo, port or per-client form.
+        let hostname = &doh.hostname;
+        if hostname.is_empty()
+            || hostname.len() > MAX_DOH_HOSTNAME_LEN
+            || hostname
+                .chars()
+                .any(|c| c.is_control() || c.is_whitespace())
+            || hostname.contains("://")
+            || hostname.contains('/')
+            || hostname.contains('@')
+            || hostname.contains('?')
+            || hostname.contains('#')
+            || hostname.contains(':')
+        {
+            bail!("DoH hostname is empty, unbounded or malformed");
+        }
+        for label in hostname.split('.') {
+            if label.is_empty()
+                || label.len() > 63
+                || label.starts_with('-')
+                || label.ends_with('-')
+                || !label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            {
+                bail!("DoH hostname has an invalid DNS label");
+            }
+        }
+        let path = &doh.path;
+        if path.is_empty()
+            || path.len() > MAX_DOH_PATH_LEN
+            || !path.starts_with('/')
+            || path.chars().any(|c| c.is_control() || c.is_whitespace())
+            || path.contains('?')
+            || path.contains('#')
+            || path.contains('@')
+        {
+            bail!("DoH path is empty, unbounded or malformed");
+        }
+        // A present but disabled block stays inert: no certificate is read and
+        // no socket is bound. Enabling is an explicit operator decision.
+        if !doh.enabled {
+            return Ok(());
+        }
+        let ip = parsed_ip(&doh.bind.address, "DoH listener address")?;
+        let canonical = normalize_ip(ip);
+        if doh.bind.port != 0 && doh.bind.port < 1024 {
+            bail!("DoH listener port must be 1024 or higher; privileged ports are not used");
+        }
+        if !canonical.is_loopback() {
+            if !doh.bind.allow_non_loopback {
+                bail!("non-loopback DoH listener requires doh_listener.bind.allow_non_loopback = true");
+            }
+            if canonical.is_unspecified() {
+                bail!("an unspecified DoH listener address is never allowed");
+            }
+            if is_public_address(canonical) {
+                bail!("a public DoH listener address is never allowed");
+            }
+        }
+        let doh_addr = SocketAddr::new(canonical, doh.bind.port);
+        let plain_addr = SocketAddr::new(normalize_ip(self.bind.address()), self.bind.port);
+        if doh.bind.port != 0 && doh_addr == plain_addr {
+            bail!("DoH listener must use a different port from the plaintext listener");
+        }
+        // The two encrypted listeners may not claim the same configured port on
+        // the same address. A zero port is checked against the ACTUAL bound
+        // socket after binding, together with every other listener.
+        if let (Some(dot), true) = (&self.dot_listener, doh.bind.port != 0) {
+            if dot.enabled && doh.bind.port == dot.bind.port {
+                let dot_ip = normalize_ip(parsed_ip(&dot.bind.address, "DoT listener address")?);
+                if dot_ip == canonical {
+                    bail!("DoH listener must use a different port from the DoT listener");
+                }
+            }
+        }
+        // Upstreams may not point back at the DoH listener either. A zero port
+        // defers this to the post-bind guard in `server::serve`.
+        if doh.bind.port != 0 {
+            for raw in &self.upstreams {
+                let addr = SocketAddr::from_str(raw)
+                    .map_err(|_| anyhow::anyhow!("upstream '{raw}' must be an IP:port literal"))?;
+                if forwards_to_self(&addr, &doh_addr) {
+                    bail!("upstream {addr} points back at the DoH listener");
+                }
+            }
+            for spec in &self.encrypted_upstreams {
+                let bootstrap = IpAddr::from_str(spec.bootstrap())
+                    .map_err(|_| anyhow::anyhow!("encrypted bootstrap is not an IP literal"))?;
+                let candidate = SocketAddr::new(normalize_ip(bootstrap), spec.port());
+                if forwards_to_self(&candidate, &doh_addr) {
+                    bail!(
+                        "{} encrypted upstream points back at the DoH listener",
                         spec.scheme()
                     );
                 }
