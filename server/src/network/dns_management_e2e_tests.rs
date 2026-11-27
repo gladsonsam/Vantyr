@@ -1981,6 +1981,21 @@ async fn full_upgrade_0085_0086_preserves_evidence_and_applies_once(pool: PgPool
     .await
     .unwrap();
     assert_eq!(delivered_version, UPGRADE_VERSION, "pins were advanced");
+    // Migration and restore preserve the current status before any live report.
+    let old: (String, i64, i64) = sqlx::query_as(
+        "SELECT body_sha256, generation, filter_generation FROM network_dns_status \
+         WHERE household_id = $1 AND gateway_id = $2 AND config_version = $3",
+    )
+    .bind(hid)
+    .bind(gid)
+    .bind(UPGRADE_VERSION)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(old.0, d_old, "old V status digest was rewritten");
+    assert_eq!(old.1, 4, "old V bundle generation was reset");
+    assert_eq!(old.2, 2, "old V filter generation was reset");
+
     let before = super::dns_management_tests::evidence_snapshot(&pool, hid).await;
 
     // Offline converter: check is read-only; apply keeps an exact private backup.
@@ -2131,8 +2146,8 @@ async fn full_upgrade_0085_0086_preserves_evidence_and_applies_once(pool: PgPool
     .unwrap();
     assert_eq!(deliveries_after, 1, "next poll created a second delivery");
 
-    // Policy revision/history/CAS space and audit were never reset; the old V
-    // status row still carries its original digest and generation counters.
+    // Policy history, historical delivery and original audit rows survive.
+    // Status is current per gateway and was legitimately advanced by the worker.
     let after = super::dns_management_tests::evidence_snapshot(&pool, hid).await;
     assert_eq!(
         after["policies"], before["policies"],
@@ -2142,6 +2157,15 @@ async fn full_upgrade_0085_0086_preserves_evidence_and_applies_once(pool: PgPool
         after["desired_policy"], before["desired_policy"],
         "assignment was reset"
     );
+    let historical_deliveries = before["delivery"].as_array().unwrap();
+    let current_deliveries = after["delivery"].as_array().unwrap();
+    assert!(!historical_deliveries.is_empty());
+    for historical in historical_deliveries {
+        assert!(
+            current_deliveries.contains(historical),
+            "historical delivery evidence was changed or removed"
+        );
+    }
     // Credential issuance and real worker reads/reports append audit events.
     // Every pre-upgrade row must retain its identity and full contents.
     let original_audit = before["audit"].as_array().unwrap();
@@ -2155,19 +2179,6 @@ async fn full_upgrade_0085_0086_preserves_evidence_and_applies_once(pool: PgPool
         assert_eq!(matching.len(), 1, "original audit identity was lost");
         assert_eq!(matching[0], original, "original audit row was changed");
     }
-    let old: (String, i64, i64) = sqlx::query_as(
-        "SELECT body_sha256, generation, filter_generation FROM network_dns_status \
-         WHERE household_id = $1 AND gateway_id = $2 AND config_version = $3",
-    )
-    .bind(hid)
-    .bind(gid)
-    .bind(UPGRADE_VERSION)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(old.0, d_old, "old V status digest was rewritten");
-    assert_eq!(old.1, 4, "old V bundle generation was reset");
-    assert_eq!(old.2, 2, "old V filter generation was reset");
 
     // Durable restart from the single converted bundle, with a stale external
     // config file, recovers the exact applied state and status.
