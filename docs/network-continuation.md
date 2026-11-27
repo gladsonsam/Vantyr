@@ -424,6 +424,14 @@ The first shared-cache compile exposed an obsolete dependency API despite the
 correct source exports; the dedicated build compiled the current source and
 passed without product changes. Keep that target specific to this runtime line
 to avoid sharing incompatible workspace artifacts across candidate branches.
+Strict family-dns all-target clippy also passed in that dedicated directory.
+
+HTTP/3 listener work is blocked on maintained request-validation support in
+the pinned Hickory 0.26.4 server adapter: it consumes bodies without the H2
+path/authority/method/content-type checks and has no GET query decoding or
+configurable path. Do not expose a hostname/path setting that the adapter
+ignores. No H3 dependencies or listener have been added; a safe maintained seam
+or separately reviewed upstream fix is needed before implementation.
 
 ## Frontend continuation
 
