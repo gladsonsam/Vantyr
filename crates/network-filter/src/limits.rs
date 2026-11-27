@@ -23,6 +23,10 @@ pub const MAX_FIELD_LEN: usize = 200;
 pub const MAX_NAME_LEN: usize = 253;
 /// Maximum number of hostnames recognised on one hosts line.
 pub const MAX_HOSTS_PER_LINE: usize = 16;
+/// Global cap on accepted typed DNS rewrite rules across all ABP sources.
+/// Every rewrite is indexed by owner and selected on each supported query, so
+/// this bounds the compiled index independently of the looser `max_rules`.
+pub const MAX_DNS_REWRITES: usize = 512;
 
 /// Maximum text length of one hostname regex pattern.
 pub const MAX_REGEX_PATTERN_LEN: usize = MAX_RULE_LEN;
@@ -66,6 +70,8 @@ pub struct Limits {
     pub max_regex_work_bytes: usize,
     /// Global cap on the aggregate regex compilation reservation.
     pub max_regex_reservation_bytes: usize,
+    /// Global cap on accepted typed DNS rewrite rules across all sources.
+    pub max_dns_rewrites: usize,
 }
 
 impl Default for Limits {
@@ -80,6 +86,7 @@ impl Default for Limits {
             max_regex_rules: MAX_REGEX_RULES,
             max_regex_work_bytes: MAX_REGEX_WORK_BYTES,
             max_regex_reservation_bytes: MAX_REGEX_RESERVATION_BYTES,
+            max_dns_rewrites: MAX_DNS_REWRITES,
         }
     }
 }

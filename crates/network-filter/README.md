@@ -88,6 +88,42 @@ Rejected with a bounded diagnostic (never silently matched):
 An orphan `@@` exception must be accompanied by a matching block rule for
 upstream to report it. Diagnostics say so; nothing is fabricated.
 
+#### Typed `$dnsrewrite` (first slice, compiler only)
+
+The maintained `adblock` 0.13.6 engine exposes no typed DNS rewrite, so this
+first slice uses a thin bounded parser instead of inventing an upstream
+meaning. It accepts only:
+
+- `||host^$dnsrewrite=NOERROR;A;192.0.2.1` and the IPv4 shorthand
+  `||host^$dnsrewrite=192.0.2.1` -> typed A;
+- `||host^$dnsrewrite=NOERROR;AAAA;2001:db8::1` and the IPv6 shorthand
+  `||host^$dnsrewrite=2001:db8::1` -> typed AAAA;
+- `||host^$dnsrewrite=NOERROR;CNAME;target.example` and the hostname shorthand
+  `||host^$dnsrewrite=target.example` -> typed CNAME.
+
+`||host^` has the documented domain-and-subdomain meaning: it matches that
+owner and every subdomain at a label boundary, never a lookalike such as
+`notexample.com`. Owners and CNAME targets go through the same Hickory
+canonicalisation as other list names (ASCII/punycode, lowercase, no trailing
+dot), and single-label owners are rejected as too broad. The shorthand keyword
+and full-form response codes (`REFUSED`, `NXDOMAIN`, ...), `NOERROR;;`, other
+RR types (MX/TXT/PTR/SRV/SVCB/HTTPS/...), wrong type/value pairs, combined
+modifiers (`client`, `ctag`, `dnstype`, `important`, `badfilter`, ...), rewrite
+exceptions (`@@...$dnsrewrite`), wildcards and one-delimiter values are all
+diagnosed explicitly; none is silently matched or turned into a block.
+
+Accepted rewrites never enter the block engines: a rewrite rule alone yields
+`NoMatch` from `evaluate`. `FilterSnapshot::select_dns_rewrite(qname, qtype)`
+returns one immutable typed `DnsRewrite` (owner, value, bounded evidence and
+line), or `None`. Selection is the most specific matching owner, then the
+lexicographically first source id and line; conflicting CNAME-vs-address or
+multiple distinct CNAME values for one owner reject the candidate at compile
+time. An ordinary `@@||host^` list exception (including `$important`)
+suppresses a rewrite for that owner and its subdomains without granting an
+allow against household policy. This is a **compiler-only typed contract**:
+no DNS response is built, nothing is enforced at runtime, and no capability
+row is accepted by this slice.
+
 ### Services
 
 A `ServiceCatalog` is operator-provided and holds **domain sets only**:
@@ -125,7 +161,9 @@ an ordinary exception.
 
 `AllowException` is strictly a **list-layer** outcome. It must never be used
 to override the household baseline policy owned by the DNS worker. This crate
-never sees that policy and makes no such claim.
+never sees that policy and makes no such claim. Typed rewrites are selected
+through the separate `select_dns_rewrite` method only; they do not change any
+`evaluate` outcome or block precedence above.
 
 Evidence is honest about upstream limits: Hickory's blocklist API does not
 expose the matched entry, so hosts/service decisions carry only list or service
@@ -136,7 +174,11 @@ and its own source id and line, independent of upstream debug information.
 ## Bounds and failure behaviour
 
 Defaults: 8 MiB aggregate raw bytes, at most 32 lists, 250 000 accepted rules,
-at most 64 retained diagnostics, 64 services, 512 domains per service.
+at most 64 retained diagnostics, 64 services, 512 domains per service, and an
+additional global cap of 512 accepted typed DNS rewrites across all sources.
+Accepted rewrites count toward `total_rules`; the rewrite cap is charged
+globally before publication and an overflow rejects the whole candidate with a
+bounded `Limit` diagnostic. An exact-at-cap candidate is accepted.
 `compile_with_limits` lets callers lower the general bounds.
 
 Each hostname regex pattern is bounded to 200 bytes of text, 256 KiB of
@@ -184,8 +226,11 @@ then call `compile`; publish the resulting snapshot only on `Ok`.
 ## Deferred / not claimed
 
 - remote HTTP/S subscription refresh and local content-addressed durability;
-- DNS worker integration and enforcement;
+- DNS worker integration and enforcement, including typed rewrite response
+  construction and ordering against household policy (the compiler slice above
+  makes no runtime or capability claim);
 - full ABP syntax, further modifiers and context-dependent rule selection;
+  response-code rewrites, suppression forms and RR types beyond A/AAAA/CNAME;
 - exhaustive service catalogs and live feeds.
 
 ## Tests

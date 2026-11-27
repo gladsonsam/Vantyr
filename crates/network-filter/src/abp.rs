@@ -19,6 +19,7 @@ use adblock::request::Request;
 use adblock::sourcemap::FilterRuleDebugInfo;
 
 use crate::canonical::canonical_entry;
+use crate::dns_rewrite::{self, DnsRewrite, DnsRewritePlan};
 use crate::hostname_regex::{
     self, HostnameRegexEngine, RegexBudget, RegexPlan, RegexRule, RegexVerdictKind,
 };
@@ -66,6 +67,15 @@ impl AbpVerdict {
     }
 }
 
+/// Result of compiling one ABP source group. Rewrite rules are separate from
+/// the block/exception engines: they must never become blocks.
+pub(crate) struct AbpBuild {
+    pub(crate) engine: Option<AbpEngine>,
+    pub(crate) accepted_per_source: Vec<usize>,
+    pub(crate) rewrites: Vec<DnsRewrite>,
+    pub(crate) exception_owners: Vec<String>,
+}
+
 /// Which pipeline accepted one validated rule.
 enum Accepted {
     Skip,
@@ -73,9 +83,17 @@ enum Accepted {
         /// Upstream metadata says this is an `@@...$important` rule, so it is
         /// routed to the dedicated exception-only engine.
         important_exception: bool,
+        /// Whether the pattern carried the `@@` exception prefix. Accepted
+        /// domain exceptions are indexed so they can suppress list rewrites
+        /// even when upstream has no block to pair them with.
+        exception: bool,
+        /// Canonical ASCII owner without its trailing dot.
+        owner: String,
     },
     /// Classified but not compiled: the global budget is charged first.
     Regex(RegexPlan),
+    /// A typed `$dnsrewrite` rule, compiled without entering the block engine.
+    DnsRewrite(DnsRewritePlan),
 }
 
 /// `sources` are `(list id, list text)` sorted by id for deterministic
@@ -84,9 +102,14 @@ pub(crate) fn build(
     sources: &[(&str, &str)],
     limits: &Limits,
     diagnostics: &mut Vec<Diagnostic>,
-) -> Result<(Option<AbpEngine>, Vec<usize>), CompileError> {
+) -> Result<AbpBuild, CompileError> {
     if sources.is_empty() {
-        return Ok((None, Vec::new()));
+        return Ok(AbpBuild {
+            engine: None,
+            accepted_per_source: Vec::new(),
+            rewrites: Vec::new(),
+            exception_owners: Vec::new(),
+        });
     }
     let mut set = FilterSet::new(true);
     let mut source_ids: Vec<String> = Vec::new();
@@ -95,6 +118,8 @@ pub(crate) fn build(
     let mut accepted_per_source: Vec<usize> = Vec::new();
     let mut regex_rules: Vec<RegexRule> = Vec::new();
     let mut regex_budget = RegexBudget::new();
+    let mut rewrites: Vec<DnsRewrite> = Vec::new();
+    let mut exception_owners: Vec<String> = Vec::new();
 
     for (id, text) in sources {
         let mut kept = String::new();
@@ -104,6 +129,8 @@ pub(crate) fn build(
             match validate(line) {
                 Ok(Accepted::Domain {
                     important_exception,
+                    exception,
+                    owner,
                 }) => {
                     // Partition important exceptions into the dedicated
                     // engine. The main engine then only ever selects ordinary
@@ -115,6 +142,9 @@ pub(crate) fn build(
                     } else {
                         kept.push_str(line.trim());
                         kept.push('\n');
+                    }
+                    if exception {
+                        exception_owners.push(owner);
                     }
                     accepted += 1;
                 }
@@ -141,6 +171,26 @@ pub(crate) fn build(
                             Diagnostic::new(id, index + 1, kind, detail),
                         ),
                     }
+                }
+                Ok(Accepted::DnsRewrite(plan)) => {
+                    // Charge the explicit global cap across every source,
+                    // before publishing any index. An overflow is fatal and
+                    // cannot be diluted by splitting rules over more lists.
+                    if rewrites.len() >= limits.max_dns_rewrites {
+                        push_fatal(
+                            diagnostics,
+                            limits,
+                            Diagnostic::new(
+                                id,
+                                index + 1,
+                                DiagnosticKind::Limit("dns rewrite count".to_owned()),
+                                "global typed dnsrewrite rule cap exceeded",
+                            ),
+                        );
+                        return Err(CompileError::Rejected(diagnostics.clone()));
+                    }
+                    rewrites.push(plan.into_rewrite(id, index + 1));
+                    accepted += 1;
                 }
                 Ok(Accepted::Skip) => {}
                 Err((kind, detail)) => push(
@@ -197,8 +247,8 @@ pub(crate) fn build(
         }
     }
 
-    Ok((
-        Some(AbpEngine {
+    Ok(AbpBuild {
+        engine: Some(AbpEngine {
             engine: Engine::new_with_filter_set(set),
             source_ids,
             important_exceptions: if important_source_ids.is_empty() {
@@ -210,7 +260,9 @@ pub(crate) fn build(
             regex: HostnameRegexEngine::new(regex_rules),
         }),
         accepted_per_source,
-    ))
+        rewrites,
+        exception_owners,
+    })
 }
 
 /// Classify one line. Regex rules are recognised before the cosmetic guard:
@@ -250,6 +302,19 @@ fn validate(line: &str) -> Result<Accepted, (DiagnosticKind, String)> {
         None => (rule, None),
     };
     if let Some(options) = options {
+        // Route the typed rewrite slice before the generic modifier guard:
+        // adblock 0.13.6 exposes no typed dnsrewrite, so these rules are
+        // compiled by the bounded parser here and never enter the block engine.
+        if options
+            .split(',')
+            .any(|option| option.eq_ignore_ascii_case("dnsrewrite")
+                || option
+                    .split_once('=')
+                    .map(|(key, _)| key.eq_ignore_ascii_case("dnsrewrite"))
+                    .unwrap_or(false))
+        {
+            return validate_rewrite(rule, pattern, options);
+        }
         for option in options.split(',') {
             if option != "important" {
                 return Err((
@@ -291,7 +356,8 @@ fn validate(line: &str) -> Result<Accepted, (DiagnosticKind, String)> {
     }
     let canonical =
         canonical_entry(domain).map_err(|reason| (DiagnosticKind::Malformed, reason))?;
-    let label_count = canonical.trim_end_matches('.').split('.').count();
+    let owner = canonical.trim_end_matches('.').to_ascii_lowercase();
+    let label_count = owner.split('.').count();
     if label_count < 2 {
         return Err((
             DiagnosticKind::Unsupported,
@@ -340,7 +406,7 @@ fn validate(line: &str) -> Result<Accepted, (DiagnosticKind, String)> {
                 ));
             }
             let upstream_host = filter.hostname.as_deref().unwrap_or("");
-            if !upstream_host.eq_ignore_ascii_case(canonical.trim_end_matches('.')) {
+            if !upstream_host.eq_ignore_ascii_case(&owner) {
                 return Err((
                     DiagnosticKind::Malformed,
                     "upstream hostname does not match the canonical domain".to_owned(),
@@ -371,7 +437,81 @@ fn validate(line: &str) -> Result<Accepted, (DiagnosticKind, String)> {
     };
     Ok(Accepted::Domain {
         important_exception,
+        exception,
+        owner,
     })
+}
+
+/// Validate the first typed `$dnsrewrite` slice. This ruleset is intentionally
+/// narrow: the maintained adblock engine exposes no typed DNS rewrite, so the
+/// bounded parser here is the authority and combined/context modifiers,
+/// rewrite exceptions, wildcards, response codes and other RR types are
+/// reported honestly instead of being given invented meanings.
+fn validate_rewrite(
+    rule: &str,
+    pattern: &str,
+    options: &str,
+) -> Result<Accepted, (DiagnosticKind, String)> {
+    if options.split(',').count() != 1 {
+        return Err((
+            DiagnosticKind::Unsupported,
+            "modifiers combined with dnsrewrite are not supported".to_owned(),
+        ));
+    }
+    let value = match options.split_once('=') {
+        Some((key, value)) if key.eq_ignore_ascii_case("dnsrewrite") => value,
+        _ => {
+            return Err((
+                DiagnosticKind::Unsupported,
+                "rewrite exceptions (@@...$dnsrewrite) are not supported".to_owned(),
+            ));
+        }
+    };
+    if pattern.starts_with("@@") {
+        return Err((
+            DiagnosticKind::Unsupported,
+            "rewrite exceptions are not supported in this slice".to_owned(),
+        ));
+    }
+    if pattern.split_whitespace().count() != 1 {
+        return Err((
+            DiagnosticKind::Unsupported,
+            "whitespace-separated rewrite patterns are not supported".to_owned(),
+        ));
+    }
+    let domain = pattern.strip_prefix("||").ok_or_else(|| {
+        (
+            DiagnosticKind::Unsupported,
+            "dnsrewrite rules must be domain-anchored with ||host^".to_owned(),
+        )
+    })?;
+    let domain = domain.strip_suffix('^').ok_or_else(|| {
+        (
+            DiagnosticKind::Unsupported,
+            "dnsrewrite rules must end in ^ for an explicit label boundary".to_owned(),
+        )
+    })?;
+    if domain.contains('*') {
+        return Err((
+            DiagnosticKind::Unsupported,
+            "wildcards are not supported in dnsrewrite rules".to_owned(),
+        ));
+    }
+    let canonical =
+        canonical_entry(domain).map_err(|reason| (DiagnosticKind::Malformed, reason))?;
+    let owner = canonical.trim_end_matches('.').to_ascii_lowercase();
+    if owner.split('.').count() < 2 {
+        return Err((
+            DiagnosticKind::Unsupported,
+            "single-label dnsrewrite owners are too broad to accept".to_owned(),
+        ));
+    }
+    let value = dns_rewrite::parse_value(value)?;
+    Ok(Accepted::DnsRewrite(DnsRewritePlan {
+        owner,
+        value,
+        raw: bounded_rule(rule).unwrap_or_default(),
+    }))
 }
 
 impl AbpEngine {

@@ -37,6 +37,15 @@ pub fn hostname_of(name: &Name) -> String {
     name.to_ascii().trim_end_matches('.').to_ascii_lowercase()
 }
 
+/// Canonical ASCII host presentation for a list-owned name (a rewrite owner or
+/// CNAME target). It reuses the strict query parser, so wildcards, root names
+/// and over-long names are rejected instead of being broadened into a match.
+#[cfg(feature = "abp")]
+pub(crate) fn canonical_list_name(input: &str) -> Result<String, String> {
+    let name = canonical_query(input)?;
+    Ok(hostname_of(&name))
+}
+
 fn parse(input: &str, allow_leading_wildcard: bool) -> Result<Name, String> {
     let trimmed = input.trim();
     if trimmed.is_empty() || trimmed == "." {

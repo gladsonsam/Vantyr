@@ -12,6 +12,8 @@ use sha2::{Digest, Sha256};
 
 #[cfg(feature = "abp")]
 use crate::abp::{self, AbpEngine, AbpVerdict};
+#[cfg(feature = "abp")]
+use crate::dns_rewrite::{self, DnsRewrite, DnsRewriteEngine};
 use crate::canonical;
 use crate::hosts::{self, HostsEngine};
 use crate::limits::{Limits, MAX_FIELD_LEN};
@@ -115,7 +117,15 @@ pub fn compile_with_limits(
         .map(|source| (source.id, source.text))
         .collect();
     #[cfg(feature = "abp")]
-    let (abp_engine, abp_counts) = abp::build(&abp_sources, limits, &mut diagnostics)?;
+    let abp::AbpBuild {
+        engine: abp_engine,
+        accepted_per_source: abp_counts,
+        rewrites,
+        exception_owners,
+    } = abp::build(&abp_sources, limits, &mut diagnostics)?;
+    #[cfg(feature = "abp")]
+    let dns_rewrite_engine =
+        dns_rewrite::build(rewrites, exception_owners, limits, &mut diagnostics)?;
     #[cfg(not(feature = "abp"))]
     let abp_counts: Vec<usize> = if abp_sources.is_empty() {
         Vec::new()
@@ -126,6 +136,8 @@ pub fn compile_with_limits(
     };
     #[cfg(not(feature = "abp"))]
     let _abp_engine = ();
+    #[cfg(not(feature = "abp"))]
+    let _dns_rewrite_engine = ();
 
     let mut counts: std::collections::BTreeMap<String, usize> = prepared
         .iter()
@@ -189,6 +201,8 @@ pub fn compile_with_limits(
         hosts_engines,
         #[cfg(feature = "abp")]
         abp: abp_engine,
+        #[cfg(feature = "abp")]
+        dns_rewrite: dns_rewrite_engine,
         service_engines,
         service_meta,
         diagnostics,
@@ -213,6 +227,8 @@ pub struct FilterSnapshot {
     hosts_engines: Vec<HostsEngine>,
     #[cfg(feature = "abp")]
     abp: Option<AbpEngine>,
+    #[cfg(feature = "abp")]
+    dns_rewrite: DnsRewriteEngine,
     service_engines: Vec<ServiceEngine>,
     service_meta: Vec<ServiceMeta>,
     diagnostics: Vec<Diagnostic>,
@@ -249,6 +265,43 @@ impl FilterSnapshot {
     /// must not be given list semantics by a caller.
     pub fn supported_query_type(qtype: RecordType) -> bool {
         matches!(qtype, RecordType::A | RecordType::AAAA | RecordType::CNAME)
+    }
+
+    /// Select the typed DNS rewrite for a supported query without changing any
+    /// block or exception decision. This returns a compiler-only typed value:
+    /// no DNS response is built here and no runtime enforcement is claimed.
+    ///
+    /// A list-layer exception (`@@||host^`, including `$important`) suppresses
+    /// the rewrite; it is never a household allow. Owners were checked for
+    /// conflicts at compile time. Selection is the most specific matching
+    /// owner (label boundaries only), then (source id, line).
+    #[cfg(feature = "abp")]
+    pub fn select_dns_rewrite(&self, qname: &Name, qtype: RecordType) -> Option<DnsRewrite> {
+        if !Self::supported_query_type(qtype) {
+            return None;
+        }
+        let canonical = match canonical::canonical_query(&qname.to_string()) {
+            Ok(name) => name,
+            Err(_) => return None,
+        };
+        let host = canonical::hostname_of(&canonical);
+
+        // Domain exceptions are indexed directly because upstream only
+        // reports an exception when a block happens to pair with it. Regex
+        // exceptions arrive through the existing list-layer verdict. Both
+        // suppress a rewrite; neither grants an allow against household policy.
+        if self.dns_rewrite.has_exception(&host) {
+            return None;
+        }
+        if let Some(engine) = &self.abp {
+            if matches!(
+                engine.check(&host),
+                AbpVerdict::Exception(_) | AbpVerdict::ImportantException(_)
+            ) {
+                return None;
+            }
+        }
+        self.dns_rewrite.select(&host)
     }
 
     /// Evaluate one canonical host name.
