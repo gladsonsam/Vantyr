@@ -71,9 +71,11 @@ pub use filter::{
 };
 pub use management::{ManagementClient, ManagementError, ManagementOptions, ManagementState};
 pub use management_dto::{
-    AppliedStatusDto, DownloadState, ListFormatDto, ManagementConfig, RefreshAckDto,
-    ServiceCatalogDto, ServiceDomainDto, ServiceDto, SourceMetadataDto, SourceStatusDto,
-    SubscriptionSourceDto, WorkerReadResponse, WorkerStatusBody, CONFIG_SCHEMA_VERSION,
+    AppliedStatusDto, CacheSettingsDto, ClearAckDto, DenySettingsDto, DesiredConfig, DownloadState,
+    ListFormatDto, ManagementConfig, ManagementConfigV2, PendingCacheClearView, RefreshAckDto,
+    RuntimeSettingsDto, ServiceCatalogDto, ServiceDomainDto, ServiceDto, SourceMetadataDto,
+    SourceStatusDto, SubscriptionSourceDto, WorkerReadResponse, WorkerStatusBody,
+    CONFIG_SCHEMA_VERSION, CONFIG_SCHEMA_VERSION_V2,
 };
 pub use management_worker::{config_digest, ManagementWorker};
 pub use observe::{DecisionObservation, ObservationLog, MAX_OBSERVATIONS};

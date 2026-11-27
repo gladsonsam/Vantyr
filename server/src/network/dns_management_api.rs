@@ -21,7 +21,8 @@ use crate::http::{audit_ip, AuthUser};
 use crate::state::AppState;
 
 use super::dns_management_dto::{
-    PatchBody, RefreshResult, WorkerReadBody, WorkerReadResponse, WorkerStatusBody,
+    CacheClearBody, CacheClearResult, PatchBody, RefreshResult, WorkerReadBody, WorkerReadResponse,
+    WorkerStatusBody,
 };
 use super::{api, authz, dns_management_service, gateway_api};
 
@@ -117,6 +118,33 @@ pub async fn refresh(
         json!({
             "source_id": source_id,
             "refresh_seq": result.refresh_seq,
+            "config_version": result.config_version,
+        }),
+    )
+    .await;
+    Ok(Json(json!(result)))
+}
+
+pub async fn cache_clear(
+    Path(hid): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    body: Result<Json<CacheClearBody>, JsonRejection>,
+) -> ApiResult<Json<Value>> {
+    authz::require_network_admin(&s.db, user.user_id, hid).await?;
+    let body = body.map_err(reject_json)?.0;
+    let result: CacheClearResult =
+        dns_management_service::request_clear(&s.db, user.user_id, hid, body, Utc::now()).await?;
+    api::audit_network(
+        &s,
+        &user,
+        audit_ip(&headers, addr).as_deref(),
+        hid,
+        "network_dns_cache_clear_request",
+        json!({
+            "clear_seq": result.clear_seq,
             "config_version": result.config_version,
         }),
     )

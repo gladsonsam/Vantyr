@@ -1,8 +1,10 @@
 # Stage A — bounded HTTP DNS management control plane
 
-Status: **control plane accepted in local source, worker consumer PENDING (Stage B)**.
-Migration `0079` is additive and latest; migrations `0073`–`0078` and their
-checksums are untouched. This slice saves a *desired* management config and
+Status: **control plane and worker consumer accepted for list/service settings;
+additive schema-v2 runtime settings and cache-clear command implemented in local
+source and covered by scoped tests**. Migration `0082` is additive and latest;
+migrations `0073`–`0081` and their checksums are untouched (0081 is reserved by
+the event agent; 0083 is reserved by the proxy agent). This slice saves a *desired* management config and
 records *worker-reported* observations. It never publishes a policy revision,
 changes `original_published_at`, changes a desired-policy assignment, or claims
 that a gateway applied, enforced or verified anything. The DNS worker consumer
@@ -20,6 +22,7 @@ explicit household grant; platform roles never imply network access.
 | `/api/network/households/{hid}/dns/management` | PATCH | `network_admin` | 32 KiB |
 | `/api/network/households/{hid}/dns/lists/{source_id}/refresh` | POST | `network_admin` | — |
 | `/api/network/households/{hid}/dns/status` | GET | `network_admin` **or** `network_events` | — |
+| `/api/network/households/{hid}/dns/cache/clear` | POST | `network_admin` | 32 KiB |
 | `/worker/network/dns-management/read` | POST | Bearer `read_dns_management`, kind `dns` | 32 KiB |
 | `/worker/network/dns/status` | POST | Bearer `report_dns_status`, kind `dns` | 32 KiB |
 
@@ -95,10 +98,12 @@ carries only operation names, version and digest — never a URL or metadata.
 config, created_at, updated_at, updated_by}, delivery: [...], supported:
 {...}}`. An empty household is `desired:null` with 200. `supported` reports
 `worker_consumer:"opt_in"`, `service_blocking:"dns_domains"`, and `false` for
-SafeSearch, statistics, serve-stale, cache-TTL controls, rate limiting,
-retention controls and `verified`. No caller can set a value that implies a
-missing runtime feature. `opt_in` denotes accepted software support, not a claim
-that any particular gateway is configured, currently reporting or verified.
+SafeSearch, statistics, serve-stale, rate limiting, retention controls and
+`verified`. With schema v2, `cache_ttl_controls`, `response_mode_controls` and
+`cache_clear` are `true` ONLY for the runtime-supported fields below. No caller
+can set a value that implies a missing runtime feature. `opt_in` denotes accepted
+software support, not a claim that any particular gateway is configured,
+currently reporting or verified.
 
 ## Manual refresh (per gateway, bounded and replay-safe)
 
@@ -185,6 +190,66 @@ exact SHA below; the worker should mirror this test verbatim:
 ```
 
 SHA-256: `820a75626ccf71e9a30529b381dc7dd2dd5abc9209446c850b129acc2a2ea93e`.
+
+## Additive schema v2: runtime settings and cache clear
+
+Migration `0082` widens `network_dns_management_config.schema_version` from
+`= 1` to `IN (1, 2)` and adds the cache-clear request/delivery/ack tables. It
+does **not** update any credential row: default issuance remains heartbeat-only
+and the two existing explicit DNS commands (`read_dns_management`,
+`report_dns_status`) are reused, so no new command scope or gateway auth file is
+touched.
+
+`ManagementConfigV2` contains the v1 fields in the SAME order plus one
+`runtime` object; v1 DTOs, fixtures and the golden SHA above are unchanged:
+
+```
+runtime: {
+  cache: { enabled: bool (default true), max_entries: u64 (default 4096, 0..=65536,
+           positive_min_ttl_secs / positive_max_ttl_secs / negative_min_ttl_secs /
+           negative_max_ttl_secs: Option<u32> in 1..=86400, min <= max) },
+  deny:  { mode: "nxdomain" | "refused" | "sinkhole",
+           sinkhole ipv4/ipv6 literals and ttl_secs in 1..=86400 }
+}
+```
+
+Only cache enable/size/TTL bounds and denial mode/denial TTL are supported.
+System hosts-file opt-in, bogus-NXDOMAIN IPs, IPv6/HTTPS/SVCB hints, serve-expired,
+DO, ECS, retention, rate limiting, listener, upstream, trust, paths and device
+mapping stay operator-local and are rejected as unknown fields. PATCH gains
+`set_runtime_settings{runtime}` (upgrade to schema 2) and
+`reset_runtime_settings{}` (back to schema 1); the same CAS, audit and 16 KiB
+canonical-body bounds apply. `GET` returns `config:null, config_v2:{...}` for
+v2. Worker reads carry `config_v2` as an additive optional field; an old v1
+worker's strict parser rejects it and fails honestly without poisoning
+last-known-good. Applied settings and the schema are persisted in the single
+bundle and overlaid on local reload/controller/subscription paths. Settings
+commits and policy commits share the bundle generation but keep policy revision
+and publication time separate and never freshen a cached body's age.
+
+### Cache clear command
+
+`POST .../dns/cache/clear` with `{expected_config_version}` is a command, not a
+settings or policy mutation. One pending token per household uses a 60 s
+cooldown and a 10 min expiry; a replay returns the same token with
+`created:false`, and a stale version gets 409. The read response delivers
+`pending_cache_clear[{clear_seq, config_version, expires_at}]` to each gateway
+only for the currently delivered/applied version; the status report carries
+`clear_ack[{clear_seq, config_version, cleared_at}]`. The server validates an
+exact delivered token per gateway: replay is idempotent, a foreign/future/
+never-delivered token is 409, and one gateway's ack never hides the token from
+another. The status view exposes truthful requested/delivered/attempted/
+acknowledged timestamps and **no entries count**. A clear targets the current
+resolver cache only; it never bumps settings, policy or generation, is not a
+flush barrier against in-flight repopulation, and is executed by the worker
+before any ack is claimed.
+
+### v2 shared fixtures
+
+`tests/network-contracts/dns-management-v2/{read,report}.json` are generated by
+the server serializers and parsed by both validators. The v2 config's golden
+SHA-256 is `4652ce3244e14658db02de0c05520507d0d92619a434a6a455a8309f5dbb6d37`.
+The v1 fixture golden SHA and the Stage A canonical SHA are unchanged.
 
 ## Verification performed
 
@@ -280,3 +345,21 @@ then the actual session and CSRF middleware are exercised.
 - Dashboard wiring and its validation are tracked separately from backend
   acceptance. Statistics, general DNS settings and other capability gaps are not
   implemented by the list/service management routes.
+
+## Schema-v2 settings/clear verification note
+
+Scoped checks exercise the additive v2 wire end to end on the dedicated
+throwaway PostgreSQL (`127.0.0.1:58743`) only: v1 and v2 shared fixtures round-
+trip in both validators with their pinned digests; real HTTP CAS PATCH upgrades
+to schema 2, rejects unsupported/out-of-bounds runtime fields, and resets to v1
+without touching policy history; cache-clear request replay, cooldown, per-
+gateway delivery, exact ack replay, forged/stale-token 409, repeated cycles and
+truthful lifecycle timestamps are checked without any entries count. The real
+server/worker TLS/UDP/TCP test now drives a v2 settings apply, verifies the
+effect through a real counting DNS origin (cache collapses repeated queries),
+executes a delivered clear and confirms a fresh origin hit with no generation or
+policy bump, then disables the cache and confirms every query reaches the
+origin. Offline bundle restart and worker-side version-gate/digest-failure tests
+confirm applied settings and original times survive without poisoning
+last-known-good. No live provider, host DNS/router/CA change, deploy, push or PR
+is part of this work.

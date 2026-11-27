@@ -18,6 +18,30 @@ use crate::error::{ApiError, ApiResult};
 
 /// Only this shape version is stored or served.
 pub const CONFIG_SCHEMA_VERSION: i32 = 1;
+/// Additive v2: the v1 list/service config plus explicitly supported runtime
+/// cache/response settings. v1 DTOs, fixtures and golden digest stay frozen.
+pub const CONFIG_SCHEMA_VERSION_V2: i32 = 2;
+
+/// Bounds mirrored from the accepted worker `config.rs`. Only these values are
+/// ever exposed as server-manageable runtime settings.
+pub const MAX_CACHE_ENTRIES: u64 = 65_536;
+pub const DEFAULT_CACHE_ENTRIES: u64 = 4096;
+pub const MAX_TTL_SECS: u32 = 86_400;
+pub const DEFAULT_SINKHOLE_TTL: u32 = 60;
+pub const MAX_IP_LEN: usize = 45;
+pub const CACHE_CLEAR_COOLDOWN_SECS: i64 = 60;
+pub const CACHE_CLEAR_TTL_SECS: i64 = 10 * 60;
+
+fn default_true() -> bool {
+    true
+}
+fn default_cache_entries() -> u64 {
+    DEFAULT_CACHE_ENTRIES
+}
+fn default_sinkhole_ttl() -> u32 {
+    DEFAULT_SINKHOLE_TTL
+}
+
 /// Canonical config bytes cap (16 KiB), mirrored in migration 0079.
 pub const MAX_CONFIG_BYTES: usize = 16 * 1024;
 /// Admin PATCH / worker report body cap (32 KiB), applied as an axum layer.
@@ -142,6 +166,97 @@ pub struct ManagementConfig {
     pub selected_services: Vec<String>,
 }
 
+// ─── Additive v2 runtime settings (v1 shape above is frozen) ────────────────
+
+/// Bounded response-cache controls. These are the ONLY cache fields exposed as
+/// server-manageable; the worker keeps hosts-file, bogus-NXDOMAIN IPs and all
+/// operator-local trust/upstream/listener/path/device settings local.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheSettingsDto {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Cached RESPONSE count bound (not a byte bound). 0 disables the cache.
+    #[serde(default = "default_cache_entries")]
+    pub max_entries: u64,
+    #[serde(default)]
+    pub positive_min_ttl_secs: Option<u32>,
+    #[serde(default)]
+    pub positive_max_ttl_secs: Option<u32>,
+    #[serde(default)]
+    pub negative_min_ttl_secs: Option<u32>,
+    #[serde(default)]
+    pub negative_max_ttl_secs: Option<u32>,
+}
+
+impl Default for CacheSettingsDto {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_entries: DEFAULT_CACHE_ENTRIES,
+            positive_min_ttl_secs: None,
+            positive_max_ttl_secs: None,
+            negative_min_ttl_secs: None,
+            negative_max_ttl_secs: None,
+        }
+    }
+}
+
+/// Denial response mode and its TTL. This maps onto the accepted worker
+/// `DenyConfig`; IPv6 hints, HTTPS/SVCB and every other response-shaping knob
+/// remain unsupported and are rejected as unknown fields.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub enum DenySettingsDto {
+    #[default]
+    Nxdomain,
+    Refused,
+    Sinkhole {
+        #[serde(default)]
+        ipv4: Option<String>,
+        #[serde(default)]
+        ipv6: Option<String>,
+        #[serde(default = "default_sinkhole_ttl")]
+        ttl_secs: u32,
+    },
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeSettingsDto {
+    #[serde(default)]
+    pub cache: CacheSettingsDto,
+    #[serde(default)]
+    pub deny: DenySettingsDto,
+}
+
+/// v2 desired config: v1 fields in the SAME order and serde representation,
+/// plus one additive `runtime` object. Canonical bytes are
+/// `serde_json::to_vec` of this struct in this exact field order.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManagementConfigV2 {
+    #[serde(default)]
+    pub sources: Vec<SubscriptionSourceDto>,
+    #[serde(default)]
+    pub catalog: Option<ServiceCatalogDto>,
+    #[serde(default)]
+    pub selected_services: Vec<String>,
+    #[serde(default)]
+    pub runtime: RuntimeSettingsDto,
+}
+
+impl ManagementConfigV2 {
+    /// Lossless view of the v1 portion, reused by the accepted v1 validator.
+    pub fn base(&self) -> ManagementConfig {
+        ManagementConfig {
+            sources: self.sources.clone(),
+            catalog: self.catalog.clone(),
+            selected_services: self.selected_services.clone(),
+        }
+    }
+}
+
 // ─── Admin mutation ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -156,11 +271,29 @@ pub struct PatchBody {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PatchOperation {
-    AddList { source: SubscriptionSourceDto },
-    RemoveList { id: String },
-    SetList { id: String, patch: SourcePatchDto },
-    SetCatalog { catalog: ServiceCatalogDto },
-    SelectServices { ids: Vec<String> },
+    AddList {
+        source: SubscriptionSourceDto,
+    },
+    RemoveList {
+        id: String,
+    },
+    SetList {
+        id: String,
+        patch: SourcePatchDto,
+    },
+    SetCatalog {
+        catalog: ServiceCatalogDto,
+    },
+    SelectServices {
+        ids: Vec<String>,
+    },
+    /// Replace the supported runtime settings; upgrades the desired config to
+    /// schema v2. Never touches operator-local fields.
+    SetRuntimeSettings {
+        runtime: RuntimeSettingsDto,
+    },
+    /// Drop the runtime object and return the desired config to schema v1.
+    ResetRuntimeSettings {},
 }
 
 impl PatchOperation {
@@ -171,6 +304,8 @@ impl PatchOperation {
             Self::SetList { .. } => "set_list",
             Self::SetCatalog { .. } => "set_catalog",
             Self::SelectServices { .. } => "select_services",
+            Self::SetRuntimeSettings { .. } => "set_runtime_settings",
+            Self::ResetRuntimeSettings {} => "reset_runtime_settings",
         }
     }
 }
@@ -267,6 +402,17 @@ pub struct RefreshAckDto {
     pub config_version: u64,
 }
 
+/// Truthful worker ack of one delivered cache-clear command. `cleared_at` is
+/// the worker's clock at the actual `clear_cache()` call, not a fabricated
+/// server time, and there is deliberately no entries count.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClearAckDto {
+    pub clear_seq: u64,
+    pub config_version: u64,
+    pub cleared_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkerStatusBody {
@@ -287,6 +433,9 @@ pub struct WorkerStatusBody {
     pub sources: Vec<SourceStatusDto>,
     #[serde(default)]
     pub refresh_ack: Vec<RefreshAckDto>,
+    /// Additive v2: empty (and omitted on the wire) for a v1-only report.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clear_ack: Vec<ClearAckDto>,
 }
 
 // ─── Responses ──────────────────────────────────────────────────────────────
@@ -302,7 +451,12 @@ pub struct SupportedView {
     pub safe_search: bool,
     pub statistics: bool,
     pub serve_stale: bool,
+    /// Runtime-supported cache enable/size/TTL bounds only.
     pub cache_ttl_controls: bool,
+    /// Runtime-supported denial mode and denial TTL only.
+    pub response_mode_controls: bool,
+    /// Coherent cache clear of the current cache, no generation bump.
+    pub cache_clear: bool,
     pub rate_limit: bool,
     pub retention_controls: bool,
     pub verified: bool,
@@ -318,7 +472,9 @@ impl Default for SupportedView {
             safe_search: false,
             statistics: false,
             serve_stale: false,
-            cache_ttl_controls: false,
+            cache_ttl_controls: true,
+            response_mode_controls: true,
+            cache_clear: true,
             rate_limit: false,
             retention_controls: false,
             verified: false,
@@ -331,7 +487,12 @@ pub struct DesiredView {
     pub config_version: u64,
     pub schema_version: i32,
     pub body_sha256: String,
-    pub config: ManagementConfig,
+    /// `null` for a v2 config, whose shape lives in `config_v2`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<ManagementConfig>,
+    /// Additive v2 desired shape; omitted for a v1 config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_v2: Option<ManagementConfigV2>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub updated_by: Option<Uuid>,
@@ -373,10 +534,49 @@ pub struct RefreshResult {
     pub cooldown_secs: i64,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheClearBody {
+    /// CAS token: the clear must target the currently saved desired version.
+    pub expected_config_version: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CacheClearResult {
+    pub clear_seq: u64,
+    pub config_version: u64,
+    pub expires_at: DateTime<Utc>,
+    pub created: bool,
+    pub cooldown_secs: i64,
+}
+
+/// Truthful per-gateway command lifecycle. Every timestamp stays original:
+/// requesting, delivering, attempting (worker clock) and acknowledging are
+/// separate and are never freshened on restart. No entries count exists.
+#[derive(Clone, Debug, Serialize)]
+pub struct CacheClearView {
+    pub clear_seq: u64,
+    pub config_version: u64,
+    pub requested_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub delivered_at: Option<DateTime<Utc>>,
+    pub attempted_at: Option<DateTime<Utc>>,
+    pub acked_at: Option<DateTime<Utc>>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct PendingRefreshView {
     pub source_id: String,
     pub refresh_seq: u64,
+    pub config_version: u64,
+    pub expires_at: DateTime<Utc>,
+}
+
+/// One pending cache-clear command, delivered only inside a gateway-scoped
+/// manager read and only for the currently delivered/applied config version.
+#[derive(Debug, Serialize)]
+pub struct PendingCacheClearView {
+    pub clear_seq: u64,
     pub config_version: u64,
     pub expires_at: DateTime<Utc>,
 }
@@ -390,7 +590,14 @@ pub struct WorkerReadResponse {
     pub schema_version: Option<i32>,
     pub body_sha256: Option<String>,
     pub config: Option<ManagementConfig>,
+    /// Additive v2 config. `schema_version=2, config=null, config_v2=Some(..)`.
+    /// Omitted on v1 reads, so the v1 fixture round-trips byte-for-byte.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_v2: Option<ManagementConfigV2>,
     pub pending_refreshes: Vec<PendingRefreshView>,
+    /// Additive v2 cache-clear command; omitted when none is pending.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_cache_clear: Vec<PendingCacheClearView>,
     pub server_time: DateTime<Utc>,
 }
 
@@ -423,6 +630,8 @@ pub struct GatewayStatusView {
     pub delivered_version: Option<u64>,
     pub reported_version: Option<u64>,
     pub status: Option<ReportedStatusView>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_clear: Option<CacheClearView>,
 }
 
 #[derive(Debug, Serialize)]
@@ -683,6 +892,87 @@ pub fn canonical_bytes(config: &ManagementConfig) -> ApiResult<Vec<u8>> {
     serde_json::to_vec(config).map_err(|e| ApiError::Internal(e.into()))
 }
 
+/// Validate only the explicitly supported runtime settings. Every other
+/// runtime knob is absent from the DTO (unknown fields are rejected at parse).
+pub fn validate_runtime_settings(settings: &RuntimeSettingsDto) -> ApiResult<()> {
+    if settings.cache.max_entries > MAX_CACHE_ENTRIES {
+        return Err(bad("cache max_entries must be 0..=65536 responses"));
+    }
+    for (_name, min, max) in [
+        (
+            "positive TTL",
+            settings.cache.positive_min_ttl_secs,
+            settings.cache.positive_max_ttl_secs,
+        ),
+        (
+            "negative TTL",
+            settings.cache.negative_min_ttl_secs,
+            settings.cache.negative_max_ttl_secs,
+        ),
+    ] {
+        if min.is_some_and(|ttl| ttl == 0 || ttl > MAX_TTL_SECS)
+            || max.is_some_and(|ttl| ttl == 0 || ttl > MAX_TTL_SECS)
+        {
+            return Err(bad("cache TTL bounds must be 1..=86400 seconds"));
+        }
+        if let (Some(min), Some(max)) = (min, max) {
+            if min > max {
+                return Err(bad("cache TTL minimum exceeds its maximum"));
+            }
+        }
+    }
+    match &settings.deny {
+        DenySettingsDto::Sinkhole {
+            ipv4,
+            ipv6,
+            ttl_secs,
+        } => {
+            if !(1..=MAX_TTL_SECS).contains(ttl_secs) {
+                return Err(bad("sinkhole TTL must be 1..=86400 seconds"));
+            }
+            if ipv4.is_none() && ipv6.is_none() {
+                return Err(bad("sinkhole denial needs at least one IP address"));
+            }
+            for raw in [ipv4.as_deref(), ipv6.as_deref()].into_iter().flatten() {
+                if raw.is_empty()
+                    || raw.len() > MAX_IP_LEN
+                    || raw.chars().any(|c| c.is_control())
+                    || raw.parse::<std::net::IpAddr>().is_err()
+                {
+                    return Err(bad("sinkhole address is malformed"));
+                }
+            }
+            if ipv4.as_deref().is_some_and(|raw| !raw.contains('.'))
+                || ipv6.as_deref().is_some_and(|raw| !raw.contains(':'))
+            {
+                return Err(bad("sinkhole address family does not match its field"));
+            }
+        }
+        DenySettingsDto::Nxdomain | DenySettingsDto::Refused => {}
+    }
+    Ok(())
+}
+
+pub fn validate_config_v2(config: &ManagementConfigV2) -> ApiResult<()> {
+    validate_config(&config.base())?;
+    validate_runtime_settings(&config.runtime)
+}
+
+/// Deterministic ordering, identical to v1 for the base fields. The runtime
+/// object is a fixed struct with no collection, so it needs no canonical sort.
+pub fn canonicalize_v2(config: &mut ManagementConfigV2) {
+    config.sources.sort_by(|a, b| a.id.cmp(&b.id));
+    if let Some(catalog) = &mut config.catalog {
+        catalog.services.sort_by(|a, b| a.id.cmp(&b.id));
+    }
+    config.selected_services.sort();
+    config.selected_services.dedup();
+}
+
+pub fn canonical_bytes_v2(config: &ManagementConfigV2) -> ApiResult<Vec<u8>> {
+    serde_json::to_vec(config).map_err(|e| ApiError::Internal(e.into()))
+}
+
 pub fn digest(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
@@ -845,12 +1135,31 @@ pub fn validate_worker_status(body: &WorkerStatusBody, now: DateTime<Utc>) -> Ap
             return Err(bad("refresh ack token is out of range"));
         }
     }
+    if body.clear_ack.len() > MAX_SOURCES {
+        return Err(bad("too many cache clear acknowledgements"));
+    }
+    for ack in &body.clear_ack {
+        if ack.clear_seq == 0
+            || ack.config_version == 0
+            || ack.clear_seq > i64::MAX as u64
+            || ack.config_version > i64::MAX as u64
+        {
+            return Err(bad("cache clear ack token is out of range"));
+        }
+        observed_time(
+            ack.cleared_at,
+            now,
+            MAX_FUTURE_SKEW,
+            "cache clear attempted time is outside the observation window",
+        )?;
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn url_policy_rejects_credentials_queries_private_and_viewer_pages() {
@@ -960,12 +1269,14 @@ mod tests {
             schema_version: Some(1),
             body_sha256: Some(read["body_sha256"].as_str().unwrap().to_owned()),
             config: Some(config),
+            config_v2: None,
             pending_refreshes: vec![PendingRefreshView {
                 source_id: "list1".into(),
                 refresh_seq: 1,
                 config_version: 1,
                 expires_at: "2026-11-26T12:10:00Z".parse().unwrap(),
             }],
+            pending_cache_clear: Vec::new(),
             server_time: "2026-11-26T12:00:00Z".parse().unwrap(),
         };
         assert_eq!(serde_json::to_value(response).unwrap(), read);
@@ -988,5 +1299,122 @@ mod tests {
         };
         config.selected_services.push("missing".into());
         assert!(validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn v2_shared_read_fixture_roundtrips_and_digest_matches() {
+        let expected: Value = serde_json::from_str(include_str!(
+            "../../../tests/network-contracts/dns-management-v2/read.json"
+        ))
+        .unwrap();
+        let config: ManagementConfigV2 =
+            serde_json::from_value(expected["config_v2"].clone()).unwrap();
+        let checksum = digest(&canonical_bytes_v2(&config).unwrap());
+        assert_eq!(checksum, expected["body_sha256"].as_str().unwrap());
+        assert_eq!(
+            checksum,
+            "4652ce3244e14658db02de0c05520507d0d92619a434a6a455a8309f5dbb6d37"
+        );
+        validate_config_v2(&config).unwrap();
+        let response = WorkerReadResponse {
+            household_id: expected["household_id"].as_str().unwrap().parse().unwrap(),
+            gateway_id: expected["gateway_id"].as_str().unwrap().parse().unwrap(),
+            kind: "dns",
+            config_version: 1,
+            schema_version: Some(CONFIG_SCHEMA_VERSION_V2),
+            body_sha256: Some(checksum),
+            config: None,
+            config_v2: Some(config),
+            pending_refreshes: vec![],
+            pending_cache_clear: vec![PendingCacheClearView {
+                clear_seq: 1,
+                config_version: 1,
+                expires_at: "2026-11-26T12:10:00Z".parse().unwrap(),
+            }],
+            server_time: expected["server_time"].as_str().unwrap().parse().unwrap(),
+        };
+        assert_eq!(serde_json::to_value(response).unwrap(), expected);
+    }
+
+    #[test]
+    fn v2_shared_report_fixture_validates() {
+        let report: WorkerStatusBody = serde_json::from_str(include_str!(
+            "../../../tests/network-contracts/dns-management-v2/report.json"
+        ))
+        .unwrap();
+        assert_eq!(report.clear_ack.len(), 1);
+        assert_eq!(report.clear_ack[0].clear_seq, 1);
+        assert_eq!(
+            report.body_sha256,
+            "4652ce3244e14658db02de0c05520507d0d92619a434a6a455a8309f5dbb6d37"
+        );
+        validate_worker_status(&report, "2026-11-26T12:00:00Z".parse().unwrap()).unwrap();
+        // Old applied/content times stay original and are not freshened.
+        assert_eq!(
+            report
+                .applied
+                .as_ref()
+                .unwrap()
+                .applied_at
+                .unwrap()
+                .to_rfc3339(),
+            "2024-01-01T00:00:00+00:00"
+        );
+    }
+
+    #[test]
+    fn v1_fixture_still_roundtrips_without_additive_fields() {
+        let expected: Value = serde_json::from_str(include_str!(
+            "../../../tests/network-contracts/dns-management-v1/read.json"
+        ))
+        .unwrap();
+        let config: ManagementConfig = serde_json::from_value(expected["config"].clone()).unwrap();
+        let response = WorkerReadResponse {
+            household_id: expected["household_id"].as_str().unwrap().parse().unwrap(),
+            gateway_id: expected["gateway_id"].as_str().unwrap().parse().unwrap(),
+            kind: "dns",
+            config_version: 1,
+            schema_version: Some(1),
+            body_sha256: Some(expected["body_sha256"].as_str().unwrap().to_owned()),
+            config: Some(config),
+            config_v2: None,
+            pending_refreshes: vec![PendingRefreshView {
+                source_id: "list1".into(),
+                refresh_seq: 1,
+                config_version: 1,
+                expires_at: "2026-11-26T12:10:00Z".parse().unwrap(),
+            }],
+            pending_cache_clear: vec![],
+            server_time: expected["server_time"].as_str().unwrap().parse().unwrap(),
+        };
+        assert_eq!(serde_json::to_value(response).unwrap(), expected);
+    }
+
+    #[test]
+    fn runtime_validation_rejects_unsupported_or_out_of_bounds_fields() {
+        let mut settings = RuntimeSettingsDto::default();
+        settings.cache.max_entries = MAX_CACHE_ENTRIES + 1;
+        assert!(validate_runtime_settings(&settings).is_err());
+        settings = RuntimeSettingsDto::default();
+        settings.cache.positive_min_ttl_secs = Some(0);
+        assert!(validate_runtime_settings(&settings).is_err());
+        settings = RuntimeSettingsDto::default();
+        settings.cache.positive_min_ttl_secs = Some(300);
+        settings.cache.positive_max_ttl_secs = Some(5);
+        assert!(validate_runtime_settings(&settings).is_err());
+        settings = RuntimeSettingsDto::default();
+        settings.deny = DenySettingsDto::Sinkhole {
+            ipv4: None,
+            ipv6: None,
+            ttl_secs: 60,
+        };
+        assert!(validate_runtime_settings(&settings).is_err());
+        // serve-expired / DO / ECS are not part of the DTO at all.
+        assert!(
+            serde_json::from_value::<RuntimeSettingsDto>(serde_json::json!({
+                "cache": { "serve_expired": true }
+            }))
+            .is_err()
+        );
     }
 }

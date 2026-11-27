@@ -1433,3 +1433,317 @@ async fn refresh_database_cap_allows_updates_but_not_a_33rd_insert(pool: PgPool)
     .unwrap();
     assert_eq!(count, 32);
 }
+
+// ─── Runtime settings (schema v2) and cache-clear command ────────────────────
+
+fn runtime_settings() -> Value {
+    json!({
+        "cache": {
+            "enabled": true,
+            "max_entries": 1024,
+            "positive_min_ttl_secs": 5,
+            "positive_max_ttl_secs": 300,
+            "negative_min_ttl_secs": null,
+            "negative_max_ttl_secs": null
+        },
+        "deny": {
+            "mode": "sinkhole",
+            "ipv4": "0.0.0.0",
+            "ipv6": null,
+            "ttl_secs": 30
+        }
+    })
+}
+
+#[sqlx::test]
+async fn runtime_settings_are_cas_versioned_schema_gated_and_policy_independent(pool: PgPool) {
+    let (base, _task) = spawn_router(pool.clone()).await;
+    let user = insert_user(&pool, "admin", "admin").await;
+    let (token, csrf) = session_for(&pool, user, "admin").await;
+    let http = Http::new(&base, token, csrf);
+    let hid = bootstrap_as(&http, "Home").await;
+    let gid = create_gateway(&http, hid, "dns").await;
+    let bearer = issue_cred(&http, hid, gid, Some(vec!["read_dns_management"])).await;
+    let path = format!("/api/network/households/{hid}/dns/management");
+    let policies_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM network_policies")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let (status, body) = http
+        .patch(
+            &path,
+            patch_with(
+                0,
+                vec![json!({"op":"set_runtime_settings","runtime":runtime_settings()})],
+            ),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["desired"]["schema_version"], 2);
+    assert!(body["desired"]["config"].is_null());
+    assert!(body["desired"]["config_v2"].is_object());
+    assert_eq!(
+        body["desired"]["config_v2"]["runtime"]["cache"]["max_entries"],
+        1024
+    );
+    assert_eq!(body["supported"]["cache_ttl_controls"], true);
+    assert_eq!(body["supported"]["response_mode_controls"], true);
+    assert_eq!(body["supported"]["cache_clear"], true);
+    assert_eq!(body["supported"]["serve_stale"], false);
+    assert_eq!(body["supported"]["verified"], false);
+    let digest_v2 = body["desired"]["body_sha256"].as_str().unwrap().to_owned();
+
+    // Strict worker read: schema and typed bytes agree, no v1 body is present.
+    let (status, read) = worker_read_paced(&http, &bearer, hid, gid).await;
+    assert_eq!(status, 200, "{read}");
+    assert_eq!(read["schema_version"], 2);
+    assert!(read["config"].is_null());
+    assert!(read["config_v2"].is_object());
+    assert_eq!(read["body_sha256"], digest_v2);
+    let typed: super::dns_management_dto::ManagementConfigV2 =
+        serde_json::from_value(read["config_v2"].clone()).unwrap();
+    assert_eq!(
+        digest(&super::dns_management_dto::canonical_bytes_v2(&typed).unwrap()),
+        digest_v2
+    );
+
+    // No-op and unsupported settings are honest.
+    let (status, body) = http
+        .patch(
+            &path,
+            patch_with(
+                1,
+                vec![json!({"op":"set_runtime_settings","runtime":runtime_settings()})],
+            ),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["changed"], false);
+    let mut bad = runtime_settings();
+    bad["cache"]["serve_expired"] = json!(true);
+    let (status, _) = http
+        .patch(
+            &path,
+            patch_with(1, vec![json!({"op":"set_runtime_settings","runtime":bad})]),
+        )
+        .await;
+    assert_eq!(status, 400);
+    let mut bad = runtime_settings();
+    bad["cache"]["max_entries"] = json!(70_000);
+    let (status, _) = http
+        .patch(
+            &path,
+            patch_with(1, vec![json!({"op":"set_runtime_settings","runtime":bad})]),
+        )
+        .await;
+    assert_eq!(status, 400);
+
+    // Explicit reset returns to the frozen v1 shape with a real version bump.
+    let (status, body) = http
+        .patch(
+            &path,
+            patch_with(1, vec![json!({"op":"reset_runtime_settings"})]),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["desired"]["schema_version"], 1);
+    assert!(body["desired"]["config_v2"].is_null());
+    assert_eq!(body["desired"]["config_version"], 2);
+    let policies_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM network_policies")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(policies_before, policies_after);
+}
+
+fn clear_ack_body(
+    mut base: Value,
+    clear_seq: u64,
+    config_version: u64,
+    cleared_at: chrono::DateTime<Utc>,
+) -> Value {
+    base["clear_ack"] = json!([{
+        "clear_seq": clear_seq,
+        "config_version": config_version,
+        "cleared_at": cleared_at
+    }]);
+    base
+}
+
+#[sqlx::test]
+async fn cache_clear_delivery_ack_cooldown_and_per_gateway_isolation_are_truthful(pool: PgPool) {
+    let (base, _task) = spawn_router(pool.clone()).await;
+    let user = insert_user(&pool, "admin", "admin").await;
+    let (token, csrf) = session_for(&pool, user, "admin").await;
+    let http = Http::new(&base, token, csrf);
+    let hid = bootstrap_as(&http, "Home").await;
+    let gid_a = create_gateway(&http, hid, "dns").await;
+    let gid_b = create_gateway(&http, hid, "dns").await;
+    let cred_a = issue_cred(
+        &http,
+        hid,
+        gid_a,
+        Some(vec!["read_dns_management", "report_dns_status"]),
+    )
+    .await;
+    let cred_b = issue_cred(
+        &http,
+        hid,
+        gid_b,
+        Some(vec!["read_dns_management", "report_dns_status"]),
+    )
+    .await;
+    let path = format!("/api/network/households/{hid}/dns/management");
+    let clear_path = format!("/api/network/households/{hid}/dns/cache/clear");
+    let status_path = format!("/api/network/households/{hid}/dns/status");
+    let (status, saved) = http
+        .patch(
+            &path,
+            patch_with(
+                0,
+                vec![json!({"op":"set_runtime_settings","runtime":runtime_settings()})],
+            ),
+        )
+        .await;
+    assert_eq!(status, 200, "{saved}");
+    let digest_v2 = saved["desired"]["body_sha256"].as_str().unwrap().to_owned();
+
+    // Stale CAS and an absent desired config are refused.
+    let (status, _) = http
+        .post(&clear_path, json!({"expected_config_version": 0}))
+        .await;
+    assert_eq!(status, 409);
+
+    let (status, first) = http
+        .post(&clear_path, json!({"expected_config_version": 1}))
+        .await;
+    assert_eq!(status, 200, "{first}");
+    assert_eq!(first["clear_seq"], 1);
+    assert_eq!(first["created"], true);
+    let (status, replay) = http
+        .post(&clear_path, json!({"expected_config_version": 1}))
+        .await;
+    assert_eq!(status, 200, "{replay}");
+    assert_eq!(replay["clear_seq"], 1);
+    assert_eq!(replay["created"], false);
+    assert_eq!(replay["expires_at"], first["expires_at"]);
+    assert!(first.get("entries_count").is_none());
+
+    // Both gateways receive the exact token inside their scoped read only.
+    for (cred, gid) in [(&cred_a, gid_a), (&cred_b, gid_b)] {
+        let (status, read) = worker_read_paced(&http, cred, hid, gid).await;
+        assert_eq!(status, 200, "{read}");
+        let pending = read["pending_cache_clear"].as_array().unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0]["clear_seq"], 1);
+        assert_eq!(pending[0]["config_version"], 1);
+    }
+
+    let attempted = Utc::now() - ChronoDuration::seconds(2);
+    let report_a = clear_ack_body(
+        status_body(hid, gid_a, 1, &digest_v2, 1, Uuid::new_v4()),
+        1,
+        1,
+        attempted,
+    );
+    let (status, _) = worker_status_paced(&http, &cred_a, report_a.clone()).await;
+    assert_eq!(status, 200);
+    // Exact replay is idempotent; a different gateway cannot ack this token.
+    let (status, _) = worker_status_paced(&http, &cred_a, report_a).await;
+    assert_eq!(status, 200);
+    let forged = clear_ack_body(
+        status_body(hid, gid_b, 1, &digest_v2, 1, Uuid::new_v4()),
+        9,
+        1,
+        attempted,
+    );
+    let (status, _) = worker_status_paced(&http, &cred_b, forged).await;
+    assert_eq!(status, 409);
+
+    let (status, view) = http.get(&status_path).await;
+    assert_eq!(status, 200, "{view}");
+    let gateways = view["gateways"].as_array().unwrap();
+    let gw_a = gateways
+        .iter()
+        .find(|g| g["gateway_id"] == json!(gid_a.to_string()))
+        .unwrap();
+    let gw_b = gateways
+        .iter()
+        .find(|g| g["gateway_id"] == json!(gid_b.to_string()))
+        .unwrap();
+    assert_eq!(gw_a["cache_clear"]["clear_seq"], 1);
+    assert!(gw_a["cache_clear"]["delivered_at"].is_string());
+    assert!(gw_a["cache_clear"]["attempted_at"].is_string());
+    assert!(gw_a["cache_clear"]["acked_at"].is_string());
+    let attempted_reported: chrono::DateTime<Utc> = gw_a["cache_clear"]["attempted_at"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    // PostgreSQL stores microseconds; compare at millisecond precision.
+    assert_eq!(
+        attempted_reported.timestamp_millis(),
+        attempted.timestamp_millis()
+    );
+    assert!(
+        gw_b["cache_clear"]["acked_at"].is_null(),
+        "gateway A ack hid gateway B"
+    );
+    assert!(gw_b["cache_clear"]["delivered_at"].is_string());
+    assert!(gw_a["cache_clear"].get("entries_count").is_none());
+
+    // B reports its own exact ack; no settings or policy version is bumped.
+    let report_b = clear_ack_body(
+        status_body(hid, gid_b, 1, &digest_v2, 1, Uuid::new_v4()),
+        1,
+        1,
+        attempted,
+    );
+    let (status, _) = worker_status_paced(&http, &cred_b, report_b).await;
+    assert_eq!(status, 200);
+    let (status, current) = http.get(&path).await;
+    assert_eq!(status, 200);
+    assert_eq!(current["desired"]["config_version"], 1);
+
+    // A new cycle after cooldown invalidates the old delivery+ack; replaying
+    // the old token is refused, and the new token is independently acked.
+    sqlx::query("UPDATE network_dns_cache_clear_request SET requested_at = NOW() - INTERVAL '61 seconds' WHERE household_id = $1")
+        .bind(hid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, second) = http
+        .post(&clear_path, json!({"expected_config_version": 1}))
+        .await;
+    assert_eq!(status, 200, "{second}");
+    assert_eq!(second["clear_seq"], 2);
+    assert_eq!(second["created"], true);
+    let (status, _) = worker_status_paced(
+        &http,
+        &cred_a,
+        clear_ack_body(
+            status_body(hid, gid_a, 1, &digest_v2, 1, Uuid::new_v4()),
+            1,
+            1,
+            attempted,
+        ),
+    )
+    .await;
+    assert_eq!(status, 409, "stale token was acked after a new cycle");
+    let (status, read) = worker_read_paced(&http, &cred_a, hid, gid_a).await;
+    assert_eq!(status, 200);
+    assert_eq!(read["pending_cache_clear"][0]["clear_seq"], 2);
+    let (status, _) = worker_status_paced(
+        &http,
+        &cred_a,
+        clear_ack_body(
+            status_body(hid, gid_a, 1, &digest_v2, 1, Uuid::new_v4()),
+            2,
+            1,
+            attempted,
+        ),
+    )
+    .await;
+    assert_eq!(status, 200);
+}

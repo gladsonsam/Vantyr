@@ -22,7 +22,9 @@ use uuid::Uuid;
 
 use crate::controller::{read_private_file, CONTROLLER_AUDIENCE};
 use crate::management_dto::{
-    is_digest, RefreshAckDto, WorkerReadBody, WorkerReadResponse, WorkerStatusBody,
+    canonical_bytes, canonical_bytes_v2, digest, is_digest, DesiredConfig, RefreshAckDto,
+    RuntimeSettingsDto, WorkerReadBody, WorkerReadResponse, WorkerStatusBody,
+    CONFIG_SCHEMA_VERSION, CONFIG_SCHEMA_VERSION_V2, MAX_CACHE_ENTRIES, MAX_IP_LEN, MAX_TTL_SECS,
 };
 
 /// Applied management state persisted in the ONE durable bundle. The desired
@@ -43,10 +45,21 @@ pub struct ManagementState {
     /// wire; used to avoid reporting expired or stale acknowledgements.
     #[serde(default)]
     pub receipt_expiry: std::collections::BTreeMap<String, DateTime<Utc>>,
+    /// Schema of the applied desired config. Old bundles default to v1.
+    #[serde(default = "default_schema_version")]
+    pub schema_version: i32,
+    /// Support settings actually applied by the durable publish. `None` means
+    /// the local worker config's cache/deny fields remain authoritative.
+    #[serde(default)]
+    pub runtime: Option<RuntimeSettingsDto>,
     #[serde(default)]
     pub applied_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub last_error: Option<String>,
+}
+
+fn default_schema_version() -> i32 {
+    CONFIG_SCHEMA_VERSION
 }
 
 /// Server `MAX_SOURCES` also bounds refresh_ack in WorkerStatusBody.
@@ -56,12 +69,74 @@ pub fn receipt_key(id: &str, seq: u64, version: u64) -> String {
     format!("{id}:{seq}:{version}")
 }
 
+/// Structural checks on the ONLY runtime fields the server may manage. Local
+/// trust, upstreams, listener, paths, device mapping and every unsupported
+/// response hint are never part of this value.
+fn validate_runtime(settings: &RuntimeSettingsDto) -> Result<(), ManagementError> {
+    let invalid = || ManagementError::Integrity("applied runtime settings are invalid".into());
+    if settings.cache.max_entries > MAX_CACHE_ENTRIES {
+        return Err(invalid());
+    }
+    for (min, max) in [
+        (
+            settings.cache.positive_min_ttl_secs,
+            settings.cache.positive_max_ttl_secs,
+        ),
+        (
+            settings.cache.negative_min_ttl_secs,
+            settings.cache.negative_max_ttl_secs,
+        ),
+    ] {
+        if min.is_some_and(|ttl| ttl == 0 || ttl > MAX_TTL_SECS)
+            || max.is_some_and(|ttl| ttl == 0 || ttl > MAX_TTL_SECS)
+            || matches!((min, max), (Some(a), Some(b)) if a > b)
+        {
+            return Err(invalid());
+        }
+    }
+    if let crate::management_dto::DenySettingsDto::Sinkhole {
+        ipv4,
+        ipv6,
+        ttl_secs,
+    } = &settings.deny
+    {
+        if !(1..=MAX_TTL_SECS).contains(ttl_secs) || (ipv4.is_none() && ipv6.is_none()) {
+            return Err(invalid());
+        }
+        for raw in [ipv4.as_deref(), ipv6.as_deref()].into_iter().flatten() {
+            if raw.is_empty()
+                || raw.len() > MAX_IP_LEN
+                || raw.chars().any(|c| c.is_control())
+                || raw.parse::<std::net::IpAddr>().is_err()
+            {
+                return Err(invalid());
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Structural checks used by bundle consistency on load and apply.
 pub fn validate_state(state: &ManagementState) -> Result<(), ManagementError> {
     if state.config_version == 0 || !is_digest(&state.digest) {
         return Err(ManagementError::Integrity(
             "applied management version or digest is invalid".into(),
         ));
+    }
+    if state.schema_version != CONFIG_SCHEMA_VERSION
+        && state.schema_version != CONFIG_SCHEMA_VERSION_V2
+    {
+        return Err(ManagementError::Integrity(
+            "applied management schema is unsupported".into(),
+        ));
+    }
+    if state.schema_version == CONFIG_SCHEMA_VERSION_V2 && state.runtime.is_none() {
+        return Err(ManagementError::Integrity(
+            "v2 applied management is missing its runtime settings".into(),
+        ));
+    }
+    if let Some(settings) = &state.runtime {
+        validate_runtime(settings)?;
     }
     if state.filter_identity.len() > 64 || state.filter_identity.chars().any(|c| c.is_control()) {
         return Err(ManagementError::Integrity(
@@ -402,35 +477,48 @@ impl ManagementClient {
             if response.schema_version.is_some()
                 || response.body_sha256.is_some()
                 || response.config.is_some()
+                || response.config_v2.is_some()
+                || !response.pending_cache_clear.is_empty()
             {
                 return Err(ManagementError::Integrity(
-                    "versionless response carried config fields".into(),
+                    "versionless response carried config or command fields".into(),
                 ));
             }
             return Ok(());
         }
-        let (Some(schema), Some(digest), Some(config)) = (
-            response.schema_version,
-            response.body_sha256.as_deref(),
-            response.config.as_ref(),
-        ) else {
+        let (Some(schema), Some(digest_value)) =
+            (response.schema_version, response.body_sha256.as_deref())
+        else {
             return Err(ManagementError::Integrity(
                 "desired config is incomplete".into(),
             ));
         };
-        if schema != crate::management_dto::CONFIG_SCHEMA_VERSION {
-            return Err(ManagementError::Integrity(format!(
-                "unsupported management schema {schema}"
-            )));
-        }
-        if !crate::management_dto::is_digest(digest) {
+        if !is_digest(digest_value) {
             return Err(ManagementError::Integrity("digest is malformed".into()));
         }
-        let computed = crate::management_dto::digest(
-            &crate::management_dto::canonical_bytes(config)
-                .map_err(|_| ManagementError::Integrity("config is not serializable".into()))?,
-        );
-        if computed != digest {
+        // Select the typed body by the server-declared schema. A v1 shape is
+        // never coerced into v2 bytes; an unsupported version fails honestly
+        // before any commit or report and cannot poison last-known-good.
+        let selected: DesiredConfig = match (schema, &response.config, &response.config_v2) {
+            (CONFIG_SCHEMA_VERSION, Some(config), None) => DesiredConfig::V1(config.clone()),
+            (CONFIG_SCHEMA_VERSION_V2, None, Some(config)) => DesiredConfig::V2(config.clone()),
+            (CONFIG_SCHEMA_VERSION, None, Some(_)) | (CONFIG_SCHEMA_VERSION_V2, Some(_), None) => {
+                return Err(ManagementError::Integrity(
+                    "management config shape does not match its schema".into(),
+                ))
+            }
+            _ => {
+                return Err(ManagementError::Integrity(format!(
+                    "unsupported management schema {schema}"
+                )))
+            }
+        };
+        let canonical = match &selected {
+            DesiredConfig::V1(config) => canonical_bytes(config),
+            DesiredConfig::V2(config) => canonical_bytes_v2(config),
+        }
+        .map_err(|_| ManagementError::Integrity("config is not serializable".into()))?;
+        if digest(&canonical) != digest_value {
             return Err(ManagementError::Integrity(
                 "management config digest does not match".into(),
             ));

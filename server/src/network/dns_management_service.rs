@@ -20,10 +20,12 @@ use super::dns_management_db as db;
 use super::dns_management_dto as dto;
 use super::{authz, db as network_db, gateway_auth, gateway_db, gateway_dto, gateway_service};
 use dto::{
-    AppliedView, DeliveryView, DesiredView, ManagementConfig, ManagementView, PatchBody,
-    PatchResult, RefreshResult, ReportedStatusView, SourceStatusDto, StatusView, SupportedView,
-    WorkerReadBody, WorkerReadResponse, WorkerStatusBody, CONFIG_SCHEMA_VERSION, DELIVERY_HISTORY,
-    MAX_CONFIG_BYTES, REFRESH_COOLDOWN_SECS, REFRESH_TTL_SECS,
+    AppliedView, CacheClearBody, CacheClearResult, DeliveryView, DesiredView, ManagementConfig,
+    ManagementConfigV2, ManagementView, PatchBody, PatchResult, RefreshResult, ReportedStatusView,
+    RuntimeSettingsDto, SourceStatusDto, StatusView, SupportedView, WorkerReadBody,
+    WorkerReadResponse, WorkerStatusBody, CACHE_CLEAR_COOLDOWN_SECS, CACHE_CLEAR_TTL_SECS,
+    CONFIG_SCHEMA_VERSION, CONFIG_SCHEMA_VERSION_V2, DELIVERY_HISTORY, MAX_CONFIG_BYTES,
+    REFRESH_COOLDOWN_SECS, REFRESH_TTL_SECS,
 };
 
 fn worker_auth_error() -> ApiError {
@@ -33,24 +35,67 @@ fn worker_auth_error() -> ApiError {
     )
 }
 
-fn config_from_row(row: &db::ConfigRow) -> ApiResult<(ManagementConfig, DesiredView)> {
-    if row.schema_version != CONFIG_SCHEMA_VERSION {
-        return Err(ApiError::not_found("unsupported stored management schema"));
+/// One stored desired config. v1 is never coerced into v2 on read; the v2
+/// upgrade is an explicit PATCH operation with a real version/digest bump.
+#[derive(Clone)]
+enum StoredConfig {
+    V1(ManagementConfig),
+    V2(ManagementConfigV2),
+}
+
+impl StoredConfig {
+    fn schema_version(&self) -> i32 {
+        match self {
+            Self::V1(_) => CONFIG_SCHEMA_VERSION,
+            Self::V2(_) => CONFIG_SCHEMA_VERSION_V2,
+        }
     }
-    let config: ManagementConfig =
-        serde_json::from_slice(&row.body).map_err(|e| ApiError::Internal(e.into()))?;
-    Ok((
-        config.clone(),
-        DesiredView {
-            config_version: row.config_version as u64,
-            schema_version: row.schema_version,
-            body_sha256: row.body_sha256.clone(),
-            config,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            updated_by: row.updated_by,
-        },
-    ))
+    fn sources(&self) -> &[dto::SubscriptionSourceDto] {
+        match self {
+            Self::V1(config) => &config.sources,
+            Self::V2(config) => &config.sources,
+        }
+    }
+    fn as_v2(&self) -> ManagementConfigV2 {
+        match self {
+            Self::V1(config) => ManagementConfigV2 {
+                sources: config.sources.clone(),
+                catalog: config.catalog.clone(),
+                selected_services: config.selected_services.clone(),
+                runtime: RuntimeSettingsDto::default(),
+            },
+            Self::V2(config) => config.clone(),
+        }
+    }
+}
+
+fn config_from_row(row: &db::ConfigRow) -> ApiResult<StoredConfig> {
+    match row.schema_version {
+        CONFIG_SCHEMA_VERSION => serde_json::from_slice(&row.body)
+            .map(StoredConfig::V1)
+            .map_err(|e| ApiError::Internal(e.into())),
+        CONFIG_SCHEMA_VERSION_V2 => serde_json::from_slice(&row.body)
+            .map(StoredConfig::V2)
+            .map_err(|e| ApiError::Internal(e.into())),
+        _ => Err(ApiError::not_found("unsupported stored management schema")),
+    }
+}
+
+fn desired_view(row: &db::ConfigRow, config: &StoredConfig) -> DesiredView {
+    let (v1, v2) = match config {
+        StoredConfig::V1(config) => (Some(config.clone()), None),
+        StoredConfig::V2(config) => (None, Some(config.clone())),
+    };
+    DesiredView {
+        config_version: row.config_version as u64,
+        schema_version: config.schema_version(),
+        body_sha256: row.body_sha256.clone(),
+        config: v1,
+        config_v2: v2,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        updated_by: row.updated_by,
+    }
 }
 
 fn delivery_views(rows: &[db::DeliveryPinRow]) -> Vec<DeliveryView> {
@@ -72,7 +117,10 @@ fn delivery_views(rows: &[db::DeliveryPinRow]) -> Vec<DeliveryView> {
 /// capability map. An empty household returns `desired: null` with 200.
 pub async fn get_view(pool: &PgPool, household_id: Uuid) -> ApiResult<ManagementView> {
     let desired = match db::get_desired(pool, household_id).await? {
-        Some(row) => Some(config_from_row(&row)?.1),
+        Some(row) => {
+            let config = config_from_row(&row)?;
+            Some(desired_view(&row, &config))
+        }
         None => None,
     };
     let pins = db::delivery_pins_view(pool, household_id).await?;
@@ -112,10 +160,14 @@ pub async fn patch(
         ));
     }
 
-    let mut config = match &current {
-        Some(row) => config_from_row(row)?.0,
-        None => ManagementConfig::default(),
+    let current_config = match &current {
+        Some(row) => config_from_row(row)?,
+        None => StoredConfig::V1(ManagementConfig::default()),
     };
+    let mut schema_version = current_config.schema_version();
+    // Work on the v2 superset so an explicit runtime op can upgrade in one
+    // atomic CAS. A v1 batch without a runtime op serializes back to v1 bytes.
+    let mut config = current_config.as_v2();
 
     for operation in body.operations {
         match operation {
@@ -168,12 +220,28 @@ pub async fn patch(
             dto::PatchOperation::SelectServices { ids } => {
                 config.selected_services = ids;
             }
+            dto::PatchOperation::SetRuntimeSettings { runtime } => {
+                dto::validate_runtime_settings(&runtime)?;
+                config.runtime = runtime;
+                schema_version = CONFIG_SCHEMA_VERSION_V2;
+            }
+            dto::PatchOperation::ResetRuntimeSettings {} => {
+                config.runtime = RuntimeSettingsDto::default();
+                schema_version = CONFIG_SCHEMA_VERSION;
+            }
         }
     }
 
-    dto::canonicalize(&mut config);
-    dto::validate_config(&config)?;
-    let bytes = dto::canonical_bytes(&config)?;
+    let bytes = if schema_version == CONFIG_SCHEMA_VERSION {
+        let mut base = config.base();
+        dto::canonicalize(&mut base);
+        dto::validate_config(&base)?;
+        dto::canonical_bytes(&base)?
+    } else {
+        dto::canonicalize_v2(&mut config);
+        dto::validate_config_v2(&config)?;
+        dto::canonical_bytes_v2(&config)?
+    };
     if bytes.len() > MAX_CONFIG_BYTES {
         return Err(ApiError::bad_request(
             "canonical management config exceeds 16 KiB",
@@ -198,7 +266,7 @@ pub async fn patch(
     if !db::upsert_desired_on_conn(
         &mut tx,
         household_id,
-        CONFIG_SCHEMA_VERSION,
+        schema_version,
         new_version as i64,
         &bytes,
         &checksum,
@@ -251,9 +319,9 @@ pub async fn request_refresh(
     let row = db::desired_on_conn(&mut tx, household_id)
         .await?
         .ok_or_else(|| ApiError::not_found("no desired DNS configuration saved"))?;
-    let (config, _) = config_from_row(&row)?;
+    let config = config_from_row(&row)?;
     let source = config
-        .sources
+        .sources()
         .iter()
         .find(|s| s.id == source_id)
         .ok_or_else(|| ApiError::not_found("source id not found in desired config"))?;
@@ -285,8 +353,52 @@ pub async fn request_refresh(
     })
 }
 
+/// Request a cache clear of the CURRENT resolver cache. This is a command,
+/// not a settings or policy mutation: no revision, publication time or bundle
+/// generation is bumped, and no entries count is fabricated. Delivery and ack
+/// are exclusively reported by the scoped worker commands.
+pub async fn request_clear(
+    pool: &sqlx::PgPool,
+    actor: Uuid,
+    household_id: Uuid,
+    body: CacheClearBody,
+    now: DateTime<Utc>,
+) -> ApiResult<CacheClearResult> {
+    let mut tx = pool.begin().await?;
+    network_db::lock_household(&mut tx, household_id).await?;
+    if !authz::has_grant_on_conn(&mut tx, actor, household_id, authz::NetworkGrant::Admin).await? {
+        return Err(ApiError::forbidden());
+    }
+    let row = db::desired_on_conn(&mut tx, household_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("no desired DNS configuration saved"))?;
+    if body.expected_config_version != row.config_version as u64 {
+        return Err(ApiError::conflict(
+            "expected_config_version is stale; reload the desired config",
+        ));
+    }
+    let outcome = db::request_clear_on_conn(
+        &mut tx,
+        household_id,
+        actor,
+        now,
+        row.config_version,
+        CACHE_CLEAR_COOLDOWN_SECS,
+        CACHE_CLEAR_TTL_SECS,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(CacheClearResult {
+        clear_seq: outcome.clear_seq as u64,
+        config_version: outcome.config_version as u64,
+        expires_at: outcome.expires_at,
+        created: outcome.created,
+        cooldown_secs: CACHE_CLEAR_COOLDOWN_SECS,
+    })
+}
+
 /// Scoped, cookie-free worker pull. Records delivery evidence (version +
-/// digest) and per-gateway refresh-token delivery; it never marks applied.
+/// digest) and per-gateway refresh/cache-clear token delivery; never applied.
 pub async fn worker_read(
     pool: &PgPool,
     bearer: Option<&str>,
@@ -317,18 +429,23 @@ pub async fn worker_read(
     )
     .await?;
 
-    let (config_version, schema_version, body_sha256, config) =
+    let (config_version, schema_version, body_sha256, config, config_v2) =
         match db::desired_on_conn(&mut tx, worker.household_id).await? {
             Some(row) => {
-                let (parsed, _) = config_from_row(&row)?;
+                let parsed = config_from_row(&row)?;
+                let (v1, v2) = match &parsed {
+                    StoredConfig::V1(config) => (Some(config.clone()), None),
+                    StoredConfig::V2(config) => (None, Some(config.clone())),
+                };
                 (
                     row.config_version as u64,
                     Some(row.schema_version),
                     Some(row.body_sha256.clone()),
-                    Some(parsed),
+                    v1,
+                    v2,
                 )
             }
-            None => (0, None, None, None),
+            None => (0, None, None, None, None),
         };
 
     if config_version > 0 {
@@ -370,6 +487,10 @@ pub async fn worker_read(
             )
             .await?;
         }
+        // Cache clear is delivered only for this exact delivered config
+        // version; a token requested before a config edit is never rebound.
+        db::mark_clear_delivered_on_conn(&mut tx, worker.household_id, worker.gateway_id, now)
+            .await?;
     }
 
     let (delivered, reported, extra_pins) =
@@ -394,6 +515,20 @@ pub async fn worker_read(
             .into_iter()
             .filter(|token| token.config_version == config_version)
             .collect();
+    let pending_clear = if config_version > 0 {
+        db::pending_clear_on_conn(
+            &mut tx,
+            worker.household_id,
+            worker.gateway_id,
+            config_version as i64,
+            now,
+        )
+        .await?
+        .into_iter()
+        .collect()
+    } else {
+        Vec::new()
+    };
     gateway_db::mark_credential_used(&mut tx, worker.id).await?;
     tx.commit().await?;
 
@@ -405,7 +540,9 @@ pub async fn worker_read(
         schema_version,
         body_sha256,
         config,
+        config_v2,
         pending_refreshes,
+        pending_cache_clear: pending_clear,
         server_time: now,
     })
 }
@@ -520,6 +657,44 @@ pub async fn worker_status(
         .await?;
     }
 
+    for ack in &body.clear_ack {
+        if let Some(existing) =
+            db::clear_ack_state_on_conn(&mut tx, worker.household_id, worker.gateway_id).await?
+        {
+            if existing.clear_seq == ack.clear_seq as i64
+                && existing.config_version == ack.config_version as i64
+            {
+                continue; // exact replay: idempotent
+            }
+            return Err(ApiError::conflict(
+                "cache clear ack does not match the accepted token for this gateway",
+            ));
+        }
+        if !db::clear_token_exists_on_conn(
+            &mut tx,
+            worker.household_id,
+            worker.gateway_id,
+            ack.clear_seq as i64,
+            ack.config_version as i64,
+        )
+        .await?
+        {
+            return Err(ApiError::conflict(
+                "cache clear token was not delivered to this gateway",
+            ));
+        }
+        db::insert_clear_ack_on_conn(
+            &mut tx,
+            worker.household_id,
+            worker.gateway_id,
+            ack.clear_seq as i64,
+            ack.config_version as i64,
+            ack.cleared_at,
+            now,
+        )
+        .await?;
+    }
+
     if db::existing_report_id_on_conn(&mut tx, worker.household_id, worker.gateway_id).await?
         != Some(body.report_id)
     {
@@ -618,6 +793,8 @@ pub async fn status_view(pool: &PgPool, household_id: Uuid) -> ApiResult<StatusV
         .await?
         .map(|row| row.config_version as u64);
     let rows = db::status_rows(pool, household_id).await?;
+    let mut conn = pool.acquire().await?;
+    let clear_states = db::clear_states_on_conn(&mut conn, household_id).await?;
     let mut gateways = Vec::with_capacity(rows.len());
     for row in rows {
         let status = match (
@@ -691,6 +868,10 @@ pub async fn status_view(pool: &PgPool, household_id: Uuid) -> ApiResult<StatusV
             delivered_version: row.delivered_version.map(|v| v as u64),
             reported_version: row.reported_version.map(|v| v as u64),
             status,
+            cache_clear: clear_states
+                .iter()
+                .find(|(gateway_id, _)| *gateway_id == row.gateway_id)
+                .map(|(_, view)| view.clone()),
         });
     }
     Ok(StatusView {
